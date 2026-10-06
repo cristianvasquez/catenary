@@ -55,7 +55,8 @@ jobs:
       # No install scripts: they build the Linux desktop app (drivelist, Electron for linux-x64). The unit tests do not need them.
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm check
-      - run: pnpm test
+      # Separate processes: in the thread pool, a Vitest worker ended with a V8 fatal error ("unreachable code") on Windows.
+      - run: pnpm test --pool=forks
 
   smoke:
     needs: package

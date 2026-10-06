@@ -46,7 +46,8 @@ async function until(what, fn, ms = 90000) {
 }
 
 const gitEnv = { GIT_AUTHOR_NAME: 'smoke', GIT_AUTHOR_EMAIL: 'smoke@example.org', GIT_COMMITTER_NAME: 'smoke', GIT_COMMITTER_EMAIL: 'smoke@example.org' };
-const git = (...args) => execFileSync('git', args, { cwd: ws, encoding: 'utf8', env: { ...process.env, ...gitEnv } }).trim();
+// The identity as arguments, not as `env`: the first Windows run of `git init` with a changed `env` gave ENOENT.
+const git = (...args) => execFileSync('git', ['-c', 'user.name=smoke', '-c', 'user.email=smoke@example.org', ...args], { cwd: ws, encoding: 'utf8' }).trim();
 
 mkdirSync(run);
 if (!launcher) {
