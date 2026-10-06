@@ -1,0 +1,101 @@
+# Open work
+
+The contracts (spec/manifest.hs, spec/ui-manifest.hs) define target behavior. This file holds decisions, implementation gaps and defects. Do not change a contract merely to match the code.
+
+Evidence labels distinguish source checks from historical reports. A historical report comes from an earlier UI review. It is not a fresh browser result. Reproduce it before a change. Remove a row when its item is done.
+
+## Decisions
+
+| ID | Decision needed | Current rule or next action |
+|---|---|---|
+| D1 (F5) | Statement deletion by layer | The proposal deletes subject statements but retains incoming statements. Current instance deletion removes incoming data references. Node-shape deletion removes sh:node references. Value-set deletion refuses used sets. Source: `ops.ts`, `shape-ops.ts`. Test these effects before choosing one rule. |
+| D2 | Selection or highlight in other panes | UI §3 specifies highlights on the active canvas. Confirm the later request to select placements on other canvases before changing it. |
+| D3 | Several items in Go to Source | Keep the current one-item contract unless the user approves multiple-item behavior. |
+| D4 | Files with several views | The current loader rejects them. Decide whether the editor needs a view picker before changing the one-view-per-file rule. |
+| D5 | Relation as both a box part and an edge | Decide how both presentations should select and highlight the same relation. |
+| D6 | Shape-driven workspace settings | Keep the main-area document. Decide whether its fields should use a workspace shape, an Element panel or text-section controls. |
+| D7 | Read-only file globs | ADR 0004 leaves explicit protection unresolved. Format-based write restrictions already exist and are separate. |
+| D8 | Installed or external shapes library | First decide whether this feature is still needed after folder-based membership. Then define library location, CLI replace/extend behavior and missing-shape validation. Preserve source graph identities if this extends file loading. |
+| D9 | UI library extraction | Proposal (ADR 0008): a generic library (canvas, geometry, layout, tree, property sheet, fields) separate from Catenary bindings and a Theia host adapter; it would replace the GLSP canvas. Choose React or snabbdom, workspace package or separate repository, DOM text measurement or estimates, and whether replacing GLSP is worth the work. Do not implement before approval. |
+| OWN1 | Ownership rules of nested resources | ADR 0014 removes ownership from the display: the cascade only decides which figure draws an element. Copy and delete still use three ownership rules that disagree (`graph.ts:389` skolem and one referrer, `shape-ops.ts:88` IRI prefix, `shapes-read.ts:136-160` helper content). A named helper with two owners (`Keys concept`) passes only the third rule. Its Explorer row cannot be dragged, and Properties shows "Loading…" (`selection.ts:39-47`, `properties-widget.tsx:460,503`). Choose one rule. |
+| D11 | Class pill: private or shared | Datatype and node-kind ends are private to their line (ADR 0014). A class without a node shape is a shared pill (`shn:ClassPill`, kept by lines). Decide whether it follows the datatype rule. |
+| MIGRATION1 | Opposing migration entries | Historical report: changing a target class and changing it back leaves both entries. Decide whether to merge or cancel them before applying either. |
+
+## Data safety and persistence
+
+| ID | Evidence and risk | Completion condition |
+|---|---|---|
+| STORE1 | Source check: `model-store.ts/readModelFile` removes source named-graph names and warns. A later write loses those names. ADR 0003 requires preservation. | Preserve file/graph identity through reads, edits and writes. Add TriG/N-Quads tests with repeated triples across graphs. Until then, do not claim graph-preserving round trips. |
+| MULTI1 | One window per process (`modeler/src/electron-main/electron-main-module.ts`): New Window, a workspace opened in a new window and a second launch start a new process with the profile of the workspace. Not verified with real windows. A workspace opened in the current window keeps the profile of the first workspace, so a later launch on the new workspace starts a second process on it. The profile key is the path as given: a folder and its `workspace.trig` give two profiles. | Check with real windows: New Window, File → Open Workspace, and `desktop.sh` twice on one folder. Decide whether an in-place workspace change must move to a new process. |
+| STORE2 | Source check: `doSave` prepares temporary files, then renames destinations sequentially without rollback. A later rename failure can leave earlier writes in place. | Add failure-injection tests. Provide cross-file rollback or obtain approval for a weaker persistence contract. Store transaction atomicity alone is insufficient. |
+| RDF1 | Existing annotation guard cites n3 2.7.12 defects #677 and #673. Historical review also reports nested annotation failure #678. | Keep annotation files read-only until parser fixes pass regression tests. The guard prevents destructive writes, not incomplete reads. |
+| RDF2 | Existing Turtle serializer patch prevents duplicate lists with IRI cells. Source: `patches/@rdfjs__serializer-turtle@1.1.5.patch`. | Remove the patch only after an upstream fix passes `list-save.test.ts`. Existing orphan chains need separate cleanup, not silent deletion. |
+| RDF3 | Historical grammar limits: surrogate escapes can parse incorrectly. `a:a a:b a:c .` can trigger fallback serialization. | Add grammar regressions before updating the pinned tree-sitter fork. Rebuild through `scripts/build-turtle-grammar.sh` with Docker. |
+| NESTED1 | Reproduced 2026-10-03: a workspace file in a folder with nested workspaces (`ws/demo.trig` beside `ws/ui-manifest/workspace.trig`) loads `ui-manifest/views/*.view.ttl`. `listModelFiles` stops a nested folder only after its subfolders were walked. | Check for a workspace file before walking subfolders. Add a test with a nested `views/` folder. |
+| SOURCE1 | Source check: `files.ts/sourceLine` uses text matching, not an RDF source map. Relative IRIs and escaped local names can lack a line. | Test each supported spelling. Keep an explicit unknown-line result until a reliable location is available. |
+
+## Implementation gaps
+
+| ID | Gap and evidence | Next action |
+|---|---|---|
+| NOTATION2 | ADR 0014 is implemented for what a view draws of SHACL shapes, value sets and instance rows (`notation-schema.ts`), and for the placement edits (`figure-edits.ts`). Not done: (1) instance links, notes, frames, references and arrows are still drawn from the read model of the view (`diagram-schema.ts`), with the same rules; (2) the rule 13 warnings (a placement without a figure, a line placement whose ends are not shown) are computed by the engine (`join().problems`) but not shown in Problems; (3) the cascade puts `shn:ClassPill` before `inn:Card`: an instance whose IRI is also a class without a node shape draws as a class pill, not as an instance card; (4) the class notation (`classes.ttl`) is not offered as a choice of a view. | Show the engine problems in Problems. Draw links and marks from the join. Decide which figure wins in (3). |
+| G1 | Current `explorerChildren` has no paging parameters. UI §7 (Model explorer) requires counts and pages of 100 rows. | Add backend paging tests, then the next-page control. |
+| G3 | Target element-level style and generic figures are incomplete. | Compare Appearance and view schemas with UI §§2 and 8. Add tests for style precedence. |
+| G4 | Properties still dispatches by kind. Links omits Project connections and target layer grouping. | Implement all applicable shapes, uncovered statements and layer-grouped links from UI §7. |
+| G5 | Selection holds one view. Outline uses active-view placements. Selecting a view row opens it. | Reconcile these behaviors with independent document/selection state and cross-canvas selections in UI §3, after D2. |
+| G6 | Show Hidden Edges uses an editor flag. Shapes views draw dashed edges of rows for a selected element (`TYPES.LATENT`); instance views do not. ADR 0014 makes unplaced instance links hidden (`nt:unplaced nt:Hidden`), dashed while an end is selected. | Implement the selected-element connector display for instance relations, as `TYPES.LATENT` does for property shapes. |
+| G7 | Historical report: range-created value sets lack a separate follow-up. Some instance labels use a Rename dialog. | Test creation focus and cancellation against UI §4 (creation follow-up). |
+| BLANK1 | shacl-engine read a path node that is not a blank node as a predicate path. Catenary applies the fix with `patches/shacl-engine@1.1.2.patch` (pnpm-workspace.yaml). The fix, a test and a repro are in `~/doing/shacl-engine-bug` (defect 3), not committed and not pushed in the fork. | Commit and push the fork, update the dependency, then remove the patch. |
+| VIEW2 | ADR 0011: the reads select the view graph; they do not use `view:view`. | Switch view reads to `view:view` if wanted. |
+| READ1 | After ADR 0012: `queries.ts/links`, Search placement reads and explorer placement reads have specialized SELECT queries. Shape targeting paths in form candidates traverse each path within one graph. A placed relation with an end outside the view is reported as "placement of an unknown relation", because a view read does not load instances outside the view. | Test cross-graph shape paths. Decide whether the warning must say "without both ends". |
+| G9 | View-deletion confirmation needs reference counts grouped by containing view. | Check UI §4 (delete confirmation) against the dialog. Test deletion, undo and preserved Domain data. |
+| G10 | Property-row selection and Del-to-row behavior conflict with the generic box-row key rule. | Reconcile UI §6 with the key rules of §4 explicitly. Do not remove a working gesture merely to hide the inconsistency. |
+| G11 | Shape proposal (`shape-proposal.ts`) reads only the model graph. Values that are concepts of shapes files count as untyped IRIs, so no scheme range is proposed. An `sh:or` member with `sh:nodeKind` and `sh:class` (mixed literal and resource values) stays a raw constraint. | Decide whether the proposal should map SKOS values to scheme ranges. Test mixed values in the Properties panel. |
+
+## UI defects and review candidates
+
+The F identifiers retain continuity with the earlier review. Unless a row says otherwise, reproduce the report before changing code.
+
+| ID | Report | Next check |
+|---|---|---|
+| LINKS1 | A Links folder opens an empty context menu. | Reproduce with a folder row. Suppress menus without actions. Check empty menus on other panels too. |
+| F-DEL-1 | Del on a logical-constraint circle gives a property-specific message. | Check GLSP hints and handler text. Del must not become model deletion. |
+| F-LINK-1 / F-EXP-1 | Creation and expansion controls differ across kinds. | Compare current halos with backend facts. Incoming creation controls now exist for instance and shape cards. |
+| F-SEL-1 | Shift/Ctrl selection differs across card kinds. | Test cards, notes, references, entity groups and value sets with exact selections. |
+| F-SEL-2 | A listing-selected value set may not select its card. | Closure reports conflict. Reproduce across listing, active canvas and another canvas. |
+| F-DND-1 | Explorer property rows lack Search's drag behavior. | Test Explorer, Search and Links drag sources against the same view. |
+| F-CREATE-1 | The palette cannot create a SKOS collection directly. | Confirm whether target-picker creation is sufficient before adding a control. |
+| F-PANEL-1 | Entity groups, pills and alternative cards lack suitable Properties content. | Resolve through G4. Test each kind's panel and available actions. |
+| F-UNDO-1 | Some retarget/place or mixed-add gestures send two commands. | Count commands for row drags and Search additions. Cut and paste remain separate operations. |
+| F-FEED-1 | Empty or rejected drops can give no feedback. | Recheck own-card links and empty-canvas edge-end drops after the connect-drag changes. |
+| F-UNDO-2 | Panel-focused undo bindings may be absent. | Test Properties, Appearance, Links, Search and Outline. Keep text-input undo local. |
+| F-COLOR-1 | Property edges, pills and alternative cards lack style controls. | Test placement color and side support against UI §8. |
+| F-NAME-1 | “Group” names frame and logical-constraint operations. | Choose distinct UI labels without renaming RDF identifiers. |
+| F-DOC-1 | `VIEW_HELP` may name a removed palette dropdown. | Check the help text against the current palette. |
+| FONT1 | Card text changes leave fixed widths and unscaled edge/pill labels. | Reproduce truncation at 42 px. Decide which dimensions and labels should follow the preference. |
+| PICKER1 | Add Target picker reportedly closes at once. | Get the user's steps. Earlier headless checks did not reproduce it. |
+| HIT1 | Edge hit paths can cover parallel labels. A form edit can require two clicks to select an edge label. Reproduced 2026-10-03: the `keyword` edge intercepted a click on the `language` label. | Test pointer targets and focus after a form commit. Separate hit-testing from selection-update failures. |
+| GROUP1 | An empty entity group can remain. Show on a collected instance can select nothing. | Test last-member deletion and navigation to a contained instance. |
+| QUERY1 | Historical reports: duplicate placements resolve differently in Outline and projections. Counts can differ for SKOS relations in shape graphs. | Add shared query/projection fixtures for both cases. Do not rely on unordered query results. |
+| VALIDATION1 | Default Class message without a path lacks a word. Equal-focus/path results can change order. | Test message formatting and stable display order without assuming report-graph ordering. |
+| SEARCH2 | Search (`packages/rdf/src/search.ts`): a predicate result has no element kind in the UI. A click selects nothing, and double-click and drag do nothing. The 200 results are cut in IRI order, then sorted by label. Find Element does not list relations. | Decide the actions of a predicate. |
+| SEARCH1 | Search refreshes after each model change while hidden (writes, moves of placements and validation changes no longer refresh it). Links can show the previous answer during a new request. | Test stale-response handling. Avoid work for hidden panels where practical. |
+| PERF1 | Measured 2026-10-04 on the catalog workspace (1,761 instances, 680 KB data file): a card move costs about 10 ms in the store; a value set member shows 21–27 ms after Enter (pending row). Remaining costs per model edit: explorer refresh 30 ms per call, search 35 ms, Properties 19 ms, metamodel rebuild and shapes read 25–50 ms after a shapes or SKOS change, write of the data file about 100 ms (the first write parses the whole file). View files (TriG) are written as a whole: the text patch covers Turtle only. | Measure before adding caches (ADR 0012). Candidates: skip hidden panels, a TriG text patch for view files. |
+| LAYOUT1 | ADR 0014: the layout must treat a hub (logical constraint, generalization set) as a node; a hub placement without a position gets one from the layout. Layered gives tall results for hub graphs. The ui-manifest Surfaces view gives 3200 × 6367 px. Layered also reserves no room for edge labels. Direct edges still cross cards: 11 crossings in Shapes after Layered. | Decide whether Layered can choose DOWN at the view level, which changes UI §8. Try ELK inline edge labels, as @rdf-viz/layout does. Measure with the drawn geometry (toSchema). Measured 2026-10-04: Layered packs the 136 boxes of the catalog "proposed shapes" view into one column about 36,000 units tall. |
+| VISUAL1 | White borders disappear on a light canvas. Edge labels overlap, and group title padding ignores font size. | Check theme contrast, short edges and large fonts. Treat geometry limits separately from data correctness. |
+
+## Verification gaps
+
+- **Last verification (2026-10-07, Node 22.23.3, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (5.2 s), test (566/566, 24.8 s), build (8.6 s) and e2e (6/6, 65.4 s).
+
+- **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
+- **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.
+- **Windows:** no Windows runtime test exists. The package substitutes a drive-list stub and browser keyboard layout for unavailable native modules. It requires `git.exe` on PATH for Source Control. Check filesystem writes, Git, window input and conpty on Windows. The unsigned executable can trigger SmartScreen.
+- **Electron:** use a real window. Headless Electron gives no working window: its main process exits and leaves its backend running, so a headless test cannot check the single-instance lock. A second `desktop.sh` launch on an open workspace must focus the open window: not verified with a real window. Historical test backends sometimes stopped with SIGPIPE during rebuilds. Reproduce with process logs before attributing a cause.
+- **RDF 1.2:** base-direction literals lack end-to-end verification. Do not claim full support from term-key and writer checks alone.
+- **Scale:** routing cost on larger diagrams remains unmeasured. Small-view timings are not performance guarantees.
+- **Manifests:** Haskell notation remains unchecked. Machine checking is separate work. Start with command/RPC coverage and invariant tests, not a claim of full STE or contract certification.
+
+## Optional work
+
+Hover popups and an MCP adapter remain ideas, not accepted requirements. UI library extraction requires D9. Do not add implementation plans for these features until the user selects one.

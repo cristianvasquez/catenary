@@ -1,0 +1,36 @@
+# The People view: the data of data.ttl, drawn with the instance notation. Same placement vocabulary as the Model view.
+# The relator instance ex:m1 is a card. Its links ex:husband and ex:wife are lines because the view shows both ends.
+
+@prefix ex:   <https://example.org/draft/> .
+@prefix nt:   <osg://vocab/notation#> .
+@prefix view: <osg://vocab/view#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mkn:  <osg://vocab/notation/marks#> .
+@prefix inn:  <osg://vocab/notation/instances#> .
+
+<urn:view:people> {
+
+    <urn:view:people> a view:View ;
+        rdfs:label "People" ;
+        nt:notations ( mkn:notation inn:notation ) .
+
+    <urn:view:people/p/john> a view:Placement ; view:view <urn:view:people> ; view:element ex:john ;
+        view:x 0 ; view:y 0 ; view:width 280 ; view:height 160 .
+    <urn:view:people/p/mary> a view:Placement ; view:view <urn:view:people> ; view:element ex:mary ;
+        view:x 480 ; view:y 0 ; view:width 280 ; view:height 160 .
+    <urn:view:people/p/m1>   a view:Placement ; view:view <urn:view:people> ; view:element ex:m1 ;
+        view:x 240 ; view:y 280 ; view:width 280 ; view:height 140 .
+    <urn:view:people/p/m2>   a view:Placement ; view:view <urn:view:people> ; view:element ex:m2 ;
+        view:x -280 ; view:y 280 ; view:width 280 ; view:height 140 .
+
+    <urn:view:people/p/m1-husband> a view:Placement ; view:view <urn:view:people> ;
+        rdf:reifies <<( ex:m1 ex:husband ex:john )>> .
+    <urn:view:people/p/m1-wife>    a view:Placement ; view:view <urn:view:people> ;
+        rdf:reifies <<( ex:m1 ex:wife ex:mary )>> .
+    <urn:view:people/p/john-marriedTo-mary> a view:Placement ; view:view <urn:view:people> ;
+        rdf:reifies <<( ex:john ex:marriedTo ex:mary )>> .
+
+    # ex:m2 ex:husband ex:john has no placement: it is hidden. It draws dashed while ex:m2 or ex:john is selected.
+    # ex:tim is not placed.
+}

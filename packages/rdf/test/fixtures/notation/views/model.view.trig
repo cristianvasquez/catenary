@@ -1,0 +1,69 @@
+# The Model view: the class model with every case of this draft.
+# It stores decisions only: the cascade, the placed elements and statements, and the geometry of boxes and hubs.
+# Placement IRIs are readable here. The contract derives them from a hash of the placed term (ADR 0011).
+#
+#   boxes        8 classes
+#   hubs         2 generalization sets: one classifier over several relations
+#   lines        3 property shapes: 2 mediations, 1 material relation
+#   link lines   2 generalizations, 1 derivation (it ends on the marriedTo line)
+#   rows         Person: name, birthDate, nationality. Marriage: date, kind. Not placed, so drawn inside their class box.
+#   not shown    sh:xone, sh:in, sh:or and the helper shape ex:InCountries: this notation has no figure for them.
+
+@prefix ex:   <https://example.org/draft/> .
+@prefix nt:   <osg://vocab/notation#> .
+@prefix view: <osg://vocab/view#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mkn:  <osg://vocab/notation/marks#> .
+@prefix cln:  <osg://vocab/notation/classes#> .
+
+<urn:view:model> {
+
+    <urn:view:model> a view:View ;
+        rdfs:label "Model" ;
+        nt:notations ( mkn:notation cln:notation ) .
+
+    # --- class boxes ---
+
+    <urn:view:model/p/Person>   a view:Placement ; view:view <urn:view:model> ; view:element ex:Person ;
+        view:x 0    ; view:y 0   ; view:width 240 ; view:height 145 .
+    <urn:view:model/p/Man>      a view:Placement ; view:view <urn:view:model> ; view:element ex:Man ;
+        view:x -360 ; view:y 320 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Woman>    a view:Placement ; view:view <urn:view:model> ; view:element ex:Woman ;
+        view:x -120 ; view:y 320 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Child>    a view:Placement ; view:view <urn:view:model> ; view:element ex:Child ;
+        view:x 200  ; view:y 320 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Adult>    a view:Placement ; view:view <urn:view:model> ; view:element ex:Adult ;
+        view:x 440  ; view:y 320 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Husband>  a view:Placement ; view:view <urn:view:model> ; view:element ex:Husband ;
+        view:x -360 ; view:y 560 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Wife>     a view:Placement ; view:view <urn:view:model> ; view:element ex:Wife ;
+        view:x -120 ; view:y 560 ; view:width 160 ; view:height 70 .
+    <urn:view:model/p/Marriage> a view:Placement ; view:view <urn:view:model> ; view:element ex:Marriage ;
+        view:x -240 ; view:y 820 ; view:width 200 ; view:height 125 .
+
+    # --- generalization-set hubs: placed by the IRI of their list ---
+
+    <urn:view:model/p/Person-bySex>   a view:Placement ; view:view <urn:view:model> ; view:element <urn:trellis:list:1c24175aa2b9> ;   # owl:disjointUnionOf (Man Woman)
+        view:x -160 ; view:y 200 .
+    <urn:view:model/p/Person-byPhase> a view:Placement ; view:view <urn:view:model> ; view:element <urn:trellis:list:c48e6f6f7dfc> ;   # owl:disjointUnionOf (Child Adult)
+        view:x 400  ; view:y 200 .
+
+    # --- property shapes as lines: no geometry, the ends come from the model ---
+
+    <urn:view:model/p/Marriage-husband>   a view:Placement ; view:view <urn:view:model> ; view:element ex:Marriage-husband .
+    <urn:view:model/p/Marriage-wife>      a view:Placement ; view:view <urn:view:model> ; view:element ex:Marriage-wife .
+    <urn:view:model/p/Husband-marriedTo>  a view:Placement ; view:view <urn:view:model> ; view:element ex:Husband-marriedTo .
+
+    # --- links as lines: placed by their statement ---
+
+    <urn:view:model/p/Husband-sub-Man>   a view:Placement ; view:view <urn:view:model> ;
+        rdf:reifies <<( ex:Husband rdfs:subClassOf ex:Man )>> .
+    <urn:view:model/p/Wife-sub-Woman>    a view:Placement ; view:view <urn:view:model> ;
+        rdf:reifies <<( ex:Wife rdfs:subClassOf ex:Woman )>> .
+
+    # The derivation: from the marriedTo line (a figure that is a line) to the Marriage box.
+    <urn:view:model/p/marriedTo-derivation> a view:Placement ; view:view <urn:view:model> ;
+        rdf:reifies <<( ex:Husband-marriedTo prov:wasDerivedFrom ex:Marriage )>> .
+}

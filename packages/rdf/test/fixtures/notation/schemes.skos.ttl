@@ -1,0 +1,12 @@
+# The SKOS concept schemes that the model refers to.
+
+@prefix ex:   <https://example.org/draft/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+ex:Countries a skos:ConceptScheme ; skos:prefLabel "Countries" .
+ex:nl a skos:Concept ; skos:prefLabel "Netherlands" ; skos:inScheme ex:Countries .
+ex:be a skos:Concept ; skos:prefLabel "Belgium"     ; skos:inScheme ex:Countries .
+
+ex:MarriageKinds a skos:ConceptScheme ; skos:prefLabel "Marriage kinds" .
+ex:civil     a skos:Concept ; skos:prefLabel "Civil"     ; skos:inScheme ex:MarriageKinds .
+ex:religious a skos:Concept ; skos:prefLabel "Religious" ; skos:inScheme ex:MarriageKinds .

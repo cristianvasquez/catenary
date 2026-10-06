@@ -1,0 +1,62 @@
+{
+  "name": "catenary",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Theia + GLSP editor for RDF models",
+  "keywords": [
+    "theia-extension"
+  ],
+  "files": [
+    "lib",
+    "src",
+    "css"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "watch": "tsc -w"
+  },
+  "dependencies": {
+    "@eclipse-glsp/client": "2.8.0",
+    "@eclipse-glsp/protocol": "2.8.0",
+    "@eclipse-glsp/server": "2.8.0",
+    "@eclipse-glsp/theia-integration": "2.8.0",
+    "@ro-kit/ui-widgets": "^1.0.64",
+    "@theia/debug": "~1.74.1",
+    "@theia/test": "~1.74.1",
+    "@theia/task": "~1.74.1",
+    "@theia/terminal": "~1.74.1",
+    "@catenary/model": "workspace:*",
+    "@catenary/rdf": "workspace:*",
+    "@ulb-darmstadt/shacl-form": "^3.7.3",
+    "elkjs": "^0.11.1",
+    "jsonld": "^9.0.0",
+    "lit": "^3.3.3",
+    "n3": "^2.7.12",
+    "rdfxml-streaming-parser": "^3.3.0",
+    "snabbdom": "~3.5.1",
+    "uuid": "^13.0.2",
+    "webcola": "^3.4.0"
+  },
+  "peerDependencies": {
+    "@theia/core": "^1.66.0",
+    "@theia/editor": "^1.66.0",
+    "@theia/filesystem": "^1.66.0",
+    "@theia/markers": "^1.66.0",
+    "@theia/monaco": "^1.74.1",
+    "@theia/monaco-editor-core": "^1.108.201",
+    "@theia/navigator": "^1.66.0",
+    "@theia/outline-view": "^1.66.0",
+    "@theia/property-view": "^1.66.0",
+    "@theia/workspace": "^1.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/frontend-module",
+      "backend": "lib/node/backend-module",
+      "electronMain": "lib/electron-main/electron-main-module"
+    }
+  ]
+}

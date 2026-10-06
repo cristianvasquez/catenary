@@ -1,0 +1,22 @@
+view: 22 figures
+box   «Phase» Adult   (Class)
+box   «Phase» Child   (Class)
+box   «Role» Husband   (Class)
+box   «SubKind» Man   (Class)
+box   «Relator» Marriage   (Class)
+        ex:date [0..1]
+        ex:kind [1]
+box   «Kind» Person   (Class)
+        ex:birthDate: xsd:date [0..1]
+        rdfs:label: xsd:string [1]
+        ex:nationality: Countries [0..1]
+box   «Role» Wife   (Class)
+box   «SubKind» Woman   (Class)
+hub   {disjoint, complete} → Person   members: Child, Adult   (GeneralizationSet)
+hub   {disjoint, complete} → Person   members: Man, Woman   (GeneralizationSet)
+line  Husband → Wife   "ex:marriedTo [0..1]"
+line  Marriage → Husband   "ex:husband [1]" «mediates»
+line  Marriage → Wife   "ex:wife [1]" «mediates»
+link  Husband → Man   "rdfs:subClassOf: Man"
+link  Wife → Woman   "rdfs:subClassOf: Woman"
+link  ex:marriedTo → Marriage   "prov:wasDerivedFrom: Marriage"

@@ -1,0 +1,164 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { boxes, hiddenNeighbors, isHidden, relationsInView, unnamedLabel } from '@catenary/model';
+import { hiddenNeighborCounts } from '../../model/test/doc-reference';
+import { ModelStore } from '../src/model-store';
+import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+
+// The queries that replace the read model of the frontend (ADR 0007): the selection, the boxes of a view, the content of the
+// dialogs and pickers of the user actions, labels of new elements.
+
+let dir: string, store: ModelStore;
+beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'catenary-prompts-'));
+    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
+    writeFileSync(join(dir, 'data.ttl'), DATA);
+    store = new ModelStore();
+    store.watching = false;
+    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+});
+afterEach(async () => {
+    await store.idle();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+});
+
+/** A view with an instance card, the card and its instance. */
+function cardView() {
+    const view = Object.values(docOf(store).views).find(v => boxes(v, 'card').some(c => docOf(store).instances[c.element]))!;
+    const card = boxes(view, 'card').find(c => docOf(store).instances[c.element])!;
+    return { view, card, instance: card.element };
+}
+
+describe('selected: the selection resolved on the read model', () => {
+    it('a canvas selection holds placements: their elements, by kind; unknown ids and views go', () => {
+        const { view, card, instance } = cardView();
+        expect(store.selected({ view: view.id, ids: [card.id, 'no-such-id'] })).toMatchObject({
+            view: view.id, ids: [card.id], elements: [instance], instances: [instance], relations: []
+        });
+        expect(store.selected({ view: 'no-such-view', ids: [instance] })).toMatchObject({ view: undefined, ids: [instance], instances: [instance] });
+        expect(store.selected({ ids: [view.id] })).toMatchObject({ views: [view.id] });
+    });
+
+    it('nothing when no model is open', () => {
+        expect(new ModelStore().selected({ ids: ['x'] }).ids).toEqual([]);
+    });
+});
+
+describe('view, properties of a view, display cards', () => {
+    it('view: the stored view with its placements, from its view graph', () => {
+        const { view } = cardView();
+        const stored = store.view(view.id)!;
+        expect(stored.label).toBe(view.label);
+        expect(boxes(stored, 'card').map(c => c.id).sort()).toEqual(boxes(view, 'card').map(c => c.id).sort());
+        expect(store.view('no-such-view')).toBeUndefined();
+    });
+
+    it('properties of a view: what it holds', () => {
+        const { view } = cardView();
+        const rels = relationsInView(docOf(store), view);
+        const shapes = boxes(view, 'card').filter(c => docOf(store).shapes.nodeShapes[c.element]).length;
+        expect(store.properties(view.id)).toEqual({
+            kind: 'view', id: view.id, uri: view.uri, label: view.label, cards: boxes(view, 'card').length - shapes, shapes,
+            notes: boxes(view, 'note').length, references: boxes(view, 'reference').length, relations: rels.length,
+            hidden: rels.filter(r => isHidden(view, r.id)).length
+        });
+    });
+
+    it('selection actions carry the cards that Show Details acts on (a canvas selection only)', () => {
+        const { view, card, instance } = cardView();
+        expect(store.selectionActions({ view: view.id, ids: [card.id] }).cards.map(c => c.element)).toEqual([instance]);
+        expect(store.selectionActions({ ids: [instance] }).cards).toEqual([]);
+    });
+});
+
+describe('dialogs and pickers of the user actions', () => {
+    it('deletePlan: one line for each element, notes for implied relations; nothing for unknown ids', () => {
+        const { instance } = cardView();
+        const plan = store.deletePlan([instance]);
+        expect(plan.lines).toHaveLength(1);
+        expect(plan.lines[0]).toContain(docOf(store).instances[instance].label);
+        const implied = Object.values(docOf(store).relations).filter(r => r.subject === instance || r.object === instance).length;
+        expect(plan.notes.some(n => n.startsWith(`Also ${implied} relation`))).toBe(implied > 0);
+        expect(store.deletePlan(['no-such-id'])).toEqual({ lines: [], notes: [] });
+    });
+
+    it('relationChoices: no relation to itself; undefined when an end is not an instance', () => {
+        const { instance } = cardView();
+        expect(store.relationChoices(instance, instance)).toEqual({ error: 'A relation from an element to itself is not supported.' });
+        expect(store.relationChoices(instance, 'no-such-id')).toBeUndefined();
+        const r = Object.values(docOf(store).relations)[0];
+        // The relation exists: that type is not offered again.
+        const choices = store.relationChoices(r.subject, r.object)!;
+        if ('types' in choices) expect(choices.types.map(t => t.path)).not.toContain(r.predicate);
+    });
+
+    it('neighborChoices: the hidden neighbors of a card, the same counts as the halo', () => {
+        let seen = 0;
+        for (const view of Object.values(docOf(store).views)) {
+            const counts = hiddenNeighborCounts(docOf(store), view);
+            for (const card of boxes(view, 'card').filter(c => docOf(store).instances[c.element])) {
+                for (const dir of ['in', 'out'] as const) {
+                    const hidden = hiddenNeighbors(docOf(store), view, card.element, dir);
+                    seen += hidden.length;
+                    expect(counts.get(card.element)?.[dir] ?? 0).toBe(hidden.length);
+                    const choices = store.neighborChoices(view.id, card.id, dir);
+                    expect(choices?.items.map(i => i.ids) ?? []).toEqual(hidden.map(n => n.relations.map(r => r.id)));
+                }
+            }
+        }
+        // The fixture has hidden neighbors: the comparison is not empty.
+        expect(seen).toBeGreaterThan(0);
+    });
+
+    it('linkChoices: a section for each relation type; undefined for an unknown instance', () => {
+        const { view, instance } = cardView();
+        const out = store.linkChoices('out', instance, view.id);
+        expect(out).toBeDefined();
+        if (out && 'sections' in out) for (const s of out.sections) expect(s.candidates.map(c => c.id)).not.toContain(instance);
+        expect(store.linkChoices('out', 'no-such-id', view.id)).toBeUndefined();
+    });
+
+    it('newLabel: the first free "unnamed <kind> N"; a free base label as it is, else the next', () => {
+        expect(store.newLabel('view')).toBe(unnamedLabel('view', Object.values(docOf(store).views)));
+        expect(store.newLabel('shape')).toBe(unnamedLabel('shape', Object.values(docOf(store).shapes.nodeShapes)));
+        const taken = Object.values(docOf(store).views)[0].label;
+        expect(store.newLabel('view', { base: 'a free label' })).toBe('a free label');
+        expect(store.newLabel('view', { base: taken })).not.toBe(taken);
+        const label = store.newLabel('view');
+        expect(store.execute({ kind: 'createView', label })).toMatchObject({ ok: true });
+        expect(store.newLabel('view')).not.toBe(label);
+    });
+
+    it('instancesNamed, unplaced, elementRows', () => {
+        const { view, card, instance } = cardView();
+        const inst = docOf(store).instances[instance];
+        expect(store.instancesNamed(inst.uri)).toEqual([instance]);
+        expect(store.unplaced([instance])).toEqual([]);
+        expect(store.elementRows([instance, view.id, 'no-such-id'])).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: instance, label: inst.label, kind: 'instance' }),
+            expect.objectContaining({ id: view.id, label: view.label, kind: 'view', kindName: 'View' }),
+            { id: 'no-such-id', label: undefined, kind: undefined, kindName: '' }
+        ]));
+        // A placement (a card selected on a canvas) gives the label and kind of its element.
+        expect(card.id).not.toBe(instance);
+        const [row] = store.elementRows([card.id], view.id);
+        expect(row).toMatchObject({ id: card.id, label: inst.label, kind: 'instance' });
+        expect(row.kindName).toBe(store.elementRows([instance])[0].kindName);
+    });
+});
+
+describe('snapshot', () => {
+    it('has counts, not the read model and not the report', async () => {
+        await store.validate();
+        const s = store.snapshot() as unknown as Record<string, unknown>;
+        expect(s.doc).toBeUndefined();
+        expect(s.violations).toBeUndefined();
+        expect(s.counts).toEqual({
+            instances: Object.keys(docOf(store).instances).length, results: store.violations.length,
+            violations: store.violations.filter(v => v.severity === 'Violation').length
+        });
+    });
+});

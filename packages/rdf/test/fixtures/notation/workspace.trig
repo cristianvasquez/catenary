@@ -1,0 +1,16 @@
+# The workspace file of the draft: the prefixes that the text rule uses (prefix:local).
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix ws:  <osg://vocab/workspace#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:name:workspace> {
+    <urn:name:workspace> a ws:Workspace ;
+        sh:declare <urn:name:workspace-ex> , <urn:name:workspace-xsd> , <urn:name:workspace-rdfs> , <urn:name:workspace-skos> ,
+                   <urn:name:workspace-gufo> , <urn:name:workspace-prov> .
+    <urn:name:workspace-ex>   sh:prefix "ex"   ; sh:namespace "https://example.org/draft/"^^xsd:anyURI .
+    <urn:name:workspace-xsd>  sh:prefix "xsd"  ; sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI .
+    <urn:name:workspace-rdfs> sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI .
+    <urn:name:workspace-skos> sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI .
+    <urn:name:workspace-gufo> sh:prefix "gufo" ; sh:namespace "http://purl.org/nemo/gufo#"^^xsd:anyURI .
+    <urn:name:workspace-prov> sh:prefix "prov" ; sh:namespace "http://www.w3.org/ns/prov#"^^xsd:anyURI .
+}

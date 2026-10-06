@@ -1,0 +1,28 @@
+{
+  "name": "catenary",
+  "private": true,
+  "packageManager": "pnpm@11.3.0",
+  "scripts": {
+    "build": "pnpm -C packages/model build && pnpm -C packages/rdf-serialization build && pnpm -C packages/rdf-files build && pnpm -C packages/rdf build && pnpm -C modeler build && pnpm -C app build && pnpm -C electron-app build",
+    "start": "pnpm -C app start",
+    "desktop": "bash scripts/desktop.sh",
+    "install-desktop": "bash scripts/install-desktop.sh",
+    "watch": "pnpm -C modeler watch",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "check": "node scripts/check-boundaries.mjs && pnpm -C packages/rdf-serialization build && tsc -b packages/model packages/rdf-files packages/rdf modeler && tsc -p tsconfig.test.json",
+    "e2e": "node scripts/e2e.cjs",
+    "postinstall": "bash scripts/build-drivelist.sh && bash scripts/install-electron.sh && pnpm -C app -s download:plugins",
+    "catenary": "node scripts/catenary.mjs",
+    "verify": "node scripts/verify.mjs",
+    "package:win": "bash scripts/package-windows.sh"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

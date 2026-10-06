@@ -1,0 +1,27 @@
+# Instance notation: how data is drawn. The workspace SHACL model gives the content of the card.
+# The notation does not repeat the model. It only says: gather with the model shapes that target the focus.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix inn:  <osg://vocab/notation/instances#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix view: <osg://vocab/view#> .
+
+inn:notation a nt:Notation ;
+    rdfs:label "Instances" ;
+    nt:figures ( inn:Card ) .
+
+# Every subject with a type, except the placements of the view files. Title and class first, then the fields and links of the model shapes.
+# ex:m1 ex:husband ex:john comes from ex:Marriage-husband with role nt:link:
+# a line when the view places that statement. Unplaced, it is hidden when ex:john is shown (dashed while an end is selected),
+# else the row "husband: John".
+inn:Card a nt:Figure ;
+    nt:kind nt:Box ;
+    sh:targetSubjectsOf rdf:type ;
+    nt:when [ sh:not [ sh:class view:Placement ] ] ;
+    sh:property
+        [ sh:path rdfs:label ; nt:role nt:title ] ,
+        [ sh:path rdf:type ;   nt:role nt:text ] ;
+    nt:gatherWith nt:ModelShapes ;
+    nt:unplaced nt:Hidden .

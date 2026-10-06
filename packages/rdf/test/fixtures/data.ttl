@@ -1,0 +1,67 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#>.
+@prefix dct: <http://purl.org/dc/terms/>.
+@prefix dpm: <osg://vocab/data-product-draft#>.
+@prefix dprod: <https://ekgf.github.io/dprod/>.
+@prefix prov: <http://www.w3.org/ns/prov#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+
+<urn:name:Agent%20%2F%20chatbot> a prov:Agent;
+  dct:description "Application that uses the query service.";
+  rdfs:label "Agent / chatbot";
+  dpm:uses <urn:name:Query%20service>.
+
+<urn:name:Analysis%20%2F%20dashboards> a prov:Agent;
+  dct:description "Applications that consume reports and derived outputs.";
+  rdfs:label "Analysis / dashboards";
+  dpm:uses <urn:name:Reports%20-%20CSV>.
+
+<urn:name:Data%20Product%20Owner> a prov:Agent;
+  dct:description "Accountable for the consumer-facing contract and for coordinating changes across the operational owners.";
+  rdfs:label "Data Product Owner".
+
+<urn:name:Product%20events%20dataset> a dcat:Dataset;
+  dct:description "An anonymized event dataset for product reports and analysis.";
+  rdfs:label "Product events dataset";
+  dpm:exposedThrough <urn:name:Query%20service>.
+
+<urn:name:Events%20API> a dcat:DataService;
+  dct:description "The events API returns time-bounded records with a stable schema.";
+  rdfs:label "Events API".
+
+<urn:name:Product%20usage%20data> a dprod:DataProduct;
+  dct:description "Published product usage data for reports, queries, and analysis.";
+  rdfs:label "Product usage data";
+  dprod:dataProductOwner <urn:name:Data%20Product%20Owner>;
+  dprod:domain <urn:name:Product%20Analytics>;
+  dprod:inputDataset <urn:name:Product%20events%20dataset>;
+  dprod:inputPort
+    <urn:name:Events%20API>,
+    <urn:name:Metrics%20API>;
+  dprod:lifecycleStatus "Build";
+  dprod:outputDataset <urn:name:Product%20events%20dataset>;
+  dprod:purpose "Provide consistent product usage metrics for reports and analysis through documented services.";
+  dpm:publishes <urn:name:Usage%20events%20named-graph>.
+
+<urn:name:model>
+  dct:conformsTo <osg://shapes/data-product-draft>.
+
+<urn:name:Product%20Analytics> a dpm:Domain;
+  rdfs:label "Product Analytics".
+
+<urn:name:Query%20service> a dcat:DataService;
+  dct:description "SPARQL / equivalent access port.";
+  rdfs:label "Query service".
+
+<urn:name:Reports%20-%20CSV> a dcat:DataService;
+  rdfs:label "Reports - CSV";
+  prov:wasDerivedFrom <urn:name:Usage%20events%20named-graph>.
+
+<urn:name:Metrics%20API> a dcat:DataService;
+  rdfs:label "Metrics API".
+
+<urn:name:Usage%20events%20named-graph> a dpm:NamedGraph;
+  rdfs:label "Usage events named graph";
+  dpm:exposedThrough <urn:name:Query%20service>;
+  dpm:pattern "{base}/graph/usage/{year}";
+  dpm:unit "one event batch".

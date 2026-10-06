@@ -1,0 +1,30 @@
+diff --git a/lib/TurtleSerializer.js b/lib/TurtleSerializer.js
+index 9e95e46fa564c503cfc351fe02cd915465852ac9..82fa513ae1e454601bd2a02a653cf32179b3fbb5 100644
+--- a/lib/TurtleSerializer.js
++++ b/lib/TurtleSerializer.js
+@@ -23,6 +23,16 @@ function loop ({ each, filter, items, join }) {
+   }
+ }
+ 
++// A list is written as a collection "( … )" only when each cell is a blank node, used once, with one rdf:first and one rdf:rest.
++// Otherwise (IRI cells) the cells are also written as subjects and the output parses to a second, blank-node list.
++function isCollection (node) {
++  if (!node.items) {
++    return node.term.value === 'http://www.w3.org/1999/02/22-rdf-syntax-ns#nil'
++  }
++
++  return node.items.every(cell => cell.term.termType === 'BlankNode' && cell.refs.length === 1 && cell.quads.length === 2)
++}
++
+ class TurtleSerializer {
+   constructor (quads, { baseIRI, output = [], prefixes } = {}) {
+     this.baseIRI = baseIRI
+@@ -83,7 +93,7 @@ class TurtleSerializer {
+   }
+ 
+   serializeObject (objectNode, { isList, level, multiple }) {
+-    if (isList && objectNode.refs.length === 1) {
++    if (isList && objectNode.refs.length === 1 && isCollection(objectNode)) {
+       return this.serializeList(objectNode, { level })
+     }
+ 

@@ -1,0 +1,16 @@
+{
+  "extends": "./modeler/tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "rootDir": ".",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@catenary/model": ["packages/model/src/index.ts"],
+      "@catenary/rdf": ["packages/rdf/src/index.ts"],
+      "rdf-files": ["packages/rdf-files/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/test/**/*.ts", "packages/rdf/src/shims.d.ts", "modeler/test/**/*.ts"]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "rdf-files",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RDF files on disk and an in-memory quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, git commits. Node only. No Catenary dependency.",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src",
+    "grammars"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "watch": "tsc -w",
+    "test": "vitest run --config ../../vitest.config.mts packages/rdf-files/test"
+  },
+  "dependencies": {
+    "@rdfjs/types": "^2.0.1",
+    "oxigraph": "0.5.11",
+    "rdf-serialization": "workspace:*",
+    "rdf-ext": "^2.6.0",
+    "web-tree-sitter": "0.25.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "vitest": "^3.2.4"
+  }
+}

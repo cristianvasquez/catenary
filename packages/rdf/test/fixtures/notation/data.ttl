@@ -1,0 +1,37 @@
+# The data: instances of the model in model.shapes.ttl.
+
+@prefix ex:   <https://example.org/draft/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+ex:john a ex:Man , ex:Adult , ex:Husband ;
+    rdfs:label "John" ;
+    ex:birthDate "1990-04-12"^^xsd:date ;
+    ex:email "john@example.org" ;
+    ex:nationality ex:nl ;
+    ex:marriedTo ex:mary .
+
+ex:mary a ex:Woman , ex:Adult , ex:Wife ;
+    rdfs:label "Mary" ;
+    ex:birthDate "1991-09-30"^^xsd:date ;
+    ex:phone "+31 20 000 0000" ;
+    ex:nationality ex:be .
+
+ex:tim a ex:Man , ex:Child ;
+    rdfs:label "Tim" ;
+    ex:phone "+31 6 0000 0000" ;
+    ex:nickname "Timmy" .                    # no shape describes ex:nickname
+
+# A relator instance: one resource that connects several others.
+ex:m1 a ex:Marriage ;
+    rdfs:label "John and Mary" ;
+    ex:husband ex:john ;
+    ex:wife ex:mary ;
+    ex:kind ex:civil ;
+    ex:date "2020-06-01"^^xsd:date .
+
+# A violation: a marriage without a wife.
+ex:m2 a ex:Marriage ;
+    rdfs:label "Draft marriage" ;
+    ex:kind ex:religious ;
+    ex:husband ex:john .

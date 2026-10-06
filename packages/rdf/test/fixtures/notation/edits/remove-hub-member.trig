@@ -1,0 +1,16 @@
+# The edit: in the SHACL view the user selects the line ex:email (or its xsd:string pill) and presses Del.
+#
+#   EditCommand   { kind: 'removeFromView', view: 'urn:view:shapes', ids: ['urn:view:shapes/p/Person-contact'] }
+#
+# One command, one undo step, one patch. The patch changes only the view file: every property shape and the sh:xone list still exist.
+# The line ex:email has no placement of its own: it is a member of the xone hub, and a hub and its member lines are one unit (rule 7).
+# So Del on the line, on its private pill or on the hub removes the hub placement. Nothing else needs it: nothing else leaves.
+# ex:email and ex:phone return to Person as the row group "xone" (removal of urn:trellis:list:8c7eb551ddb4, notation-engine.test.ts).
+# ⇥ on the row group places the hub again. Undo adds the same statements back.
+
+@prefix view: <osg://vocab/view#> .
+
+<urn:patch:remove-hub-member:removed> {
+    <urn:view:shapes/p/Person-contact> a view:Placement ; view:view <urn:view:shapes> ; view:element <urn:trellis:list:8c7eb551ddb4> ;   # the sh:xone list of ex:Person
+        view:x 470 ; view:y 75 .
+}

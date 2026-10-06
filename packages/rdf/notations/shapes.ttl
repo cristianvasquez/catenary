@@ -1,0 +1,153 @@
+# SHACL notation: how the shapes themselves are drawn, also the hard cases.
+# It reads the same model.shapes.ttl as the class notation. Only the figures differ.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix shn:  <osg://vocab/notation/shapes#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+
+shn:notation a nt:Notation ;
+    rdfs:label "SHACL" ;
+    nt:figures ( shn:Card shn:Property shn:Logic shn:OneOf shn:Alternative shn:ValueList shn:ClassPill ) .
+
+# A node shape: a card. Its property shapes are rows, or lines when placed.
+# Its logical constraints are parts too: unplaced, a constraint is a row group with its members as sub-rows.
+# A scheme or collection helper (shn:SchemeHelper, shn:CollectionHelper) has no card: the compact notation draws the
+# property line to the scheme or the collection.
+# A property shape under sh:not is a part too: a row (or line) with the tag «not».
+shn:Card a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style shn:shape ;
+    sh:targetClass sh:NodeShape ;
+    nt:when [ sh:not [ sh:or ( shn:SchemeHelper shn:CollectionHelper ) ] ] ;
+    sh:property
+        [ sh:path [ sh:alternativePath ( rdfs:label sh:name ) ] ; nt:role nt:title ] ,
+        [ sh:path sh:targetClass ; nt:role nt:text ] ,
+        [ sh:path sh:property ; nt:role nt:part ; sh:order 1 ] ,
+        [ sh:path [ sh:alternativePath ( sh:xone sh:or sh:and ) ] ; nt:role nt:part ; sh:order 2 ] ,
+        [ sh:path sh:not ; nt:role nt:part ; sh:order 3 ] .
+
+# A property shape: a line from its node shape to its range, or a row of that node shape.
+# Targets: values of sh:property, and members of a logical list (rdf:first) that have sh:path.
+# A datatype or node-kind end is private to the line (nt:private): one pill per line, beside its start, with no placement.
+# A property without a range ends at an "any" pill beside its start (nt:openEnd), private in the same way.
+# A line with a private or open end shows only as a member of a shown hub. Otherwise the property is a row.
+# A property shape under sh:not has the tag «not». It is not a hub: sh:not has no list, so a hub would have the focus of its
+# only member (rule 4: one figure per element).
+shn:Property a nt:Figure ;
+    nt:kind nt:Line ;
+    nt:openEnd "any" ;
+    sh:targetObjectsOf sh:property , rdf:first , sh:not ;
+    nt:when [ sh:property [ sh:path sh:path ; sh:minCount 1 ] ] ;
+    sh:property
+        [ sh:path sh:path ;     nt:role nt:title ] ,
+        [ sh:path sh:minCount ; nt:role nt:min ] ,
+        [ sh:path sh:maxCount ; nt:role nt:max ] ,
+        [ sh:path [ sh:inversePath sh:property ] ; nt:role nt:from ; sh:order 1 ] ,
+        [ sh:path ( [ sh:inversePath rdf:first ] [ sh:zeroOrMorePath [ sh:inversePath rdf:rest ] ]
+                    [ sh:inversePath [ sh:alternativePath ( sh:xone sh:or sh:and ) ] ] ) ;
+          nt:role nt:from ; sh:order 2 ] ,
+        [ sh:path [ sh:inversePath sh:not ] ; nt:role nt:from ; sh:order 3 ] ,
+        [ nt:value "not" ; nt:role nt:tag ;
+          nt:when [ sh:property [ sh:path [ sh:inversePath sh:not ] ; sh:minCount 1 ] ] ] ,
+        [ sh:path ( sh:node sh:property shn:schemeValue ) ; nt:role nt:to ; sh:order 0 ;
+          nt:when [ sh:property [ sh:path sh:node ; sh:minCount 1 ; sh:node shn:SchemeHelper ] ] ] ,
+        [ sh:path ( sh:node dct:source ) ; nt:role nt:to ; sh:order 0 ;
+          nt:when [ sh:property [ sh:path sh:node ; sh:minCount 1 ; sh:node shn:CollectionHelper ] ] ] ,
+        [ sh:path sh:node ;     nt:role nt:to ; sh:order 1 ] ,
+        [ sh:path ( sh:class [ sh:inversePath sh:targetClass ] ) ; nt:role nt:to ; sh:order 2 ] ,
+        [ sh:path sh:class ;    nt:role nt:to ; sh:order 3 ] ,
+        [ sh:path sh:datatype ; nt:role nt:to ; sh:order 4 ; nt:private true ] ,
+        [ sh:path sh:nodeKind ; nt:role nt:to ; sh:order 5 ; nt:private true ] ,
+        [ sh:path sh:in ;       nt:role nt:to ; sh:order 6 ] ,
+        [ sh:path sh:or ;       nt:role nt:to ; sh:order 7 ] ,
+        [ sh:path sh:hasValue ; nt:role nt:to ; sh:order 8 ] .
+
+# A logical constraint over property shapes: a hub on their lines. Title: xone, or, and. No end.
+# The hub and its member lines are one unit: the hub placement shows the member lines too.
+# Unplaced, it is a row group of its node shape card: the title, then one sub-row per member.
+shn:Logic a nt:Figure ;
+    nt:kind nt:Hub ;
+    nt:title nt:TargetPredicate ;
+    sh:targetObjectsOf sh:xone , sh:or , sh:and ;
+    nt:when [ sh:property [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first sh:path ) ; sh:minCount 1 ] ] ;
+    sh:property
+        [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; nt:role nt:anchor ] .
+
+# sh:or of ranges (members without sh:path): a "one of" box with the alternatives as parts.
+shn:OneOf a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:keptByLines true ;
+    nt:title "one of" ;
+    nt:inlineSeparator " | " ;
+    sh:targetObjectsOf sh:or ;
+    nt:when [ sh:property [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first sh:path ) ; sh:maxCount 0 ] ] ;
+    sh:property
+        [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; nt:role nt:part ] .
+
+# An alternative of "one of": a line to its range. No nt:from: it starts at the "one of" box it is a part of.
+shn:Alternative a nt:Figure ;
+    nt:kind nt:Line ;
+    sh:targetObjectsOf rdf:first ;
+    nt:when [ sh:property [ sh:path sh:path ; sh:maxCount 0 ] ,
+                          [ sh:path [ sh:alternativePath ( sh:datatype sh:class sh:node sh:nodeKind ) ] ; sh:minCount 1 ] ] ;
+    sh:property
+        [ sh:path ( sh:node sh:property shn:schemeValue ) ; nt:role nt:to ; sh:order 0 ;
+          nt:when [ sh:property [ sh:path sh:node ; sh:minCount 1 ; sh:node shn:SchemeHelper ] ] ] ,
+        [ sh:path ( sh:node dct:source ) ; nt:role nt:to ; sh:order 0 ;
+          nt:when [ sh:property [ sh:path sh:node ; sh:minCount 1 ; sh:node shn:CollectionHelper ] ] ] ,
+        [ sh:path sh:node ;     nt:role nt:to ; sh:order 1 ] ,
+        [ sh:path ( sh:class [ sh:inversePath sh:targetClass ] ) ; nt:role nt:to ; sh:order 2 ] ,
+        [ sh:path sh:class ;    nt:role nt:to ; sh:order 3 ] ,
+        [ sh:path sh:datatype ; nt:role nt:to ; sh:order 4 ; nt:private true ] ,
+        [ sh:path sh:nodeKind ; nt:role nt:to ; sh:order 5 ; nt:private true ] .
+
+# sh:in: a box with the allowed values as parts.
+shn:ValueList a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:keptByLines true ;
+    nt:title "in" ;
+    nt:inlineOpen "{" ; nt:inlineSeparator ", " ; nt:inlineClose "}" ;
+    sh:targetObjectsOf sh:in ;
+    sh:property
+        [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; nt:role nt:part ] .
+
+# A class without a node shape: a pill, shared by the lines to it (open point: private as a datatype end, or shared).
+shn:ClassPill a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style shn:pill ;
+    nt:keptByLines true ;
+    sh:targetObjectsOf sh:class ;
+    nt:when [ sh:not [ sh:or (
+        [ sh:property [ sh:path [ sh:inversePath sh:targetClass ] ; sh:minCount 1 ] ]
+        [ sh:class sh:NodeShape ] ) ] ] .
+
+# Compact notation for a range to a SKOS scheme. Trellis writes a helper shape for it: one property shape on skos:inScheme
+# with sh:hasValue <scheme> or sh:in (<scheme> …), and optionally sh:minCount. A helper of this form has no card, and a property
+# line to it ends at the scheme (sh:order 0 above). With several schemes, the line ends at the first. A helper with any other
+# statement does not conform: it is an ordinary card, and the line shows the middle step. Not a figure shape: a pattern, used only
+# in nt:when. The same patterns as schemesOf and collectionOf in packages/rdf/src/shapes-read.ts.
+shn:SchemeHelper
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment sh:name sh:description ) ;
+    sh:property [ sh:path sh:property ; sh:minCount 1 ; sh:maxCount 1 ; sh:node shn:SchemeHelperProperty ] .
+
+shn:SchemeHelperProperty
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type sh:minCount sh:hasValue sh:in ) ;
+    sh:property [ sh:path sh:path ; sh:hasValue skos:inScheme ] ;
+    sh:property [ sh:path shn:schemeValue ; sh:minCount 1 ] .
+
+# The schemes of a scheme helper property: its sh:hasValue and the members of its sh:in.
+shn:schemeValue sh:alternativePath ( sh:hasValue ( sh:in [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ) .
+
+# A range to a SKOS collection: a helper with dct:source <collection> and sh:in (the members), and nothing else.
+shn:CollectionHelper
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type rdfs:label rdfs:comment sh:name sh:description ) ;
+    sh:property
+        [ sh:path dct:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:class skos:Collection ] ,
+        [ sh:path sh:in ; sh:minCount 1 ] .

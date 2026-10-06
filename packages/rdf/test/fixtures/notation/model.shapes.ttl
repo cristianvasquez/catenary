@@ -1,0 +1,102 @@
+# The model: an OntoUML-style class model, written with standard vocabularies only.
+#   class and constraints   owl:Class + sh:NodeShape (a shape that is its own class: implicit target)
+#   stereotype              a gUFO type: gufo:Kind, gufo:SubKind, gufo:Phase, gufo:Role, gufo:Relator
+#   generalization          rdfs:subClassOf
+#   generalization set      owl:disjointUnionOf: {disjoint, complete}. The predicate is the meaning, no flags.
+#   mediation               a property whose predicate is a subproperty of gufo:mediates
+#   derivation              prov:wasDerivedFrom, from a material relation (a property shape) to its relator
+#   SHACL-only constraints  sh:xone over property shapes, sh:in, sh:or of ranges, a range to a SKOS scheme
+#                           (the class view does not show them; the SHACL view does)
+#
+# The lists of owl:disjointUnionOf have IRIs, not ( ) syntax: a view places a generalization set by the IRI
+# of its list. Trellis gives a ( ) list skolem IRIs at the next write; here they are written out.
+
+@prefix ex:    <https://example.org/draft/> .
+@prefix gufo:  <http://purl.org/nemo/gufo#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix prov:  <http://www.w3.org/ns/prov#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+
+# --- Person and its two generalization sets -----------------------------------------
+
+ex:Person a owl:Class , sh:NodeShape , gufo:Kind ;
+    rdfs:label "Person" ;
+    owl:disjointUnionOf ex:Person-bySex , ex:Person-byPhase ;
+    sh:property ex:Person-name , ex:Person-birthDate , ex:Person-nationality ;
+    sh:xone ex:Person-contact .
+
+ex:Person-name      sh:path rdfs:label   ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 .
+ex:Person-birthDate sh:path ex:birthDate ; sh:datatype xsd:date   ; sh:maxCount 1 .
+
+# A range to a SKOS scheme: the value is a concept of ex:Countries. SHACL says it through a helper node shape.
+ex:Person-nationality sh:path ex:nationality ; sh:node ex:InCountries ; sh:maxCount 1 .
+
+ex:InCountries a sh:NodeShape ;
+    rdfs:label "in Countries" ;
+    sh:property ex:InCountries-scheme .
+
+ex:InCountries-scheme sh:path skos:inScheme ; sh:hasValue ex:Countries .
+
+# Exactly one of email and phone: sh:xone over two property shapes. They are not in sh:property.
+ex:Person-contact   rdf:first ex:Person-email ; rdf:rest ex:Person-contact-2 .
+ex:Person-contact-2 rdf:first ex:Person-phone ; rdf:rest rdf:nil .
+
+ex:Person-email sh:path ex:email ; sh:datatype xsd:string ; sh:minCount 1 .
+ex:Person-phone sh:path ex:phone ; sh:datatype xsd:string ; sh:minCount 1 .
+
+ex:Person-bySex     rdf:first ex:Man   ; rdf:rest ex:Person-bySex-2 .
+ex:Person-bySex-2   rdf:first ex:Woman ; rdf:rest rdf:nil .
+ex:Person-byPhase   rdf:first ex:Child ; rdf:rest ex:Person-byPhase-2 .
+ex:Person-byPhase-2 rdf:first ex:Adult ; rdf:rest rdf:nil .
+
+# rdfs:subClassOf is also stated: owl:disjointUnionOf does not give it, and SHACL class targets need it.
+ex:Man   a owl:Class , sh:NodeShape , gufo:SubKind ; rdfs:label "Man"   ; rdfs:subClassOf ex:Person .
+ex:Woman a owl:Class , sh:NodeShape , gufo:SubKind ; rdfs:label "Woman" ; rdfs:subClassOf ex:Person .
+ex:Child a owl:Class , sh:NodeShape , gufo:Phase   ; rdfs:label "Child" ; rdfs:subClassOf ex:Person .
+ex:Adult a owl:Class , sh:NodeShape , gufo:Phase   ; rdfs:label "Adult" ; rdfs:subClassOf ex:Person .
+
+# --- Roles and the material relation ------------------------------------------------
+
+ex:Husband a owl:Class , sh:NodeShape , gufo:Role ;
+    rdfs:label "Husband" ;
+    rdfs:subClassOf ex:Man ;
+    sh:property ex:Husband-marriedTo .
+
+ex:Wife a owl:Class , sh:NodeShape , gufo:Role ;
+    rdfs:label "Wife" ;
+    rdfs:subClassOf ex:Woman .
+
+# Material relation: derived from the relator Marriage.
+ex:Husband-marriedTo
+    sh:path ex:marriedTo ; sh:class ex:Wife ; sh:maxCount 1 ;
+    prov:wasDerivedFrom ex:Marriage .
+
+# --- The relator ----------------------------------------------------------------------
+
+ex:Marriage a owl:Class , sh:NodeShape , gufo:Relator ;
+    rdfs:label "Marriage" ;
+    sh:property ex:Marriage-husband , ex:Marriage-wife , ex:Marriage-date , ex:Marriage-kind .
+
+ex:Marriage-husband sh:path ex:husband ; sh:class ex:Husband ; sh:minCount 1 ; sh:maxCount 1 .
+ex:Marriage-wife    sh:path ex:wife    ; sh:class ex:Wife    ; sh:minCount 1 ; sh:maxCount 1 .
+
+# sh:or of ranges: a full date or only a year. The alternatives have IRIs, so a view can place them.
+ex:Marriage-date sh:path ex:date ; sh:or ex:Marriage-date-or ; sh:maxCount 1 .
+
+ex:Marriage-date-or   rdf:first ex:Marriage-date-asDate ; rdf:rest ex:Marriage-date-or-2 .
+ex:Marriage-date-or-2 rdf:first ex:Marriage-date-asYear ; rdf:rest rdf:nil .
+ex:Marriage-date-asDate sh:datatype xsd:date .
+ex:Marriage-date-asYear sh:datatype xsd:gYear .
+
+# sh:in: the allowed values are concepts of the scheme ex:MarriageKinds.
+ex:Marriage-kind sh:path ex:kind ; sh:in ex:Marriage-kind-in ; sh:minCount 1 ; sh:maxCount 1 .
+
+ex:Marriage-kind-in   rdf:first ex:civil     ; rdf:rest ex:Marriage-kind-in-2 .
+ex:Marriage-kind-in-2 rdf:first ex:religious ; rdf:rest rdf:nil .
+
+ex:husband rdfs:subPropertyOf gufo:mediates .
+ex:wife    rdfs:subPropertyOf gufo:mediates .

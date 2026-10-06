@@ -1,0 +1,10 @@
+# The default cascade: the notations of a view without nt:notations. All current views have none, so they open
+# as today: marks, SHACL cards and pills, value sets, instance cards. The class-diagram notation is a choice of a view.
+
+@prefix nt:  <osg://vocab/notation#> .
+@prefix mkn: <osg://vocab/notation/marks#> .
+@prefix shn: <osg://vocab/notation/shapes#> .
+@prefix vsn: <osg://vocab/notation/skos#> .
+@prefix inn: <osg://vocab/notation/instances#> .
+
+nt:default nt:notations ( mkn:notation shn:notation vsn:notation inn:notation ) .

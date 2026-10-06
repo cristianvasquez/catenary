@@ -1,0 +1,39 @@
+# Value-set notation: a concept scheme is a box with its concepts as rows.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix vsn:  <osg://vocab/notation/skos#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+vsn:notation a nt:Notation ;
+    rdfs:label "Value sets" ;
+    nt:figures ( vsn:Scheme vsn:Collection vsn:Concept ) .
+
+# The concepts of the scheme are parts (an inverse path).
+# A value set placed by the user stays when its last line leaves. A value set that a line brought (view:keptByLines) leaves with it.
+vsn:Scheme a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style vsn:valueSet ;
+    sh:targetClass skos:ConceptScheme ;
+    sh:property
+        [ sh:path skos:prefLabel ; nt:role nt:title ] ,
+        [ sh:path [ sh:inversePath skos:inScheme ] ; nt:role nt:part ] .
+
+vsn:Collection a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style vsn:valueSet ;
+    sh:targetClass skos:Collection ;
+    sh:property
+        [ sh:path skos:prefLabel ; nt:role nt:title ] ,
+        [ sh:path skos:member ;    nt:role nt:part ] .
+
+# A concept: a row of its scheme and of each sh:in list that has it, or its own box when placed.
+# Its skos:inScheme link is a line only when placed; unplaced it is hidden, because the scheme shows it as a row.
+vsn:Concept a nt:Figure ;
+    nt:kind nt:Box ;
+    sh:targetClass skos:Concept ;
+    sh:property
+        [ sh:path skos:prefLabel ; nt:role nt:title ] ,
+        [ sh:path skos:inScheme ;  nt:role nt:link ; nt:unplaced nt:Hidden ] .

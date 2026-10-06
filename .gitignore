@@ -1,0 +1,19 @@
+node_modules/
+modeler/lib/
+packages/*/lib/
+app/lib/
+app/src-gen/
+app/gen-esbuild.*.mjs
+app/plugins/
+electron-app/lib/
+electron-app/src-gen/
+electron-app/gen-esbuild.*.mjs
+*.tsbuildinfo
+workspace/
+dist/
+
+# Git worktrees of Claude Code agents
+.claude/worktrees/
+
+# Local upload script with credentials
+scripts/upload-windows-koofr.sh

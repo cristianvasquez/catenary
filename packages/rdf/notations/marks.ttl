@@ -1,0 +1,52 @@
+# Marks notation (built in): notes, frames, view references. An arrow is a link: the statement
+# <note> view:arrow <element> is a connector, as ex:m1 ex:husband ex:john is in the instance notation.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix mkn:  <osg://vocab/notation/marks#> .
+@prefix view: <osg://vocab/view#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+mkn:notation a nt:Notation ;
+    rdfs:label "Marks" ;
+    nt:figures ( mkn:Note mkn:Frame mkn:ViewReference mkn:FileReference mkn:EntityGroup ) .
+
+mkn:Note a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style mkn:note ;
+    sh:targetClass view:Note ;
+    sh:property
+        [ sh:path view:text ;  nt:role nt:title ] ,
+        # An arrow is a mark: it exists only through its placements. Either end can be the note.
+        [ sh:path view:arrow ; nt:role nt:link ; nt:unplaced nt:Hidden ] ,
+        [ sh:path [ sh:inversePath view:arrow ] ; nt:role nt:link ; nt:unplaced nt:Hidden ] .
+
+mkn:Frame a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style mkn:frame ;
+    sh:targetClass view:Frame ;
+    sh:property [ sh:path rdfs:label ; nt:role nt:title ] .
+
+mkn:FileReference a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style mkn:reference ;
+    sh:targetClass view:FileRef ;
+    sh:property [ sh:path view:file ; nt:role nt:title ] .
+
+mkn:ViewReference a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style mkn:reference ;
+    sh:targetClass view:View ;
+    sh:property [ sh:path rdfs:label ; nt:role nt:title ] .
+
+# An entity group: a box with its members as parts. A member has no own placement while it is in the group,
+# like a hub member (rule 7). As the end of a link, a member resolves to the group (nt:linkEnd); the renderer bundles
+# the links of the members into one edge with a count.
+mkn:EntityGroup a nt:Figure ;
+    nt:kind nt:Box ;
+    nt:style mkn:group ;
+    sh:targetClass view:EntityGroup ;
+    sh:property
+        [ sh:path rdfs:label ;  nt:role nt:title ] ,
+        [ sh:path view:member ; nt:role nt:part ; nt:linkEnd true ] .

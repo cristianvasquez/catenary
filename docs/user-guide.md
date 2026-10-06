@@ -1,0 +1,97 @@
+# User guide
+
+This guide describes what a user can do with Catenary. The exact rules for each gesture are in the [interaction contract](../spec/ui-manifest.hs).
+
+**Caution:** each edit writes the files and can make a Git commit. Use a copy of valuable data for experiments. Named graphs in model files do not survive a write (open work STORE1).
+
+## Open or create a workspace
+
+The first `pnpm start` or `pnpm desktop` copies `examples/catalog` to `~/.local/share/catenary/workspaces/example`, or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy and does not change the tracked example. Set `CATENARY_WORKSPACE` to open another folder. A non-empty default workspace is never overwritten.
+
+1. Select File → Open Workspace.
+2. Select a folder or a `workspace.trig` file.
+
+If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace creates `workspace.trig`, the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
+
+In the desktop app, each workspace runs in its own process with its own window. File → New Window and a workspace opened in a new window start a new process. If the workspace is already open, its window comes to the front. `bash scripts/desktop.sh <folder>` does the same from the command line.
+
+All supported RDF files in the folder and its subfolders are part of the model: Turtle, TriG, N-Triples, N-Quads and JSON-LD (read and write), N3 and RDF/XML (read only). Hidden files, `*.bak`, `node_modules`, nested workspaces and the exclude globs of the settings are not part of it.
+
+## The screen
+
+| Area | Content |
+|---|---|
+| Files (left, first tab) | The file navigator. Each file shows what it contains: views, shapes, instances. |
+| Model (left) | The Model explorer: elements by type, relations by predicate, concepts by scheme. Folders load when you open them. |
+| Search (left) | Faceted search on text, type and "Linked to". At most 200 results. |
+| Main area | View canvases, text editors, Workspace settings. |
+| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files). |
+| Outline | Frames, cards and placed relations of the active view. |
+| Problems | SHACL results. A click selects the focus instance. |
+
+## Views and canvases
+
+In the browser, append `?view=<view-id>` to the backend URL to open a specific view. Use `pnpm -s catenary --port PORT model views --keys` to get view IDs. For example: `http://localhost:3931/?view=n-urn_3aname_3aPackage_2520provenance`. The link selects a view in the current workspace after startup, even when other tabs were restored. An unknown view shows an error and leaves normal startup behavior unchanged. The link does not select a workspace or start a backend.
+
+- Open a view: double-click a `*.view.trig` file, or a view row in the Model explorer.
+- Create an element: use the palette (Shape, Scheme, one tool per class with a target-class shape; Group and Note for the view).
+- Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
+- Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
+- Card controls (halo): Reveal, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
+- Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group; its relations and arrows end at the group.
+- An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
+- Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
+- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste creates new instances; cut and paste moves the placements.
+- Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
+- Show Text / Show Canvas switches between the canvas and the TriG text of the same file.
+
+## Shapes
+
+- A new node shape opens its name for edit. The typed name also sets the target class: the known class with that name, else a new class IRI from the name. Escape keeps the default name and sets no class.
+- A property of a node shape is a row of its card, or a line to the box of its end: a node shape, a value set, an "in" or "one of" box, or a class pill. When a card arrives, the lines between it and the shown boxes are placed. ⇥ on a row shows the line; the return arrow on the line shows the row again. A box that ⇥ brought leaves with its last line.
+- A property with a datatype, a node kind or no range is a row. Its end is private: it shows as a line only as a member of a logical constraint, with its own pill beside the card.
+- A logical constraint (sh:or, sh:xone, sh:and) without a hub on the view is a row group: the operator, then its members. ⇥ on the operator row shows the hub and its member lines. Del or the return arrow on a member line removes the whole hub. A property under sh:not is a row with the tag «not».
+- `+ attribute` adds an `xsd:string` property with cardinality 0..1. Click the cardinality badge to cycle 0..* → 0..1 → 1 → 1..*.
+- Double-click a path or line label to edit the path. Double-click a pill to edit the target.
+- Drag the logic handle of a property onto another property of the same shape to make an Or constraint.
+- Value sets: `+ concept` and `+ member` add concepts to a SKOS scheme or collection. Drag a concept onto another to add a broader parent.
+- Propose Node Shapes from Data (on a class or instance) and Model → Propose Missing Shapes create shapes from the existing data. The result opens in a new view "proposed shapes". Review it: it describes the data, it is not a rule.
+- A change of a path or a target class can propose a data migration. Apply it with "Apply to data", or dismiss it.
+
+## Keys
+
+| Key | Effect |
+|---|---|
+| F2 | Rename the selected element, or edit a note |
+| F12 | Go to Source: open the file of the element at its line. With nothing selected on a canvas: the view file |
+| Ctrl+T | Find an element |
+| F3 / Shift+F3 | Next / previous occurrence of the element in views |
+| Del | Remove the placement from the view. The model does not change |
+| Ctrl+Del | Delete the element from the model, after confirmation |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / redo (shared model history, outside text inputs) |
+| Escape | Cancel the current edit. It never commits |
+
+## Settings
+
+Open `workspace.trig` to show Workspace settings. A change writes the workspace file at once. It is not an undo step.
+
+- **New subjects**: for Shapes, SKOS / Collections and Everything else, select Auto or File. Auto puts a new subject near subjects of its kind: shapes in the file with most node shapes, a concept or collection in the file of its scheme or collection, another subject in the file with most subjects of its class. With File, type a path or click Browse… A path that does not exist becomes a new file at the first write. Everything else also takes a new subject that Auto cannot place, for example the first subject of a new class. With Auto, that is the first Turtle file with statements.
+- **Prefixes**: hover a row to edit or remove it. Add a prefix in the last row. Above 12 prefixes, a filter shows. A warning icon marks a namespace that does not end with `/` or `#`.
+- **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
+- **HTML export**: the views of Export Views as HTML, in order. Drag a numbered row, or press Alt+↑ or Alt+↓ on it. Export… exports this list.
+
+The toolbar has Show Text, Select in Explorer and More actions (Reset Prefixes to Defaults).
+
+Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace.
+
+## Export
+
+File → Export Views as HTML writes one self-contained HTML file with the checked views, in the chosen order, as SVG.
+
+## History and Git
+
+If the workspace is in a Git repository, each write makes a commit of the changed files only (`git commit --only`). Other staged changes stay out of it. Source Control shows changes and history. A file changed outside Catenary is read again; this clears the undo history.
+
+## Command line
+
+`pnpm -s catenary` controls a running backend: read the model, run edit commands, run UI commands and answer prompts. See the [readme](../readme.md#command-line-interface).

@@ -1,0 +1,56 @@
+packages:
+  - packages/*
+  - modeler
+  - app
+  - electron-app
+
+# Theia apps need a flat node_modules (same as the GLSP repositories).
+shamefullyHoist: true
+# @theia/* peers resolve from the version that the app pins.
+autoInstallPeers: false
+
+onlyBuiltDependencies:
+  - esbuild
+  - '@parcel/watcher'
+  - '@theia/node-pty'
+  - node-pty
+  - nsfw
+  - keytar
+  - msgpackr-extract
+  - '@vscode/ripgrep'
+  - unrs-resolver
+  - native-keymap
+  - find-git-repositories
+  - '@theia/ffmpeg'
+  - electron
+allowBuilds:
+  esbuild: true
+  '@parcel/watcher': true
+  '@theia/node-pty': true
+  node-pty: true
+  nsfw: true
+  keytar: true
+  msgpackr-extract: true
+  '@vscode/ripgrep': true
+  unrs-resolver: true
+  native-keymap: true
+  find-git-repositories: true
+  '@theia/ffmpeg': true
+  electron: true
+  drivelist: false
+  puppeteer: false
+
+# React typings for Theia widgets, without creating a second @theia/core peer variant.
+packageExtensions:
+  '@theia/core@*':
+    dependencies:
+      '@types/react': '^18.3.0'
+      '@types/react-dom': '^18.3.0'
+
+patchedDependencies:
+  '@rdfjs/serializer-turtle@1.1.5': patches/@rdfjs__serializer-turtle@1.1.5.patch
+  # A complex SHACL path is decided by structure, not by term type: Catenary skolemizes path nodes (AGENTS.md). Upstream fix: shacl-engine-bug, defect 3.
+  'shacl-engine@1.1.2': patches/shacl-engine@1.1.2.patch
+
+minimumReleaseAgeExclude:
+  - shaclxtract@0.1.0

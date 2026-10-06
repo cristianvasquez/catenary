@@ -1,0 +1,58 @@
+# Class-diagram notation: how the model in model.shapes.ttl is drawn (OntoUML style).
+# Three figure shapes: a class box, an association line, a generalization-set hub.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix cln:  <osg://vocab/notation/classes#> .
+@prefix shn:  <osg://vocab/notation/shapes#> .
+@prefix gufo: <http://purl.org/nemo/gufo#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+cln:notation a nt:Notation ;
+    rdfs:label "Classes" ;
+    nt:figures ( cln:Class cln:Association cln:GeneralizationSet ) .
+
+# A class: a box with a stereotype, a name and its attributes.
+# A generalization is a line only when the view places it. Unplaced, it is hidden: a generalization set draws it.
+cln:Class a nt:Figure ;
+    nt:kind nt:Box ;
+    sh:targetClass owl:Class ;
+    sh:property
+        [ sh:path rdfs:label ; nt:role nt:title ] ,
+        [ sh:path rdf:type ; nt:select ( gufo:Kind gufo:SubKind gufo:Phase gufo:Role gufo:Relator ) ; nt:role nt:tag ] ,
+        [ sh:path sh:property ; nt:role nt:part ] ,
+        [ sh:path rdfs:subClassOf ; nt:role nt:link ; nt:style cln:generalization ; nt:unplaced nt:Hidden ] .
+
+# A property shape: a row of its class, or a line to the class of its values.
+# A datatype end has no figure in this notation, so an attribute is always a row.
+cln:Association a nt:Figure ;
+    nt:kind nt:Line ;
+    sh:targetObjectsOf sh:property ;
+    sh:property
+        [ sh:path sh:path ;     nt:role nt:title ] ,
+        [ sh:path sh:minCount ; nt:role nt:min ] ,
+        [ sh:path sh:maxCount ; nt:role nt:max ] ,
+        [ sh:path [ sh:inversePath sh:property ] ; nt:role nt:from ] ,
+        # Compact range to a SKOS scheme, as in the SHACL notation (shn:SchemeHelper).
+        [ sh:path ( sh:node sh:property sh:hasValue ) ; nt:role nt:to ; sh:order 0 ;
+          nt:when [ sh:property [ sh:path sh:node ; sh:minCount 1 ; sh:node shn:SchemeHelper ] ] ] ,
+        [ sh:path sh:class ;    nt:role nt:to ; sh:order 1 ] ,
+        [ sh:path sh:node ;     nt:role nt:to ; sh:order 2 ] ,
+        [ sh:path sh:datatype ; nt:role nt:to ; sh:order 3 ] ,
+        [ sh:path ( sh:path rdfs:subPropertyOf ) ; nt:select ( gufo:mediates ) ; nt:role nt:styled ] ,
+        [ sh:path ( sh:path rdfs:subPropertyOf ) ; nt:select ( gufo:mediates ) ; nt:role nt:tag ] ,
+        [ sh:path prov:wasDerivedFrom ; nt:role nt:link ; nt:style cln:derivation ] .
+
+# A generalization set: a hub. Its end is the general class; its members are the specific classes.
+# While the hub is shown, it draws the rdfs:subClassOf statements of its members (nt:covers).
+cln:GeneralizationSet a nt:Figure ;
+    nt:kind nt:Hub ;
+    nt:title "{disjoint, complete}" ;
+    sh:targetObjectsOf owl:disjointUnionOf ;
+    sh:property
+        [ sh:path [ sh:inversePath owl:disjointUnionOf ] ; nt:role nt:to ] ,
+        [ sh:path ( [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; nt:role nt:anchor ] ,
+        [ sh:path rdfs:subClassOf ; nt:role nt:covers ] .

@@ -1,0 +1,149 @@
+# The Trellis model as SHACL: what a valid view, placement, mark, notation and figure is.
+# Stored: views, placements, marks (view files), notations (notation files).
+# Derived, in memory only: figures and rows (last section).
+
+@prefix tm:   <osg://vocab/trellis-model#> .
+@prefix nt:   <osg://vocab/notation#> .
+@prefix view: <osg://vocab/view#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# --- View: a label and a cascade of notations --------------------------------------
+
+tm:View a sh:NodeShape ;
+    sh:targetClass view:View ;
+    sh:property
+        [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:notations ; sh:maxCount 1 ] ,
+        [ sh:path ( nt:notations [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; sh:class nt:Notation ] .
+
+# --- Placement: one view, and one element or one statement ---------------------------
+
+tm:Placement a sh:NodeShape ;
+    sh:targetClass view:Placement ;
+    sh:property
+        [ sh:path view:view ; sh:minCount 1 ; sh:maxCount 1 ; sh:class view:View ] ,
+        [ sh:path view:x ;      sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+        [ sh:path view:y ;      sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+        [ sh:path view:width ;  sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+        [ sh:path view:height ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+        [ sh:path view:color ;  sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        # A box: "simple" shows the title and the tags only. A line: the sides are routing hints, not geometry.
+        [ sh:path view:display ; sh:maxCount 1 ; sh:in ( "simple" ) ] ,
+        # A box that a line or hub brought (⇥ on a row): it leaves with its last line. Absent: the user placed it, it stays.
+        [ sh:path view:keptByLines ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
+        [ sh:path view:fromSide ; sh:maxCount 1 ; sh:in ( "top" "right" "bottom" "left" ) ] ,
+        [ sh:path view:toSide ;   sh:maxCount 1 ; sh:in ( "top" "right" "bottom" "left" ) ] ,
+        # rdf:reifies holds a triple term: not an IRI, not a literal, not a blank node.
+        [ sh:path rdf:reifies ; sh:not [ sh:nodeKind sh:IRI ] ; sh:not [ sh:nodeKind sh:Literal ] ; sh:not [ sh:nodeKind sh:BlankNode ] ] ;
+    # One placement per element per view: not checked here (SHACL Core cannot group by two values).
+    # The placement IRI derives from the view and the placed term (ADR 0011), so a second one has the same IRI.
+    # Not checked here either: geometry on a line placement (the kind is known only in the derived figure),
+    # and that the element exists (it lives in another file).
+    # An element (a box, a line of a property shape) or a statement (a line of a link). Not both.
+    sh:xone (
+        [ sh:property [ sh:path view:element ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+                      [ sh:path rdf:reifies ; sh:maxCount 0 ] ]
+        [ sh:property [ sh:path rdf:reifies ; sh:minCount 1 ; sh:maxCount 1 ] ,
+                      [ sh:path view:element ; sh:maxCount 0 ] ]
+    ) .
+
+# --- Marks: Project elements that live in a view file -------------------------------
+
+tm:Note a sh:NodeShape ;
+    sh:targetClass view:Note ;
+    sh:property
+        [ sh:path view:text ;  sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path view:arrow ; sh:nodeKind sh:IRI ] .
+
+tm:Frame a sh:NodeShape ;
+    sh:targetClass view:Frame ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+# --- Notation: an ordered list of figures -------------------------------------------
+
+tm:Notation a sh:NodeShape ;
+    sh:targetClass nt:Notation ;
+    sh:property
+        [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:figures ; sh:minCount 1 ; sh:maxCount 1 ] ,
+        [ sh:path ( nt:figures [ sh:zeroOrMorePath rdf:rest ] rdf:first ) ; sh:minCount 1 ; sh:class nt:Figure ] .
+
+# --- Figure: a kind, roles on its property shapes, and the ends its kind needs ---------
+# A Line needs an end (nt:to). Its start can come from the figure it is a part of. A Hub needs members.
+
+tm:Figure a sh:NodeShape ;
+    sh:targetClass nt:Figure ;
+    sh:property
+        [ sh:path nt:kind ;        sh:minCount 1 ; sh:maxCount 1 ; sh:in ( nt:Box nt:Line nt:Hub ) ] ,
+        [ sh:path nt:style ;       sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+        [ sh:path nt:title ;       sh:maxCount 1 ] ,
+        [ sh:path nt:when ;        sh:maxCount 1 ] ,
+        [ sh:path nt:gatherWith ;  sh:in ( nt:ModelShapes ) ] ,
+        [ sh:path nt:unplaced ;    sh:maxCount 1 ; sh:in ( nt:AsRow nt:Hidden ) ] ,
+        [ sh:path nt:keptByLines ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
+        [ sh:path nt:openEnd ;     sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:inlineOpen ;  sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:inlineSeparator ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:inlineClose ; sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path rdf:type ;       sh:not [ sh:hasValue sh:NodeShape ] ] ,
+        [ sh:path sh:property ;    sh:node tm:RoleShape ] ;
+    sh:or (
+        [ sh:property [ sh:path nt:kind ; sh:hasValue nt:Box ] ]
+        [ sh:property [ sh:path nt:kind ; sh:hasValue nt:Line ] ,
+                      [ sh:path ( sh:property nt:role ) ; sh:hasValue nt:to ] ]
+        [ sh:property [ sh:path nt:kind ; sh:hasValue nt:Hub ] ,
+                      [ sh:path ( sh:property nt:role ) ; sh:hasValue nt:anchor ] ]
+    ) .
+
+# A property shape of a figure: one path or one fixed value (nt:value), one role, optional filter, style, order.
+tm:RoleShape a sh:NodeShape ;
+    sh:xone ( [ sh:property [ sh:path sh:path ; sh:minCount 1 ] ] [ sh:property [ sh:path nt:value ; sh:minCount 1 ] ] ) ;
+    sh:property
+        [ sh:path sh:path ;  sh:maxCount 1 ] ,
+        [ sh:path nt:value ; sh:maxCount 1 ] ,
+        [ sh:path nt:role ;  sh:minCount 1 ; sh:maxCount 1 ;
+          sh:in ( nt:title nt:tag nt:text nt:min nt:max nt:part nt:link nt:from nt:to nt:anchor nt:covers nt:styled ) ] ,
+        [ sh:path nt:select ; sh:maxCount 1 ] ,
+        [ sh:path nt:private ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
+        [ sh:path nt:when ;   sh:maxCount 1 ] ,
+        [ sh:path sh:in ;     sh:maxCount 0 ; sh:message "Use nt:select: a notation is not a shapes graph." ] ,
+        [ sh:path nt:unplaced ; sh:maxCount 1 ; sh:in ( nt:AsRow nt:Hidden ) ] ,
+        [ sh:path nt:style ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+        [ sh:path sh:order ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+# --- Derived, in memory only: figures, rows, connectors ------------------------------
+# A figure is an instance of a figure shape (<urn:fig:Person> a cln:Class). Never written to disk.
+
+tm:FigureInstance a sh:NodeShape ;
+    sh:targetSubjectsOf nt:focus ;
+    sh:property
+        [ sh:path nt:focus ;     sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+        [ sh:path rdf:type ;     sh:minCount 1 ; sh:class nt:Figure ] ,
+        [ sh:path nt:title ;     sh:maxCount 1 ; sh:datatype xsd:string ] ,
+        [ sh:path nt:tag ;       sh:datatype xsd:string ] ,
+        [ sh:path nt:row ;       sh:class nt:Row ] ,
+        [ sh:path nt:connector ; sh:class nt:Connector ] ,
+        [ sh:path nt:start ;     sh:maxCount 1 ; sh:node tm:FigureInstance ] ,
+        [ sh:path nt:end ;       sh:maxCount 1 ; sh:node tm:FigureInstance ] ,
+        [ sh:path nt:member ;    sh:node tm:FigureInstance ] ,
+        [ sh:path nt:style ;     sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+tm:Row a sh:NodeShape ;
+    sh:targetClass nt:Row ;
+    sh:property
+        [ sh:path nt:order ;  sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ,
+        [ sh:path nt:figure ; sh:maxCount 1 ; sh:node tm:FigureInstance ] ,
+        [ sh:path nt:row ;    sh:class nt:Row ] ,
+        [ sh:path nt:text ;   sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+tm:Connector a sh:NodeShape ;
+    sh:targetClass nt:Connector ;
+    sh:property
+        [ sh:path nt:statement ; sh:minCount 1 ; sh:maxCount 1 ] ,
+        [ sh:path nt:start ;     sh:minCount 1 ; sh:maxCount 1 ; sh:node tm:FigureInstance ] ,
+        [ sh:path nt:end ;       sh:minCount 1 ; sh:maxCount 1 ; sh:node tm:FigureInstance ] ,
+        [ sh:path nt:style ;     sh:maxCount 1 ; sh:nodeKind sh:IRI ] ,
+        [ sh:path nt:text ;      sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .

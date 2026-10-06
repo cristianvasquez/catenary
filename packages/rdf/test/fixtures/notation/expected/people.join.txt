@@ -1,0 +1,28 @@
+view: 23 figures
+box   John   (Card)
+        type: Adult
+        type: Husband
+        type: Man
+        birthDate: 1990-04-12
+        nationality: Netherlands
+        xone
+          email: john@example.org
+box   John and Mary   (Card)
+        type: Marriage
+        date: 2020-06-01
+        kind: Civil
+box   Draft marriage   (Card)
+        type: Marriage
+        kind: Religious
+box   Mary   (Card)
+        type: Adult
+        type: Wife
+        type: Woman
+        birthDate: 1991-09-30
+        nationality: Belgium
+        xone
+          phone: +31 20 000 0000
+link  John → Mary   "marriedTo: Mary"
+link  John and Mary → John   "husband: John"
+link  John and Mary → Mary   "wife: Mary"
+hidden Draft marriage → John   "husband: John"   (dashed while an end is selected)

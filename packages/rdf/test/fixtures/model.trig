@@ -1,0 +1,259 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#>.
+@prefix dct: <http://purl.org/dc/terms/>.
+@prefix dpm: <osg://vocab/data-product-draft#>.
+@prefix dprod: <https://ekgf.github.io/dprod/>.
+@prefix prov: <http://www.w3.org/ns/prov#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix view: <osg://vocab/view#>.
+
+<urn:name:model> {
+  <urn:name:Agent%20%2F%20chatbot> a prov:Agent;
+    dct:description "Application that uses the query service.";
+    rdfs:label "Agent / chatbot";
+    dpm:uses <urn:name:Query%20service>.
+
+  <urn:name:Analysis%20%2F%20dashboards> a prov:Agent;
+    dct:description "Applications that consume reports and derived outputs.";
+    rdfs:label "Analysis / dashboards";
+    dpm:uses <urn:name:Reports%20-%20CSV>.
+
+  <urn:name:Data%20Product%20Owner> a prov:Agent;
+    dct:description "Accountable for the consumer-facing contract and for coordinating changes across the operational owners.";
+    rdfs:label "Data Product Owner".
+
+  <urn:name:Product%20events%20dataset> a dcat:Dataset;
+    dct:description "An anonymized event dataset for product reports and analysis.";
+    rdfs:label "Product events dataset";
+    dpm:exposedThrough <urn:name:Query%20service>.
+
+  <urn:name:Events%20API> a dcat:DataService;
+    dct:description "The events API returns time-bounded records with a stable schema.";
+    rdfs:label "Events API".
+
+  <urn:name:Product%20usage%20data> a dprod:DataProduct;
+    dct:description "Published product usage data for reports, queries, and analysis.";
+    rdfs:label "Product usage data";
+    dprod:dataProductOwner <urn:name:Data%20Product%20Owner>;
+    dprod:domain <urn:name:Product%20Analytics>;
+    dprod:inputDataset <urn:name:Product%20events%20dataset>;
+    dprod:inputPort
+      <urn:name:Events%20API>,
+      <urn:name:Metrics%20API>;
+    dprod:lifecycleStatus "Build";
+    dprod:outputDataset <urn:name:Product%20events%20dataset>;
+    dprod:purpose "Provide consistent product usage metrics for reports and analysis through documented services.";
+    dpm:publishes <urn:name:Usage%20events%20named-graph>.
+
+  <urn:name:model>
+    dct:conformsTo <osg://shapes/data-product-draft>.
+
+  <urn:name:Product%20Analytics> a dpm:Domain;
+    rdfs:label "Product Analytics".
+
+  <urn:name:Query%20service> a dcat:DataService;
+    dct:description "SPARQL / equivalent access port.";
+    rdfs:label "Query service".
+
+  <urn:name:Reports%20-%20CSV> a dcat:DataService;
+    rdfs:label "Reports - CSV";
+    prov:wasDerivedFrom <urn:name:Usage%20events%20named-graph>.
+
+  <urn:name:Metrics%20API> a dcat:DataService;
+    rdfs:label "Metrics API".
+
+  <urn:name:Usage%20events%20named-graph> a dpm:NamedGraph;
+    rdfs:label "Usage events named graph";
+    dpm:exposedThrough <urn:name:Query%20service>;
+    dpm:pattern "{base}/graph/usage/{year}";
+    dpm:unit "one event batch".
+}
+
+<urn:name:Product%20context> {
+  <urn:name:Product%20context> a view:View;
+    rdfs:label "Product context".
+
+  <urn:name:Product%20context/m/14s74x> a view:Frame;
+    rdfs:label "Consumers / applications".
+
+  <urn:name:Product%20context/m/3y5hqx> a view:Frame;
+    rdfs:label "Consumer-facing contract".
+
+  <urn:name:Product%20context/m/9yqwbp> a view:Frame;
+    rdfs:label "Source systems".
+
+  <urn:name:Product%20context/p/00dee83b2f56> a view:Placement;
+    rdf:reifies <<( <urn:name:Analysis%20%2F%20dashboards> dpm:uses <urn:name:Reports%20-%20CSV> )>>;
+    view:color "6";
+    view:fromSide "left";
+    view:toSide "right";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/0a41e5b5bd91> a view:Placement;
+    rdf:reifies <<( <urn:name:Reports%20-%20CSV> prov:wasDerivedFrom <urn:name:Usage%20events%20named-graph> )>>;
+    view:color "6";
+    view:fromSide "left";
+    view:toSide "right";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/0f78fefb2ea0> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20usage%20data> dprod:inputDataset <urn:name:Product%20events%20dataset> )>>;
+    view:color "2";
+    view:fromSide "bottom";
+    view:toSide "left";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/240fb0f33c2e> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Reports%20-%20CSV>;
+    view:height 230;
+    view:view <urn:name:Product%20context>;
+    view:width 420;
+    view:x 1450;
+    view:y -30.
+
+  <urn:name:Product%20context/p/2e26d8ddde0f> a view:Placement;
+    view:element <urn:name:Analysis%20%2F%20dashboards>;
+    view:height 200;
+    view:view <urn:name:Product%20context>;
+    view:width 500;
+    view:x 2240;
+    view:y -15.
+
+  <urn:name:Product%20context/p/4180d720e514> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Query%20service>;
+    view:height 200;
+    view:view <urn:name:Product%20context>;
+    view:width 450;
+    view:x 1450;
+    view:y 620.
+
+  <urn:name:Product%20context/p/50dcda25040c> a view:Placement;
+    view:element <urn:name:Product%20context/m/14s74x>;
+    view:height 1040;
+    view:view <urn:name:Product%20context>;
+    view:width 580;
+    view:x 2200;
+    view:y -150.
+
+  <urn:name:Product%20context/p/5aa165a4a5ab> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20usage%20data> dpm:publishes <urn:name:Usage%20events%20named-graph> )>>;
+    view:color "5";
+    view:fromSide "right";
+    view:toSide "left";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/68046af0be19> a view:Placement;
+    view:color "2";
+    view:element <urn:name:Events%20API>;
+    view:height 220;
+    view:view <urn:name:Product%20context>;
+    view:width 500;
+    view:x -1100;
+    view:y -80.
+
+  <urn:name:Product%20context/p/6872e8900b20> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20usage%20data> dprod:inputPort <urn:name:Events%20API> )>>;
+    view:color "2";
+    view:fromSide "left";
+    view:toSide "right";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/8918d3ac2318> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Usage%20events%20named-graph>;
+    view:height 200;
+    view:view <urn:name:Product%20context>;
+    view:width 365;
+    view:x 735;
+    view:y 0.
+
+  <urn:name:Product%20context/p/8eec2a687acc> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20events%20dataset> dpm:exposedThrough <urn:name:Query%20service> )>>;
+    view:color "6";
+    view:fromSide "right";
+    view:toSide "left";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/91b1ebaf0df2> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20usage%20data> dprod:inputPort <urn:name:Metrics%20API> )>>;
+    view:color "2";
+    view:fromSide "left";
+    view:toSide "right";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/a035040fc612> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Product%20context/m/3y5hqx>;
+    view:height 1240;
+    view:view <urn:name:Product%20context>;
+    view:width 1350;
+    view:x 600;
+    view:y -150.
+
+  <urn:name:Product%20context/p/ab3d115af2da> a view:Placement;
+    rdf:reifies <<( <urn:name:Agent%20%2F%20chatbot> dpm:uses <urn:name:Query%20service> )>>;
+    view:color "6";
+    view:fromSide "left";
+    view:toSide "right";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/ab44e4733d21> a view:Placement;
+    view:color "2";
+    view:element <urn:name:Product%20context/m/9yqwbp>;
+    view:height 690;
+    view:view <urn:name:Product%20context>;
+    view:width 670;
+    view:x -1150;
+    view:y -150.
+
+  <urn:name:Product%20context/p/b1a5c4096999> a view:Placement;
+    view:color "2";
+    view:element <urn:name:Metrics%20API>;
+    view:height 280;
+    view:view <urn:name:Product%20context>;
+    view:width 500;
+    view:x -1100;
+    view:y 220.
+
+  <urn:name:Product%20context/p/b2993ed5d560> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Product%20usage%20data>;
+    view:height 400;
+    view:view <urn:name:Product%20context>;
+    view:width 400;
+    view:x -140;
+    view:y 140.
+
+  <urn:name:Product%20context/p/c51c54c2b883> a view:Placement;
+    rdf:reifies <<( <urn:name:Usage%20events%20named-graph> dpm:exposedThrough <urn:name:Query%20service> )>>;
+    view:color "6";
+    view:fromSide "bottom";
+    view:toSide "top";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/c66dab83fdcf> a view:Placement;
+    view:element <urn:name:Agent%20%2F%20chatbot>;
+    view:height 200;
+    view:view <urn:name:Product%20context>;
+    view:width 500;
+    view:x 2240;
+    view:y 620.
+
+  <urn:name:Product%20context/p/c97ed7d9d898> a view:Placement;
+    rdf:reifies <<( <urn:name:Product%20usage%20data> dprod:outputDataset <urn:name:Product%20events%20dataset> )>>;
+    view:color "4";
+    view:fromSide "right";
+    view:toSide "left";
+    view:view <urn:name:Product%20context>.
+
+  <urn:name:Product%20context/p/dca4a3312c81> a view:Placement;
+    view:color "6";
+    view:element <urn:name:Product%20events%20dataset>;
+    view:height 240;
+    view:view <urn:name:Product%20context>;
+    view:width 365;
+    view:x 735;
+    view:y 600.
+}

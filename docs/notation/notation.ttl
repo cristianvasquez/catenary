@@ -1,0 +1,142 @@
+# The notation vocabulary.
+#
+#   data        ex:m1 ex:husband ex:john .                                            stored
+#   model       ex:Marriage sh:property ex:Marriage-husband .                         stored
+#   notation    cln:Association nt:kind nt:Line ; sh:targetObjectsOf sh:property .    stored
+#   placement   <p> view:element ex:Marriage-husband ; view:view <v> .                stored
+#   figure      <urn:fig:Marriage-husband> a cln:Association ; nt:start … ; nt:end … .   derived, in memory
+#
+# A notation uses SHACL syntax for targets and paths. It is not a shapes graph: a notation is never validated
+# against data. A figure shape selects focus elements (its targets) and says what their figure shows (its property
+# shapes with roles). A placement names only an element or a statement. The view does not store what it shows.
+
+@prefix nt:   <osg://vocab/notation#> .
+@prefix view: <osg://vocab/view#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# === Stored: notations ==========================================================
+
+nt:Notation a rdfs:Class ;
+    rdfs:comment "An ordered list of figure shapes for one vocabulary." .
+
+nt:figures a rdf:Property ; rdfs:domain nt:Notation ; rdfs:range rdf:List .
+
+nt:Figure a rdfs:Class ;
+    rdfs:subClassOf rdfs:Class ;
+    rdfs:comment """A figure shape. It uses sh:target*, sh:property and sh:path, but it is not a sh:NodeShape.
+It is the class of its figures: <urn:fig:Person> a cln:Class.""" .
+
+nt:kind a rdf:Property ; rdfs:domain nt:Figure ; rdfs:range nt:Kind .
+nt:Kind a rdfs:Class .
+nt:Box   a nt:Kind ; rdfs:comment "No ends. Its placement gives position and size." .
+nt:Line  a nt:Kind ; rdfs:comment "A start and an end. Its placement has no geometry. It is drawn only when both ends have a shown figure." .
+nt:Hub   a nt:Kind ; rdfs:comment """Members (nt:anchor), and optionally an end (nt:to). Its placement gives its position.
+A hub and its member lines are one unit: the hub placement also shows the member lines, and a member has no placement
+of its own. Without a hub placement, the hub and its members are rows of their owner.""" .
+
+nt:when a rdf:Property ;
+    rdfs:comment """Real SHACL conformance of the focus. On a figure shape: the figure applies only to a focus that conforms.
+On a property shape of a figure shape: the role uses its path only when the focus conforms.""" .
+nt:gatherWith a rdf:Property ; rdfs:domain nt:Figure ;
+    rdfs:comment "Other shapes whose property shapes add rows to this figure." .
+nt:ModelShapes a rdfs:Resource ;
+    rdfs:comment """The model node shapes that target the focus. Each of their property shapes with a value is one row.
+A property shape without a value gives no row. Literal values are text; IRI values are links. The members of a logical constraint with sh:path are a row
+group (rule 7). A property shape with the path of the title role gives no row.""" .
+nt:TargetPredicate a rdfs:Resource ;
+    rdfs:comment "As nt:title of a figure shape: the label of the predicate through which sh:targetObjectsOf reached the focus." .
+
+# --- property shapes of a figure shape ---
+
+nt:role a rdf:Property ; rdfs:range nt:Role .
+nt:select a rdf:Property ; rdfs:range rdf:List ;
+    rdfs:comment "Keep only these values. A filter, not a constraint." .
+nt:value a rdf:Property ;
+    rdfs:comment "A fixed value of the role, used instead of the values of sh:path. Example: the tag «not» of a property shape under sh:not." .
+nt:linkEnd a rdf:Property ;
+    rdfs:comment "On a part property shape (true): as the end of a link, an unplaced part resolves to the owner box. Example: a member of an entity group." .
+nt:unplaced a rdf:Property ;
+    rdfs:comment """A link without a placement: nt:AsRow (default) or nt:Hidden.
+Hidden: when both ends are shown, the link is not part of the view; the renderer draws it dashed while an end is
+selected. When the other end is not shown, a hidden link is a row too: no information disappears.
+On a figure shape: the value for the links that nt:gatherWith adds.""" .
+nt:AsRow  a rdfs:Resource .
+nt:Hidden a rdfs:Resource .
+
+nt:Role a rdfs:Class .
+nt:title  a nt:Role ; rdfs:comment "The first value is the title." .
+nt:tag    a nt:Role ; rdfs:comment "Each value is shown above the title as «label»." .
+nt:text   a nt:Role ; rdfs:comment "Each value is a text line: <label of the path>: <label of the value>." .
+nt:min    a nt:Role ; rdfs:comment "Lower bound of the multiplicity." .
+nt:max    a nt:Role ; rdfs:comment "Upper bound of the multiplicity." .
+nt:part   a nt:Role ; rdfs:comment "Each value is an element. Without a placement, its figure is a row of this figure. Several part property shapes: rows in sh:order." .
+nt:link   a nt:Role ; rdfs:comment "Each statement is a connector. With a placement of the statement it is a line, else nt:unplaced decides." .
+nt:from   a nt:Role ; rdfs:comment "The start of a Line. Several: the first by sh:order with a value. None: the figure it is a part of." .
+nt:to     a nt:Role ; rdfs:comment "The end of a Line or a Hub. Several: the first by sh:order with a value." .
+nt:anchor a nt:Role ; rdfs:comment "A member of a Hub." .
+nt:covers a nt:Role ; rdfs:comment """On a Hub: the predicate from each member to the end of the hub. While the hub is shown, it draws\nthose statements: they are not separate lines, not dashed on selection, and an arrival does not place them.""" .
+nt:styled a nt:Role ; rdfs:comment "The value is a style key." .
+
+nt:title a rdf:Property ; rdfs:comment "A title. On a figure shape: fixed for all its figures." .
+nt:keptByLines a rdf:Property ; rdfs:comment """On a Box figure shape (true): the box is on the canvas only as the end of lines. It leaves the view
+when a removal takes its last line ("in" and "one of" boxes, class pills). On a placement, view:keptByLines does the same
+for one box: the box that a line or hub brought (⇥ on a row). A box that the user placed has no flag and stays.""" .
+nt:private a rdf:Property ; rdfs:comment """On a property shape with nt:role nt:to (true): the end is private to the line. It is drawn as a
+pill beside the start, with the label of the value. It has no figure, no placement and no element, and lines do not share it.
+A Line whose end is private or open (nt:openEnd) shows only as a member of a shown hub: the only reason to draw such a
+line is a constraint between lines. Otherwise the property is a row.""" .
+nt:openEnd a rdf:Property ; rdfs:comment """On a Line figure shape: a line without an nt:to value ends at a private pill with this text, drawn beside its
+start (as nt:private). The pill has no placement and no element ("any").""" .
+nt:default a rdfs:Resource ; rdfs:comment "Holds the default cascade (nt:notations) of a view without nt:notations." .
+nt:inlineOpen a rdf:Property ; rdfs:comment "On a Box figure shape: the text before its parts when a row shows the box inline." .
+nt:inlineSeparator a rdf:Property ; rdfs:comment """On a Box figure shape: a row whose end is this box shows its parts inline, with this separator.
+At most three parts; else two parts and "+N".""" .
+nt:inlineClose a rdf:Property ; rdfs:comment "On a Box figure shape: the text after its parts when a row shows the box inline." .
+nt:style a rdf:Property ; rdfs:comment "A style key. On a property shape with nt:link: the style of its connectors." .
+
+# --- badges ---
+#
+#   Validation is not part of the model. Catenary computes the report into the named graph urn:trellis:validation.
+#   The renderer draws a badge on every shown figure, row or line whose element IRI is a sh:focusNode of a result.
+
+# --- text rule ---
+#
+#   label(x)     a literal: its value. An IRI: rdfs:label, skos:prefLabel or sh:name, else its local name.
+#   title        nt:title, else label of the focus.
+#   multiplicity [min..max] with min default 0 and max default *. Omitted when the figure has neither.
+#   line label   title multiplicity                      "husband [1..1]"
+#   row of a Line part   title: label(end) multiplicity  "birthDate: date [0..1]"; without a title: label(end)
+#   row of a Box part    title                            "Netherlands"
+#   row of a link        label(predicate): label(object)  "subClassOf: Man"
+#   row of a Hub part    title, then one sub-row per member  "xone" / "email: string [1..*]" / "phone: string [1..*]"
+#
+# --- join rule (renderer, not stored) ---
+#
+#   A figure lists all its parts. The join shows a part as a row only when the part has no placement in the view.
+#   A placement needs a shown figure at each end (a Line). A hub placement needs both ends of each member line.
+#   A hub and its member lines are placed and removed as one unit. Removing a placement removes
+#   the placements that need it (spec/ui-manifest.hs §2, dependsOn). Their elements return as rows of their owner.
+
+# === Stored: views ==============================================================
+
+nt:notations a rdf:Property ;
+    rdfs:range rdf:List ;
+    rdfs:comment """The notations of a view, in order. An element gets the figure of the first figure shape that targets it.
+A placed element shows its figure. An unplaced element shows as a row of each shown figure that has it as a part.""" .
+
+# === Derived, in memory only: figures ===========================================
+
+nt:focus     a rdf:Property ; rdfs:comment "The element that the figure shows." .
+nt:row       a rdf:Property ; rdfs:range nt:Row .
+nt:connector a rdf:Property ; rdfs:range nt:Connector .
+nt:start     a rdf:Property ; rdfs:comment "The figure where a line or a connector starts." .
+nt:end       a rdf:Property ; rdfs:comment "The figure where a line, a connector or a hub ends." .
+nt:member    a rdf:Property ; rdfs:comment "A member figure of a hub." .
+nt:Row       a rdfs:Class ; rdfs:comment "A line of text inside a box. A row of a Hub part has sub-rows (nt:row)." .
+nt:order     a rdf:Property ; rdfs:domain nt:Row .
+nt:figure    a rdf:Property ; rdfs:domain nt:Row ; rdfs:comment "The part figure that this row stands for." .
+nt:text      a rdf:Property ; rdfs:comment "The text of a row or of a connector." .
+nt:Connector a rdfs:Class ; rdfs:comment "A statement between two figures." .
+nt:statement a rdf:Property ; rdfs:domain nt:Connector .

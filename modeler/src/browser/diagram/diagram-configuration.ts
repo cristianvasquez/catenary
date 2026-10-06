@@ -1,0 +1,417 @@
+// Client DI container of a view editor.
+
+import {
+    ConsoleLogger, ContainerConfiguration, CutOperation, DefaultTypes, FeatureModule, GGraph, GLabel, GModelRoot, GResizeHandle,
+    LocalClipboardService, LogLevel, RequestClipboardDataAction, ServerCopyPasteHandler, TYPES, bindOrRebind, configureModelElement, configureView,
+    KeyboardToolPalette, generateUuid, gridModule, configureActionHandler, IActionHandler, ViewerOptions,
+    Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
+    helperLineModule, initializeDiagramContainer, accessibilityModule, toolPaletteModule, createIcon, FocusTrackerTool, PaletteItem,
+    ChangeBoundsOperation, CompoundOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions
+} from '@eclipse-glsp/client';
+import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
+import { CommandRegistry, CommandService } from '@theia/core';
+import { Container, inject, injectable } from '@theia/core/shared/inversify';
+import { TYPES as CATENARY, boxOf, ownerOfLabel } from '@catenary/model';
+import { DIAGRAM_TYPE, viewIdOfUri } from '../../common/protocol';
+import { SelectionModel } from '../selection-model';
+import { ModelActions } from '../actions';
+import { ModelCommands } from '../commands';
+import { ViewHistory } from './view-history';
+import { ModelFrontend } from '../model-client';
+import { NoteEditor } from '../notes/note-editor';
+import { editCanvasName } from './name-edit';
+import { ViewEditors } from './view-editors';
+import { CardScaleStartup } from './card-scale';
+import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
+import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
+import {
+    AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView,
+    NoteNode, NoteView, PropertyEdge, PropertyEdgeView, RelationEdge, RelationEdgeView, ResizeHandleView, ShapeCardView, ShapeNode, ShapeRow, ShapeRowView, ValueSetNode, ValueSetView,
+    CatenaryGraphView, ViewReferenceNode, ViewReferenceView
+} from './views';
+
+@injectable()
+export class EditCreatedCanvasName implements IActionHandler {
+    @inject(TYPES.ViewerOptions) protected readonly viewer: ViewerOptions;
+    @inject(ModelFrontend) protected readonly model: ModelFrontend;
+    @inject(NoteEditor) protected readonly notes: NoteEditor;
+    @inject(ViewEditors) protected readonly editors: ViewEditors;
+
+    handle(action: Action): void {
+        const { id, view } = action as Action & { id: string; view: string };
+        // The model update and the action cross different frontend connections. Wait for the card DOM, not for a fixed delay.
+        // A note has no name slot: its text opens in the note editor.
+        let attempts = 0;
+        void this.model.service.view(view).then(stored => {
+            const tryEdit = () => {
+                if (boxOf(stored, id)?.kind === 'note') return void this.notes.open(view, id);
+                const w = this.editors.find(view);
+                if (w && editCanvasName(w, id, view, this.editors, this.model, true)) return;
+                if (++attempts < 120) requestAnimationFrame(tryEdit);
+            };
+            requestAnimationFrame(tryEdit);
+        });
+    }
+}
+
+export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebind) => {
+    const context = { bind, unbind, isBound, rebind };
+    bindOrRebind(context, TYPES.ILogger).to(ConsoleLogger).inSingletonScope();
+    bindOrRebind(context, TYPES.LogLevel).toConstantValue(LogLevel.warn);
+    bind(CardScaleStartup).toSelf().inSingletonScope();
+    bind(TYPES.IDiagramStartup).toService(CardScaleStartup);
+    configureModelElement(context, DefaultTypes.GRAPH, GGraph, CatenaryGraphView);
+    configureModelElement(context, CATENARY.CARD, CardNode, CardView);
+    configureModelElement(context, CATENARY.GROUP, GroupNode, GroupView);
+    configureModelElement(context, CATENARY.NOTE, NoteNode, NoteView);
+    configureModelElement(context, CATENARY.VIEW_REFERENCE, ViewReferenceNode, ViewReferenceView);
+    configureModelElement(context, CATENARY.RELATION, RelationEdge, RelationEdgeView);
+    configureModelElement(context, CATENARY.COLLECTION, CollectionNode, CollectionView);
+    configureModelElement(context, CATENARY.BUNDLE, BundleEdge, BundleEdgeView);
+    configureModelElement(context, CATENARY.ARROW, ArrowEdge, ArrowEdgeView);
+    configureModelElement(context, CATENARY.NAME, GLabel, NameLabelView);
+    configureModelElement(context, CATENARY.SHAPE, ShapeNode, ShapeCardView);
+    configureModelElement(context, CATENARY.ROW, ShapeRow, ShapeRowView);
+    configureModelElement(context, CATENARY.PROPERTY, PropertyEdge, PropertyEdgeView);
+    configureModelElement(context, CATENARY.LEAF, LeafNode, LeafView);
+    configureModelElement(context, CATENARY.ALTERNATIVE, AlternativeEdge, AlternativeEdgeView);
+    configureModelElement(context, CATENARY.LATENT, LatentEdge, LatentEdgeView);
+    configureModelElement(context, CATENARY.LOGIC, LogicNode, LogicView);
+    configureModelElement(context, CATENARY.VALUESET, ValueSetNode, ValueSetView);
+    configureView(context, GResizeHandle.TYPE, ResizeHandleView, true);
+    configureActionHandler(context, 'catenaryEditCanvasName', EditCreatedCanvasName);
+    // A server update sent before the server applied the last drop does not draw the box at its older place (pending-bounds.ts).
+    bind(PendingBounds).toSelf().inSingletonScope();
+    configureActionHandler(context, ChangeBoundsOperation.KIND, PendingBounds);
+    configureActionHandler(context, CompoundOperation.KIND, PendingBounds);
+    configureCommand(context, ApplyPendingBoundsCommand);
+    // "+ concept" / "+ member" of a value set card: the new row shows at once (pending-members.ts).
+    bind(PendingMembers).toSelf().inSingletonScope();
+    configureActionHandler(context, PendingMemberAction.KIND, PendingMembers);
+    configureCommand(context, ApplyPendingMembersCommand);
+}, { featureId: Symbol('catenaryViewDiagram') });
+
+/**
+ * A selection change in the view editor that has the focus is a user gesture: it goes to the SelectionModel, and to the
+ * Theia selection (the Property view picks its provider from it). A change in another view editor comes from the
+ * SelectionModel (DiagramSelectionSync) and is not sent back. On focus gain, the base class forwards the current diagram selection.
+ */
+@injectable()
+export class FocusedSelectionForwarder extends TheiaGLSPSelectionForwarder {
+    @inject(SelectionModel) protected readonly selection: SelectionModel;
+
+    override selectionChanged(root: Readonly<GModelRoot>, selectedElements: string[]): void {
+        const base = document.getElementById(this.viewerOptions.baseDiv);
+        if (!base?.contains(document.activeElement)) return;
+        const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
+        if (view) this.selection.set({ view, ids: selectedElements.map(ownerOfLabel).filter(id => id !== root.id) });
+        super.selectionChanged(root, selectedElements);
+    }
+}
+
+const selectionForwarderModule = new FeatureModule((_bind, _unbind, _isBound, rebind) => {
+    rebind(TheiaGLSPSelectionForwarder).to(FocusedSelectionForwarder).inSingletonScope();
+}, { featureId: Symbol('catenarySelectionForwarder') });
+
+/**
+ * Copy, cut and paste while any element of the view editor has the focus. GLSP accepts only an element
+ * whose parent is the base div; a click on empty canvas focuses the svg one level deeper, and the paste was ignored.
+ * A cut requests the clip with `args.mode = 'cut'`: its paste adds the same instances; the paste of a copy creates new ones.
+ */
+@injectable()
+export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
+    override handleCut(event: ClipboardEvent): void {
+        if (!event.clipboardData || !this.shouldCopy(event)) return;
+        const clipboardId = generateUuid();
+        event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
+        this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' })))
+            .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
+        this.actionDispatcher.dispatch(CutOperation.create(this.editorContext.get()));
+        event.preventDefault();
+    }
+
+    protected override shouldCopy(_event: ClipboardEvent): boolean {
+        return this.editorContext.get().selectedElementIds.length > 0 && this.hasFocus();
+    }
+
+    protected override shouldPaste(_event: ClipboardEvent): boolean {
+        return this.hasFocus();
+    }
+
+    protected hasFocus(): boolean {
+        return !!document.getElementById(this.viewerOptions.baseDiv)?.contains(document.activeElement);
+    }
+}
+
+/**
+ * One clipboard for all view editors of the window. GLSP binds one for each diagram container, so a clip
+ * copied in one view editor was not found by a paste in another one.
+ */
+const sharedClipboard = new LocalClipboardService();
+const copyPasteModule = new FeatureModule((bind, _unbind, isBound, rebind) => {
+    bindOrRebind({ bind, isBound, rebind }, TYPES.IAsyncClipboardService).toConstantValue(sharedClipboard);
+    bindOrRebind({ bind, isBound, rebind }, TYPES.ICopyPasteHandler).to(ViewCopyPasteHandler);
+}, { featureId: Symbol('catenaryCopyPaste') });
+
+/**
+ * Shift+drag on the canvas: marquee that adds to the selection. GLSP enables the marquee only when nothing is selected,
+ * and keeps the previous selection only with Ctrl.
+ */
+class ShiftMarqueeKeyListener extends KeyListener {
+    override keyDown(_element: GModelElement, event: KeyboardEvent): Action[] {
+        return event.shiftKey ? [EnableToolsAction.create([MarqueeMouseTool.ID])] : [];
+    }
+}
+
+@injectable()
+export class AddingMarqueeTool extends MarqueeTool {
+    override enable(): void {
+        this.toDisposeOnDisable.push(this.keyTool.registerListener(new ShiftMarqueeKeyListener()));
+    }
+}
+
+class AddingMarqueeMouseListener extends MarqueeMouseListener {
+    override mouseDown(target: GModelElement, event: MouseEvent): Action[] {
+        const result = super.mouseDown(target, event);
+        this.previouslySelected = [...target.root.index.all()].filter(e => (e as { selected?: boolean }).selected).map(e => e.id);
+        return result;
+    }
+}
+
+@injectable()
+export class AddingMarqueeMouseTool extends MarqueeMouseTool {
+    /** As the base class, with AddingMarqueeMouseListener. */
+    override enable(): void {
+        this.toDisposeOnDisable.push(
+            this.mouseTool.registerListener(new AddingMarqueeMouseListener(this.editorContext.modelRoot, this.marqueeUtil)),
+            this.keyTool.registerListener(this.shiftKeyListener),
+            this.createFeedbackEmitter().add(cursorFeedbackAction(CursorCSS.MARQUEE), cursorFeedbackAction()).submit()
+        );
+    }
+}
+
+const marqueeModule = new FeatureModule((_bind, _unbind, _isBound, rebind) => {
+    rebind(MarqueeTool).to(AddingMarqueeTool).inSingletonScope();
+    rebind(MarqueeMouseTool).to(AddingMarqueeMouseTool).inSingletonScope();
+}, { featureId: Symbol('catenaryMarquee') });
+
+/** Classes of the shapes in the bar: at most this number of rows (the Back/Forward row included); the others are behind "+N". */
+const CLASS_ROWS = 2;
+
+/**
+ * Tool palette: a bar above the canvas. Row 1 (and 2): Back, Forward, then MODEL (Scheme▾, Shape, the class picker, one item per class,
+ * "+N"). Last row: VIEW (Group, Note), the marks of the view. The items come from the shapes (see ShapesPaletteProvider).
+ */
+@injectable()
+export class CatenaryToolPalette extends KeyboardToolPalette {
+    @inject(CommandService) protected readonly commands: CommandService;
+    @inject(CommandRegistry) protected readonly registry: CommandRegistry;
+    @inject(ViewHistory) protected readonly history: ViewHistory;
+    @inject(SelectionModel) protected readonly elements: SelectionModel;
+    @inject(ModelFrontend) protected readonly model: ModelFrontend;
+    @inject(ModelActions) protected readonly actions: ModelActions;
+
+    protected historyButtons: [HTMLElement, string][] = [];
+    /** The kind of value set that the Scheme item makes: its menu changes it. */
+    protected valueSetKind: 'scheme' | 'collection' = 'scheme';
+    protected listening = false;
+    protected fitWidth = -1;
+
+    /**
+     * The class items change with the shapes. GLSP requests the items again on UpdateModel/SetModel only when the palette is
+     * "dynamic" (a creation action with a dynamic ghost element), so set the flag here. A shapes change refreshes every view session.
+     */
+    protected override async setPaletteItems(): Promise<void> {
+        await super.setPaletteItems();
+        this.dynamic = true;
+    }
+
+    protected override initializeContents(containerElement: HTMLElement): void {
+        super.initializeContents(containerElement);
+        // A width change moves the classes between the rows.
+        new ResizeObserver(() => {
+            if (this.containerElement.clientWidth !== this.fitWidth) this.fitClasses();
+        }).observe(this.containerElement);
+    }
+
+    /**
+     * Header tools: Back and Forward (view history). No delete tool (Del, Ctrl+Del) and no search (Ctrl+T). The selection button is
+     * not shown; it stays as the "clicked" target when the default tools are active.
+     */
+    protected override createHeaderTools(): HTMLElement {
+        this.headerToolsButtonMapping.clear();
+        const headerTools = document.createElement('div');
+        headerTools.classList.add('header-tools');
+        this.defaultToolsButton = this.createDefaultToolButton();
+        this.headerToolsButtonMapping.set(0, this.defaultToolsButton);
+        const button = (icon: string, title: string, command: string) => {
+            const b = createIcon(icon);
+            b.title = title;
+            b.onclick = () => { if (this.registry.isEnabled(command)) void this.commands.executeCommand(command); };
+            return b;
+        };
+        this.historyButtons = [
+            [button('arrow-left', 'Back (Alt+Left, mouse back button)', ModelCommands.BACK.id), ModelCommands.BACK.id],
+            [button('arrow-right', 'Forward (Alt+Right, mouse forward button)', ModelCommands.FORWARD.id), ModelCommands.FORWARD.id]
+        ];
+        headerTools.append(...this.historyButtons.map(([b]) => b));
+        if (!this.listening) {
+            this.listening = true;
+            this.history.onDidChange(() => this.updateHistoryButtons());
+        }
+        this.updateHistoryButtons();
+        return headerTools;
+    }
+
+    protected updateHistoryButtons(): void {
+        for (const [b, command] of this.historyButtons) b.classList.toggle('catenary-disabled', !this.registry.isEnabled(command));
+    }
+
+    protected override createKeyboardToolButton(item: PaletteItem, tabIndex: number, buttonIndex: number): HTMLElement {
+        const button = super.createKeyboardToolButton(item, tabIndex, buttonIndex);
+        button.dataset.item = item.id;
+        if (item.id.startsWith('class-')) button.classList.add('catenary-class-tool');
+        if (item.id === 'collection') button.classList.add('catenary-hidden');
+        if (item.id === 'scheme') this.decorateScheme(button);
+        return button;
+    }
+
+    /** After the classes: the class picker before them, "+N" after them, and the VIEW group on its own row. */
+    protected override createBody(): void {
+        super.createBody();
+        const body = this.bodyDiv!;
+        const pick = (className: string, title: string, icon?: string) => {
+            const b = document.createElement('div');
+            b.classList.add('tool-button', className);
+            b.title = title;
+            if (icon) b.appendChild(createIcon(icon));
+            b.onclick = () => void this.commands.executeCommand(ModelCommands.NEW_INSTANCE.id);
+            return b;
+        };
+        const classes = [...body.querySelectorAll<HTMLElement>('.catenary-class-tool')];
+        const picker = pick('catenary-class-pick', 'New instance: pick a class (I on the canvas)', 'search');
+        picker.insertAdjacentText('beforeend', 'class…');
+        const shape = body.querySelector<HTMLElement>('[data-item="node-shape"]');
+        if (classes[0]) classes[0].before(picker); else shape?.after(picker);
+        classes.at(-1)?.after(pick('catenary-class-more', 'More classes: pick a class (I on the canvas)'));
+        const groups = body.querySelectorAll(':scope > .tool-group');
+        if (groups.length > 1) {
+            const rowBreak = document.createElement('div');
+            rowBreak.classList.add('catenary-palette-break');
+            groups[groups.length - 1].before(rowBreak);
+        }
+        this.fitWidth = -1;
+        requestAnimationFrame(() => this.fitClasses());
+    }
+
+    /** At most CLASS_ROWS rows up to the last class: the classes that do not fit are hidden, "+N" counts them. */
+    protected fitClasses(): void {
+        const container = this.containerElement;
+        const classes = [...container?.querySelectorAll<HTMLElement>('.catenary-class-tool') ?? []];
+        const more = container?.querySelector<HTMLElement>('.catenary-class-more');
+        if (!more || !this.headerDiv || !container.isConnected || !container.clientWidth) return;
+        this.fitWidth = container.clientWidth;
+        classes.forEach(b => b.classList.remove('catenary-overflow'));
+        more.classList.add('catenary-overflow');
+        // align-items: center: the items of one row have the same center.
+        const center = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2; };
+        const pitch = classes[0].offsetHeight + 2;
+        const limit = center(this.headerDiv) + (CLASS_ROWS - 0.5) * pitch;
+        if (center(classes[classes.length - 1]) < limit) return;
+        more.classList.remove('catenary-overflow');
+        let hidden = 0;
+        for (let i = classes.length - 1; i >= 0 && (hidden === 0 || center(more) >= limit); i--) {
+            classes[i].classList.add('catenary-overflow');
+            more.textContent = `+${++hidden}`;
+        }
+    }
+
+    /** Scheme▾: the arrow opens a menu with Scheme and Collection; the item then makes that kind. */
+    protected decorateScheme(button: HTMLElement): void {
+        const label = this.valueSetKind === 'scheme' ? 'Scheme' : 'Collection';
+        button.replaceChildren(createIcon(this.valueSetKind === 'scheme' ? 'symbol-enum' : 'symbol-array'), document.createTextNode(label));
+        const arrow = createIcon('chevron-down');
+        arrow.classList.add('catenary-palette-arrow');
+        arrow.title = 'Scheme or collection';
+        arrow.onclick = ev => { ev.stopPropagation(); this.showValueSetMenu(button); };
+        button.appendChild(arrow);
+    }
+
+    protected showValueSetMenu(button: HTMLElement): void {
+        const menu = document.createElement('div');
+        menu.classList.add('catenary-palette-menu');
+        const close = () => { menu.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape, true); };
+        const outside = (e: Event) => { if (!menu.contains(e.target as Node)) close(); };
+        const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        for (const [kind, text, icon] of [['scheme', 'Scheme', 'symbol-enum'], ['collection', 'Collection', 'symbol-array']] as const) {
+            const entry = document.createElement('div');
+            entry.classList.add('catenary-palette-menu-entry');
+            entry.append(createIcon(icon), document.createTextNode(text));
+            entry.onclick = () => {
+                close();
+                this.valueSetKind = kind;
+                this.decorateScheme(button);
+                button.click();
+            };
+            menu.appendChild(entry);
+        }
+        // Fixed position under the button: the palette is static (GLSP gives it top/left offsets that a positioned palette would apply).
+        const r = button.getBoundingClientRect();
+        menu.style.left = `${r.left}px`;
+        menu.style.top = `${r.bottom + 2}px`;
+        document.body.appendChild(menu);
+        document.addEventListener('pointerdown', outside, true);
+        document.addEventListener('keydown', escape, true);
+    }
+
+    protected override onClickCreateToolButton(button: HTMLElement, item: PaletteItem): (ev: MouseEvent) => void {
+        const arm = super.onClickCreateToolButton(button, item);
+        return ev => {
+            // Group with boxes selected on this canvas: a group around them at once (no click on the canvas).
+            if (item.id === 'group' && this.boxesSelected()) return void this.commands.executeCommand(ModelCommands.NEW_GROUP.id);
+            if (item.id === 'scheme' && this.valueSetKind === 'collection') {
+                const collection = this.paletteItems.flatMap(i => i.children ?? [i]).find(i => i.id === 'collection');
+                if (collection) return super.onClickCreateToolButton(button, collection)(ev);
+            }
+            const classIri = (item.actions[0] as { args?: { classIri?: unknown } } | undefined)?.args?.classIri;
+            if (typeof classIri === 'string') this.actions.useClass(classIri);
+            arm(ev);
+        };
+    }
+
+    /** True when the selection was made on this canvas and has a box (card, group, note, reference, collection, value set). */
+    protected boxesSelected(): boolean {
+        const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
+        const sel = this.elements.selection;
+        if (!view || sel.view !== view || !sel.ids.length) return false;
+        const s = this.elements.resolved;
+        return [s.instances, s.groups, s.notes, s.references, s.collections, s.shapes, s.valueSets].some(ids => ids.length > 0);
+    }
+}
+
+/** The GLSP focus tracker shows a "Currently focused: …" toast on each focus change. No listeners, no toast. */
+@injectable()
+export class SilentFocusTracker extends FocusTrackerTool {
+    override enable(): void { /* disabled */ }
+}
+
+const catenaryToolPaletteModule = new FeatureModule((_bind, _unbind, _isBound, rebind) => {
+    rebind(KeyboardToolPalette).to(CatenaryToolPalette).inSingletonScope();
+    rebind(FocusTrackerTool).to(SilentFocusTracker).inSingletonScope();
+}, { featureId: Symbol('catenaryToolPalette'), requires: accessibilityModule });
+
+@injectable()
+export class ViewDiagramConfiguration extends GLSPDiagramConfiguration {
+    diagramType = DIAGRAM_TYPE;
+
+    /** No zoom-out limit (GLSP: 0.1), so that a fit shows a large view. 0.001: a zoom of 0 has no scale. The zoom-in limit stays. */
+    protected override createDiagramOptionsModule(options: IDiagramOptions): FeatureModule {
+        return createDiagramOptionsModule(options, { zoomLimits: { min: 0.001, max: 20 } });
+    }
+
+    configureContainer(container: Container, ...containerConfiguration: ContainerConfiguration): Container {
+        // accessibilityModule brings a keyboard-aware tool palette that replaces the default one.
+        return initializeDiagramContainer(container, helperLineModule, gridModule, viewDiagramModule, ...containerConfiguration,
+            { add: [accessibilityModule, catenaryToolPaletteModule, selectionForwarderModule, copyPasteModule, marqueeModule], remove: [toolPaletteModule] });
+    }
+}

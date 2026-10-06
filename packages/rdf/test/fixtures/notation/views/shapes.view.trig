@@ -1,0 +1,51 @@
+# The SHACL view: the same model.shapes.ttl as the Model view, drawn with the SHACL notation.
+# It shows the cases that are hard to draw:
+#   sh:xone over property shapes   one hub placement: the hub and its two member lines (email, phone), each with a private pill
+#   range to a SKOS scheme         nationality → the Countries box (compact: the helper shape has no figure)
+#   sh:or of ranges                date → a "one of" box with the rows date and gYear
+#   sh:in                          kind → an "in" box with the rows Civil and Religious
+
+@prefix ex:   <https://example.org/draft/> .
+@prefix nt:   <osg://vocab/notation#> .
+@prefix view: <osg://vocab/view#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mkn:  <osg://vocab/notation/marks#> .
+@prefix shn:  <osg://vocab/notation/shapes#> .
+@prefix vsn:  <osg://vocab/notation/skos#> .
+
+<urn:view:shapes> {
+
+    <urn:view:shapes> a view:View ;
+        rdfs:label "SHACL" ;
+        nt:notations ( mkn:notation shn:notation vsn:notation ) .
+
+    # --- boxes ---
+
+    <urn:view:shapes/p/Person>      a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Person ;
+        view:x 0   ; view:y 0   ; view:width 300 ; view:height 130 .
+    <urn:view:shapes/p/Countries>   a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Countries ;
+        view:x 0   ; view:y 420 ; view:width 240 ; view:height 110 .
+    <urn:view:shapes/p/Marriage>    a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Marriage ;
+        view:x 400 ; view:y 240 ; view:width 300 ; view:height 130 .
+
+    # The "one of" box and the "in" box are placed by the hash of their list (rule 12).
+    <urn:view:shapes/p/Marriage-date-or> a view:Placement ; view:view <urn:view:shapes> ; view:element <urn:trellis:list:0f1d7b1cb919> ;   # the sh:or list of ex:Marriage-date
+        view:x 820 ; view:y 220 ; view:width 160 ; view:height 96 .
+    <urn:view:shapes/p/Marriage-kind-in> a view:Placement ; view:view <urn:view:shapes> ; view:element <urn:trellis:list:ed292fa4d715> ;   # the sh:in list of ex:Marriage-kind
+        view:x 820 ; view:y 380 ; view:width 160 ; view:height 96 .
+
+    # The xone hub: placed by the hash of its list (rule 12). The hub and its member lines (email, phone) are one unit:
+    # this placement shows both lines. The members have no placement of their own. Each ends at its own xsd:string pill.
+    <urn:view:shapes/p/Person-contact> a view:Placement ; view:view <urn:view:shapes> ; view:element <urn:trellis:list:8c7eb551ddb4> ;   # the sh:xone list of ex:Person
+        view:x 470 ; view:y 75 .
+
+    # --- property shapes as lines ---
+
+    <urn:view:shapes/p/Person-nationality>   a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Person-nationality .
+    <urn:view:shapes/p/Marriage-date>        a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Marriage-date .
+    <urn:view:shapes/p/Marriage-kind>        a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Marriage-kind .
+
+    # Not placed, so drawn as rows: Person name and birthDate (datatype ends are private: a row unless in a hub), Marriage husband and wife,
+    # the alternatives date and gYear, the values Civil and Religious, the concepts of Countries.
+}

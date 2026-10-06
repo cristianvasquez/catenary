@@ -1,0 +1,22 @@
+version: 1
+enabled: true
+group: rdf
+indexing:
+  include:
+    - "**/*.md"
+  exclude:
+    - .env
+    - .env.*
+    - node_modules/**
+    - __pycache__/**
+    - .venv/**
+    - venv/**
+    - env/**
+    - .tox/**
+    - .nox/**
+    - site-packages/**
+    - .*/**
+triplifier:
+  enabled: true
+qmd:
+  enabled: true

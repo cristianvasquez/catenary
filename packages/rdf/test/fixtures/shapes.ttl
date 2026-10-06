@@ -1,0 +1,343 @@
+# Example metamodel: a small DPROD / DCAT subset for the EP voting data product drafts.
+# Draft IRIs. Terms that DPROD and DCAT do not define use the dpm: draft namespace.
+# Note: the current DPROD source uses https://www.omg.org/spec/DPROD/dprod/ ; this file keeps
+# the https://ekgf.github.io/dprod/ namespace that the task specification uses.
+@prefix dcat: <http://www.w3.org/ns/dcat#>.
+@prefix dct: <http://purl.org/dc/terms/>.
+@prefix dpm: <osg://vocab/data-product-draft#>.
+@prefix dprod: <https://ekgf.github.io/dprod/>.
+@prefix prov: <http://www.w3.org/ns/prov#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix sh: <http://www.w3.org/ns/shacl#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+<osg://shapes/data-product-draft#Agent> a sh:NodeShape;
+  sh:description "A person, team or application.";
+  sh:name "Agent";
+  sh:order 5;
+  sh:property
+    <urn:skolem:2bdf0680-dc97-4881-9b1b-5b8e4301a63f>,
+    <urn:skolem:62dc6628-f300-4c83-8cde-1b4b7547529e>,
+    <urn:skolem:dbecb8a7-4247-4749-a778-6fc50690c5d1>;
+  sh:targetClass prov:Agent.
+
+<osg://shapes/data-product-draft#DataProduct> a sh:NodeShape;
+  sh:description "A managed, reusable data asset with an owner, a purpose and ports.";
+  sh:name "Data Product";
+  sh:order 1;
+  sh:property
+    <urn:skolem:2545b860-52fd-4bdd-993d-78a575face8e>,
+    <urn:skolem:2e6efb79-a51a-47cb-afae-8d1ec1937dff>,
+    <urn:skolem:6481b655-dda1-4201-8683-cc77b94404af>,
+    <urn:skolem:8281bfb4-2909-4548-ae69-d8c9ff5b9d22>,
+    <urn:skolem:afd82268-d242-45f3-9880-73628fce1510>,
+    <urn:skolem:bb3bd1a3-aa35-4589-a04a-72b952885075>,
+    <urn:skolem:bdafab0d-5899-4d3e-8a9a-e6c93765b6da>,
+    <urn:skolem:c4b39226-bf33-4801-85fc-29ee4a6dfc77>,
+    <urn:skolem:c6391ebb-1a17-47b4-9729-2c9d01015e5f>,
+    <urn:skolem:ef1121ab-aa60-44ef-9657-51ef04bfb394>,
+    <urn:skolem:f0c76c26-6f9f-446f-965b-6fec8408f6f5>;
+  sh:targetClass dprod:DataProduct.
+
+<osg://shapes/data-product-draft#DataService> a sh:NodeShape;
+  sh:name "Data Service";
+  sh:order 3;
+  sh:property
+    <urn:skolem:133df149-0c57-4711-a630-6a0671dcdde6>,
+    <urn:skolem:5092466f-3569-4cd8-88af-ea0c38a3eade>,
+    <urn:skolem:a54bcd7f-1f3d-4a6f-8904-83143ddbee98>,
+    <urn:skolem:b9f6b7fc-6475-4f3e-9d32-5d7e20cf54ea>;
+  sh:targetClass dcat:DataService.
+
+<osg://shapes/data-product-draft#Dataset> a sh:NodeShape;
+  sh:name "Dataset";
+  sh:order 2;
+  sh:property
+    <urn:skolem:1cd658ea-4425-4f1f-9451-3f065c87d960>,
+    <urn:skolem:8bc6b10e-8591-4545-b3f4-cd22e89f7c90>,
+    <urn:skolem:bf5e8cae-e0f5-4a04-8d5a-751d07415b57>,
+    <urn:skolem:fcd00cdf-834b-4b52-bb93-13aa923e3a55>;
+  sh:targetClass dcat:Dataset.
+
+<osg://shapes/data-product-draft#Domain> a sh:NodeShape;
+  sh:name "Domain";
+  sh:order 6;
+  sh:property
+    <urn:skolem:6a1a4478-26ad-498c-aa02-e58f6a501b05>,
+    <urn:skolem:d344808d-c0d7-4f8f-91db-6a947a145980>;
+  sh:targetClass dpm:Domain.
+
+<osg://shapes/data-product-draft#NamedGraph> a sh:NodeShape;
+  sh:name "Named Graph";
+  sh:order 4;
+  sh:property
+    <urn:skolem:2d5e5f84-44dd-42fc-a9ee-cf6df44e0bf0>,
+    <urn:skolem:bf9192d4-52b2-4245-8cd5-498b37d69520>,
+    <urn:skolem:c2622c06-0267-4332-ae4d-5bf66d2f25ac>,
+    <urn:skolem:e788de3b-1e30-4b9d-b5ac-0166239895ec>;
+  sh:targetClass dpm:NamedGraph.
+
+<osg://shapes/data-product-draft#Task> a sh:NodeShape;
+  sh:name "Task";
+  sh:order 7;
+  sh:property
+    <urn:skolem:8c1ef480-5f6e-4dee-a3a5-e7a9281710bc>,
+    <urn:skolem:b4e78dd8-a56b-4af6-994e-08e217165498>,
+    <urn:skolem:dd105f9e-e985-47f9-afb9-1b593059c3b8>;
+  sh:targetClass dpm:Task.
+
+<urn:skolem:133df149-0c57-4711-a630-6a0671dcdde6>
+  sh:class dpm:NamedGraph;
+  sh:name "is derived from";
+  sh:order 10;
+  sh:path prov:wasDerivedFrom.
+
+<urn:skolem:1404553c-d8a9-482a-b633-8e9668c0e9a0>
+  rdf:first "Deploy";
+  rdf:rest <urn:skolem:6c3fe349-a97e-45bc-9ab6-2db89ad96836>.
+
+<urn:skolem:1cd658ea-4425-4f1f-9451-3f065c87d960>
+  sh:class dprod:DataProduct;
+  sh:name "produced by";
+  sh:path <urn:skolem:9413b217-7e4f-4875-a323-f53a193d12cd>.
+
+<urn:skolem:2545b860-52fd-4bdd-993d-78a575face8e>
+  sh:description "DPROD lifecycle stage.";
+  sh:in <urn:skolem:d41c7344-1e32-4bf6-a409-0456e7b845d4>;
+  sh:maxCount 1;
+  sh:name "lifecycle status";
+  sh:order 3;
+  sh:path dprod:lifecycleStatus.
+
+<urn:skolem:2bdf0680-dc97-4881-9b1b-5b8e4301a63f>
+  sh:class dcat:DataService;
+  sh:name "uses";
+  sh:order 10;
+  sh:path dpm:uses.
+
+<urn:skolem:2d5e5f84-44dd-42fc-a9ee-cf6df44e0bf0>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:name "unit";
+  sh:order 2;
+  sh:path dpm:unit.
+
+<urn:skolem:2e6efb79-a51a-47cb-afae-8d1ec1937dff>
+  sh:class dcat:Dataset;
+  sh:name "input dataset";
+  sh:order 14;
+  sh:path dprod:inputDataset.
+
+<urn:skolem:342cb08e-8aeb-4365-9c42-28490e7b1df8>
+  rdf:first "Build";
+  rdf:rest <urn:skolem:1404553c-d8a9-482a-b633-8e9668c0e9a0>.
+
+<urn:skolem:5092466f-3569-4cd8-88af-ea0c38a3eade>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:62dc6628-f300-4c83-8cde-1b4b7547529e>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:6481b655-dda1-4201-8683-cc77b94404af>
+  sh:class prov:Agent;
+  sh:description "Accountable for the consumer-facing contract.";
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "data product owner";
+  sh:order 10;
+  sh:path dprod:dataProductOwner.
+
+<urn:skolem:6667f226-6b17-4ffb-88df-557fe9b8f7c5>
+  rdf:first "Design";
+  rdf:rest <urn:skolem:342cb08e-8aeb-4365-9c42-28490e7b1df8>.
+
+<urn:skolem:6a1a4478-26ad-498c-aa02-e58f6a501b05>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:6c3fe349-a97e-45bc-9ab6-2db89ad96836>
+  rdf:first "Consume";
+  rdf:rest rdf:nil.
+
+<urn:skolem:8281bfb4-2909-4548-ae69-d8c9ff5b9d22>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:8bc6b10e-8591-4545-b3f4-cd22e89f7c90>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:name "description";
+  sh:order 1;
+  sh:path dct:description.
+
+<urn:skolem:8c1ef480-5f6e-4dee-a3a5-e7a9281710bc>
+  sh:in <urn:skolem:e8dec723-cecc-4339-bb2e-c89c136a3671>;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "action";
+  sh:order 1;
+  sh:path dpm:action.
+
+<urn:skolem:9413b217-7e4f-4875-a323-f53a193d12cd>
+  sh:inversePath dprod:outputDataset.
+
+<urn:skolem:a54bcd7f-1f3d-4a6f-8904-83143ddbee98>
+  sh:maxCount 1;
+  sh:name "endpoint URL";
+  sh:nodeKind sh:IRI;
+  sh:order 2;
+  sh:path dcat:endpointURL.
+
+<urn:skolem:afd82268-d242-45f3-9880-73628fce1510>
+  sh:class dpm:NamedGraph;
+  sh:name "publishes";
+  sh:order 16;
+  sh:path dpm:publishes.
+
+<urn:skolem:b4e78dd8-a56b-4af6-994e-08e217165498>
+  sh:class dpm:NamedGraph;
+  sh:name "updates";
+  sh:order 10;
+  sh:path dpm:updates.
+
+<urn:skolem:b9f6b7fc-6475-4f3e-9d32-5d7e20cf54ea>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:name "description";
+  sh:order 1;
+  sh:path dct:description.
+
+<urn:skolem:bb3bd1a3-aa35-4589-a04a-72b952885075>
+  sh:datatype xsd:string;
+  sh:description "What the product provides.";
+  sh:maxCount 1;
+  sh:message "A data product needs a description.";
+  sh:minCount 1;
+  sh:name "description";
+  sh:order 1;
+  sh:path dct:description.
+
+<urn:skolem:bdafab0d-5899-4d3e-8a9a-e6c93765b6da>
+  sh:class dcat:DataService;
+  sh:description "Service that the product reads from.";
+  sh:name "input port";
+  sh:order 12;
+  sh:path dprod:inputPort.
+
+<urn:skolem:bf5e8cae-e0f5-4a04-8d5a-751d07415b57>
+  sh:class dcat:DataService;
+  sh:name "is exposed through";
+  sh:order 10;
+  sh:path dpm:exposedThrough.
+
+<urn:skolem:bf9192d4-52b2-4245-8cd5-498b37d69520>
+  sh:class dcat:DataService;
+  sh:name "is exposed through";
+  sh:order 10;
+  sh:path dpm:exposedThrough.
+
+<urn:skolem:c2622c06-0267-4332-ae4d-5bf66d2f25ac>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:c4b39226-bf33-4801-85fc-29ee4a6dfc77>
+  sh:class dcat:Dataset;
+  sh:name "output dataset";
+  sh:order 15;
+  sh:path dprod:outputDataset.
+
+<urn:skolem:c6391ebb-1a17-47b4-9729-2c9d01015e5f>
+  sh:class dpm:Domain;
+  sh:maxCount 1;
+  sh:name "domain";
+  sh:order 11;
+  sh:path dprod:domain.
+
+<urn:skolem:cfc1d34f-0530-4cc4-9a91-c3e10c15294f>
+  rdf:first "replace";
+  rdf:rest rdf:nil.
+
+<urn:skolem:d344808d-c0d7-4f8f-91db-6a947a145980>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:name "description";
+  sh:order 1;
+  sh:path dct:description.
+
+<urn:skolem:d41c7344-1e32-4bf6-a409-0456e7b845d4>
+  rdf:first "Ideation";
+  rdf:rest <urn:skolem:6667f226-6b17-4ffb-88df-557fe9b8f7c5>.
+
+<urn:skolem:dbecb8a7-4247-4749-a778-6fc50690c5d1>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:name "description";
+  sh:order 1;
+  sh:path dct:description.
+
+<urn:skolem:dd105f9e-e985-47f9-afb9-1b593059c3b8>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.
+
+<urn:skolem:e788de3b-1e30-4b9d-b5ac-0166239895ec>
+  sh:datatype xsd:string;
+  sh:description "Template of the graph IRI, for example {base}/graph/decisions/{year}.";
+  sh:maxCount 1;
+  sh:name "IRI pattern";
+  sh:order 1;
+  sh:path dpm:pattern.
+
+<urn:skolem:e8dec723-cecc-4339-bb2e-c89c136a3671>
+  rdf:first "append";
+  rdf:rest <urn:skolem:cfc1d34f-0530-4cc4-9a91-c3e10c15294f>.
+
+<urn:skolem:ef1121ab-aa60-44ef-9657-51ef04bfb394>
+  sh:datatype xsd:string;
+  sh:description "The question that the product answers for its consumers.";
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "purpose";
+  sh:order 2;
+  sh:path dprod:purpose.
+
+<urn:skolem:f0c76c26-6f9f-446f-965b-6fec8408f6f5>
+  sh:class dcat:DataService;
+  sh:description "Service through which consumers reach the product.";
+  sh:name "output port";
+  sh:order 13;
+  sh:path dprod:outputPort.
+
+<urn:skolem:fcd00cdf-834b-4b52-bb93-13aa923e3a55>
+  sh:datatype xsd:string;
+  sh:maxCount 1;
+  sh:minCount 1;
+  sh:name "label";
+  sh:order 0;
+  sh:path rdfs:label.

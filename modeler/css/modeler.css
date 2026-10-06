@@ -1,0 +1,593 @@
+/* Catenary. Colors come from the Theia theme. */
+
+:root {
+    --catenary-fg: var(--theia-editor-foreground);
+    --catenary-bg: var(--theia-editor-background);
+    --catenary-muted: var(--theia-descriptionForeground);
+    --catenary-border: var(--theia-panel-border, #8888);
+    --catenary-accent: var(--theia-focusBorder);
+    --catenary-danger: var(--theia-errorForeground);
+}
+
+/* ---------------------------------------------------------------- view editor */
+
+.sprotty-graph { background: var(--catenary-bg); }
+
+.catenary-card { --c: var(--catenary-border); --k: var(--catenary-muted); }
+.catenary-card > .body { fill: color-mix(in srgb, var(--c) 10%, var(--catenary-bg)); stroke: var(--c); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.catenary-card:not(.colored) > .body { stroke: color-mix(in srgb, var(--k) 55%, var(--catenary-border)); }
+.catenary-card.mouseover > .body { stroke-width: 2.5; }
+.catenary-card.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-card.invalid > .body { stroke: var(--catenary-danger); stroke-dasharray: 6 4; }
+.catenary-card.invalid.selected > .body { stroke: var(--catenary-accent); }
+.catenary-card.unknown > .body { stroke-dasharray: 3 4; }
+.catenary-card .card-fo { pointer-events: none; }
+/* --catenary-card-scale and --catenary-group-font-size: font preferences (font-preferences.ts). */
+.card-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 12px 14px; font-size: calc(16px * var(--catenary-card-scale, 1)); line-height: 1.4; color: var(--catenary-fg); user-select: none; }
+.card-class { font-size: calc(12px * var(--catenary-card-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--k); }
+.card-name { font-size: calc(22px * var(--catenary-card-scale, 1)); font-weight: 700; line-height: 1.2; margin: 4px 0 8px; overflow-wrap: anywhere; }
+.card-line { font-size: calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; margin-bottom: 4px; }
+.catenary-card .badge circle { fill: var(--catenary-danger); }
+.catenary-card .badge text { fill: #fff; font-size: 16px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+/* Halo (card-chrome.ts): icon buttons around the only selected element, as in Reactodia: half transparent until hovered. */
+/* Opaque background: a button stays legible over an edge label or another element. */
+.halo-action { cursor: pointer; }
+.halo-action > .halo-icon, .halo-action > .halo-count { opacity: 0.55; transition: opacity 0.1s; }
+.halo-action:hover > .halo-icon, .halo-action:hover > .halo-count { opacity: 1; }
+.halo-action > .hit { fill: var(--catenary-bg); }
+.halo-action:hover > .hit { fill: color-mix(in srgb, var(--catenary-fg) 12%, var(--catenary-bg)); }
+.halo-action > .halo-icon { pointer-events: none; overflow: visible; }
+.halo-action > .halo-icon > div { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--catenary-fg); }
+.halo-action > .halo-icon .codicon { font-size: inherit; }
+.halo-action[data-action="link"], .halo-action[data-action="linkIn"] { cursor: crosshair; }
+.halo-action > .halo-count { fill: var(--catenary-fg); stroke: var(--catenary-bg); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; vector-effect: non-scaling-stroke; text-anchor: middle; dominant-baseline: middle; font-weight: 600; pointer-events: none; }
+
+/* Collection (card-chrome.ts renderCollection): a list of member rows. Only the ➟ buttons take pointer events. */
+.catenary-collection { --c: var(--catenary-muted); }
+.catenary-collection > .body { fill: color-mix(in srgb, var(--c) 8%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.catenary-collection.mouseover > .body { stroke-width: 2.5; }
+.catenary-collection.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-collection .collection-fo { pointer-events: none; }
+/* Member list: instance collection and SKOS scheme or collection card (MEMBER_LIST in diagram-schema.ts: head 64, row 46, add 34; all × card scale). */
+/* One type scale for all cards (instance, node shape, scheme, collection): kind 12, name 22, text 16, detail 14 (px × --catenary-card-scale). */
+.member-list { box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; padding: calc(10px * var(--catenary-card-scale, 1)) calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-fg); user-select: none; }
+.member-head { height: calc(44px * var(--catenary-card-scale, 1)); font-size: calc(12px * var(--catenary-card-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); }
+.vs-name { height: calc(27px * var(--catenary-card-scale, 1)); line-height: 1.2; font-size: calc(22px * var(--catenary-card-scale, 1)); font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.vs-kind { height: calc(17px * var(--catenary-card-scale, 1)); line-height: 1.2; font-size: calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.member-row { --k: var(--catenary-muted); box-sizing: border-box; display: flex; align-items: center; gap: 4px; height: calc(40px * var(--catenary-card-scale, 1)); margin-bottom: calc(6px * var(--catenary-card-scale, 1)); padding: 0 6px 0 8px; border-left: 4px solid var(--k); border-radius: 4px; background: color-mix(in srgb, var(--catenary-fg) 6%, transparent); pointer-events: auto; }
+.member-row .text { flex: 1; min-width: 0; line-height: 1.2; }
+.member-label { font-size: calc(16px * var(--catenary-card-scale, 1)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-sub { font-size: calc(13px * var(--catenary-card-scale, 1)); color: var(--catenary-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-remove { cursor: pointer; padding: 4px; border-radius: 3px; opacity: 0; }
+.member-row:hover .member-remove { opacity: 0.6; }
+.member-row .member-remove:hover { opacity: 1; background: color-mix(in srgb, var(--catenary-fg) 15%, transparent); }
+.member-take-out { display: flex; cursor: pointer; opacity: 0; }
+.member-row:hover .member-take-out { opacity: 1; }
+.member-row:hover .member-take-out.disabled { opacity: 0.35; cursor: default; }
+.member-take-out.disabled .arrow-button { --catenary-accent: var(--catenary-muted); }
+.member-take-out.disabled:hover .arrow-button > circle { fill: var(--catenary-bg); }
+.member-take-out.disabled:hover .arrow-button > path { stroke: var(--catenary-muted); }
+.member-add { display: inline-block; height: calc(28px * var(--catenary-card-scale, 1)); line-height: calc(26px * var(--catenary-card-scale, 1)); margin-top: 2px; padding: 0 10px; border-radius: calc(14px * var(--catenary-card-scale, 1)); border: 1px dashed var(--catenary-muted); color: var(--catenary-muted); font-size: calc(14px * var(--catenary-card-scale, 1)); pointer-events: auto; cursor: pointer; box-sizing: border-box; }
+.member-add:hover { color: var(--catenary-fg); border-color: var(--catenary-fg); }
+.catenary-halo > .multi-frame { fill: none; stroke: var(--catenary-accent); pointer-events: none; }
+.catenary-bundle > .line, .catenary-bundle > .hit { cursor: default; }
+
+/* Name labels: y = 0 at the label top (card: 34 px below the card top; group: 34 px above it). The card name is centered
+   between the class line and the content lines; the group name keeps its bottom 8 px above the group. */
+.catenary-name.group-label text { font-size: var(--catenary-group-font-size, 20px); font-weight: 600; dominant-baseline: middle; text-anchor: start; fill: var(--c, var(--catenary-muted)); transform: translateY(calc(26px - var(--catenary-group-font-size, 20px) / 2)); }
+
+.catenary-group { --c: var(--catenary-muted); }
+.catenary-group > .body { fill: color-mix(in srgb, var(--c) 7%, transparent); stroke: color-mix(in srgb, var(--c) 60%, transparent); stroke-width: 2; }
+.catenary-group.mouseover > .body { stroke-width: 3; }
+.catenary-group.selected > .body { stroke: var(--catenary-accent); stroke-width: 4; }
+
+.catenary-note { --c: #e0ac00; }
+.catenary-note > .body { fill: color-mix(in srgb, var(--c) 16%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.catenary-note.mouseover > .body { stroke-width: 2.5; }
+.catenary-note.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-note .note-fo { pointer-events: none; }
+.note-body { box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; padding: 14px 16px; color: var(--catenary-fg); font-size: var(--catenary-note-font-size, 16px); line-height: 1.4; overflow-wrap: anywhere; user-select: none; }
+
+/* View notes: the same Markdown presentation in the dialog and the diagram. */
+.catenary-markdown { line-height: 1.5; overflow-wrap: anywhere; }
+.catenary-markdown > :first-child { margin-top: 0; }
+.catenary-markdown > :last-child { margin-bottom: 0; }
+.catenary-markdown p, .catenary-markdown ul, .catenary-markdown ol, .catenary-markdown pre { margin: 0.6em 0; }
+.catenary-markdown h1 { font-size: 1.5em; }
+.catenary-markdown h2 { font-size: 1.3em; }
+.catenary-markdown h3, .catenary-markdown h4, .catenary-markdown h5, .catenary-markdown h6 { font-size: 1.1em; }
+.catenary-markdown ul, .catenary-markdown ol { padding-left: 1.8em; }
+.catenary-markdown pre { white-space: pre-wrap; padding: 0.6em; background: var(--theia-textCodeBlock-background); }
+.catenary-markdown code { font-family: var(--theia-code-font-family); }
+.catenary-markdown blockquote { margin: 0.6em 0; padding-left: 0.8em; border-left: 3px solid var(--theia-textBlockQuote-border); }
+.catenary-markdown a { color: var(--theia-textLink-foreground); }
+.catenary-markdown table { border-collapse: collapse; }
+.catenary-markdown th, .catenary-markdown td { border: 1px solid var(--theia-panel-border); padding: 0.25em 0.5em; }
+
+/* The editor uses the note's surface color, not Theia's modal dialog chrome. */
+.catenary-note-popover {
+    --c: #e0ac00;
+    --catenary-note-surface: color-mix(in srgb, var(--c) 16%, var(--catenary-bg));
+    --vscode-editor-background: var(--catenary-note-surface);
+    position: fixed; z-index: 10000; box-sizing: border-box;
+    padding: 4px; background: var(--catenary-note-surface); color: var(--catenary-fg);
+    border: 1.5px solid color-mix(in srgb, var(--c) 65%, var(--catenary-border));
+    border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.24);
+}
+.catenary-note-popover .catenary-note-source { width: 100%; height: 260px; }
+.catenary-note-popover .monaco-editor, .catenary-note-popover .monaco-editor-background, .catenary-note-popover .margin { background: var(--catenary-note-surface) !important; }
+.catenary-note-popover .catenary-note-error { color: var(--catenary-danger); }
+.catenary-note-popover .catenary-note-error:empty { display: none; }
+.catenary-view-reference { --c: var(--catenary-accent); cursor: pointer; }
+.catenary-view-reference > .body { fill: color-mix(in srgb, var(--c) 8%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.catenary-view-reference.mouseover > .body { stroke-width: 2.5; }
+.catenary-view-reference.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-view-reference .view-reference-fo { pointer-events: none; }
+.view-reference-body { box-sizing: border-box; width: 100%; height: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--theia-textLink-foreground, var(--catenary-accent)); font-size: calc(22px * var(--catenary-card-scale, 1)); font-weight: 600; user-select: none; }
+.catenary-view-reference.colored .view-reference-body { color: var(--c); }
+.view-reference-body .codicon { flex: none; font-size: calc(26px * var(--catenary-card-scale, 1)); }
+.view-reference-body .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.catenary-edge { --c: var(--catenary-muted); }
+.catenary-edge > .line { fill: none; stroke: var(--c); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; cursor: grab; }
+.catenary-edge > .hit { fill: none; stroke: transparent; stroke-width: 16; vector-effect: non-scaling-stroke; cursor: grab; }
+.catenary-edge > .arrow { fill: var(--c); }
+.catenary-edge.mouseover > .line { stroke-width: 2.5; }
+.catenary-edge.selected > .line { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-edge.selected > .arrow { fill: var(--catenary-accent); }
+.catenary-edge.hidden-edge { opacity: 0.4; }
+.catenary-edge.hidden-edge > .line { stroke-dasharray: 6 5; }
+.catenary-edge.arrow-edge > .line { stroke-dasharray: 6 4; cursor: pointer; }
+.catenary-edge.arrow-edge > .hit { cursor: pointer; }
+/* The dashed edge of a row: no hit area; only its button takes the pointer. */
+.catenary-edge.latent-edge > .line { stroke-dasharray: 6 4; opacity: 0.7; }
+.catenary-edge.latent-edge > .hit { pointer-events: none; }
+.catenary-edge.latent-edge > .edge-label { opacity: 0.7; }
+.catenary-edge > .edge-label { text-anchor: middle; dominant-baseline: middle; fill: var(--catenary-fg); stroke: var(--catenary-bg); stroke-linejoin: round; paint-order: stroke; pointer-events: none; }
+
+/* Resize handles (card-chrome.ts resizeHandle): circles at the corners, bars at the side middles, as in Reactodia. */
+.catenary-resize-handle > .hit { fill: transparent; }
+.catenary-resize-handle > .mark { fill: var(--catenary-bg); stroke: var(--catenary-accent); }
+.catenary-resize-handle:hover > .mark, .catenary-resize-handle.mouseover > .mark { fill: var(--catenary-accent); }
+.catenary-resize-handle.resize-not-allowed > .mark { stroke: var(--catenary-danger); }
+.catenary-resize-handle[data-kind="top-left"], .catenary-resize-handle[data-kind="bottom-right"] { cursor: nwse-resize; }
+.catenary-resize-handle[data-kind="top-right"], .catenary-resize-handle[data-kind="bottom-left"] { cursor: nesw-resize; }
+.catenary-resize-handle[data-kind="top"], .catenary-resize-handle[data-kind="bottom"] { cursor: ns-resize; }
+.catenary-resize-handle[data-kind="left"], .catenary-resize-handle[data-kind="right"] { cursor: ew-resize; }
+.catenary-edge > .edge-end { fill: var(--catenary-bg); stroke: var(--catenary-accent); cursor: grab; }
+.catenary-edge > .edge-end:hover { fill: var(--catenary-accent); }
+
+body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; }
+
+/* Picker next to the element (popup-picker.ts). */
+.catenary-popup-picker { position: fixed; z-index: 1000; width: 340px; max-height: 420px; display: flex; flex-direction: column; background: var(--theia-quickInput-background, var(--catenary-bg)); color: var(--theia-quickInput-foreground, var(--catenary-fg)); border: 1px solid var(--theia-widget-border, var(--catenary-border)); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); font-size: 13px; }
+.catenary-popup-picker > .title { padding: 6px 8px 4px; font-size: 11px; color: var(--catenary-muted); }
+.catenary-popup-picker > input { margin: 0 8px 6px; }
+.catenary-popup-picker > .list { overflow-y: auto; padding-bottom: 4px; }
+.catenary-popup-picker .separator { padding: 6px 8px 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); border-top: 1px solid var(--catenary-border); }
+.catenary-popup-picker .item { display: flex; gap: 8px; padding: 3px 8px 3px 14px; cursor: pointer; }
+.catenary-popup-picker .item.active { background: var(--theia-quickInputList-focusBackground, var(--theia-list-activeSelectionBackground)); color: var(--theia-quickInputList-focusForeground, var(--theia-list-activeSelectionForeground)); }
+.catenary-popup-picker .item .description { margin-left: auto; color: var(--catenary-muted); font-size: 11px; white-space: nowrap; }
+
+/* Color commands (commands.ts COLORS): a box with the color as menu icon. Rules .catenary-swatch-N (--catenary-swatch) come from PRESETS at start (commands.ts onStart). Default: an empty box. */
+.catenary-swatch::before { content: ''; display: inline-block; box-sizing: border-box; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--catenary-muted); vertical-align: middle; background: var(--catenary-swatch, transparent); }
+/* "none": transparent; the swatch shows a diagonal line. */
+.catenary-swatch-none::before { background: linear-gradient(to top right, transparent 44%, var(--catenary-muted) 44% 56%, transparent 56%); }
+
+.catenary-connect-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+.catenary-connect-overlay .connect-line { stroke: var(--catenary-accent); stroke-width: 2; stroke-dasharray: 6 4; }
+
+/* ---------------------------------------------------------------- tool palette: bar at the top of the view, above the canvas */
+
+[id^="catenary-view:"] > .sprotty { flex-direction: column; }
+[id^="catenary-view:"] > .sprotty > div:has(> .sprotty-graph) { flex: 1; min-height: 0; }
+[id^="catenary-view:"] .minimize-palette-button { display: none; }
+/* No projection bars (GLSP scroll bars): their borders draw lines over the canvas and the palette. */
+[id^="catenary-view:"] .sprotty-projection-bar { display: none; }
+[id^="catenary-view:"] .tool-palette {
+    order: -1; position: static; width: auto; max-height: none; z-index: auto; box-shadow: none; border-radius: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 3px 8px;
+    font-size: 12px; color: var(--catenary-fg); background: var(--theia-editorWidget-background, var(--catenary-bg)); border-bottom: 1px solid var(--catenary-border);
+}
+[id^="catenary-view:"] .tool-palette .palette-header { flex-direction: row; padding: 0; background: none; border: 0; gap: 6px; }
+[id^="catenary-view:"] .tool-palette .header-tools i { padding: 2px; border-radius: 3px; }
+[id^="catenary-view:"] .tool-palette .header-tools i:hover { background: var(--theia-toolbar-hoverBackground); }
+[id^="catenary-view:"] .tool-palette .header-tools .clicked { background: var(--theia-inputOption-activeBackground); border-color: var(--catenary-accent); }
+[id^="catenary-view:"] .tool-palette .search-input { width: 110px; font-size: 12px; }
+[id^="catenary-view:"] .tool-palette .palette-body { display: contents; }
+[id^="catenary-view:"] .tool-palette .tool-group { display: contents; }
+[id^="catenary-view:"] .tool-palette .group-header { background: none; border-left: 1px solid var(--catenary-border); padding-left: 8px; margin-left: 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); }
+[id^="catenary-view:"] .tool-palette .group-header i { display: none; }
+[id^="catenary-view:"] .tool-palette .tool-button { padding: 2px 6px; border-radius: 3px; background: none; color: var(--catenary-fg); cursor: pointer; white-space: nowrap; }
+[id^="catenary-view:"] .tool-palette .tool-button i { margin-right: 3px; }
+[id^="catenary-view:"] .tool-palette .tool-button:hover { background: var(--theia-toolbar-hoverBackground); }
+[id^="catenary-view:"] .tool-palette .tool-button.clicked { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); }
+[id^="catenary-view:"] .tool-palette .tool-button.collapsed { display: none; }
+/* Back/Forward first; no delete tool, no search (CatenaryToolPalette). */
+[id^="catenary-view:"] .tool-palette .header-icon { display: none; }
+[id^="catenary-view:"] .tool-palette .header-tools .catenary-disabled { opacity: 0.4; cursor: default; }
+[id^="catenary-view:"] .tool-palette .header-tools .catenary-disabled:hover { background: none; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-break { display: none; }
+[id^="catenary-view:"] .tool-palette .catenary-hidden,
+[id^="catenary-view:"] .tool-palette .catenary-overflow { display: none; }
+[id^="catenary-view:"] .tool-palette .catenary-class-pick { color: var(--catenary-muted); border: 1px solid var(--catenary-border); }
+[id^="catenary-view:"] .tool-palette .catenary-class-more { color: var(--catenary-muted); }
+[id^="catenary-view:"] .tool-palette .catenary-palette-arrow { margin: 0 0 0 2px; padding: 0 1px; border-radius: 2px; font-size: 11px; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-arrow:hover { background: var(--theia-toolbar-hoverBackground); }
+.catenary-palette-menu {
+    position: fixed; z-index: 1000; min-width: 120px; padding: 3px 0; border-radius: 3px;
+    background: var(--theia-menu-background); color: var(--theia-menu-foreground); border: 1px solid var(--theia-menu-border, var(--catenary-border)); box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.catenary-palette-menu-entry { padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+.catenary-palette-menu-entry i { margin-right: 4px; }
+.catenary-palette-menu-entry:hover { background: var(--theia-menu-selectionBackground); color: var(--theia-menu-selectionForeground); }
+
+/* ---------------------------------------------------------------- explorer */
+
+/* In a section of the Model container the tree has no height of its own (Theia sets it per view, e.g. .theia-Files). */
+.catenary-explorer { height: 100%; }
+.catenary-explorer .catenary-tree-icon { margin-right: 4px; }
+.catenary-tree-caption { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.catenary-tree-caption.folder { font-weight: 600; }
+/* Views explorer: the folder under a dragged view or folder; the whole tree for the top level. */
+.catenary-explorer .theia-TreeNode.catenary-drop-target { outline: 1px solid var(--theia-list-dropBackground, var(--catenary-accent)); outline-offset: -1px; background: var(--theia-list-dropBackground); }
+.catenary-explorer.catenary-drop-root { outline: 1px solid var(--catenary-accent); outline-offset: -1px; }
+/* The name keeps its width; a long description is cut first. */
+.catenary-tree-name { flex: none; white-space: nowrap; }
+.catenary-explorer .catenary-tree-description { flex: 0 1 auto; min-width: 0; }
+.catenary-tree-caption.muted { color: var(--catenary-muted); font-style: italic; }
+/* Shown in the current view editor. */
+.catenary-explorer .theia-TreeNodeContent:has(.catenary-tree-caption.in-view) { opacity: 0.55; }
+.catenary-tree-badge { white-space: nowrap; margin-left: auto; font-size: 10px; font-weight: normal; font-style: normal; color: var(--catenary-muted); border: 1px solid var(--catenary-border); border-radius: 8px; padding: 0 5px; min-width: 12px; text-align: center; }
+.catenary-tree-problems { font-size: 10px; font-weight: 700; color: #fff; background: var(--catenary-danger); border-radius: 8px; padding: 0 5px; }
+.catenary-empty { padding: 12px; }
+.catenary-row-actions { display: none; flex: none; gap: 2px; margin-left: 4px; }
+.catenary-explorer .theia-TreeNode:hover .catenary-row-actions, .catenary-explorer .theia-TreeNode.theia-mod-selected .catenary-row-actions { display: flex; }
+.catenary-row-actions .action-label { cursor: pointer; padding: 1px; border-radius: 3px; }
+.catenary-row-actions .action-label:hover { background: var(--theia-toolbar-hoverBackground); }
+.catenary-start { display: flex; flex-direction: column; gap: 6px; }
+.catenary-start .theia-button { margin-left: 0; }
+.catenary-start-heading { margin-top: 8px; font-weight: 600; }
+.catenary-recent { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; padding: 2px 0; }
+.catenary-recent:hover .catenary-tree-name { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- links */
+
+.catenary-links .catenary-tree-icon { margin-right: 4px; }
+.catenary-tree-description { color: var(--catenary-muted); font-size: 0.9em; margin-left: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catenary-tree-warning { color: var(--theia-editorWarning-foreground, var(--catenary-danger)); font-size: 12px; }
+
+/* ---------------------------------------------------------------- properties */
+
+.catenary-props { padding: 6px 12px 16px; overflow: auto; height: 100%; box-sizing: border-box; }
+/* The Theia property view attaches its content widget without a layout: without a height, the widget grows with its content and .catenary-props does not scroll. */
+.theia-property-view-widget > .catenary-properties { height: 100%; }
+.catenary-head { margin-bottom: 8px; }
+.catenary-head .kind { font-size: 11px; text-transform: uppercase; color: var(--catenary-muted); letter-spacing: 0.05em; }
+.catenary-head .title { font-size: 16px; font-weight: 700; word-break: break-word; }
+.catenary-section { border-top: 1px solid var(--catenary-border); padding: 8px 0; }
+.catenary-section h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; color: var(--catenary-muted); letter-spacing: 0.04em; }
+.catenary-row { margin-bottom: 8px; }
+.catenary-row > label:first-child { display: flex; align-items: center; gap: 4px; color: var(--catenary-muted); margin-bottom: 3px; }
+.catenary-row > label.catenary-check { color: inherit; }
+/* The RDF term of a field (Row `term`), at the right of its label. */
+.catenary-term { margin-left: auto; padding-left: 8px; font-family: var(--theia-code-font-family, monospace); font-size: 11px; color: var(--catenary-muted); opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catenary-row input.theia-input, .catenary-row textarea.theia-input, .catenary-row select.theia-select { width: 100%; box-sizing: border-box; }
+.catenary-row textarea.theia-input { resize: vertical; font-family: inherit; }
+.catenary-props .req { color: var(--catenary-danger); }
+.catenary-help { color: var(--catenary-muted); font-size: 12px; margin-top: 2px; }
+.catenary-help-icon { margin-left: 4px; font-size: 12px; vertical-align: middle; cursor: help; opacity: 0.7; }
+.catenary-help-icon:hover { opacity: 1; }
+.catenary-problem { color: var(--catenary-danger); font-size: 12px; margin-top: 2px; }
+.catenary-none { color: var(--catenary-muted); font-style: italic; }
+.catenary-value { display: flex; align-items: center; gap: 4px; min-height: 22px; }
+.catenary-iri { font-size: 11px; word-break: break-all; white-space: pre-wrap; color: var(--catenary-muted); }
+.catenary-slider { display: flex; align-items: center; gap: 8px; }
+.catenary-slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--theia-button-background); }
+.catenary-row .catenary-slider input.theia-input { width: 4em; flex: none; text-align: right; }
+.catenary-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.catenary-inline { display: flex; gap: 6px; align-items: center; }
+.catenary-inline > :first-child { flex: 1; min-width: 0; }
+.catenary-check { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+/* Appearance panel (appearance-widget.tsx). An inline row: the label at the left, the control and its help text at the right. */
+.catenary-row.inline { display: grid; grid-template-columns: 56px minmax(0, 1fr); column-gap: 8px; align-items: center; min-height: 26px; margin-bottom: 6px; }
+.catenary-row.inline > label:first-child { grid-column: 1; align-self: start; padding-top: 4px; font-weight: normal; color: var(--catenary-muted); margin: 0; }
+.catenary-row.inline > :not(:first-child) { grid-column: 2; min-width: 0; }
+/* Labels above the control (Color) look like the inline labels. */
+#catenary-appearance .catenary-inline { flex-wrap: wrap; }
+#catenary-appearance .catenary-inline .theia-button { margin: 0; min-width: 0; padding: 3px 10px; }
+.catenary-section h4 { display: flex; align-items: center; gap: 4px; }
+.catenary-scope { margin-left: auto; padding: 0 7px; border-radius: 9px; background: var(--theia-badge-background, var(--catenary-border)); color: var(--theia-badge-foreground, inherit); font-size: 10px; font-weight: normal; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+.catenary-fold { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-align: left; }
+.catenary-row .catenary-fold { width: auto; text-transform: none; }
+.catenary-subhead { margin: 0 0 4px; }
+.catenary-hint { margin: 4px 0 8px; }
+.catenary-colors { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding: 3px 0; }
+.catenary-color { position: relative; width: 19px; height: 19px; box-sizing: border-box; padding: 0; border: 1px solid rgba(128, 128, 128, 0.5); border-radius: 4px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--catenary-muted); }
+.catenary-color.default { border-style: dashed; }
+.catenary-color.none { background-image: conic-gradient(rgba(128, 128, 128, 0.6) 25%, transparent 0 50%, rgba(128, 128, 128, 0.6) 0 75%, transparent 0); background-size: 8px 8px; }
+.catenary-color.on { box-shadow: 0 0 0 2px var(--theia-sideBar-background, var(--theia-editor-background)), 0 0 0 4px var(--theia-focusBorder); }
+.catenary-color:focus-visible, .catenary-choice button:focus-visible, .catenary-side-grid button:focus-visible { outline: 1px solid var(--theia-focusBorder); outline-offset: 1px; }
+.catenary-color.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.catenary-choice { display: inline-flex; border: 1px solid var(--theia-dropdown-border, var(--catenary-border)); border-radius: 3px; overflow: hidden; flex: none; }
+.catenary-choice button { display: flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; padding: 0 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.catenary-choice button + button { border-left: 1px solid var(--theia-dropdown-border, var(--catenary-border)); }
+.catenary-choice button:hover { background: var(--theia-toolbar-hoverBackground); }
+.catenary-choice button.on { background: var(--theia-list-activeSelectionBackground, var(--theia-button-background)); color: var(--theia-list-activeSelectionForeground, var(--theia-button-foreground)); }
+.catenary-inline > .catenary-choice:first-child { flex: none; }
+.catenary-size { display: flex; align-items: center; gap: 6px; }
+.catenary-row .catenary-size input.theia-input { flex: 1; min-width: 0; width: auto; }
+.catenary-side-pair { display: flex; gap: 20px; }
+.catenary-side-grid { display: grid; grid-template-columns: repeat(3, 22px); grid-template-rows: repeat(3, 22px); gap: 2px; grid-template-areas: ". t ." "l c r" ". b ."; }
+.catenary-side-grid button { padding: 0; border: 1px solid var(--theia-dropdown-border, var(--catenary-border)); border-radius: 3px; background: transparent; color: var(--catenary-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.catenary-side-grid button:hover { background: var(--theia-toolbar-hoverBackground); }
+.catenary-side-grid button.on { background: var(--theia-list-activeSelectionBackground, var(--theia-button-background)); color: var(--theia-list-activeSelectionForeground, var(--theia-button-foreground)); border-color: var(--theia-focusBorder); }
+.catenary-kbd { font-family: var(--theia-code-font-family, monospace); font-size: 11px; padding: 0 4px; border: 1px solid var(--catenary-border); border-radius: 3px; color: var(--catenary-muted); }
+.catenary-hidden-edge { justify-content: space-between; }
+/* Properties panel (properties-widget.tsx): action toolbar and its menu. */
+.catenary-head .kind .catenary-link { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.catenary-toolbar { display: flex; align-items: center; gap: 2px; margin: -2px -4px 8px; }
+.catenary-tool { display: flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: none; color: inherit; cursor: pointer; }
+.catenary-tool:hover:not(:disabled) { background: var(--theia-toolbar-hoverBackground); }
+.catenary-tool:disabled { opacity: 0.4; cursor: default; }
+.catenary-tool.on { background: var(--theia-toolbar-activeBackground, var(--theia-toolbar-hoverBackground)); }
+.catenary-tool:focus-visible, .catenary-menu button:focus-visible { outline: 1px solid var(--theia-focusBorder); outline-offset: -1px; }
+.catenary-toolbar-separator { width: 1px; height: 16px; margin: 0 4px; background: var(--catenary-border); }
+.catenary-toolbar-more { position: relative; margin-left: auto; }
+.catenary-menu { position: absolute; right: 0; top: 28px; z-index: 10; min-width: 220px; padding: 4px 0; border: 1px solid var(--theia-menu-border, var(--catenary-border)); border-radius: 4px; background: var(--theia-menu-background); color: var(--theia-menu-foreground); box-shadow: 0 4px 16px var(--theia-widget-shadow, rgba(0, 0, 0, 0.4)); }
+.catenary-menu button { display: flex; justify-content: space-between; gap: 16px; width: 100%; padding: 4px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.catenary-menu button:hover:not(:disabled) { background: var(--theia-menu-selectionBackground); color: var(--theia-menu-selectionForeground); }
+.catenary-menu button:disabled { opacity: 0.5; cursor: default; }
+.catenary-menu button > span { white-space: nowrap; }
+.catenary-menu .key { color: var(--catenary-muted); font-size: 12px; }
+.catenary-menu-separator { height: 1px; margin: 4px 0; background: var(--theia-menu-separatorBackground, var(--catenary-border)); }
+/* Violations near the top of the panel. */
+.catenary-warning { display: grid; gap: 2px; margin: 0 0 8px; padding: 6px 8px; border: 1px solid var(--theia-inputValidation-warningBorder, var(--catenary-border)); border-radius: 4px; background: var(--theia-inputValidation-warningBackground, transparent); font-size: 12px; }
+.catenary-warning .codicon { font-size: 13px; vertical-align: text-bottom; color: var(--theia-editorWarning-foreground); }
+/* Terms as boxes: classes, targets. */
+.catenary-pills { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
+.catenary-pill { display: inline-flex; align-items: baseline; gap: 4px; max-width: 100%; padding: 1px 7px; border: 1px solid var(--catenary-border); border-radius: 3px; font-family: var(--theia-code-font-family, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-pill .k { color: var(--catenary-muted); font-family: var(--theia-ui-font-family); font-size: 11px; }
+/* A property of a shape: path, cardinality at the right, target below. */
+.catenary-prop-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 6px; align-items: center; margin: 0 -4px; padding: 3px 4px; border-radius: 3px; }
+.catenary-prop-row:hover { background: var(--theia-list-hoverBackground); }
+.catenary-prop-row > .catenary-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-prop-row > .catenary-help { grid-column: 1 / -1; margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-cardinality { padding: 0 6px; border-radius: 9px; background: var(--theia-badge-background, var(--catenary-border)); color: var(--theia-badge-foreground, inherit); font-family: var(--theia-code-font-family, monospace); font-size: 11px; }
+.catenary-cardinality.required { background: var(--theia-inputValidation-warningBackground, transparent); color: var(--theia-editorWarning-foreground); border: 1px solid var(--theia-inputValidation-warningBorder, transparent); }
+.catenary-row .catenary-cardinality-edit input.theia-input { width: 4.5em; flex: none; }
+.catenary-verbal-list { margin: 0; padding-left: 16px; }
+.catenary-reads { margin: 0 0 8px; }
+.catenary-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.catenary-buttons .theia-button { margin: 0; }
+.catenary-danger { color: var(--catenary-danger) !important; }
+.catenary-icon-button { cursor: pointer; opacity: 0.7; }
+.catenary-icon-button:hover { opacity: 1; }
+.catenary-link { color: var(--theia-textLink-foreground); text-decoration: none; }
+.catenary-link:hover { text-decoration: underline; }
+.catenary-link > .codicon { margin-right: 4px; vertical-align: text-bottom; font-size: 14px; }
+.catenary-links-row { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+
+/* ---------------------------------------------------------------- SHACL form (properties panel)
+   The form renders in a shadow root. Only CSS variables and ::part() reach it. */
+
+.catenary-shacl-form shacl-form {
+    --shacl-label-width: 100%;
+    --shacl-bg: transparent;
+    --shacl-row-alt-bg: transparent;
+    --shacl-text-color: var(--theia-foreground);
+    --shacl-muted-color: var(--theia-descriptionForeground);
+    --shacl-border-color: var(--theia-input-border, var(--catenary-border));
+    --shacl-error-color: var(--theia-errorForeground);
+    --shacl-font-family: var(--theia-ui-font-family);
+    --shacl-font-size: var(--theia-ui-font-size1);
+    --rokit-primary-color: var(--theia-focusBorder);
+    --rokit-background-color: var(--theia-input-background);
+    --rokit-error-color: var(--theia-errorForeground);
+}
+/* The panel is narrow: label above the field, not beside it. */
+.catenary-shacl-form shacl-form::part(property-instance),
+.catenary-shacl-form shacl-form::part(constraint-editor) { flex-wrap: wrap; }
+.catenary-shacl-form shacl-form::part(label) { padding: 6px 0 2px; color: var(--theia-descriptionForeground); }
+.catenary-shacl-form shacl-form::part(editor) { flex: 1; min-width: 0; }
+/* The add and link buttons take the width of their label (a full IRI). The form aligns them right, so a wide one went past the left edge of the
+   panel. Align them left, let them wrap, and limit each one to the panel width. */
+.catenary-shacl-form shacl-form::part(add-controls) { justify-content: flex-start; flex-wrap: wrap; gap: 4px 12px; padding-right: 0; min-width: 0; }
+.catenary-shacl-form shacl-form::part(add-button),
+.catenary-shacl-form shacl-form::part(link-button) { max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
+
+/* "+" after the tabs of the main area: the tabs take their width only, the button follows, the toolbar stays at the right. */
+#theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container { flex: 0 1 auto; min-width: 0; }
+.catenary-new-view { flex: none; align-self: center; margin-right: auto; padding: 4px; border-radius: 4px; cursor: pointer; color: var(--theia-tab-inactiveForeground); }
+.catenary-new-view:hover { color: var(--theia-tab-activeForeground); background: var(--theia-toolbar-hoverBackground); }
+.catenary-tab-rename { position: fixed; z-index: 1000; box-sizing: border-box; padding: 0 4px; font: inherit; font-size: var(--theia-ui-font-size1); }
+
+/* Search panel (search-widget.tsx). */
+.catenary-search-body { display: flex; flex-direction: column; gap: 6px; height: 100%; box-sizing: border-box; padding: 8px; }
+.catenary-search-body > .theia-input, .catenary-search-body > .theia-select { width: 100%; box-sizing: border-box; }
+.catenary-search-body .linked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 6px; border: 1px solid var(--catenary-border); border-radius: 4px; }
+.catenary-search-body .linked .label { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-search-body .linked .theia-select { flex: 1; min-width: 0; }
+.catenary-search-body .linked .codicon { cursor: pointer; }
+.catenary-search-body .summary { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--catenary-muted); font-size: 12px; }
+.catenary-search-body .summary .theia-button { margin: 0; min-width: 0; }
+.catenary-search-body .results { flex: 1; overflow-y: auto; min-height: 0; }
+.catenary-search-body .row { display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 3px; cursor: grab; user-select: none; }
+.catenary-search-body .row:hover { background: var(--theia-list-hoverBackground); }
+.catenary-search-body .row.selected { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); }
+.catenary-search-body .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-search-body .row .class { color: var(--catenary-muted); font-size: 11px; white-space: nowrap; }
+.catenary-search-body .row.selected .class { color: inherit; }
+
+/* ---- Shapes views: node shape cards, attribute rows, property edges, pills, logical constraints ---- */
+.catenary-card.shape-card { --c: #3b82f6; }
+.catenary-card.shape-card > .body { fill: color-mix(in srgb, #3b82f6 9%, var(--catenary-bg)); stroke: var(--c); stroke-width: 1.5; }
+.catenary-card.shape-card:not(.colored) > .body { stroke: #3b82f6; }
+.catenary-card.shape-card.invalid > .body { stroke-dasharray: none; stroke: var(--catenary-danger); }
+.shape-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: calc(9px * var(--catenary-card-scale, 1)) calc(14px * var(--catenary-card-scale, 1)) calc(6px * var(--catenary-card-scale, 1)); color: var(--catenary-fg); user-select: none; font-size: calc(15px * var(--catenary-card-scale, 1)); }
+.shape-name { font-size: calc(22px * var(--catenary-card-scale, 1)); font-weight: 700; text-align: center; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shape-class { font-size: calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-muted); text-align: center; margin-bottom: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shape-rows { border-top: 1px solid color-mix(in srgb, var(--catenary-fg) 12%, transparent); padding-top: 4px; }
+.shape-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; height: calc(28px * var(--catenary-card-scale, 1)); padding: 0 4px; border-radius: 4px; pointer-events: auto; cursor: default; font-size: calc(15px * var(--catenary-card-scale, 1)); }
+.shape-row:hover { background: color-mix(in srgb, var(--catenary-fg) 8%, transparent); }
+.shape-row.selected { background: color-mix(in srgb, var(--catenary-accent) 25%, transparent); outline: 1px solid var(--catenary-accent); }
+.shape-row.invalid .row-path { text-decoration: underline wavy var(--catenary-danger); }
+.shape-row .row-path { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shape-row .muted, .catenary-edge .edge-label tspan.muted { color: var(--catenary-muted); fill: var(--catenary-muted); }
+.shape-row .row-range { color: var(--catenary-muted); max-width: calc(180px * var(--catenary-card-scale, 1)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; border-radius: 3px; padding: 0 2px; }
+.shape-row .row-range:hover { background: color-mix(in srgb, var(--catenary-fg) 12%, transparent); color: var(--catenary-fg); }
+.shape-row.relation .row-range { color: #7aa7ff; }
+.shape-row.row-group-head .row-group-name { color: var(--catenary-muted); font-style: italic; }
+.shape-row.row-group-member { padding-left: 18px; }
+.shape-row .row-path { cursor: text; }
+.shape-row .row-out { display: flex; cursor: pointer; opacity: 0; }
+.shape-row:hover .row-out { opacity: 1; }
+.shape-add-row { font-size: calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-muted); padding: 2px 4px; margin-top: 2px; border-radius: 4px; cursor: pointer; pointer-events: auto; }
+.shape-add-row:hover { color: var(--catenary-fg); background: color-mix(in srgb, var(--catenary-fg) 8%, transparent); }
+/* SKOS concept scheme or collection: a node with its concepts as a member list. */
+.catenary-card.valueset-card { --c: #22c55e; }
+.catenary-card.valueset-card > .body { fill: color-mix(in srgb, var(--c) 10%, var(--catenary-bg)); stroke: var(--c); stroke-width: 1.5; }
+.catenary-card.valueset-card.selected > .body { stroke-width: 2.5; }
+.catenary-leaf { cursor: move; }
+.catenary-leaf.selected > .body { stroke-width: 2.5; }
+.shape-row .row-range.leaf-in, .shape-row .row-range.leaf-scheme { color: #4ade80; }
+.shape-row .row-range.leaf-nodeKind, .shape-row .row-range.leaf-any { font-style: italic; }
+.shape-row .row-card { min-width: 26px; text-align: center; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--catenary-fg) 12%, transparent); color: var(--catenary-fg); font-size: calc(13px * var(--catenary-card-scale, 1)); cursor: pointer; }
+.shape-row .row-card:hover { background: var(--catenary-accent); color: #fff; }
+.catenary-edge.property > .edge-label { pointer-events: auto; cursor: text; font-weight: 500; }
+.catenary-edge.property.invalid > .line { stroke: var(--catenary-danger); }
+.catenary-edge .edge-card { cursor: pointer; }
+.catenary-edge .edge-card > rect { fill: color-mix(in srgb, var(--catenary-fg) 16%, var(--catenary-bg)); stroke: none; }
+.catenary-edge .edge-card > text { fill: var(--catenary-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.catenary-edge .edge-card:hover > rect { fill: var(--catenary-accent); }
+.catenary-edge .row-in { cursor: pointer; opacity: 0; }
+.catenary-edge.mouseover .row-in, .catenary-edge.selected .row-in { opacity: 1; }
+/* Circled arrow: the return arrow of an edge (SVG) and the ➟ of a row (HTML, arrowButton): the same marks. */
+.catenary-edge .latent-out { cursor: pointer; }
+.catenary-edge .row-in > circle, .catenary-edge .latent-out > circle, .arrow-button > circle { fill: var(--catenary-bg); stroke: var(--catenary-accent); }
+.catenary-edge .row-in > path, .catenary-edge .latent-out > path, .arrow-button > path { fill: none; stroke: var(--catenary-accent); pointer-events: none; }
+.catenary-edge .row-in:hover > circle, .catenary-edge .latent-out:hover > circle, :hover > .arrow-button > circle { fill: var(--catenary-accent); }
+.catenary-edge .row-in:hover > path, .catenary-edge .latent-out:hover > path, :hover > .arrow-button > path { stroke: var(--catenary-bg); }
+.arrow-button { width: calc(18px * var(--catenary-card-scale, 1)); height: calc(18px * var(--catenary-card-scale, 1)); overflow: visible; }
+.catenary-edge .logic-handle { cursor: crosshair; }
+.catenary-edge .logic-handle > circle { fill: var(--catenary-bg); stroke: #8b7cf6; }
+.catenary-edge .logic-handle > circle.dot { fill: #8b7cf6; stroke: none; }
+.catenary-leaf > .body { fill: var(--catenary-bg); stroke: var(--catenary-muted); stroke-width: 1.2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.catenary-leaf > text { fill: var(--catenary-muted); font-size: 13px; text-anchor: middle; dominant-baseline: central; }
+.catenary-leaf.leaf-nodeKind > text, .catenary-leaf.leaf-any > text { font-style: italic; }
+.catenary-leaf.leaf-in > .body, .catenary-leaf.leaf-scheme > .body { fill: color-mix(in srgb, #22c55e 14%, var(--catenary-bg)); stroke: #22c55e; stroke-dasharray: none; }
+.catenary-leaf.leaf-in > text, .catenary-leaf.leaf-scheme > text { fill: #4ade80; }
+.catenary-leaf.leaf-class > .body { stroke: #3b82f6; stroke-dasharray: none; }
+.catenary-leaf.leaf-class > text { fill: var(--catenary-fg); }
+/* "One of" card (sh:or of ranges): violet as the logical constraints; its rows take the pointer (member list). */
+.catenary-leaf.leaf-or > .body { fill: color-mix(in srgb, #8b7cf6 8%, var(--catenary-bg)); stroke: #8b7cf6; stroke-dasharray: none; }
+.catenary-leaf.leaf-or .card-fo { pointer-events: none; }
+.catenary-leaf.leaf-or .member-row { --k: #8b7cf6; }
+.catenary-alternative > .line { stroke: #8b7cf6; }
+.catenary-alternative > .line, .catenary-alternative > .hit { cursor: default; }
+.catenary-logic > .link { stroke: #8b7cf6; fill: none; pointer-events: none; }
+.catenary-logic > .ring { fill: var(--catenary-bg); stroke: #8b7cf6; cursor: pointer; }
+.catenary-logic > .dot { fill: #8b7cf6; pointer-events: none; }
+.catenary-logic > text { fill: #a99cf8; font-size: 13px; pointer-events: none; }
+.catenary-logic.mouseover > .ring { stroke-width: 3; }
+.catenary-logic.selected > .ring { stroke: var(--catenary-accent); }
+.catenary-logic.selected > .link { stroke: var(--catenary-accent); }
+.catenary-verbal { font-style: italic; margin-bottom: 4px; }
+.catenary-migration { border-left: 3px solid var(--catenary-accent); padding: 4px 8px; margin-bottom: 8px; }
+.catenary-edge > .edge-label.start { text-anchor: start; }
+.catenary-inline-input { position: fixed; z-index: 10000; width: 320px; font-size: 14px; padding: 4px 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.catenary-name-input, .catenary-embedded-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; height: 100%; padding: 0 2px; font: inherit; color: var(--catenary-fg); background: var(--catenary-bg, #242424); border: 1px solid var(--catenary-accent); border-radius: 3px; outline: none; text-align: inherit; }
+.catenary-name-input { min-height: 22px; }
+.catenary-embedded-input { min-height: 20px; }
+/* The card content has no pointer events (card-fo); the name slots take the double-click of canvas.ts (rename). */
+.catenary-card .card-name, .shape-card .shape-name, .valueset-card .vs-name, .shape-card .shape-class { pointer-events: auto; cursor: text; }
+
+/* Workspace settings view (workspace-settings.tsx): one column in the main area. */
+.catenary-settings { max-width: 760px; margin: 0 auto; padding-top: 8px; }
+.catenary-settings-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; margin-bottom: 10px; }
+.catenary-settings-head .catenary-help { overflow-wrap: anywhere; }
+.catenary-settings-head .kind { font-size: 11px; text-transform: uppercase; color: var(--catenary-muted); letter-spacing: 0.05em; }
+.catenary-settings-head .title { font-size: 16px; font-weight: 700; word-break: break-word; }
+.catenary-settings-head .catenary-help { margin: 0; }
+.catenary-settings-head .catenary-toolbar { margin: 0; }
+.catenary-settings .catenary-section { margin-top: 14px; }
+.catenary-settings-filter { width: 240px; max-width: 100%; margin-bottom: 6px; }
+/* Lists of prefixes and globs: read rows, actions on hover or focus, an add row at the end. */
+.catenary-settings-list { border: 1px solid var(--catenary-border); border-radius: 4px; overflow: hidden; }
+.catenary-settings-row { display: grid; gap: 6px; align-items: center; padding: 3px 8px; border-top: 1px solid var(--catenary-border); }
+.catenary-settings-row:first-child { border-top: 0; }
+.catenary-settings-row.prefix { grid-template-columns: 8em minmax(0, 1fr) auto; }
+.catenary-settings-row.glob { grid-template-columns: minmax(0, 1fr) auto; }
+.catenary-settings-row:not(.add):not(.editing):hover { background: var(--theia-list-hoverBackground); }
+.catenary-settings-row.editing, .catenary-settings-row.add { background: var(--theia-editorWidget-background, transparent); }
+.catenary-settings-row input.theia-input { min-width: 0; }
+.catenary-settings-row .ns { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--catenary-muted); }
+.catenary-settings-row .acts { display: flex; gap: 2px; visibility: hidden; }
+.catenary-settings-row:hover .acts, .catenary-settings-row:focus-within .acts, .catenary-settings-row.editing .acts { visibility: visible; }
+.catenary-settings-row .catenary-problem { grid-column: 1 / -1; margin: 0; }
+.catenary-settings-warn { margin-left: 6px; font-size: 13px; color: var(--theia-editorWarning-foreground); vertical-align: text-bottom; }
+.catenary-add { display: inline-flex; align-items: center; gap: 4px; min-width: 0; margin: 0; padding: 2px 10px; }
+.catenary-add .codicon { font-size: 14px; }
+.catenary-settings .catenary-view-order-bar { flex-wrap: wrap; margin-bottom: 6px; }
+.catenary-settings .catenary-view-order-bar .theia-button .codicon { font-size: 14px; vertical-align: text-bottom; }
+.catenary-settings .catenary-view-order-scroll { max-height: none; margin: 0; border-radius: 4px; }
+.catenary-view-order-list li.checked:focus { outline: 1px solid var(--theia-focusBorder); outline-offset: -1px; }
+
+/* Card display: simple (class and name, the name centered in the free space) or detailed. Toggle at the lower left of cards and groups. */
+.card-body.simple, .shape-body.simple { display: flex; flex-direction: column; }
+.card-body.simple .card-name { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; margin: 0 0 14px; }
+.shape-body.simple .shape-name { flex: 1; display: flex; align-items: center; justify-content: center; white-space: normal; overflow-wrap: anywhere; margin-bottom: 14px; }
+.shape-type { font-size: calc(12px * var(--catenary-card-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); text-align: center; }
+
+/* ---------------------------------------------------------------- export views: order dialog */
+
+.catenary-view-order { min-width: 420px; max-width: 640px; }
+.catenary-view-order-bar { display: flex; align-items: center; gap: 6px; }
+.catenary-view-order-bar .catenary-help { flex: 1; margin: 0; }
+.catenary-view-order-bar .theia-button { min-width: 0; margin: 0; padding: 2px 10px; }
+.catenary-view-order-scroll { margin: 8px 0; max-height: 50vh; overflow: auto; border: 1px solid var(--catenary-border); }
+.catenary-view-order-list { list-style: none; margin: 0; padding: 0; }
+.catenary-view-order-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; user-select: none; }
+.catenary-view-order-list li:hover { background: var(--theia-list-hoverBackground); }
+.catenary-view-order-list li.checked { cursor: grab; }
+.catenary-view-order-list.dragging, .catenary-view-order-list.dragging li { cursor: grabbing; }
+.catenary-view-order-list.dragging li:not(.dragged):hover { background: none; }
+.catenary-view-order-list li.dragged { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); outline: 1px solid var(--theia-focusBorder); }
+.catenary-view-order-list li:not(.checked) .label { color: var(--catenary-muted); }
+.catenary-view-order-list label { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; }
+.catenary-view-order-list .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-view-order-list .folder { color: var(--catenary-muted); font-size: 11px; white-space: nowrap; }
+.catenary-view-order-list .number { min-width: 2.5ch; text-align: right; color: var(--catenary-muted); font-variant-numeric: tabular-nums; }
+.catenary-view-order-list .codicon-gripper { opacity: 0.5; }
+.catenary-view-order-list .catenary-icon-button.disabled { opacity: 0.3; pointer-events: none; }
+.catenary-view-order-heading { padding: 6px 6px 2px; font-size: 11px; color: var(--catenary-muted); border-top: 1px solid var(--catenary-border); }
+.catenary-view-order-list + .catenary-view-order-heading { margin-top: 4px; }
+/* A file reference whose file is not on disk (ADR 0004): muted, dashed. */
+.catenary-view-reference.broken { opacity: 0.55; }
+.catenary-view-reference.broken > .body { stroke-dasharray: 6 4; }
+.catenary-view-reference.broken .view-reference-body { color: var(--theia-descriptionForeground); }
+/* Connect gesture (canvas.ts dragLine, spec/ui-manifest.hs 0.4): the elements that are not targets are dimmed; the target under the pointer is highlighted. */
+.connect-dragging .connect-dimmed { opacity: 0.25; }
+.connect-dragging :is(.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-collection, .catenary-leaf).drop-target > .body { stroke: var(--catenary-accent); stroke-width: 3.5; }
+.connect-dragging .member-row.drop-target { outline: 2px solid var(--catenary-accent); }
+.connect-dragging .catenary-edge.property.drop-target > .line { stroke: #8b7cf6; stroke-width: 3.5; }
+.connect-dragging .shape-row.drop-target { outline: 2px solid #8b7cf6; }
+.connect-dragging .catenary-logic > .ring.drop-target { stroke-width: 4; }
+/* "+ target" handle of a selected property edge (canvas.ts targetDrag). */
+.catenary-edge .target-handle { cursor: crosshair; }
+.catenary-edge .target-handle > circle { fill: var(--catenary-bg); stroke: #8b7cf6; }
+.catenary-edge .target-handle > path { stroke: #8b7cf6; fill: none; }
+
+/* File of new subjects, one box per kind: Auto or File (PlaceBox, workspace-placement.tsx). Settings view and New Workspace dialog. */
+.catenary-new-workspace { max-width: 680px; }
+.catenary-places { display: grid; gap: 8px; margin-top: 8px; }
+.catenary-place { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 6px 10px 8px; border: 1px solid var(--catenary-border); border-radius: 4px; }
+.catenary-place legend { padding: 0 4px; font-weight: 600; }
+.catenary-place-option { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.catenary-place-option.file { align-items: center; }
+.catenary-place-option input[type=radio] { margin: 0; }
+.catenary-place-option input.theia-input { flex: 1 1 auto; min-width: 0; }
+.catenary-place-option .theia-button { min-width: 0; margin: 0; padding: 2px 10px; }
+.catenary-place-option.off input.theia-input, .catenary-place-option.off .theia-button { opacity: 0.5; }
+.catenary-place-rule { color: var(--catenary-muted); }
+.catenary-place .catenary-problem { margin: 0 0 0 20px; }
