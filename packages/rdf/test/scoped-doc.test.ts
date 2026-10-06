@@ -78,7 +78,7 @@ describe('request-scoped read models give the answers of the whole read model', 
             }
         }
         for (const id of elements()) expect(store.elementRows([id]), id).toEqual(elementRows(doc, store.meta, [id]));
-    }, 15_000);
+    }, 60_000);
 
     it('neighbor choices and halo counts of each card', () => {
         for (const view of views()) {

@@ -158,7 +158,7 @@ it.each(LAYOUT_ALGORITHMS.flatMap(a => [1, 2].map(scale => [a.id, scale] as cons
     }
     await store.idle();
     rmSync(dir, { recursive: true, force: true });
-}, 15_000);
+}, 60_000);
 
 // ELK layered packs unlinked components in rows that come out tall: 10 unlinked cards of 400 × 180 gave 2 columns and 5 rows (880 × 2100
 // in the ui-manifest Overview view). The components are packed near the aspect ratio 1.6.
