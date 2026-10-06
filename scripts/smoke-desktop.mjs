@@ -7,7 +7,7 @@
 //   --crlf       the workspace files have CRLF line ends, as after a Git checkout with core.autocrlf on Windows.
 //   --launcher   start Catenary.cmd of the package on its example/ folder (Windows). Read-only: no edits in the package.
 import { execFileSync, spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,8 +46,7 @@ async function until(what, fn, ms = 90000) {
 }
 
 const gitEnv = { GIT_AUTHOR_NAME: 'smoke', GIT_AUTHOR_EMAIL: 'smoke@example.org', GIT_COMMITTER_NAME: 'smoke', GIT_COMMITTER_EMAIL: 'smoke@example.org' };
-// `-C` instead of `cwd`: on the Windows runner, git started with this `cwd` gave ENOENT (spawn could not start it). On a failure, the
-// output says why.
+// `-C` instead of `cwd`: a missing folder gives a git message, not a spawn ENOENT. On a failure, the output says why.
 const git = (...args) => {
     try {
         return execFileSync('git', ['-C', ws, '-c', 'user.name=smoke', '-c', 'user.email=smoke@example.org', ...args], { encoding: 'utf8' }).trim();
@@ -57,9 +56,18 @@ const git = (...args) => {
     }
 };
 
+/** A recursive copy. Not fs.cpSync: on Windows, Node 22 gave no error and no folder for a destination with a non-ASCII letter. */
+function copyTree(from, to) {
+    mkdirSync(to, { recursive: true });
+    for (const e of readdirSync(from, { withFileTypes: true })) {
+        if (e.isDirectory()) copyTree(join(from, e.name), join(to, e.name));
+        else copyFileSync(join(from, e.name), join(to, e.name));
+    }
+}
+
 mkdirSync(run);
 if (!launcher) {
-    cpSync(join(root, 'examples/catalog'), ws, { recursive: true });
+    copyTree(join(root, 'examples/catalog'), ws);
     if (crlf) for (const f of readdirSync(ws, { recursive: true }).map(f => join(ws, f)).filter(f => /\.(ttl|trig)$/.test(f))) {
         writeFileSync(f, readFileSync(f, 'utf8').replace(/\r?\n/g, '\r\n'));
     }

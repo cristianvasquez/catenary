@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NS, Violation } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
+import { ValidationRunner } from '../src/validation-runner';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 
 const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
@@ -74,9 +75,11 @@ describe('Problems: the results of the report graph', () => {
     });
 
     it('are empty before a validation and without a workspace', async () => {
-        // The store validates 250 ms after an open. On a busy machine, the store of beforeEach can validate before the test starts.
+        // The store validates 250 ms after an open, and an open can take longer (git on Windows). A timer that never fires: no validation.
         const fresh = new ModelStore();
         fresh.watching = false;
+        const parts = fresh as unknown as { validation: ValidationRunner; graph: never; metamodel: never };
+        parts.validation = new ValidationRunner(() => ({ graph: parts.graph, metamodel: parts.metamodel }), () => {}, { set: () => undefined, clear: () => {} });
         expect(await fresh.open(writeWorkspace(dir))).toEqual({ ok: true });
         expect(fresh.problems()).toEqual([]);
         await fresh.idle();
