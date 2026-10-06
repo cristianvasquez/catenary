@@ -357,6 +357,10 @@ data OneOf
 
 -- 7. Panels ------------------------------------------------------------------
 
+-- | Side panel width: the stored width, the default width (new layout), or the width of the last sash drag.
+-- A window resize widens a narrower open side panel to that width. Reason: a tiling window manager resizes the window after the restore.
+-- Default width: left min(280 px, 20 % of the window), right min(320 px, 24 % of the window).
+
 -- | Right area: sections derive their content from the same selection. Mixed selections show mixed values.
 -- Element: outgoing statements, fields of all applicable shapes grouped by shape, uncovered statements, errors beside fields.
 -- Visuals: figure, style and geometry, and whether each style value comes from the placement or the element.
