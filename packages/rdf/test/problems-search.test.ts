@@ -73,8 +73,14 @@ describe('Problems: the results of the report graph', () => {
         }
     });
 
-    it('are empty before a validation and without a workspace', () => {
-        expect(store.problems()).toEqual([]);
+    it('are empty before a validation and without a workspace', async () => {
+        // The store validates 250 ms after an open. On a busy machine, the store of beforeEach can validate before the test starts.
+        const fresh = new ModelStore();
+        fresh.watching = false;
+        expect(await fresh.open(writeWorkspace(dir))).toEqual({ ok: true });
+        expect(fresh.problems()).toEqual([]);
+        await fresh.idle();
+        fresh.close();
         expect(new ModelStore().problems()).toEqual([]);
     });
 });
