@@ -49,7 +49,8 @@ packageExtensions:
 
 patchedDependencies:
   '@rdfjs/serializer-turtle@1.1.5': patches/@rdfjs__serializer-turtle@1.1.5.patch
-  # A complex SHACL path is decided by structure, not by term type: Catenary skolemizes path nodes (AGENTS.md). Upstream fix: shacl-engine-bug, defect 3.
+  # Fixes not released upstream: (1) a complex SHACL path is decided by structure, not by term type, because Catenary skolemizes path nodes (AGENTS.md).
+  # (2) A shape can have more than one sh:not. (3) sh:qualifiedValueShape validates the property value when sh:node reaches it.
   'shacl-engine@1.1.2': patches/shacl-engine@1.1.2.patch
 
 minimumReleaseAgeExclude:
