@@ -91,7 +91,7 @@ Paths are relative to the directory in the first column.
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
 | | `glsp/` | GLSP server, one session per view, operation handlers, layout |
 | `modeler/src/browser` | `actions.ts`, `action-service.ts`, `action-commands.ts`, `action-menus.ts`, `follow-up.ts` | Actions, prompts, creation follow-up |
-| | `selection-model.ts`, `model-client.ts`, `commands.ts`, `menus.ts`, `outline.ts`, `problems.ts` | Window state and shell integration |
+| | `selection-model.ts`, `model-client.ts`, `commands.ts`, `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes, export. `pending-*.ts`: moves and new members shown before the server confirms them |
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
