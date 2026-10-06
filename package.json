@@ -1,6 +1,8 @@
 {
   "name": "catenary",
   "private": true,
+  "license": "AGPL-3.0-or-later",
+  "author": "Cristian Vasquez",
   "packageManager": "pnpm@11.3.0",
   "scripts": {
     "build": "pnpm -C packages/model build && pnpm -C packages/rdf-serialization build && pnpm -C packages/rdf-files build && pnpm -C packages/rdf build && pnpm -C modeler build && pnpm -C app build && pnpm -C electron-app build",
@@ -15,7 +17,8 @@
     "postinstall": "bash scripts/build-drivelist.sh && bash scripts/install-electron.sh && pnpm -C app -s download:plugins",
     "catenary": "node scripts/catenary.mjs",
     "verify": "node scripts/verify.mjs",
-    "package:win": "bash scripts/package-windows.sh"
+    "package": "bash scripts/package.sh",
+    "package:win": "bash scripts/package.sh win32-x64"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

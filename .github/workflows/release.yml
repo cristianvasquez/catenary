@@ -1,0 +1,108 @@
+name: Release
+
+# A tag v* builds the packages for Linux, Windows and macOS and publishes them as a GitHub release.
+# A push that changes the packaging, or a manual run, builds the packages as workflow artifacts only.
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    # The oldest supported runner: the native modules that the Linux package keeps link against its glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      # Native Theia modules: native-keymap needs X11 and xkbfile, keytar needs libsecret.
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Package
+        env:
+          CATENARY_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.0.0-dev' }}
+        run: |
+          for target in linux-x64 win32-x64 darwin-x64 darwin-arm64; do
+            bash scripts/package.sh "$target"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            dist/Catenary-linux-x64.tar.gz
+            dist/Catenary-win32-x64.zip
+            dist/Catenary-darwin-*.zip
+          if-no-files-found: error
+
+  macos:
+    # Apple silicon loads only signed code. Sign the app ad hoc (no Apple Developer ID) and make a disk image.
+    needs: package
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - name: Sign and make the disk image
+        run: |
+          set -euo pipefail
+          name="Catenary-darwin-${{ matrix.arch }}"
+          mkdir -p "out/$name"
+          ditto -x -k "dist/$name.zip" "out/$name"
+          app="out/$name/Catenary.app"
+          # Native modules and executables outside the frameworks first, then the bundle.
+          find "$app/Contents/Resources" -type f \( -name '*.node' -o -name rg -o -name spawn-helper \) -print0 |
+            xargs -0 -n1 codesign --force --sign -
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          mkdir -p signed
+          ditto -c -k --keepParent "$app" "signed/$name.zip"
+          ln -s /Applications "out/$name/Applications"
+          hdiutil create -volname Catenary -srcfolder "out/$name" -ov -format UDZO "signed/$name.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: signed/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect the files
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp artifacts/packages/Catenary-linux-x64.tar.gz artifacts/packages/Catenary-win32-x64.zip release/
+          # The signed macOS packages replace the unsigned zips.
+          cp artifacts/macos-*/* release/
+          (cd release && sha256sum * > SHA256SUMS)
+          ls -l release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -38,7 +38,7 @@ pnpm build            # packages, extension, browser app and Electron app
 pnpm start            # browser app: http://localhost:3100, example workspace
 pnpm desktop          # Electron app on the example workspace
 pnpm install-desktop  # Linux launcher entry
-pnpm package:win      # dist/Catenary-win32-x64.zip (not tested on Windows)
+pnpm package linux-x64   # portable package in dist/: linux-x64, win32-x64, darwin-x64, darwin-arm64
 pnpm test             # source-based tests
 pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
 pnpm verify           # check → test → build, stops at the first failure
@@ -48,6 +48,30 @@ pnpm verify --e2e     # also run browser smoke tests
 By default, the first start copies [`examples/catalog`](examples/catalog/readme.md) to `~/.local/share/catenary/workspaces/example` or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy, not the tracked example, and does not overwrite a non-empty workspace. Set `CATENARY_WORKSPACE` to use another folder. For another desktop workspace, use `bash scripts/desktop.sh <folder>`. Each workspace gets its own Electron profile in `~/.config/catenary/profiles/<hash>`, so each workspace runs in its own process with its own backend. A second launch on the same workspace focuses the open window. `--user-data-dir=<dir>` overrides the profile. Backend logs of all instances also go to `~/.local/state/catenary/backend.log`.
 
 The install script builds `drivelist` in a temporary directory because node-gyp fails on some paths with spaces. Both applications load the downloaded plugins for Source Control with `--plugins=local-dir:plugins`.
+
+## Releases
+
+The [release workflow](.github/workflows/release.yml) builds portable packages for Linux, Windows and macOS. To publish a release, push a version tag:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow builds on Linux with `scripts/package.sh`, signs the macOS apps ad hoc on macOS and attaches these files to a GitHub release:
+
+| File | Platform | Start |
+|---|---|---|
+| `Catenary-linux-x64.tar.gz` | Linux x64 (glibc 2.35 or later) | `./catenary` |
+| `Catenary-win32-x64.zip` | Windows x64 | `Catenary.exe` |
+| `Catenary-darwin-arm64.dmg`, `.zip` | macOS, Apple silicon | `Catenary.app` |
+| `Catenary-darwin-x64.dmg`, `.zip` | macOS, Intel | `Catenary.app` |
+
+A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A change to the packaging files, or a manual run, builds the packages as workflow artifacts without a release. The packages have no Apple or Windows code signature:
+
+- macOS: after you copy Catenary to Applications, run `xattr -dr com.apple.quarantine /Applications/Catenary.app`. Alternatively, open it once from System Settings → Privacy & Security → Open Anyway.
+- Windows: SmartScreen can show a warning. Select More info → Run anyway. Source Control needs `git.exe` on the PATH.
+- Linux: if Electron stops with a sandbox error (for example on Ubuntu 24.04), run `./catenary --no-sandbox`, or give `chrome-sandbox` to root with mode 4755.
 
 ## Command-line interface
 
@@ -66,3 +90,9 @@ pnpm -s catenary --port 3917 answer --cancel
 ```
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window; a headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
+
+## License
+
+Copyright (C) 2026 Cristian Vasquez.
+
+Catenary is free software: you can redistribute it and modify it under the terms of the [GNU Affero General Public License](LICENSE) as published by the Free Software Foundation, version 3 of the License or any later version. Catenary has no warranty. See the license for details.
