@@ -96,6 +96,7 @@ Paths are relative to the directory in the first column.
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules |
+| | `package-windows.sh`, `check-windows-package.mjs`, `smoke-desktop.mjs` | Windows package, its static check, desktop smoke test (`.github/workflows/windows.yml`) |
 
 ## Hosts
 
@@ -124,6 +125,9 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 | `packages/rdf/test` | RDF commands, transactions, undo, queries, validation, file round trips |
 | `modeler/test` | Store-to-GLSP updates, frontend actions, selection, layout |
 | `scripts/e2e.cjs` | Browser wiring of gestures and rendering only |
+| `scripts/smoke-desktop.mjs` | The desktop app or the Windows package: paths, writes, Git, watcher, plugins, native modules |
+
+Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them.
 

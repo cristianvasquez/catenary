@@ -1,0 +1,78 @@
+name: Windows
+
+# The Windows package is built on Linux (scripts/package-windows.sh). This workflow checks it on a real Windows runner:
+#  - package:  build the zip on Linux, check its layout and binaries, run the desktop smoke test on Linux, upload the zip.
+#  - unit:     the unit tests on Windows: real win32 paths, file system, watcher and Git (no path.win32 simulation).
+#  - smoke:    extract the zip on Windows, start Catenary.exe and Catenary.cmd, and drive them with scripts/smoke-desktop.mjs.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm package:win --example examples/catalog
+      - run: node scripts/check-windows-package.mjs
+      - name: Desktop smoke test (Linux)
+        run: xvfb-run -a node scripts/smoke-desktop.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Catenary-win32-x64
+          path: dist/Catenary-win32-x64.zip
+          compression-level: 0
+          retention-days: 7
+
+  unit:
+    runs-on: windows-latest
+    steps:
+      # The test fixtures compare text: keep the LF line ends of the repository. The smoke job checks CRLF files.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # No install scripts: they build the Linux desktop app (drivelist, Electron for linux-x64). The unit tests do not need them.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check
+      - run: pnpm test
+
+  smoke:
+    needs: package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: Catenary-win32-x64
+      - name: Extract the package
+        shell: pwsh
+        run: Expand-Archive -Path Catenary-win32-x64.zip -DestinationPath dist
+      - run: node scripts/check-windows-package.mjs dist\Catenary-win32-x64
+      - name: Catenary.exe on a copy of the catalog
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64
+      - name: Catenary.exe on CRLF files
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64 --crlf
+      - name: Catenary.cmd on the bundled example
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64 --launcher
