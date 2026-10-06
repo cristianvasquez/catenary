@@ -2,6 +2,7 @@
 # Builds a portable package of the Electron app for one target, on Linux x64, from the existing build of electron-app/ (run
 # `pnpm build` first). No installer.
 #   linux-x64     dist/Catenary-linux-x64.tar.gz   (run ./catenary)
+#                 dist/Catenary-linux-x64.AppImage (with --appimage)
 #   win32-x64     dist/Catenary-win32-x64.zip      (run Catenary.exe, or Catenary.cmd)
 #   darwin-x64    dist/Catenary-darwin-x64.zip     (Catenary.app, unsigned: the release workflow signs it ad hoc on macOS)
 #   darwin-arm64  dist/Catenary-darwin-arm64.zip   (the same, for Apple silicon)
@@ -17,15 +18,20 @@
 # Downloads are cached in ${XDG_CACHE_HOME:-~/.cache}/catenary-package. CATENARY_VERSION sets the version of the package (default:
 # the version in electron-app/package.json).
 #
-# Usage: scripts/package.sh <target> [--example <folder>]   (--example, win32-x64 only: copies a workspace folder into the zip as
-#        example/, and Catenary.cmd opens it. Without it, Catenary.cmd opens the last folder, or none.)
+# Usage: scripts/package.sh <target> [--example <folder>] [--appimage]
+#   --example, win32-x64 only: copies a workspace folder into the zip as example/, and Catenary.cmd opens it. Without it,
+#     Catenary.cmd opens the last folder, or none.
+#   --appimage, linux-x64 only: also builds an AppImage with appimagetool (downloaded). An AppImage cannot use the SUID sandbox, so
+#     its AppRun adds --no-sandbox when the kernel does not allow unprivileged user namespaces (for example Ubuntu 24.04).
 set -euo pipefail
 root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 target=""
 example=""
+appimage=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --example) example="$(readlink -f "$2")"; shift 2 ;;
+    --appimage) appimage=1; shift ;;
     linux-x64|win32-x64|darwin-x64|darwin-arm64) target="$1"; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -33,6 +39,7 @@ done
 [[ -n "$target" ]] || { echo "usage: scripts/package.sh linux-x64|win32-x64|darwin-x64|darwin-arm64 [--example <folder>]" >&2; exit 2; }
 [[ -z "$example" || -d "$example" ]] || { echo "not a folder: $example" >&2; exit 2; }
 [[ -z "$example" || "$target" == win32-x64 ]] || { echo "--example is only for win32-x64" >&2; exit 2; }
+[[ -z "$appimage" || "$target" == linux-x64 ]] || { echo "--appimage is only for linux-x64" >&2; exit 2; }
 [[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || { echo "run this script on Linux x64: the build supplies the linux-x64 native modules" >&2; exit 1; }
 
 app="$root/electron-app"
@@ -45,6 +52,7 @@ electron_v="$(node -p "require('$(readlink -f "$root/node_modules/electron")/pac
 pty_dir="$(ls -d "$root"/node_modules/.pnpm/node-pty@*/node_modules/node-pty | head -1)"
 watcher_v="$(basename "$(ls -d "$root"/node_modules/.pnpm/@parcel+watcher@* | head -1)" | sed 's/.*@//')"
 rg_v="$(basename "$(ls -d "$root"/node_modules/.pnpm/@vscode+ripgrep@* | head -1)" | sed 's/.*@//')"
+appimagetool_v=1.9.0
 keytar_v="$(basename "$(ls -d "$root"/node_modules/.pnpm/keytar@* | head -1)" | sed 's/.*@//')"
 
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/catenary-package"
@@ -60,7 +68,7 @@ fetch() { # url → cached file path
 electron_zip="$(fetch "https://github.com/electron/electron/releases/download/v$electron_v/electron-v$electron_v-$target.zip")"
 
 out="$root/dist/Catenary-$target"
-rm -rf "$out" "$out.zip" "$out.tar.gz"
+rm -rf "$out" "$out.zip" "$out.tar.gz" "$out.AppImage"
 mkdir -p "$out"
 # unzip keeps the symbolic links of the macOS frameworks.
 unzip -q "$electron_zip" -d "$out"
@@ -152,6 +160,40 @@ case "$target" in
   linux-x64)
     (cd "$root/dist" && tar -czf "Catenary-$target.tar.gz" "Catenary-$target")
     artifact="$out.tar.gz"
+    if [[ -n "$appimage" ]]; then
+      tool="$(fetch "https://github.com/AppImage/appimagetool/releases/download/$appimagetool_v/appimagetool-x86_64.AppImage")"
+      chmod +x "$tool"
+      appdir="$root/dist/Catenary.AppDir"
+      rm -rf "$appdir"
+      cp -a "$out" "$appdir"
+      cp "$app/catenary.svg" "$appdir/catenary.svg"
+      ln -s catenary.svg "$appdir/.DirIcon"
+      cat > "$appdir/catenary.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Catenary
+Comment=RDF model editor
+Exec=catenary %U
+Icon=catenary
+Terminal=false
+Categories=Development;
+EOF
+      cat > "$appdir/AppRun" <<'EOF'
+#!/bin/sh
+# Catenary AppImage. The SUID sandbox cannot work in an AppImage: without unprivileged user namespaces, run without the sandbox.
+here="$(dirname "$(readlink -f "$0")")"
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] \
+  || [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null)" = 0 ]; then
+  exec "$here/catenary" --no-sandbox "$@"
+fi
+exec "$here/catenary" "$@"
+EOF
+      chmod +x "$appdir/AppRun"
+      # appimagetool is itself an AppImage, and CI runners have no FUSE: APPIMAGE_EXTRACT_AND_RUN runs it without a mount.
+      ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 VERSION="$version" "$tool" --no-appstream "$appdir" "$out.AppImage"
+      rm -rf "$appdir"
+      artifact="$artifact $out.AppImage"
+    fi
     ;;
   win32-x64)
     if [[ -n "$example" ]]; then
@@ -172,4 +214,4 @@ case "$target" in
     ;;
 esac
 echo "catenary $version ($target): electron $electron_v, @parcel/watcher $watcher_v, ripgrep $rg_v, keytar $keytar_v, node-pty $(basename "$(dirname "$(dirname "$pty_dir")")" | sed 's/.*@//')"
-echo "built: $artifact ($(du -h "$artifact" | cut -f1))"
+for f in $artifact; do echo "built: $f ($(du -h "$f" | cut -f1))"; done

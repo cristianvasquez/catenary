@@ -39,6 +39,7 @@ pnpm start            # browser app: http://localhost:3100, example workspace
 pnpm desktop          # Electron app on the example workspace
 pnpm install-desktop  # Linux launcher entry
 pnpm package linux-x64   # portable package in dist/: linux-x64, win32-x64, darwin-x64, darwin-arm64
+pnpm package linux-x64 --appimage  # also dist/Catenary-linux-x64.AppImage
 pnpm test             # source-based tests
 pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
 pnpm verify           # check → test → build, stops at the first failure
@@ -63,6 +64,7 @@ The workflow builds on Linux with `scripts/package.sh`, signs the macOS apps ad 
 | File | Platform | Start |
 |---|---|---|
 | `Catenary-linux-x64.tar.gz` | Linux x64 (glibc 2.35 or later) | `./catenary` |
+| `Catenary-linux-x64.AppImage` | Linux x64 (glibc 2.35 or later) | `chmod +x` the file, then run it |
 | `Catenary-win32-x64.zip` | Windows x64 | `Catenary.exe` |
 | `Catenary-darwin-arm64.dmg`, `.zip` | macOS, Apple silicon | `Catenary.app` |
 | `Catenary-darwin-x64.dmg`, `.zip` | macOS, Intel | `Catenary.app` |
@@ -71,7 +73,7 @@ A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A change to 
 
 - macOS: after you copy Catenary to Applications, run `xattr -dr com.apple.quarantine /Applications/Catenary.app`. Alternatively, open it once from System Settings → Privacy & Security → Open Anyway.
 - Windows: SmartScreen can show a warning. Select More info → Run anyway. Source Control needs `git.exe` on the PATH.
-- Linux: if Electron stops with a sandbox error (for example on Ubuntu 24.04), run `./catenary --no-sandbox`, or give `chrome-sandbox` to root with mode 4755.
+- Linux: the AppImage needs FUSE 2 (`libfuse2`). Without FUSE, run it with `--appimage-extract-and-run`. The AppImage turns off the Electron sandbox when the kernel does not allow unprivileged user namespaces, for example on Ubuntu 24.04. If the tar.gz package stops with a sandbox error, run `./catenary --no-sandbox`, or give `chrome-sandbox` to root with mode 4755.
 
 ## Command-line interface
 
