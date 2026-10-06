@@ -64,7 +64,6 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 | F-SEL-1 | Shift/Ctrl selection differs across card kinds. | Test cards, notes, references, entity groups and value sets with exact selections. |
 | F-SEL-2 | A listing-selected value set may not select its card. | Closure reports conflict. Reproduce across listing, active canvas and another canvas. |
 | F-DND-1 | Explorer property rows lack Search's drag behavior. | Test Explorer, Search and Links drag sources against the same view. |
-| F-CREATE-1 | The palette cannot create a SKOS collection directly. | Confirm whether target-picker creation is sufficient before adding a control. |
 | F-PANEL-1 | Entity groups, pills and alternative cards lack suitable Properties content. | Resolve through G4. Test each kind's panel and available actions. |
 | F-UNDO-1 | Some retarget/place or mixed-add gestures send two commands. | Count commands for row drags and Search additions. Cut and paste remain separate operations. |
 | F-FEED-1 | Empty or rejected drops can give no feedback. | Recheck own-card links and empty-canvas edge-end drops after the connect-drag changes. |

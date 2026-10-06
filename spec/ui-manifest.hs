@@ -240,7 +240,9 @@ followUp :: Element -> Field
 
 -- 5. Canvas ------------------------------------------------------------------
 
--- | Palette: Model tools for Shape, Scheme and one tool per class with a target-class shape. View tools: Group and Note.
+-- | Palette: a bar of two rows. Sections, left to right: Shape (a tile over both rows), SKOS (Scheme over Collection),
+--   classes (one tool per class with a target-class shape, in two rows, then "+N"), View (Group over Note).
+--   Shape is first and largest: shapes drive the classes, the forms and the validation.
 -- Class tools follow the metamodel after edits, undo and reload.
 -- Drag sources: a class folder creates an instance. Element rows place cards, relations or view references.
 -- A file from the navigator gives a view reference for a view file, else a file reference. A broken reference shows a warning.

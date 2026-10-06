@@ -186,41 +186,43 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 [id^="catenary-view:"] .sprotty-projection-bar { display: none; }
 [id^="catenary-view:"] .tool-palette {
     order: -1; position: static; width: auto; max-height: none; z-index: auto; box-shadow: none; border-radius: 0;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 3px 8px;
+    display: flex; align-items: stretch; gap: 0; padding: 3px 8px;
     font-size: 12px; color: var(--catenary-fg); background: var(--theia-editorWidget-background, var(--catenary-bg)); border-bottom: 1px solid var(--catenary-border);
 }
-[id^="catenary-view:"] .tool-palette .palette-header { flex-direction: row; padding: 0; background: none; border: 0; gap: 6px; }
+[id^="catenary-view:"] .tool-palette .palette-header { flex-direction: row; align-items: center; padding: 0 6px 0 0; background: none; border: 0; gap: 2px; }
 [id^="catenary-view:"] .tool-palette .header-tools i { padding: 2px; border-radius: 3px; }
 [id^="catenary-view:"] .tool-palette .header-tools i:hover { background: var(--theia-toolbar-hoverBackground); }
 [id^="catenary-view:"] .tool-palette .header-tools .clicked { background: var(--theia-inputOption-activeBackground); border-color: var(--catenary-accent); }
 [id^="catenary-view:"] .tool-palette .search-input { width: 110px; font-size: 12px; }
-[id^="catenary-view:"] .tool-palette .palette-body { display: contents; }
-[id^="catenary-view:"] .tool-palette .tool-group { display: contents; }
-[id^="catenary-view:"] .tool-palette .group-header { background: none; border-left: 1px solid var(--catenary-border); padding-left: 8px; margin-left: 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); }
-[id^="catenary-view:"] .tool-palette .group-header i { display: none; }
-[id^="catenary-view:"] .tool-palette .tool-button { padding: 2px 6px; border-radius: 3px; background: none; color: var(--catenary-fg); cursor: pointer; white-space: nowrap; }
-[id^="catenary-view:"] .tool-palette .tool-button i { margin-right: 3px; }
+/* Two rows: each section is as high as the bar. Shape, SKOS and View keep their width; Classes takes the rest. */
+[id^="catenary-view:"] .tool-palette .palette-body { display: flex; flex: 1; min-width: 0; align-items: stretch; background: none; border: 0; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-section { display: flex; align-items: stretch; gap: 2px; padding: 0 6px; border-left: 1px solid var(--catenary-border); }
+[id^="catenary-view:"] .tool-palette .catenary-palette-skos,
+[id^="catenary-view:"] .tool-palette .catenary-palette-view { flex-direction: column; justify-content: center; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-classes { flex: 1; min-width: 0; flex-wrap: wrap; align-items: center; align-content: center; gap: 2px 4px; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-view { margin-left: auto; }
+[id^="catenary-view:"] .tool-palette .tool-button { display: flex; align-items: center; padding: 2px 6px; border-radius: 3px; background: none; color: var(--catenary-fg); cursor: pointer; white-space: nowrap; }
+[id^="catenary-view:"] .tool-palette .tool-button i { margin-right: 4px; }
 [id^="catenary-view:"] .tool-palette .tool-button:hover { background: var(--theia-toolbar-hoverBackground); }
 [id^="catenary-view:"] .tool-palette .tool-button.clicked { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); }
 [id^="catenary-view:"] .tool-palette .tool-button.collapsed { display: none; }
+/* Shape first: a tile over both rows, in the accent color. Shapes drive the classes, the forms and the validation. */
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape { border-left: 0; padding-left: 0; }
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape .tool-button {
+    flex-direction: column; justify-content: center; gap: 1px; min-width: 64px; padding: 3px 12px; font-weight: 600;
+    border: 1px solid var(--catenary-accent); background: color-mix(in srgb, var(--catenary-accent) 14%, transparent);
+}
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape .tool-button i { margin: 0; font-size: 20px; color: var(--catenary-accent); }
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape .tool-button:hover { background: color-mix(in srgb, var(--catenary-accent) 26%, transparent); }
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape .tool-button.clicked { background: var(--catenary-accent); color: var(--theia-button-foreground, #fff); }
+[id^="catenary-view:"] .tool-palette .catenary-palette-shape .tool-button.clicked i { color: inherit; }
 /* Back/Forward first; no delete tool, no search (CatenaryToolPalette). */
 [id^="catenary-view:"] .tool-palette .header-icon { display: none; }
 [id^="catenary-view:"] .tool-palette .header-tools .catenary-disabled { opacity: 0.4; cursor: default; }
 [id^="catenary-view:"] .tool-palette .header-tools .catenary-disabled:hover { background: none; }
-[id^="catenary-view:"] .tool-palette .catenary-palette-break { display: none; }
-[id^="catenary-view:"] .tool-palette .catenary-hidden,
 [id^="catenary-view:"] .tool-palette .catenary-overflow { display: none; }
 [id^="catenary-view:"] .tool-palette .catenary-class-pick { color: var(--catenary-muted); border: 1px solid var(--catenary-border); }
 [id^="catenary-view:"] .tool-palette .catenary-class-more { color: var(--catenary-muted); }
-[id^="catenary-view:"] .tool-palette .catenary-palette-arrow { margin: 0 0 0 2px; padding: 0 1px; border-radius: 2px; font-size: 11px; }
-[id^="catenary-view:"] .tool-palette .catenary-palette-arrow:hover { background: var(--theia-toolbar-hoverBackground); }
-.catenary-palette-menu {
-    position: fixed; z-index: 1000; min-width: 120px; padding: 3px 0; border-radius: 3px;
-    background: var(--theia-menu-background); color: var(--theia-menu-foreground); border: 1px solid var(--theia-menu-border, var(--catenary-border)); box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-}
-.catenary-palette-menu-entry { padding: 3px 10px; cursor: pointer; white-space: nowrap; }
-.catenary-palette-menu-entry i { margin-right: 4px; }
-.catenary-palette-menu-entry:hover { background: var(--theia-menu-selectionBackground); color: var(--theia-menu-selectionForeground); }
 
 /* ---------------------------------------------------------------- explorer */
 

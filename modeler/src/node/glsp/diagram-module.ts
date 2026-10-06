@@ -97,7 +97,6 @@ export class ShapesPaletteProvider extends ToolPaletteItemProvider {
             {
                 id: 'palette-model', label: 'Model', sortString: 'A', actions: [], icon: 'symbol-class', children: [
                     { id: 'scheme', label: 'Scheme', sortString: 'A', icon: 'symbol-enum', actions: [TriggerNodeCreationAction.create(TYPES.VALUESET, { args: { kind: 'scheme' } })] },
-                    // Shown in the menu of the Scheme item (CatenaryToolPalette), not as its own button.
                     { id: 'collection', label: 'Collection', sortString: 'AB', icon: 'symbol-array', actions: [TriggerNodeCreationAction.create(TYPES.VALUESET, { args: { kind: 'collection' } })] },
                     { id: 'node-shape', label: 'Shape', sortString: 'B', icon: 'symbol-ruler', actions: [TriggerNodeCreationAction.create(TYPES.SHAPE)] },
                     ...classes
