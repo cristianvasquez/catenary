@@ -56,7 +56,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm check
       # Separate processes: in the thread pool, a Vitest worker ended with a V8 fatal error ("unreachable code") on Windows.
-      - run: pnpm test --pool=forks
+      # One worker: with two, the SHACL worker threads took the CPU and the Vitest main process timed out ("onTaskUpdate").
+      - run: pnpm test --pool=forks --maxWorkers=1
 
   smoke:
     needs: package
