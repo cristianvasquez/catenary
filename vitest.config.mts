@@ -17,9 +17,9 @@ export default defineConfig({
         environment: 'node',
         include: ['packages/*/test/**/*.test.ts', 'modeler/test/**/*.test.ts'],
         pool: 'threads',
-        maxWorkers: 4,
-        // GitHub runners are slower than a developer machine: the fixture-wide tests pass, but not in 5 s.
-        ...(process.env.CI ? { testTimeout: 30_000 } : {}),
+        // GitHub runners are slower than a developer machine. With 4 workers (and their SHACL worker threads) on 4 vCPUs, the main
+        // Vitest thread got no CPU time ("Timeout calling onTaskUpdate"), and the fixture-wide tests did not pass in 5 s.
+        ...(process.env.CI ? { maxWorkers: 2, testTimeout: 30_000 } : { maxWorkers: 4 }),
         restoreMocks: true
     }
 });
