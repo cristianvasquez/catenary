@@ -68,8 +68,9 @@ function copyTree(from, to) {
 mkdirSync(run);
 if (!launcher) {
     copyTree(join(root, 'examples/catalog'), ws);
-    if (crlf) for (const f of readdirSync(ws, { recursive: true }).map(f => join(ws, f)).filter(f => /\.(ttl|trig)$/.test(f))) {
-        writeFileSync(f, readFileSync(f, 'utf8').replace(/\r?\n/g, '\r\n'));
+    // The line ends of the copy, whatever the checkout gave (core.autocrlf on Windows): LF, or CRLF with --crlf.
+    for (const f of readdirSync(ws, { recursive: true }).map(f => join(ws, f)).filter(f => /\.(ttl|trig)$/.test(f))) {
+        writeFileSync(f, readFileSync(f, 'utf8').replace(/\r?\n/g, crlf ? '\r\n' : '\n'));
     }
     git('init', '-q');
     git('add', '-A');
@@ -214,6 +215,8 @@ async function edits() {
     check('default file read back as native path', defaultFile.path === added, defaultFile);
 
     const text = readFileSync(log, 'utf8');
-    const native = text.split('\n').filter(l => /Failed to load native module|Could not load native|No prebuild|ERR_DLOPEN|not a valid Win32|Cannot find module .*\.node/.test(l));
-    check('no native module errors in the app output', native.length === 0, native);
+    // keymapping.node: package-windows.sh removes native-keymap (no Windows prebuild); Theia then uses the browser keyboard layout.
+    const native = text.split('\n').filter(l => /Failed to load native module|Could not load native|No prebuild|ERR_DLOPEN|not a valid Win32|Cannot find module .*\.node/.test(l))
+        .filter(l => !/keymapping\.node/.test(l));
+    check('no native module errors in the app output (keymapping.node is left out)', native.length === 0, native);
 }
