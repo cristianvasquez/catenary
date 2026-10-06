@@ -18,6 +18,8 @@ export default defineConfig({
         include: ['packages/*/test/**/*.test.ts', 'modeler/test/**/*.test.ts'],
         pool: 'threads',
         maxWorkers: 4,
+        // GitHub runners are slower than a developer machine: the fixture-wide tests pass, but not in 5 s.
+        ...(process.env.CI ? { testTimeout: 30_000 } : {}),
         restoreMocks: true
     }
 });

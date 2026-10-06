@@ -21,3 +21,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      # verify shows only the end of a failed step. Print the full logs.
+      - if: failure()
+        run: cat /tmp/catenary-verify-*/*.log
