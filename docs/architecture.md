@@ -95,7 +95,7 @@ Paths are relative to the directory in the first column.
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes, export. `pending-*.ts`: moves and new members shown before the server confirms them |
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
-| `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules |
+| `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
 
 ## Hosts
 
