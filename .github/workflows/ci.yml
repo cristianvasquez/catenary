@@ -17,5 +17,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      - name: Install GHC (typechecks spec/*.hs)
+        run: command -v ghc || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ghc)
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify

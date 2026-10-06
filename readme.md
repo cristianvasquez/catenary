@@ -26,7 +26,7 @@ Read in this order, from overview to detail:
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
 | [Agent guide](AGENTS.md) | Work rules for agents and documentation style |
 
-The contracts use Haskell notation. They do not compile, and `pnpm verify` does not check them.
+The contracts are Haskell modules. `pnpm check` typechecks them with GHC, so a mismatch of names or types between them fails. Install GHC first (`apt-get install ghc`, or ghcup).
 
 ## Run
 
@@ -40,7 +40,7 @@ pnpm desktop          # Electron app on the example workspace
 pnpm install-desktop  # Linux launcher entry
 pnpm package:win      # dist/Catenary-win32-x64.zip (not tested on Windows)
 pnpm test             # source-based tests
-pnpm check            # package boundaries and TypeScript
+pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
 ```

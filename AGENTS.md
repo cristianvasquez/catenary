@@ -17,7 +17,7 @@ Theia + GLSP editor for RDF models. Files are the source of truth. One backend `
 - Documents in `docs/` are for people: short, current state only, no history. The manifests are the full contract for agents.
 - Do not add journals, status inventories or feature specs. Git history holds work records. `spec/open.md` holds what is not finished.
 - A handoff of unfinished design work goes in the `readme.md` of its folder under `draft/`. The next agent starts there.
-- The manifests use Haskell notation. They do not compile, and `pnpm verify` does not check them.
+- The manifests are Haskell modules. `pnpm check` typechecks them with GHC (`scripts/check-manifests.mjs`), so a name or type that does not match fails. Each new signature needs a stub in the "Compile-only stubs" section at the end of its file. Write a rule as an equation when it fits, not as a stub.
 
 ## Simple English
 
