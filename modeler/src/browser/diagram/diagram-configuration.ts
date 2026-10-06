@@ -195,12 +195,22 @@ const marqueeModule = new FeatureModule((_bind, _unbind, _isBound, rebind) => {
     rebind(MarqueeMouseTool).to(AddingMarqueeMouseTool).inSingletonScope();
 }, { featureId: Symbol('catenaryMarquee') });
 
-/** Classes of the shapes in the bar: at most this number of rows (the Back/Forward row included); the others are behind "+N". */
+/** Classes of the shapes in the bar: at most this number of rows; the others are behind "+N". */
 const CLASS_ROWS = 2;
 
+/** The sections of the bar, left to right, and the palette items that each section holds. */
+const SECTIONS: [section: string, title: string, items: string[]][] = [
+    ['shape', 'Shapes', ['node-shape']],
+    ['skos', 'SKOS', ['scheme', 'collection']],
+    ['classes', 'New instance of a class', []],
+    ['view', 'View marks', ['group', 'note']]
+];
+
 /**
- * Tool palette: a bar above the canvas. Row 1 (and 2): Back, Forward, then MODEL (Scheme▾, Shape, the class picker, one item per class,
- * "+N"). Last row: VIEW (Group, Note), the marks of the view. The items come from the shapes (see ShapesPaletteProvider).
+ * Tool palette: a bar of two rows above the canvas. Left to right: Back/Forward, then one section per kind of tool.
+ * Shape is a tile over both rows: shapes drive the classes, the forms and the validation. SKOS: Scheme over Collection.
+ * Classes: the class picker, one item per class and "+N" fill the remaining width in two rows. View: Group over Note.
+ * The items come from the shapes (see ShapesPaletteProvider).
  */
 @injectable()
 export class CatenaryToolPalette extends KeyboardToolPalette {
@@ -212,8 +222,6 @@ export class CatenaryToolPalette extends KeyboardToolPalette {
     @inject(ModelActions) protected readonly actions: ModelActions;
 
     protected historyButtons: [HTMLElement, string][] = [];
-    /** The kind of value set that the Scheme item makes: its menu changes it. */
-    protected valueSetKind: 'scheme' | 'collection' = 'scheme';
     protected listening = false;
     protected fitWidth = -1;
 
@@ -271,12 +279,11 @@ export class CatenaryToolPalette extends KeyboardToolPalette {
         const button = super.createKeyboardToolButton(item, tabIndex, buttonIndex);
         button.dataset.item = item.id;
         if (item.id.startsWith('class-')) button.classList.add('catenary-class-tool');
-        if (item.id === 'collection') button.classList.add('catenary-hidden');
-        if (item.id === 'scheme') this.decorateScheme(button);
+        if (item.id === 'node-shape') button.title = 'New shape: click on the canvas to place it';
         return button;
     }
 
-    /** After the classes: the class picker before them, "+N" after them, and the VIEW group on its own row. */
+    /** Moves the buttons into the sections (SECTIONS). The class section has the class picker first and "+N" last. */
     protected override createBody(): void {
         super.createBody();
         const body = this.bodyDiv!;
@@ -288,35 +295,39 @@ export class CatenaryToolPalette extends KeyboardToolPalette {
             b.onclick = () => void this.commands.executeCommand(ModelCommands.NEW_INSTANCE.id);
             return b;
         };
-        const classes = [...body.querySelectorAll<HTMLElement>('.catenary-class-tool')];
         const picker = pick('catenary-class-pick', 'New instance: pick a class (I on the canvas)', 'search');
         picker.insertAdjacentText('beforeend', 'class…');
-        const shape = body.querySelector<HTMLElement>('[data-item="node-shape"]');
-        if (classes[0]) classes[0].before(picker); else shape?.after(picker);
-        classes.at(-1)?.after(pick('catenary-class-more', 'More classes: pick a class (I on the canvas)'));
-        const groups = body.querySelectorAll(':scope > .tool-group');
-        if (groups.length > 1) {
-            const rowBreak = document.createElement('div');
-            rowBreak.classList.add('catenary-palette-break');
-            groups[groups.length - 1].before(rowBreak);
-        }
+        const classes = [picker, ...body.querySelectorAll<HTMLElement>('.catenary-class-tool'),
+            pick('catenary-class-more', 'More classes: pick a class (I on the canvas)')];
+        const sections = SECTIONS.map(([name, title, items]) => {
+            const section = document.createElement('div');
+            section.classList.add('catenary-palette-section', `catenary-palette-${name}`);
+            section.title = title;
+            const buttons = name === 'classes' ? classes : items.map(id => body.querySelector<HTMLElement>(`[data-item="${id}"]`));
+            section.append(...buttons.filter((b): b is HTMLElement => !!b));
+            return section;
+        });
+        // The GLSP groups (with their headers) are empty now; GLSP keeps the buttons by reference for the keyboard.
+        body.replaceChildren(...sections, ...body.querySelectorAll(':scope > :not(.tool-group)'));
         this.fitWidth = -1;
         requestAnimationFrame(() => this.fitClasses());
     }
 
-    /** At most CLASS_ROWS rows up to the last class: the classes that do not fit are hidden, "+N" counts them. */
+    /** At most CLASS_ROWS rows in the class section: the classes that do not fit are hidden, "+N" counts them. */
     protected fitClasses(): void {
         const container = this.containerElement;
-        const classes = [...container?.querySelectorAll<HTMLElement>('.catenary-class-tool') ?? []];
-        const more = container?.querySelector<HTMLElement>('.catenary-class-more');
-        if (!more || !this.headerDiv || !container.isConnected || !container.clientWidth) return;
+        const section = container?.querySelector<HTMLElement>('.catenary-palette-classes');
+        const classes = [...section?.querySelectorAll<HTMLElement>('.catenary-class-tool') ?? []];
+        const more = section?.querySelector<HTMLElement>('.catenary-class-more');
+        if (!section || !more || !classes.length || !container.isConnected || !container.clientWidth) return;
         this.fitWidth = container.clientWidth;
         classes.forEach(b => b.classList.remove('catenary-overflow'));
         more.classList.add('catenary-overflow');
-        // align-items: center: the items of one row have the same center.
+        // align-items: center: the items of one row have the same center. The first item of the section is on row 1.
         const center = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2; };
-        const pitch = classes[0].offsetHeight + 2;
-        const limit = center(this.headerDiv) + (CLASS_ROWS - 0.5) * pitch;
+        const first = section.firstElementChild as HTMLElement;
+        const pitch = first.offsetHeight + 2;
+        const limit = center(first) + (CLASS_ROWS - 0.5) * pitch;
         if (center(classes[classes.length - 1]) < limit) return;
         more.classList.remove('catenary-overflow');
         let hidden = 0;
@@ -326,53 +337,11 @@ export class CatenaryToolPalette extends KeyboardToolPalette {
         }
     }
 
-    /** Scheme▾: the arrow opens a menu with Scheme and Collection; the item then makes that kind. */
-    protected decorateScheme(button: HTMLElement): void {
-        const label = this.valueSetKind === 'scheme' ? 'Scheme' : 'Collection';
-        button.replaceChildren(createIcon(this.valueSetKind === 'scheme' ? 'symbol-enum' : 'symbol-array'), document.createTextNode(label));
-        const arrow = createIcon('chevron-down');
-        arrow.classList.add('catenary-palette-arrow');
-        arrow.title = 'Scheme or collection';
-        arrow.onclick = ev => { ev.stopPropagation(); this.showValueSetMenu(button); };
-        button.appendChild(arrow);
-    }
-
-    protected showValueSetMenu(button: HTMLElement): void {
-        const menu = document.createElement('div');
-        menu.classList.add('catenary-palette-menu');
-        const close = () => { menu.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape, true); };
-        const outside = (e: Event) => { if (!menu.contains(e.target as Node)) close(); };
-        const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
-        for (const [kind, text, icon] of [['scheme', 'Scheme', 'symbol-enum'], ['collection', 'Collection', 'symbol-array']] as const) {
-            const entry = document.createElement('div');
-            entry.classList.add('catenary-palette-menu-entry');
-            entry.append(createIcon(icon), document.createTextNode(text));
-            entry.onclick = () => {
-                close();
-                this.valueSetKind = kind;
-                this.decorateScheme(button);
-                button.click();
-            };
-            menu.appendChild(entry);
-        }
-        // Fixed position under the button: the palette is static (GLSP gives it top/left offsets that a positioned palette would apply).
-        const r = button.getBoundingClientRect();
-        menu.style.left = `${r.left}px`;
-        menu.style.top = `${r.bottom + 2}px`;
-        document.body.appendChild(menu);
-        document.addEventListener('pointerdown', outside, true);
-        document.addEventListener('keydown', escape, true);
-    }
-
     protected override onClickCreateToolButton(button: HTMLElement, item: PaletteItem): (ev: MouseEvent) => void {
         const arm = super.onClickCreateToolButton(button, item);
         return ev => {
             // Group with boxes selected on this canvas: a group around them at once (no click on the canvas).
             if (item.id === 'group' && this.boxesSelected()) return void this.commands.executeCommand(ModelCommands.NEW_GROUP.id);
-            if (item.id === 'scheme' && this.valueSetKind === 'collection') {
-                const collection = this.paletteItems.flatMap(i => i.children ?? [i]).find(i => i.id === 'collection');
-                if (collection) return super.onClickCreateToolButton(button, collection)(ev);
-            }
             const classIri = (item.actions[0] as { args?: { classIri?: unknown } } | undefined)?.args?.classIri;
             if (typeof classIri === 'string') this.actions.useClass(classIri);
             arm(ev);
