@@ -1,21 +1,23 @@
 -- | Catenary interaction contract: elements as the user sees them, window state, actions, keys, canvas, panels, appearance.
 -- Data and transaction rules: spec/manifest.hs. Unresolved decisions and known gaps: spec/open.md. Design rules: the index at the top of spec/manifest.hs.
 -- This file defines the target behavior. It does not certify the implementation. open.md names each known difference.
--- Haskell notation only. This file does not compile, and pnpm verify does not check it.
+-- The file is a Haskell module. pnpm check typechecks it with spec/manifest.hs (scripts/check-manifests.mjs).
+-- Signatures carry the contract. Equations (endsOf, dependsOn, cascade, style) are rules. Other bodies are stubs at the end.
 -- Sections go from concepts to details. Code comments cite section numbers (§n): keep them stable.
 
 module Catenary.UiManifest where
 
-import Catenary.Manifest (EditCommand, Id, Side)
+import Control.Applicative ((<|>))
+import Catenary.Manifest (EditCommand, Iri, Side, manifestOnly)
 
 -- 1. Elements and layers -----------------------------------------------------
 
 -- | An element is an IRI resource or a triple. Its statements define its content.
 -- A layer classifies statements, not elements or files. One element can have statements in several layers.
 -- Diagram content never changes Domain statements.
-data Resource = Iri String | Triple String String String
+data Resource = Node Iri | Triple Iri Iri Iri deriving Eq   -- a triple element is a connector: its object is an IRI
 type Element = Resource
-type Statement = (Resource, String, Resource)
+type Statement = (Resource, Iri, Resource)
 data Layer
   = Domain    -- instances, relations, SKOS concepts, schemes and collections
   | Shapes    -- node shapes, property shapes, logical constraints
@@ -28,15 +30,15 @@ layer :: Statement -> Layer
 -- A placement relates one element to one view. It supplies position and appearance. A placement has no placement.
 -- A view reference is a placement of a view. A placement row in a listing stands for the placement itself.
 isView, isPlacement :: Element -> Bool
-placementOf, viewOf :: Element -> Element
-placements :: Element -> [Element]
+elementOf, viewOf :: Element -> Element   -- of a placement: the element that it places, and its view
+placements :: Element -> [Element]        -- the placements of an element, on all views
 
 -- | An element has at most one own placement per view. A figure can also show it as a part.
 -- Several figures can show the same part on one view. Each part belongs to the placement that shows it.
 atMostOnce :: Element -> Element -> Bool
 data Part = Part Element Resource
 parts :: Element -> [Part]
-shownBy :: Element -> Element -> [Element]
+shownBy :: Element -> Element -> [Element]   -- element, view: the placements that show the element there, own or as a part
 
 -- | A connector is a triple with an IRI object. Its ends are its subject and object, never other connectors.
 -- It ends at the figure of each end when the view shows it, else at a shown box that has that end as a nt:linkEnd part
@@ -47,9 +49,9 @@ shownBy :: Element -> Element -> [Element]
 -- Removing a connector placement stores no hidden state.
 -- A hidden connector draws dashed while an end is selected (Links below). A click places it. Placed connectors draw solid.
 endsOf :: Element -> [Element]
-endsOf (Triple s _ o) = [Iri s, Iri o]
-endsOf _ = []
-attachments :: Element -> Element -> [Element]
+endsOf (Triple s _ o) = [Node s, Node o]
+endsOf (Node _) = []
+attachments :: Element -> Element -> [Element]   -- connector, view: the figure at each end
 
 -- | A mark exists through its placements. Removing its last placement deletes the mark.
 -- A mark can have placements on several views. Its statements stay in the view file where the user made it.
@@ -118,7 +120,7 @@ figureOf :: Element -> Element -> Maybe Fig   -- view, element
 data Dependency = Needs [Element] | KeptBy [Element]
 dependsOn :: Element -> [Dependency]
 dependsOn x
-  | isPlacement x = Needs [placementOf x, viewOf x] : [KeptBy (shownBy e (viewOf x)) | e <- endsOf (placementOf x)]
+  | isPlacement x = Needs [elementOf x, viewOf x] : [KeptBy (shownBy e (viewOf x)) | e <- endsOf (elementOf x)]
   | keptByPlacements x = [KeptBy (placements x)]
   | keptByLines x = [KeptBy (linesTo x)]
   | otherwise = []
@@ -180,10 +182,12 @@ data Highlighted = Row Element | ClosedFolder String | OnActiveCanvas Element
 -- place e v: place e on v, with the connector ends that v does not show. An own placement makes it a no-op.
 -- remove accepts placements only. delete on a canvas placement deletes its element.
 -- A listing row acts on its own element, also when that element is a placement.
-place :: Element -> Element -> ()
-setStyle :: Resource -> Style -> ()
-setGeometry :: Element -> Geometry -> ()
-remove, delete, goToSource :: Element -> ()
+-- Each graph operation is one EditCommand (spec/manifest.hs §5). Go to Source changes no graph.
+place :: Element -> Element -> EditCommand
+setStyle :: Resource -> Style -> EditCommand
+setGeometry :: Element -> Geometry -> EditCommand
+remove, delete :: Element -> EditCommand
+goToSource :: Element -> IO ()
 
 -- | An action uses the selection. The backend decides applicability from store facts and selected items, never widget focus.
 -- Use all types of each selected IRI. A preferred display kind does not hide actions of another type.
@@ -236,7 +240,9 @@ followUp :: Element -> Field
 
 -- 5. Canvas ------------------------------------------------------------------
 
--- | Palette: Model tools for Shape, Scheme and one tool per class with a target-class shape. View tools: Group and Note.
+-- | Palette: a bar of two rows. Sections, left to right: Shape (a tile over both rows), SKOS (Scheme over Collection),
+--   classes (one tool per class with a target-class shape, in two rows, then "+N"), View (Group over Note).
+--   Shape is first and largest: shapes drive the classes, the forms and the validation.
 -- Class tools follow the metamodel after edits, undo and reload.
 -- Drag sources: a class folder creates an instance. Element rows place cards, relations or view references.
 -- A file from the navigator gives a view reference for a view file, else a file reference. A broken reference shows a warning.
@@ -353,6 +359,10 @@ data OneOf
 
 -- 7. Panels ------------------------------------------------------------------
 
+-- | Side panel width: the stored width, the default width (new layout), or the width of the last sash drag.
+-- A window resize widens a narrower open side panel to that width. Reason: a tiling window manager resizes the window after the restore.
+-- Default width: left min(280 px, 20 % of the window), right min(320 px, 24 % of the window).
+
 -- | Right area: sections derive their content from the same selection. Mixed selections show mixed values.
 -- Element: outgoing statements, fields of all applicable shapes grouped by shape, uncovered statements, errors beside fields.
 -- Visuals: figure, style and geometry, and whether each style value comes from the placement or the element.
@@ -435,8 +445,9 @@ pageSize = 100
 -- Class-level style is outside this contract. Geometry has no element-level fallback.
 data Style = Style { color :: Maybe String }
 data Geometry = Geometry { box :: (Double, Double, Double, Double), sides :: (Maybe Side, Maybe Side) }
-styleOf :: Resource -> Maybe Style
-style :: Element -> Style
+styleOf :: Resource -> Maybe Style   -- the style statements of one level
+style :: Element -> Style            -- the effective style of a placement
+style p = Style { color = (styleOf p >>= color) <|> (styleOf (elementOf p) >>= color) }
 
 -- | Appearance edits color, size, display and edge sides. Mixed values show empty. Each accepted change is one command.
 -- The panel has three sections. Each heading names its scope.
@@ -498,3 +509,36 @@ style :: Element -> Style
 -- Browse selects an existing file in the workspace folder. A typed path that does not exist makes a new file at the first write.
 -- A rejected change shows its message below its row, not as a notification.
 data SettingOwner = ProjectSetting | PersonSetting
+
+-- Compile-only stubs ----------------------------------------------------------
+
+-- | GHC requires a binding for each signature. Add a stub here for each new signature. Do not give a stub behavior.
+
+layer = manifestOnly
+isView = manifestOnly
+isPlacement = manifestOnly
+elementOf = manifestOnly
+viewOf = manifestOnly
+placements = manifestOnly
+atMostOnce = manifestOnly
+parts = manifestOnly
+shownBy = manifestOnly
+attachments = manifestOnly
+keptByPlacements = manifestOnly
+inside = manifestOnly
+figureOf = manifestOnly
+keptByLines = manifestOnly
+linesTo = manifestOnly
+everything = manifestOnly
+documentsIn = manifestOnly
+highlight = manifestOnly
+place = manifestOnly
+setStyle = manifestOnly
+setGeometry = manifestOnly
+remove = manifestOnly
+delete = manifestOnly
+goToSource = manifestOnly
+followUp = manifestOnly
+applies = manifestOnly
+uncovered = manifestOnly
+styleOf = manifestOnly

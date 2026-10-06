@@ -1,11 +1,14 @@
 -- | Catenary data contract: files, RDF, commands, transactions, persistence, read interface and CLI.
 -- Interaction rules: spec/ui-manifest.hs. Unresolved decisions and known gaps: spec/open.md.
--- Haskell notation only. This file does not compile, and pnpm verify does not check it.
+-- The file is a Haskell module. pnpm check typechecks it with GHC (scripts/check-manifests.mjs), so names and types stay consistent.
+-- Signatures carry the contract. Their bodies are stubs in the last section, "Compile-only stubs".
 -- Signatures describe effects, not a wire schema. TypeScript defines exact fields (paths named in each section).
 -- IO is an external effect. Tx is a synchronous store transaction. Either Error is a rejection.
 -- Sections go from the outside in: terms, workspace, store, views, commands, shapes, validation, persistence, reads, CLI.
 
 module Catenary.Manifest where
+
+import Prelude hiding (Left, Right)   -- Side uses these names. The contract never matches on Either.
 
 -- | Design rules. Code comments cite them as "ADR <n>". Each line gives the rule, its reason, and where the contract states it.
 -- ADR 0001  One operation per action for all element kinds (rename, setUri, delete, copy, setStatements, one view-box model);
@@ -41,7 +44,7 @@ data Side = Top | Right | Bottom | Left
 skolemize :: [Quad] -> [Quad]
 
 -- | Owned nested resource: a skolem IRI, or a shape part <owner>-…, with no other referrer. It joins copy and deletion of its owner.
-ownedBy :: Iri -> [Iri]
+ownedBy :: Iri -> Tx [Iri]
 
 -- | Element IDs encode terms, not labels. An IRI ID is n-<escaped IRI>. A relation ID encodes its triple.
 -- An IRI change changes the ID. The snapshot field movedIds lets selection and editors follow the change.
@@ -55,14 +58,18 @@ relationId :: Term -> Iri -> Term -> Id
 -- | A workspace is a folder of RDF files. The files are the source of truth (ADR 0003). Files have no roles (ADR 0004).
 -- The optional TriG workspace file holds one graph, urn:name:workspace, in namespace osg://vocab/workspace#.
 -- A workspace file with other graphs does not open.
-data WorkspaceSettings = WorkspaceSettings
-  { defaultFile :: Maybe FilePath                          -- ws:defaultFile
-  , placeShapes, placeConcepts, placeInstances :: Place   -- ws:placeShapes, ws:placeConcepts, ws:placeInstances
-  , exclude :: [String]                                    -- ws:exclude globs
-  , exportViews :: [Iri]                                   -- ws:exportViews, an RDF list
-  , prefixes :: [(String, Iri)]                            -- sh:declare / sh:prefix / sh:namespace
-  }
 -- Relative paths resolve against the folder of the workspace file. Writers use / separators on all platforms.
+data WorkspaceFile = WorkspaceFile
+  { settings :: WorkspaceSettings
+  , prefixes :: [(String, Iri)]                  -- sh:declare / sh:prefix / sh:namespace; setPrefixes
+  , exportViews :: [Iri]                         -- ws:exportViews, an RDF list; setExportViews
+  }
+-- | The settings that setSettings replaces. TypeScript: WorkspaceSettings in modeler/src/common/protocol.ts.
+data WorkspaceSettings = WorkspaceSettings
+  { defaultFile :: Maybe FilePath                -- ws:defaultFile
+  , placement :: Placement
+  , exclude :: [String]                          -- ws:exclude globs
+  }
 
 -- | Open a folder: use workspace.trig, else its only workspace file. Several candidates require an explicit choice.
 -- No workspace file: use default settings. The window asks the placement once. Create writes workspace.trig.
@@ -72,7 +79,7 @@ data WorkspaceSettings = WorkspaceSettings
 -- and views/main.view.trig with the view Main. Proposed placement: <name>.shapes.ttl, <name>.skos.ttl, all other subjects near.
 -- Existing file content stays.
 open :: FilePath -> IO CommandResult
-create :: FilePath -> Maybe WorkspaceSettings -> IO CommandResult
+create :: FilePath -> Maybe Placement -> IO CommandResult
 
 -- | Membership: supported RDF files of the folder and its subfolders. Not: hidden entries, *.bak, node_modules,
 -- other workspace files, ws:exclude matches. A subfolder with its own workspace file is a nested workspace, outside this one.
@@ -90,7 +97,8 @@ modelFiles :: FilePath -> IO [FilePath]
 isViewFile :: FilePath -> Bool
 
 -- | Placement of new subjects, by kind: shapes, SKOS resources, all other subjects (instances).
--- The workspace file stores "near" or a relative path for each kind. Writers store every kind explicitly.
+-- The workspace file stores "near" or a relative path for each kind (ws:placeShapes, ws:placeConcepts, ws:placeInstances).
+-- Writers store every kind explicitly.
 -- A kind without a value: with ws:defaultFile, shapes use that file and the other kinds are near. Without it, all are near.
 -- The legacy value "default" means ws:defaultFile, or near without one.
 -- Near shapes: the writable file with most node shapes. Near concepts: the file of their scheme or collection.
@@ -98,13 +106,16 @@ isViewFile :: FilePath -> Bool
 -- Default file: ws:defaultFile when set. Else a nonempty writable model file that is not the shapes or SKOS file,
 -- Turtle first, then path order. Else <workspace name>.ttl. The settings view shows it but does not edit ws:defaultFile.
 data Place = File FilePath | Near
-fileForNew :: WorkspaceSettings -> Iri -> FilePath
+data Placement = Placement { shapes, concepts, instances :: Maybe Place }
+fileForNew :: WorkspaceSettings -> Iri -> Tx FilePath
 
 -- | Prefixes: one table per backend, from the workspace file. Prefix declarations in model files do not fill it.
 -- No declarations: use defaults without a rewrite of the workspace file. Reject two prefixes for one namespace.
 -- Settings, prefixes, export order and migration dismissal are not undo steps. A change of exclusions reloads membership.
 -- Person preferences are not part of this contract.
 setSettings :: WorkspaceSettings -> IO CommandResult
+setPrefixes :: [(String, Iri)] -> IO CommandResult
+setExportViews :: [Id] -> IO CommandResult
 
 -- 3. Store -------------------------------------------------------------------
 
@@ -119,12 +130,12 @@ setSettings :: WorkspaceSettings -> IO CommandResult
 -- Preserve legacy Trellis IRIs because saved view placements use urn:trellis:list:*, and existing files use osg://vocab/trellis-* terms.
 -- The workspace file stays in workspace metadata, outside the read models.
 -- Source named-graph names of model files are not kept: a write loses them (open.md STORE1). Do not claim TriG round trips.
-origin :: Quad -> [FilePath]
+origin :: Quad -> Tx [FilePath]
 
 -- | Statement origin: existing triples keep their files. An addition prefers its prior origin, then the file of its subject,
 -- then the file of a referring statement. A preferred read-only file gives the default file.
 -- A deletion from a read-only file cannot persist. IRI replacement and undo keep statement origins.
-fileForAdd :: Quad -> FilePath
+fileForAdd :: Quad -> Tx FilePath
 
 -- 4. Views in RDF ------------------------------------------------------------
 
@@ -343,8 +354,9 @@ save :: IO CommandResult
 -- the metamodel and counts (instances, report results, violations), and the last change:
 -- its reason and, for an edit, undo or redo, its views, elements, shapes flag and layout flag.
 -- The layout flag marks a change of placement geometry or style only. A panel skips a read that the change cannot affect.
--- A snapshot carries no Doc and no report.
+-- A snapshot carries no Doc and no report. onDidChange is the client callback (ModelClient). getSnapshot reads the current one.
 data Snapshot
+getSnapshot :: IO Snapshot
 onDidChange :: Snapshot -> IO ()
 
 -- 10. CLI --------------------------------------------------------------------
@@ -363,3 +375,39 @@ onDidChange :: Snapshot -> IO ()
 -- Prompt adapters: dialogs, quick picks, input boxes, canvas pickers, inline inputs.
 -- Limit: notification buttons and canvas drags have no adapter. Use exec for model effects, not for gesture checks.
 -- status reports source and build staleness, backend restart need and window reload need. All must be false before a runtime check.
+
+-- Compile-only stubs ----------------------------------------------------------
+
+-- | GHC requires a binding for each signature. These stubs keep the sections above as declarations only.
+-- Add a stub here for each new signature. Do not give a stub behavior: write behavior as an equation in its section.
+manifestOnly :: a
+manifestOnly = error "signature-level manifest only"
+
+skolemize = manifestOnly
+ownedBy = manifestOnly
+elementId = manifestOnly
+relationId = manifestOnly
+open = manifestOnly
+create = manifestOnly
+modelFiles = manifestOnly
+isViewFile = manifestOnly
+fileForNew = manifestOnly
+setSettings = manifestOnly
+setPrefixes = manifestOnly
+setExportViews = manifestOnly
+origin = manifestOnly
+fileForAdd = manifestOnly
+placementIri = manifestOnly
+markIri = manifestOnly
+viewDoc = manifestOnly
+transact = manifestOnly
+execute = manifestOnly
+undo = manifestOnly
+redo = manifestOnly
+proposeShapes = manifestOnly
+migrateData = manifestOnly
+dismissMigration = manifestOnly
+validate = manifestOnly
+save = manifestOnly
+getSnapshot = manifestOnly
+onDidChange = manifestOnly

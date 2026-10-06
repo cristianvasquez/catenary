@@ -28,6 +28,7 @@ import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, Catenary
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { WorkspaceSettingsContribution, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
+import { SidePanelSizes } from './side-panel-sizes';
 import { ModelFrontend } from './model-client';
 import { SelectionModel } from './selection-model';
 import { AppearanceContribution } from './properties/appearance-widget';
@@ -97,8 +98,11 @@ const MODEL_MENU_CREATE = [...MODEL_MENU, '3_create'];
 const EXPLORER_SURFACE = [...EXPLORER_CONTEXT_MENU, '4_surface'];
 const DIAGRAM_SURFACE = [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_4_surface'];
 
-/** Stored layouts of an older version refer to explorers that no longer exist (the Workspace tab: Views, Files): they are discarded once. */
-const LAYOUT_VERSION = 4;
+/**
+ * Stored layouts of an older version are discarded once. Version 4 discards explorers that no longer exist (the Workspace tab: Views,
+ * Files). Version 5 discards side panel widths that a window resize after the layout restore made too narrow (SidePanelSizes).
+ */
+const LAYOUT_VERSION = 5;
 const LAYOUT_VERSION_KEY = 'catenary.layoutVersion';
 
 /**
@@ -129,6 +133,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     @inject(RecentWorkspaces) protected readonly recent: RecentWorkspaces;
     @inject(StorageService) protected readonly storage: StorageService;
     @inject(ViewsExport) protected readonly viewsExport: ViewsExport;
+    @inject(SidePanelSizes) protected readonly panelSizes: SidePanelSizes;
     protected readonly showHidden = new Set<string>();
 
     constructor() {
@@ -167,12 +172,8 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     protected freshLayout = false;
 
     async onDidInitializeLayout(): Promise<void> {
-        // New layout: side panels wide enough for tree labels and forms. The shell stores the sizes the user sets later.
-        if (this.freshLayout) {
-            const width = window.innerWidth;
-            this.shell.resize(Math.round(Math.min(280, width * 0.2)), 'left');
-            this.shell.resize(Math.round(Math.min(320, width * 0.24)), 'right');
-        }
+        // Side panels wide enough for tree labels and forms, also after the window manager resizes the window.
+        this.panelSizes.start(this.freshLayout);
         (await this.widget).onOpen(node => this.openNode(node));
         // Model already open in the backend (page reload) and no view editor restored: open the first view.
         await this.model.start();

@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Native Theia modules: native-keymap needs X11 and xkbfile, keytar needs libsecret.
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev
       - uses: pnpm/action-setup@v4
         with:
           version: 11.3.0
@@ -17,5 +19,10 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      - name: Install GHC (typechecks spec/*.hs)
+        run: command -v ghc || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ghc)
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      # verify shows only the end of a failed step. Print the full logs.
+      - if: failure()
+        run: cat /tmp/catenary-verify-*/*.log

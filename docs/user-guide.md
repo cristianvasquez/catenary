@@ -34,7 +34,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 In the browser, append `?view=<view-id>` to the backend URL to open a specific view. Use `pnpm -s catenary --port PORT model views --keys` to get view IDs. For example: `http://localhost:3931/?view=n-urn_3aname_3aPackage_2520provenance`. The link selects a view in the current workspace after startup, even when other tabs were restored. An unknown view shows an error and leaves normal startup behavior unchanged. The link does not select a workspace or start a backend.
 
 - Open a view: double-click a `*.view.trig` file, or a view row in the Model explorer.
-- Create an element: use the palette (Shape, Scheme, one tool per class with a target-class shape; Group and Note for the view).
+- Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
 - Card controls (halo): Reveal, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.

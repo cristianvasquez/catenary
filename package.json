@@ -10,7 +10,7 @@
     "watch": "pnpm -C modeler watch",
     "test": "vitest run",
     "test:watch": "vitest --watch",
-    "check": "node scripts/check-boundaries.mjs && pnpm -C packages/rdf-serialization build && tsc -b packages/model packages/rdf-files packages/rdf modeler && tsc -p tsconfig.test.json",
+    "check": "node scripts/check-boundaries.mjs && node scripts/check-manifests.mjs && pnpm -C packages/rdf-serialization build && tsc -b packages/model packages/rdf-files packages/rdf modeler && tsc -p tsconfig.test.json",
     "e2e": "node scripts/e2e.cjs",
     "postinstall": "bash scripts/build-drivelist.sh && bash scripts/install-electron.sh && pnpm -C app -s download:plugins",
     "catenary": "node scripts/catenary.mjs",

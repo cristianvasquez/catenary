@@ -64,7 +64,6 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 | F-SEL-1 | Shift/Ctrl selection differs across card kinds. | Test cards, notes, references, entity groups and value sets with exact selections. |
 | F-SEL-2 | A listing-selected value set may not select its card. | Closure reports conflict. Reproduce across listing, active canvas and another canvas. |
 | F-DND-1 | Explorer property rows lack Search's drag behavior. | Test Explorer, Search and Links drag sources against the same view. |
-| F-CREATE-1 | The palette cannot create a SKOS collection directly. | Confirm whether target-picker creation is sufficient before adding a control. |
 | F-PANEL-1 | Entity groups, pills and alternative cards lack suitable Properties content. | Resolve through G4. Test each kind's panel and available actions. |
 | F-UNDO-1 | Some retarget/place or mixed-add gestures send two commands. | Count commands for row drags and Search additions. Cut and paste remain separate operations. |
 | F-FEED-1 | Empty or rejected drops can give no feedback. | Recheck own-card links and empty-canvas edge-end drops after the connect-drag changes. |
@@ -92,6 +91,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.
 - **Windows:** no Windows runtime test exists. The package substitutes a drive-list stub and browser keyboard layout for unavailable native modules. It requires `git.exe` on PATH for Source Control. Check filesystem writes, Git, window input and conpty on Windows. The unsigned executable can trigger SmartScreen.
 - **Electron:** use a real window. Headless Electron gives no working window: its main process exits and leaves its backend running, so a headless test cannot check the single-instance lock. A second `desktop.sh` launch on an open workspace must focus the open window: not verified with a real window. Historical test backends sometimes stopped with SIGPIPE during rebuilds. Reproduce with process logs before attributing a cause.
+- **Side panel widths:** `side-panel-sizes.ts` is not verified in a tiling window manager (Niri). Start the Electron app in a half-width column twice and check that both side panels keep their width. No browser test resizes the window yet.
 - **RDF 1.2:** base-direction literals lack end-to-end verification. Do not claim full support from term-key and writer checks alone.
 - **Scale:** routing cost on larger diagrams remains unmeasured. Small-view timings are not performance guarantees.
 - **Manifests:** Haskell notation remains unchecked. Machine checking is separate work. Start with command/RPC coverage and invariant tests, not a claim of full STE or contract certification.
