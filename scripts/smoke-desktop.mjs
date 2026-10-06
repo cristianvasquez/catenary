@@ -46,8 +46,16 @@ async function until(what, fn, ms = 90000) {
 }
 
 const gitEnv = { GIT_AUTHOR_NAME: 'smoke', GIT_AUTHOR_EMAIL: 'smoke@example.org', GIT_COMMITTER_NAME: 'smoke', GIT_COMMITTER_EMAIL: 'smoke@example.org' };
-// The identity as arguments, not as `env`: the first Windows run of `git init` with a changed `env` gave ENOENT.
-const git = (...args) => execFileSync('git', ['-c', 'user.name=smoke', '-c', 'user.email=smoke@example.org', ...args], { cwd: ws, encoding: 'utf8' }).trim();
+// `-C` instead of `cwd`: on the Windows runner, git started with this `cwd` gave ENOENT (spawn could not start it). On a failure, the
+// output says why.
+const git = (...args) => {
+    try {
+        return execFileSync('git', ['-C', ws, '-c', 'user.name=smoke', '-c', 'user.email=smoke@example.org', ...args], { encoding: 'utf8' }).trim();
+    } catch (e) {
+        const where = (() => { try { return execFileSync(windows ? 'where.exe' : 'which', ['git'], { encoding: 'utf8' }).trim(); } catch (w) { return w.message; } })();
+        throw new Error(`git ${args.join(' ')}: ${e.message}\n  workspace ${JSON.stringify(ws)} exists: ${existsSync(ws)}\n  git: ${where}`);
+    }
+};
 
 mkdirSync(run);
 if (!launcher) {
