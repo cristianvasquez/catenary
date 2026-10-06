@@ -13,8 +13,9 @@ import { viewFigures } from '@catenary/model';
 import { nquads, readNotations, storeIndex } from '../src/notations';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
+import { fileURLToPath } from 'node:url';
 
-const FIXTURE = new URL('./fixtures/notation/', import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL('./fixtures/notation/', import.meta.url));
 const EX = 'https://example.org/draft/';
 const ex = (l: string) => iri(EX + l);
 const RDFS_SUB = 'http://www.w3.org/2000/01/rdf-schema#subClassOf';

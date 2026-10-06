@@ -5,6 +5,7 @@ import { parseRdf } from '../src/files';
 import { forgetTurtleTrees, patchTurtle } from 'rdf-files';
 import { rdf } from '../src/terms';
 import { canonical } from '../src/trig';
+import { fileURLToPath } from 'node:url';
 
 const EX = 'http://example.org/', RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#', XSD = 'http://www.w3.org/2001/XMLSchema#';
 const FILE = '/tmp/x.ttl';
@@ -116,7 +117,7 @@ it('a text with a blank node is not patched (Catenary has no blank nodes; the ca
 });
 
 // Every triple of the fixtures: remove it, and add it back. Each step reads as expected. A fixture with blank nodes is not patched.
-const FIXTURES = new URL('./fixtures/', import.meta.url).pathname;
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 // Turtle files only: view files are TriG (*.view.trig) and a save writes them as a whole.
 const files = readdirSync(FIXTURES).filter(f => f.endsWith('.ttl')).map(f => FIXTURES + f);
 describe('text patch: every triple of the fixtures', () => {

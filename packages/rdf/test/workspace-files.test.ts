@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFIXES, Doc, PREFIXES, compactIri, emptyShapes, boxes } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
@@ -55,7 +55,7 @@ describe('workspace files', () => {
         const graphs = () => new Set((store as unknown as { graph: ModelGraph }).graph.quads().map(q => q.graph.value));
         expect(graphs().has(fileGraphIri(f.shapes))).toBe(true);
         expect(graphs().has(fileGraphIri(f.data))).toBe(false);
-        expect(store.files.files.map(x => [x.path.slice(f.dir.length + 1), x.kinds])).toEqual([['data.ttl', ['instances']], ['shapes.ttl', ['shapes']], ['sub/more.ttl', ['instances']]]);
+        expect(store.files.files.map(x => [x.path.slice(f.dir.length + 1).split(sep).join('/'), x.kinds])).toEqual([['data.ttl', ['instances']], ['shapes.ttl', ['shapes']], ['sub/more.ttl', ['instances']]]);
         const labels = Object.values(docOf(store).instances).map(i => i.label);
         expect(labels).toContain('More');
         expect(labels.filter(l => ['Backup', 'Hidden', 'Nested'].includes(l))).toEqual([]);

@@ -9,7 +9,7 @@ import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import {
-    OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, readUnchanged,
+    OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
     writeAll
 } from 'rdf-files';
 import { MANIFEST_GRAPH, Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, isViewFile, defaultViewsFolder, listModelFiles, manifestQuads, parseRdf, readManifest, serializeRdf, writeProblem } from './files';
@@ -328,7 +328,7 @@ export class Workspace {
     mount(r: FileRead, notes: string[]): boolean {
         this.stale = 'all';
         this.graph.shapesChanged();
-        const name = path.relative(this.folder, r.path);
+        const name = portableRelative(this.folder, r.path);
         if (r.kind === 'error') {
             this.modelFiles.set(r.path, { path: r.path, error: r.error });
             notes.push(`${name}: not read: ${r.error}`);
@@ -448,7 +448,7 @@ export class Workspace {
         const members = new Set(await listModelFiles(this.workspace.path, this.exclude));
         const known = new Map<string, OnDisk & { path: string; error?: string }>([...this.modelFiles.values(), ...this.viewFiles.values()].map(f => [f.path, f]));
         const read: string[] = [], notes: string[] = [];
-        const name = (file: string) => path.relative(this.folder, file);
+        const name = (file: string) => portableRelative(this.folder, file);
         // The "not read" warnings of these files are replaced: the file is gone, or read again (a new failure gives a new warning).
         const unmounted = new Set<string>();
         // A file without text and without a read error is not written yet: not a removal.
@@ -615,7 +615,7 @@ export class Workspace {
     committable(): string[] {
         return [...new Set(this.written)].filter(file => {
             if (!this.uncommitted.has(pathKey(file))) return true;
-            this.note(`not committed: ${path.relative(this.folder, file)} has changes that are not committed`);
+            this.note(`not committed: ${portableRelative(this.folder, file)} has changes that are not committed`);
             return false;
         });
     }
