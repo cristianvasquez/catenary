@@ -29,6 +29,7 @@ permissions:
 jobs:
   classify:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       statuses: write
@@ -102,6 +103,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.fast != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,10 +112,14 @@ jobs:
       - name: Style sheets
         run: node scripts/check-css.mjs
       - name: Browser form test (CSS on the SHACL form, no app build)
+        timeout-minutes: 3
+        env:
+          DEBUG: pw:api
         run: |
           pnpm -C packages/model -s build
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
+          echo "browser: $CHROMIUM $("$CHROMIUM" --version)"
           node --test --test-name-pattern='node OR selector' scripts/e2e.cjs
       - name: Install GHC (typechecks spec/*.hs)
         if: needs.classify.outputs.check == 'true'
@@ -130,6 +136,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.unit != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +152,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.build != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -161,6 +169,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.e2e != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -206,6 +215,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.shadow != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -215,6 +225,7 @@ jobs:
     needs: [classify, fast, unit, build, e2e, windows-unit, packages, release-dry, shadow]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -233,6 +244,7 @@ jobs:
     needs: [classify, gate]
     if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.gate.result != 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
       pull-requests: read
@@ -264,6 +276,7 @@ jobs:
   metrics:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read
       issues: read

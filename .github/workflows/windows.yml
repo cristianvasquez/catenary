@@ -46,6 +46,7 @@ jobs:
   package:
     if: inputs.package
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -67,6 +68,7 @@ jobs:
   unit:
     if: inputs.unit
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       # The test fixtures compare text: keep the LF line ends of the repository. The smoke job checks CRLF files.
       - run: git config --global core.autocrlf false
@@ -92,6 +94,7 @@ jobs:
     needs: package
     if: always() && (inputs.package || inputs.smoke) && (needs.package.result == 'success' || needs.package.result == 'skipped')
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
