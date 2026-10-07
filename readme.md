@@ -43,7 +43,10 @@ pnpm package linux-x64 --appimage  # also dist/Catenary-linux-x64.AppImage
 node scripts/check-windows-package.mjs   # layout and binaries of the Windows package (pnpm package:win first)
 xvfb-run -a node scripts/smoke-desktop.mjs   # start the desktop app and check paths, writes, Git, watcher
 pnpm test             # source-based tests
-pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
+pnpm check            # package boundaries, manifest typecheck (GHC), Markdown links, CSS and TypeScript
+pnpm build:browser    # the build without the Electron app
+node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
+node scripts/risk-profile.mjs   # the CI risk profile and job plan of the current branch against main
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
 ```
@@ -63,7 +66,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow builds on Linux with `scripts/package.sh`, signs the macOS apps ad hoc on macOS and attaches these files to a GitHub release:
+The workflow publishes only a commit whose CI run on `main` passed. It builds on Linux with `scripts/package.sh`, starts each package once, signs the macOS apps ad hoc on macOS and attaches these files to a GitHub release:
 
 | File | Platform | Start |
 |---|---|---|
@@ -73,7 +76,7 @@ The workflow builds on Linux with `scripts/package.sh`, signs the macOS apps ad 
 | `Catenary-darwin-arm64.dmg`, `.zip` | macOS, Apple silicon | `Catenary.app` |
 | `Catenary-darwin-x64.dmg`, `.zip` | macOS, Intel | `Catenary.app` |
 
-A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A change to the packaging files, or a manual run, builds the packages as workflow artifacts without a release. The packages have no Apple or Windows code signature:
+A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A pull request that changes the packaging files, or a manual run, builds the packages as workflow artifacts without a release. The packages have no Apple or Windows code signature:
 
 - macOS: after you copy Catenary to Applications, run `xattr -dr com.apple.quarantine /Applications/Catenary.app`. Alternatively, open it once from System Settings → Privacy & Security → Open Anyway.
 - Windows: SmartScreen can show a warning. Select More info → Run anyway. Source Control needs `git.exe` on the PATH.

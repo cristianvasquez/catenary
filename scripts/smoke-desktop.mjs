@@ -3,7 +3,8 @@
 // the writes, Git, the watcher, the plugins and the native modules. Made for the Windows package (CI workflow windows.yml); runs on
 // Linux too. The workspace path has a space and a non-ASCII letter. The test never uses workspace/ and stops the processes it started.
 // Usage: node scripts/smoke-desktop.mjs [package-dir] [--crlf | --launcher]
-//   package-dir  dist/Catenary-win32-x64. Without it: the Linux build of electron-app/. On Linux without a display, use xvfb-run.
+//   package-dir  dist/Catenary-win32-x64, dist/Catenary-linux-x64, or the folder of Catenary.app on macOS. Without it: the Linux
+//                build of electron-app/. On Linux without a display, use xvfb-run.
 //   --crlf       the workspace files have CRLF line ends, as after a Git checkout with core.autocrlf on Windows.
 //   --launcher   start Catenary.cmd of the package on its example/ folder (Windows). Read-only: no edits in the package.
 import { execFileSync, spawn } from 'node:child_process';
@@ -77,12 +78,14 @@ if (!launcher) {
     git('commit', '-q', '-m', 'bookshop');
 }
 
-const plugins = pkg ? join(pkg, 'resources/app/plugins') : join(root, 'app/plugins');
+const plugins = pkg ? join(pkg, process.platform === 'darwin' ? 'Catenary.app/Contents/Resources/app/plugins' : 'resources/app/plugins') : join(root, 'app/plugins');
 const profile = `--user-data-dir=${join(tmp, 'profile')}`;
 // Catenary.cmd gives the example folder and the plugins; it starts Catenary.exe with `start` and ends at once.
 const [exe, args, cwd] = launcher ? ['cmd.exe', ['/d', '/c', join(pkg, 'Catenary.cmd'), profile], pkg]
-    // The package sets its plugin folder itself (catenary-main.js: THEIA_DEFAULT_PLUGINS), as when a user starts Catenary.exe.
-    : pkg ? [join(pkg, 'Catenary.exe'), [ws, profile], pkg]
+    // The executable of a package folder: dist/Catenary-win32-x64, dist/Catenary-linux-x64 or the folder that holds Catenary.app.
+const packageExe = windows ? 'Catenary.exe' : process.platform === 'darwin' ? 'Catenary.app/Contents/MacOS/Electron' : 'catenary';
+// The package sets its plugin folder itself (catenary-main.js: THEIA_DEFAULT_PLUGINS), as when a user starts Catenary.exe.
+    : pkg ? [join(pkg, packageExe), [ws, profile], pkg]
         : [join(realpathSync(join(root, 'node_modules/electron')), 'dist/electron'), ['.', ws, `--plugins=local-dir:${plugins}`, profile], join(root, 'electron-app')];
 // Linux CI runners and containers have no usable Chromium sandbox (no SUID helper, user namespaces off or root).
 if (!windows) args.push('--no-sandbox');

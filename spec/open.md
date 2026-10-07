@@ -20,7 +20,6 @@ Evidence labels distinguish source checks from historical reports. A historical 
 | OWN1 | Ownership rules of nested resources | ADR 0014 removes ownership from the display: the cascade only decides which figure draws an element. Copy and delete still use three ownership rules that disagree (`graph.ts:389` skolem and one referrer, `shape-ops.ts:88` IRI prefix, `shapes-read.ts:136-160` helper content). A named helper with two owners (`Keys concept`) passes only the third rule. Its Explorer row cannot be dragged, and Properties shows "Loading…" (`selection.ts:39-47`, `properties-widget.tsx:460,503`). Choose one rule. |
 | D11 | Class pill: private or shared | Datatype and node-kind ends are private to their line (ADR 0014). A class without a node shape is a shared pill (`shn:ClassPill`, kept by lines). Decide whether it follows the datatype rule. |
 | MIGRATION1 | Opposing migration entries | Historical report: changing a target class and changing it back leaves both entries. Decide whether to merge or cancel them before applying either. |
-| CI1 | Risk-based CI profiles | Proposal: [draft/ci-profiles/readme.md](../draft/ci-profiles/readme.md). Decide whether to adopt it. Phase 0 (remove duplicate runs) is independent of the rest. |
 
 ## Data safety and persistence
 
