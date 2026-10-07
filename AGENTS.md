@@ -66,7 +66,7 @@ Commands that need no window: `status`, `model`, `rpc`, `exec`. The UI commands 
 
 ## Assertions
 
-- RDF files: query with the `rdf` CLI (`rdf read f.ttl | rdf select --query-file q.rq`). No grep on RDF, no assumptions about prefixes or text layout.
+- RDF files: query them with SPARQL (`node scripts/rdf-query.cjs f.ttl --query-file q.rq`). No grep on RDF, no assumptions about prefixes or text layout.
 - Text in the UI: exact match. `hasText: 'relation'` also matches `qualifiedRelation`.
 - A claim in your report needs the output that shows it.
 
