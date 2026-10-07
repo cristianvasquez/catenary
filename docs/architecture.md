@@ -96,7 +96,8 @@ Paths are relative to the directory in the first column.
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
-| | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test (`.github/workflows/windows.yml`) |
+| | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |
+| | `risk-profile.mjs`, `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs`, `ci-metrics.mjs` | CI: risk profile and job plan, CLI and RPC contract smoke test, Markdown links, style sheets, pipeline numbers |
 
 ## Hosts
 
@@ -125,10 +126,29 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 | `packages/rdf/test` | RDF commands, transactions, undo, queries, validation, file round trips |
 | `modeler/test` | Store-to-GLSP updates, frontend actions, selection, layout |
 | `scripts/e2e.cjs` | Browser wiring of gestures and rendering only |
-| `scripts/smoke-desktop.mjs` | The desktop app or the Windows package: paths, writes, Git, watcher, plugins, native modules |
+| `scripts/smoke-cli.mjs` | CLI and RPC contract of the browser backend: authentication, edits on disk, undo, read back |
+| `scripts/smoke-desktop.mjs` | The desktop app or a package: paths, writes, Git, watcher, plugins, native modules |
 
 Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them.
+
+### CI
+
+`.github/workflows/ci.yml` gives each PR a risk profile with `scripts/risk-profile.mjs`. The profile selects the jobs. The only required check is `gate`.
+
+| Profile | Paths (examples) | Blocking jobs |
+|---|---|---|
+| `docs` | `*.md`, `LICENSE` | Markdown links |
+| `cosmetic` | `modeler/css/**` | Style sheets, browser form test |
+| `standard` | `modeler/src/browser`, `packages/model`, manifests, `examples/`, unknown paths | Check, affected unit tests, browser build |
+| `critical` | `packages/rdf*`, `modeler/src/node`, protocol, CLI, edit commands, IDs, paths | Check, full unit tests (3 shards), browser build, CLI smoke |
+| `platform` | Workflows, dependencies, patches, Electron, packaging, the classifier | `critical` plus the Electron build and, for packaging files, the Linux and Windows packages |
+
+- The highest profile of all changed files wins. Added lines that write files, start processes or change IRIs raise the profile to `critical`. A `.only` in a test fails.
+- The labels `risk:critical` and `risk:platform` raise the profile. The label `risk:hold` makes the gate wait for the optional jobs (e2e, Windows tests). Re-run the workflow after a label change.
+- After the merge, `main` runs the full set, and every job blocks. A failure opens a `ci-escape` issue. The nightly run adds the Windows tests and the packages.
+- A tag `v*` runs only `release.yml`. It requires a passed CI run on `main` for the commit, then builds the packages once and starts each one.
+- To change a rule, edit `scripts/risk-profile.mjs` and the cases in `scripts/test/risk-profile.test.mjs`.
 
 Assert fields and geometry invariants, not whole-render snapshots or exact ELK coordinates. Query RDF results with the `rdf` CLI and SPARQL, including named graphs. Never run tests against `workspace/`.
