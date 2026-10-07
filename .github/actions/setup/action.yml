@@ -1,0 +1,39 @@
+name: Setup
+description: pnpm, Node and the dependencies of one CI job.
+inputs:
+  install:
+    description: >-
+      light: dependencies without install scripts (unit tests, typecheck, browser build).
+      backend: light plus the native drivelist module (a running Theia backend: CLI smoke, e2e).
+      full: with install scripts (Electron, native Theia modules, plugins: the Electron build and the packages).
+    default: light
+runs:
+  using: composite
+  steps:
+    # Native Theia modules: native-keymap needs X11 and xkbfile, keytar needs libsecret.
+    - if: inputs.install == 'full'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 11.3.0
+        run_install: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .node-version
+        cache: pnpm
+    - if: inputs.install == 'full'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    # Without install scripts: no Electron download, no native builds, no plugin download. About 20 s less per job.
+    - if: inputs.install != 'full'
+      shell: bash
+      run: pnpm install --frozen-lockfile --ignore-scripts
+    - if: inputs.install == 'backend'
+      shell: bash
+      run: bash scripts/build-drivelist.sh
+    # Tests import electron-main-module.ts, which loads the electron package. Its index throws without the binary; the tests only
+    # use pure functions of the module.
+    - if: inputs.install != 'full'
+      shell: bash
+      run: echo "ELECTRON_OVERRIDE_DIST_PATH=/nonexistent" >> "$GITHUB_ENV"

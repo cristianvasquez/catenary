@@ -12,7 +12,8 @@ const { iriId } = require('../packages/model/lib/ids.js');
 
 const root = path.resolve(__dirname, '..');
 
-test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 15000 }, async t => {
+// 45 s: the first browser start of a CI runner takes about 15 s (launch and first page, Chromium 154 on ubuntu-latest).
+test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 45000 }, async t => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -75,11 +76,7 @@ async function navigator(page, ...folders) {
 }
 
 // Inspect saved RDF as a dataset, not Turtle text (prefixes and serialization order are not stable).
-function rdfRows(file, query) {
-  const dataset = execFileSync('rdf', ['read', file], { encoding: 'utf8' });
-  const result = execFileSync('rdf', ['select', query], { input: dataset, encoding: 'utf8' }).trim();
-  return result ? result.split('\n').map(line => JSON.parse(line)) : [];
-}
+const rdfRows = (file, query) => require('./rdf-query.cjs').rows(file, query);
 
 function startBackend(workspace, config, onLog) {
   const entry = path.join(root, 'app/lib/backend/main.js');
