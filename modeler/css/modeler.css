@@ -81,7 +81,7 @@
 .catenary-group.mouseover > .body { stroke-width: 3; }
 .catenary-group.selected > .body { stroke: var(--catenary-accent); stroke-width: 4; }
 
-.catenary-note { --c: #e0ac00; }
+.catenary-note { --c: #c5a13a; }
 .catenary-note > .body { fill: color-mix(in srgb, var(--c) 16%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .catenary-note.mouseover > .body { stroke-width: 2.5; }
 .catenary-note.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
@@ -106,7 +106,7 @@
 
 /* The editor uses the note's surface color, not Theia's modal dialog chrome. */
 .catenary-note-popover {
-    --c: #e0ac00;
+    --c: #c5a13a;
     --catenary-note-surface: color-mix(in srgb, var(--c) 16%, var(--catenary-bg));
     --vscode-editor-background: var(--catenary-note-surface);
     position: fixed; z-index: 10000; box-sizing: border-box;
