@@ -69,8 +69,7 @@ describe('request-scoped read models give the answers of the whole read model', 
     });
 
     // This compares every element against each view; Node 22 can exceed Vitest's default timeout. The test yields after each view: a
-    // worker that runs for a minute without a break misses the replies of Vitest ("Timeout calling onTaskUpdate"). The Windows runner
-    // takes several times longer than Linux for this test.
+    // worker that runs for a minute without a break misses the replies of Vitest ("Timeout calling onTaskUpdate").
     it('occurrence and element rows of each element and each placement, in each view', async () => {
         for (const view of views()) {
             await new Promise(resolve => setImmediate(resolve));
@@ -81,7 +80,7 @@ describe('request-scoped read models give the answers of the whole read model', 
             }
         }
         for (const id of elements()) expect(store.elementRows([id]), id).toEqual(elementRows(doc, store.meta, [id]));
-    }, process.platform === 'win32' ? 300_000 : 60_000);
+    }, 60_000);
 
     it('neighbor choices and halo counts of each card', () => {
         for (const view of views()) {

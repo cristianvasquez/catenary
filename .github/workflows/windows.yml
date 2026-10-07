@@ -2,7 +2,7 @@ name: Windows
 
 # The Windows package is built on Linux (scripts/package-windows.sh). This workflow checks it on a real Windows runner:
 #  - package:  build the zip on Linux, check its layout and binaries, run the desktop smoke test on Linux, upload the zip.
-#  - unit:     the unit tests on Windows: real win32 paths, file system, watcher and Git (no path.win32 simulation).
+#  - unit:     the tests of paths, files, the watcher and Git on Windows (real win32 paths, no path.win32 simulation).
 #  - smoke:    extract the zip on Windows, start Catenary.exe and Catenary.cmd, and drive them with scripts/smoke-desktop.mjs.
 
 # Not on every push: about 10 minutes of runners for a platform without daily use. It runs on a change of the package or the desktop
@@ -74,9 +74,16 @@ jobs:
       # No install scripts: they build the Linux desktop app (drivelist, Electron for linux-x64). The unit tests do not need them.
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm check
+      # The tests of paths, files, the watcher and Git: what differs on Windows. The other tests are pure rules on RDF and diagrams,
+      # the same on every platform; ci.yml runs all of them on Linux. On the Windows runner the full suite took 5 minutes, and its
+      # CPU-heavy tests made Vitest time out ("Timeout calling onTaskUpdate") although all tests passed.
       # Separate processes: in the thread pool, a Vitest worker ended with a V8 fatal error ("unreachable code") on Windows.
-      # One worker: with two, the SHACL worker threads took the CPU and the Vitest main process timed out ("onTaskUpdate").
-      - run: pnpm test --pool=forks --maxWorkers=1
+      - run: >-
+          pnpm test --pool=forks
+          packages/model/test/paths.test.ts packages/rdf/test/paths.test.ts packages/rdf-files/test/rdf-files.test.ts
+          packages/rdf/test/watch.test.ts packages/rdf/test/workspace-files.test.ts packages/rdf/test/workspace.test.ts
+          packages/rdf/test/review-save.test.ts packages/rdf/test/text-patch.test.ts packages/rdf/test/trig.test.ts
+          modeler/test/electron-profile.test.ts
 
   smoke:
     needs: package
