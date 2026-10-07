@@ -76,11 +76,7 @@ async function navigator(page, ...folders) {
 }
 
 // Inspect saved RDF as a dataset, not Turtle text (prefixes and serialization order are not stable).
-function rdfRows(file, query) {
-  const dataset = execFileSync('rdf', ['read', file], { encoding: 'utf8' });
-  const result = execFileSync('rdf', ['select', query], { input: dataset, encoding: 'utf8' }).trim();
-  return result ? result.split('\n').map(line => JSON.parse(line)) : [];
-}
+const rdfRows = (file, query) => require('./rdf-query.cjs').rows(file, query);
 
 function startBackend(workspace, config, onLog) {
   const entry = path.join(root, 'app/lib/backend/main.js');

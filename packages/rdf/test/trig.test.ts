@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +12,9 @@ import { rdf } from '../src/terms';
 import { canonical as canonicalOf, parseTrig, writeTrig } from '../src/trig';
 import { validate } from '../src/validate';
 import { DCT, MODEL, byLabel, doc, example, load, meta, value } from './helpers';
+
+/** scripts/rdf-query.cjs: Oxigraph, a parser independent of the one that Catenary writes with. */
+const rdfQuery = createRequire(join(process.cwd(), 'package.json'))('./scripts/rdf-query.cjs') as { rows(files: string | string[], query: string): Record<string, string>[] };
 
 const canonical = async (text: string) => canonicalOf((await parseTrig(text)).quads);
 const validateGraph = (g: Awaited<ReturnType<typeof load>>, m: Awaited<ReturnType<typeof meta>>) =>
@@ -105,21 +108,14 @@ describe('TriG round trip', () => {
         expect(frames()).toBe(1);
     });
 
-    it('rdf CLI reads the file: one model graph and one named graph per view', async () => {
+    it('another parser (Oxigraph) reads the file: one model graph and one named graph per view', async () => {
         const g = await example();
         ops.createView(g, 'Empty view');
         const dir = mkdtempSync(join(tmpdir(), 'catenary-'));
         const file = join(dir, 'out.trig');
         writeFileSync(file, await writeTrig(g.quads()));
-        let nquads: string;
-        try {
-            nquads = execFileSync('rdf', ['read', file], { encoding: 'utf8' });
-        } catch {
-            console.warn('rdf CLI not available, skipped');
-            return;
-        }
-        const graphs = new Set(nquads.trim().split('\n').map(l => /(<[^>]*>) \.$/.exec(l)?.[1]));
-        expect([...graphs].sort()).toEqual(['<urn:name:Empty%20view>', '<urn:name:Product%20context>', '<urn:name:model>']);
+        const graphs = rdfQuery.rows(file, 'SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }').map(r => r.g);
+        expect(graphs.sort()).toEqual(['urn:name:Empty%20view', 'urn:name:Product%20context', 'urn:name:model']);
     });
 });
 

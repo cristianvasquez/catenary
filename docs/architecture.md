@@ -98,6 +98,7 @@ Paths are relative to the directory in the first column.
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |
 | | `risk-profile.mjs`, `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs`, `ci-metrics.mjs` | CI: risk profile and job plan, CLI and RPC contract smoke test, Markdown links, style sheets, pipeline numbers |
+| | `rdf-query.cjs` | SPARQL on RDF files (Oxigraph) for tests and agents |
 
 ## Hosts
 
@@ -151,4 +152,4 @@ Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole datas
 - A tag `v*` runs only `release.yml`. It requires a passed CI run on `main` for the commit, then builds the packages once and starts each one.
 - To change a rule, edit `scripts/risk-profile.mjs` and the cases in `scripts/test/risk-profile.test.mjs`.
 
-Assert fields and geometry invariants, not whole-render snapshots or exact ELK coordinates. Query RDF results with the `rdf` CLI and SPARQL, including named graphs. Never run tests against `workspace/`.
+Assert fields and geometry invariants, not whole-render snapshots or exact ELK coordinates. Query RDF results with SPARQL (`scripts/rdf-query.cjs`), including named graphs. Never run tests against `workspace/`.
