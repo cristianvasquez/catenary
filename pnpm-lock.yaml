@@ -8,7 +8,7 @@ packageExtensionsChecksum: sha256-TAGk2V3bF3LtyGQj3V0H5fqTqo6nKyOXTe0IQ5hfN9I=
 
 patchedDependencies:
   '@rdfjs/serializer-turtle@1.1.5': ff98f486e5e5c3dc7c90a80ca7b349b7e1663cf042596aec08563ecd1de5bdce
-  shacl-engine@1.1.2: ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9
+  shacl-engine@1.1.2: 344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21
 
 importers:
 
@@ -189,7 +189,7 @@ importers:
         version: 1.74.1(@theia/electron@1.74.1(electron@42.3.0))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       '@ulb-darmstadt/shacl-form':
         specifier: ^3.7.3
-        version: 3.7.3(@ro-kit/ui-widgets@1.0.64(lit@3.3.3))(jsonld@9.0.0)(n3@2.7.12)(rdfxml-streaming-parser@3.3.0)(shacl-engine@1.1.2(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9))(uuid@13.0.2)
+        version: 3.7.3(@ro-kit/ui-widgets@1.0.64(lit@3.3.3))(jsonld@9.0.0)(n3@2.7.12)(rdfxml-streaming-parser@3.3.0)(shacl-engine@1.1.2(patch_hash=344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21))(uuid@13.0.2)
       elkjs:
         specifier: ^0.11.1
         version: 0.11.1
@@ -247,8 +247,8 @@ importers:
         specifier: workspace:*
         version: link:../rdf-serialization
       shacl-engine:
-        specifier: github:cristianvasquez/shacl-engine#fff1373f2dece77419a47b177a6a4f71a0beec88
-        version: https://codeload.github.com/cristianvasquez/shacl-engine/tar.gz/fff1373f2dece77419a47b177a6a4f71a0beec88(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9)
+        specifier: 1.1.2
+        version: 1.1.2(patch_hash=344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21)
       shaclxtract:
         specifier: ^0.1.0
         version: 0.1.0
@@ -5836,10 +5836,6 @@ packages:
 
   shacl-engine@1.1.2:
     resolution: {integrity: sha512-ypclUwHJ6KPYUZb8ggslN7BSOwza9vgIwQgLY0oey0Xbzla6B7cRWroeDvfkntYzU1HnERgGvC/qsKge3a6s1Q==}
-
-  shacl-engine@https://codeload.github.com/cristianvasquez/shacl-engine/tar.gz/fff1373f2dece77419a47b177a6a4f71a0beec88:
-    resolution: {gitHosted: true, tarball: https://codeload.github.com/cristianvasquez/shacl-engine/tar.gz/fff1373f2dece77419a47b177a6a4f71a0beec88}
-    version: 1.1.2
 
   shaclc-parse@1.4.3:
     resolution: {integrity: sha512-MQJWVFjfzzMUvieFO0STWjIo49ywy63UkVSsr0e8+8xHUns6X+i3yWYxNKd+GtSEJjBNZxxrUubog+hnd7PvRA==}
@@ -11959,13 +11955,13 @@ snapshots:
       '@types/node': 22.20.4
     optional: true
 
-  '@ulb-darmstadt/shacl-form@3.7.3(@ro-kit/ui-widgets@1.0.64(lit@3.3.3))(jsonld@9.0.0)(n3@2.7.12)(rdfxml-streaming-parser@3.3.0)(shacl-engine@1.1.2(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9))(uuid@13.0.2)':
+  '@ulb-darmstadt/shacl-form@3.7.3(@ro-kit/ui-widgets@1.0.64(lit@3.3.3))(jsonld@9.0.0)(n3@2.7.12)(rdfxml-streaming-parser@3.3.0)(shacl-engine@1.1.2(patch_hash=344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21))(uuid@13.0.2)':
     dependencies:
       '@ro-kit/ui-widgets': 1.0.64(lit@3.3.3)
       jsonld: 9.0.0
       n3: 2.7.12
       rdfxml-streaming-parser: 3.3.0
-      shacl-engine: 1.1.2(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9)
+      shacl-engine: 1.1.2(patch_hash=344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21)
       uuid: 13.0.2
 
   '@virtuoso.dev/react-urx@0.2.13(react@18.3.1)':
@@ -15367,23 +15363,7 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shacl-engine@1.1.2(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9):
-    dependencies:
-      '@comunica/query-sparql-rdfjs-lite': 5.4.1
-      '@comunica/utils-bindings-factory': 5.4.0
-      '@rdfjs/namespace': 2.0.1
-      '@rdfjs/term-map': 2.0.2
-      '@rdfjs/term-set': 2.0.3
-      '@rdfjs/to-ntriples': 3.0.1
-      grapoi: 1.3.0
-      lodash: 4.18.1
-      rdf-literal: 2.0.0
-      rdf-validation: 0.1.1
-      readable-stream: 4.7.0
-    transitivePeerDependencies:
-      - encoding
-
-  shacl-engine@https://codeload.github.com/cristianvasquez/shacl-engine/tar.gz/fff1373f2dece77419a47b177a6a4f71a0beec88(patch_hash=ad213d91999f5edca9ed47b04d0e95ade1e604b86c33c90a133da38078f79df9):
+  shacl-engine@1.1.2(patch_hash=344d182ccc240c73049a0109fa2a876bdfd245fe7d37f20c368b6527b5d36f21):
     dependencies:
       '@comunica/query-sparql-rdfjs-lite': 5.4.1
       '@comunica/utils-bindings-factory': 5.4.0

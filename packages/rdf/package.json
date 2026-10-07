@@ -21,7 +21,7 @@
     "canonical-md": "^0.3.0",
     "rdf-ext": "^2.6.0",
     "rdf-files": "workspace:*",
-    "shacl-engine": "github:cristianvasquez/shacl-engine#fff1373f2dece77419a47b177a6a4f71a0beec88",
+    "shacl-engine": "1.1.2",
     "shaclxtract": "^0.1.0"
   },
   "devDependencies": {
