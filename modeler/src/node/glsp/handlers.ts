@@ -17,7 +17,7 @@ import { ViewSession } from './view-session';
 /** Select the created element. It has a default name: rename it in place (F2) or in the properties. */
 const selectCreated = (r: { id?: string }): Action[] => [SelectAction.create({ selectedElementsIDs: [r.id!], deselectedElementsIDs: true })];
 
-/** Follow-up of a creation (spec/ui-manifest.hs §4): select it; the client edits its name slot, or the text of a note, after it renders. */
+/** Follow-up of a creation (spec/ui-manifest.hs §4.6): select it; the client edits its name slot, or the text of a note, after it renders. */
 const renameCreated = (view: string) => (r: { id?: string }): Action[] => [
     ...selectCreated(r), { kind: 'catenaryEditCanvasName', id: r.id!, view } as Action
 ];

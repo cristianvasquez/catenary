@@ -3,7 +3,7 @@
 
 /**
  * The selected items (never label ids), and the view they were selected in (if any). A selection on a canvas holds placements
- * (spec/ui-manifest.hs §3): a card and a placed edge by the id of their placement, as a mark. A listing selects elements.
+ * (spec/ui-manifest.hs §3.3): a card and a placed edge by the id of their placement, as a mark. A listing selects elements.
  */
 export interface ModelSelection {
     view?: string;

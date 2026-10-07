@@ -59,7 +59,7 @@ export function viewTerm(g: ModelGraph, id: string): NamedNode | undefined {
     return t?.termType === 'NamedNode' && g.isView(t) ? t : undefined;
 }
 
-/** Types of marks (spec/ui-manifest.hs §2): elements kept by their placements. */
+/** Types of marks (spec/ui-manifest.hs §2.2): elements kept by their placements. */
 export const MARK_TYPES = [V.Frame, V.Note, V.FileRef, V.EntityGroup];
 
 /** View-owned elements, by kind: the placement of a mark (its type), of a view (`V.View`: a view reference), of an arrow (`V.arrow`). */
@@ -128,7 +128,7 @@ function newPlacement(g: ModelGraph, view: NamedNode, element: NamedNode, box: P
     return p;
 }
 
-/** Remove a placement. A mark or an arrow without placements is deleted (spec/ui-manifest.hs §4, kept by placements). */
+/** Remove a placement. A mark or an arrow without placements is deleted (spec/ui-manifest.hs §2.2, kept by placements). */
 export function removePlacement(g: ModelGraph, view: NamedNode, placement: Quad_Subject): void {
     const e = elementOf(g, view, placement);
     const t = g.connectorOf(placement, view);
@@ -442,7 +442,7 @@ function removeEdgeLayouts(g: ModelGraph, s: Term, p: Term, o: Term): void {
 
 /**
  * Sides or color of a relation in one view ('' / undefined remove the value). `hidden`: true removes the placement of the relation,
- * false places it (spec/ui-manifest.hs §2: no hidden state).
+ * false places it (spec/ui-manifest.hs §2.8: no hidden state).
  */
 export function setEdgeLayout(g: ModelGraph, viewId: string, relationId: string, patch: Partial<Omit<EdgeLayout, 'relation'>>): Result {
     const view = viewTerm(g, viewId), r = relationTerms(g, relationId);
@@ -471,13 +471,13 @@ function isRelation(g: ModelGraph, q: Quad): boolean {
         && isInstanceTerm(g, q.subject) && isInstanceTerm(g, q.object) && g.has(q);
 }
 
-/** A connector (spec/ui-manifest.hs §2): a relation of the model graph, or an arrow (`x view:arrow y`, in a view graph). */
+/** A connector (spec/ui-manifest.hs §2.8): a relation of the model graph, or an arrow (`x view:arrow y`, in a view graph). */
 function isConnector(g: ModelGraph, q: Quad): boolean {
     return q.predicate.equals(V.arrow) ? g.has(q) && q.object.termType === 'NamedNode' : isRelation(g, q);
 }
 
 /**
- * Runs after each command (spec/ui-manifest.hs §2). A new placement of an element places its connectors (relations, arrows) to the
+ * Runs after each command (spec/ui-manifest.hs §2.8). A new placement of an element places its connectors (relations, arrows) to the
  * elements already placed in that view. A new connector is placed in every view that places both ends.
  */
 export function placeConnectors(g: ModelGraph): void {
@@ -626,7 +626,7 @@ export function createViewReference(g: ModelGraph, viewId: string, targetId: str
     const view = viewTerm(g, viewId), target = viewTerm(g, targetId);
     if (!view) return gone('view', viewId);
     if (!target) return gone('view', targetId);
-    // A view reference is a placement of the view (spec/ui-manifest.hs §2). A view places it once.
+    // A view reference is a placement of the view (spec/ui-manifest.hs §2.1). A view places it once.
     if (g.nodeOf(view, target)) return fail(`View "${g.label(target, target)}" is already in view "${g.label(view, view)}".`);
     return ok(elementId(newPlacement(g, view, target, { ...at, ...DEFAULT_VIEW_REFERENCE_SIZE })));
 }

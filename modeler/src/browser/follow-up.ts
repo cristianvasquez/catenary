@@ -1,4 +1,4 @@
-// Follow-up of a creation (spec/ui-manifest.hs §4): the new element is selected where the gesture was made, and its first editable
+// Follow-up of a creation (spec/ui-manifest.hs §4.6): the new element is selected where the gesture was made, and its first editable
 // field gets the keyboard focus with the default value selected. On a canvas: the name slot of its card, or the note editor. Else the
 // field of the Element section (Properties) that carries `data-catenary-field`; else a label dialog. Enter accepts, Escape keeps the
 // default value (it cancels the edit, not the creation). The typed value is a second undo step. No field found: the caller asks for

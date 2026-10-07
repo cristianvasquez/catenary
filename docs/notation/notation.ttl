@@ -117,7 +117,7 @@ nt:style a rdf:Property ; rdfs:comment "A style key. On a property shape with nt
 #   A figure lists all its parts. The join shows a part as a row only when the part has no placement in the view.
 #   A placement needs a shown figure at each end (a Line). A hub placement needs both ends of each member line.
 #   A hub and its member lines are placed and removed as one unit. Removing a placement removes
-#   the placements that need it (spec/ui-manifest.hs §2, dependsOn). Their elements return as rows of their owner.
+#   the placements that need it (spec/ui-manifest.hs §2.9, dependsOn). Their elements return as rows of their owner.
 
 # === Stored: views ==============================================================
 

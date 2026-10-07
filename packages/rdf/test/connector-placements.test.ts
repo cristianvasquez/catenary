@@ -6,7 +6,7 @@ import { byLabel, doc, example, meta, run, value } from './helpers';
 
 const USES = 'osg://vocab/data-product-draft#uses';
 
-// spec/ui-manifest.hs §2: a placement of a relation is stored; placing an element places its relations to the elements on the view.
+// spec/ui-manifest.hs §2.8: a placement of a relation is stored; placing an element places its relations to the elements on the view.
 describe('placements of relations', () => {
     it('placing a card places its relations to the cards of the view; one undo step removes both', async () => {
         const m = await meta();

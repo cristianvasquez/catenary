@@ -285,7 +285,7 @@ export class PropertyEdgeView implements IView {
     }
 }
 
-/** Drawn while its owner card or its target is selected (spec/ui-manifest.hs §6): a direct curve, not routed. */
+/** Drawn while its owner card or its target is selected (spec/ui-manifest.hs §6.1): a direct curve, not routed. */
 @injectable()
 export class LatentEdgeView implements IView {
     render(edge: Readonly<LatentEdge>, _context: RenderingContext): VNode {

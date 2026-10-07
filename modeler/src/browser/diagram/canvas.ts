@@ -39,7 +39,7 @@ export const DND_VIEW = 'application/x-catenary-view';
 const DND_FILES = 'theia-editor-dnd';
 /** Elements that an arrow can connect. */
 const BOXES = '.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-collection, .catenary-leaf';
-/** Elements that a connect gesture dims when they are not its targets (spec/ui-manifest.hs §5 Connect drags). */
+/** Elements that a connect gesture dims when they are not its targets (spec/ui-manifest.hs §5.5 Connect drags). */
 const CONNECTABLE = `${BOXES}, .catenary-edge, .catenary-logic, .shape-row, .member-row`;
 
 /**
@@ -401,7 +401,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
     }
 
     /**
-     * Connect gesture `g` (spec/ui-manifest.hs §5 Connect drags): the elements of `g.selector` without a problem are the targets
+     * Connect gesture `g` (spec/ui-manifest.hs §5.5 Connect drags): the elements of `g.selector` without a problem are the targets
      * (dragLine). Release on a target: `g.drop`. Else: `g.click` near the start; on a dimmed element (not the source): the reason, as a
      * message; on empty canvas: `g.empty`; outside the view: nothing.
      */
@@ -541,7 +541,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
     }
 
     /**
-     * Connect gesture (spec/ui-manifest.hs §5 Connect drags): dashed line from `from` (client coordinates) to the pointer. During the
+     * Connect gesture (spec/ui-manifest.hs §5.5 Connect drags): dashed line from `from` (client coordinates) to the pointer. During the
      * drag, every element of the view (CONNECTABLE) that is not in `targets`, does not contain one and is not inside one is dimmed; the
      * `source` stays. The target under the pointer is highlighted. `drop` runs on release, with that target or undefined: the same set
      * decides the dimming and the drop.

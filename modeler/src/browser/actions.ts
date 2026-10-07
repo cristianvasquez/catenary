@@ -188,7 +188,7 @@ export class ModelActions {
     }
 
     /**
-     * Follow-up of a creation (spec/ui-manifest.hs §4, follow-up.ts): the first field of the new element gets the focus; with no
+     * Follow-up of a creation (spec/ui-manifest.hs §4.6, follow-up.ts): the first field of the new element gets the focus; with no
      * field for its label, a label dialog. `view`: the gesture was on that canvas.
      */
     async followUp(id: string, field: FollowUpField = 'label', view?: string): Promise<void> {
