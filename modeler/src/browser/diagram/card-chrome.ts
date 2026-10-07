@@ -14,7 +14,7 @@ export function s(tag: string, data: VNodeData, children: (VNode | string)[] = [
 // JSON Canvas preset colors "1".."6", "white" (stored as the CSS color name), and "none" (transparent: no fill, no border); any other
 // value is a CSS color (for example #hex).
 export const PRESETS: Record<string, string> = {
-    'none': 'transparent', '1': '#e93147', '2': '#ec7500', '3': '#e0ac00', '4': '#08b94e', '5': '#00bfbc', '6': '#7852ee', 'white': '#ffffff'
+    'none': 'transparent', '1': '#d65a68', '2': '#d97a3a', '3': '#c5a13a', '4': '#4d9a70', '5': '#3e98a2', '6': '#7668c9', 'white': '#ffffff'
 };
 export const COLOR_NAMES: Record<string, string> = { 'none': 'none', '1': 'red', '2': 'orange', '3': 'yellow', '4': 'green', '5': 'cyan', '6': 'purple', 'white': 'white' };
 /** The presets in menu order (object keys put "1".."6" before "none"). */
