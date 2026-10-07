@@ -5,10 +5,29 @@ name: Windows
 #  - unit:     the unit tests on Windows: real win32 paths, file system, watcher and Git (no path.win32 simulation).
 #  - smoke:    extract the zip on Windows, start Catenary.exe and Catenary.cmd, and drive them with scripts/smoke-desktop.mjs.
 
+# Not on every push: about 10 minutes of runners for a platform without daily use. It runs on a change of the package or the desktop
+# app (the paths below), and on demand: Actions → Windows → Run workflow (or `gh workflow run windows.yml --ref <branch>`).
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/windows.yml
+      - scripts/package-windows.sh
+      - scripts/check-windows-package.mjs
+      - scripts/smoke-desktop.mjs
+      - electron-app/**
+      - modeler/src/electron-main/**
+      - pnpm-lock.yaml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows.yml
+      - scripts/package-windows.sh
+      - scripts/check-windows-package.mjs
+      - scripts/smoke-desktop.mjs
+      - electron-app/**
+      - modeler/src/electron-main/**
+      - pnpm-lock.yaml
 
 jobs:
   package:
