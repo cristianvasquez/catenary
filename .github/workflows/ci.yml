@@ -226,7 +226,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: scripts/risk-profile.mjs
+          sparse-checkout: |
+            scripts/risk-profile.mjs
+            .node-version
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v4
         with:
