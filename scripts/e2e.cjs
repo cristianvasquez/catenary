@@ -12,7 +12,8 @@ const { iriId } = require('../packages/model/lib/ids.js');
 
 const root = path.resolve(__dirname, '..');
 
-test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 15000 }, async t => {
+// 45 s: the first browser start of a CI runner takes about 15 s (launch and first page, Chromium 154 on ubuntu-latest).
+test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 45000 }, async t => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });
   t.after(() => browser.close());
   const page = await browser.newPage();

@@ -113,13 +113,10 @@ jobs:
         run: node scripts/check-css.mjs
       - name: Browser form test (CSS on the SHACL form, no app build)
         timeout-minutes: 3
-        env:
-          DEBUG: pw:api
         run: |
           pnpm -C packages/model -s build
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
-          echo "browser: $CHROMIUM $("$CHROMIUM" --version)"
           node --test --test-name-pattern='node OR selector' scripts/e2e.cjs
       - name: Install GHC (typechecks spec/*.hs)
         if: needs.classify.outputs.check == 'true'
