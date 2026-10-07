@@ -49,7 +49,7 @@ export const P = {
 export const V = {
     View: rdf.namedNode(NS.view + 'View'),
     Placement: rdf.namedNode(NS.view + 'Placement'),
-    // Marks (spec/ui-manifest.hs §2): elements of the Project layer, kept by their placements. A mark holds its content; its
+    // Marks (spec/ui-manifest.hs §2.2): elements of the Project layer, kept by their placements. A mark holds its content; its
     // placements hold box and color. The statements of a mark are in the view file of the view where it was made.
     /** A label; what is inside is computed from the geometry of one view. */
     Frame: rdf.namedNode(NS.view + 'Frame'),
