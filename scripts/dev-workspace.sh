@@ -11,13 +11,13 @@ fi
 workspace="${XDG_DATA_HOME:-$HOME/.local/share}/catenary/workspaces/example"
 if [[ ! -e "$workspace" ]]; then
   mkdir -p "$workspace"
-  cp -R "$root/examples/catalog/." "$workspace/"
+  cp -R "$root/examples/bookshop/." "$workspace/"
 else
   [[ -d "$workspace" ]] || { echo "not a workspace folder: $workspace" >&2; exit 1; }
   shopt -s nullglob dotglob
   entries=("$workspace"/*)
   if [[ ${#entries[@]} -eq 0 ]]; then
-    cp -R "$root/examples/catalog/." "$workspace/"
+    cp -R "$root/examples/bookshop/." "$workspace/"
   elif [[ ! -f "$workspace/workspace.trig" ]]; then
     echo "existing folder has no workspace.trig, refusing to seed it: $workspace" >&2
     exit 1

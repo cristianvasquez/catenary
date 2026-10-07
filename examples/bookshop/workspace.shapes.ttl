@@ -1,0 +1,74 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <urn:example:bookshop:> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<urn:name:Book%20shape-author> a sh:PropertyShape ;
+    sh:name "author" ;
+    sh:node <urn:name:Author%20shape> ;
+    sh:path <http://www.example.org/author> ;
+    sh:description "Each book must have at least one author. Coauthors are allowed." ;
+    sh:minCount 1 .
+
+<urn:name:Bookshop%20shape-stocks> a sh:PropertyShape ;
+    sh:name "stocks" ;
+    sh:node <urn:name:Book%20shape> ;
+    sh:path <http://www.example.org/stocks> ;
+    sh:description "Works offered by the shop; no minimum stock is required." .
+
+
+<urn:name:Bookshop%20shape-city> a sh:PropertyShape ;
+    sh:name "city" ;
+    sh:maxCount 1 ;
+    sh:minCount 1 ;
+    sh:path <http://www.example.org/city> ;
+    sh:description "City where the store is located; fictional in this example." ;
+    sh:node <urn:name:Cities%20member> ;
+    sh:nodeKind sh:IRI .
+
+<urn:name:Book%20shape-publicationYear> a sh:PropertyShape ;
+    sh:name "publication year" ;
+    sh:maxCount 1 ;
+    sh:minCount 1 ;
+    sh:datatype xsd:integer ;
+    sh:path <http://www.example.org/publicationYear> ;
+    sh:description "Year of first publication of the work, not an edition." .
+
+
+<urn:name:Author%20shape-birthDate> a sh:PropertyShape ;
+    sh:name "birth date" ;
+    sh:maxCount 1 ;
+    sh:minCount 1 ;
+    sh:datatype xsd:date ;
+    sh:path <http://www.example.org/birthDate> ;
+    sh:description "Date of birth of the author." .
+
+<urn:name:Author%20shape> a sh:NodeShape ;
+    sh:name "Author shape" ;
+    sh:property <urn:name:Author%20shape-birthDate> ;
+    sh:description "A person who wrote a work." ;
+    sh:targetClass ex:Author .
+
+<urn:name:Book%20shape> a sh:NodeShape ;
+    sh:name "Book shape" ;
+    sh:property <urn:name:Book%20shape-publicationYear>, <urn:name:Book%20shape-author> ;
+    sh:description "A literary work, independent of its editions and physical copies." ;
+    sh:targetClass ex:Book .
+
+<urn:name:Bookshop%20shape> a sh:NodeShape ;
+    sh:name "Shop shape" ;
+    sh:property <urn:name:Bookshop%20shape-city>, <urn:name:Bookshop%20shape-stocks> ;
+    sh:description "A retail store. This example shows a fictional store offering books." ;
+    sh:targetClass ex:Bookshop .
+
+<urn:name:Cities%20member> a sh:NodeShape ;
+    sh:in <urn:name:Cities%20member-in> ;
+    dct:source <urn:name:unnamed%20collection%201> .
+
+<urn:name:Cities%20member-in-2> rdf:rest rdf:nil ;
+    rdf:first <urn:name:Tanganana> .
+
+<urn:name:Cities%20member-in> rdf:rest <urn:name:Cities%20member-in-2> ;
+    rdf:first <urn:name:Tangamandapio> .

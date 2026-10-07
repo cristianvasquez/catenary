@@ -1,0 +1,34 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <urn:example:bookshop:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:name:Wonderland%20Books%20(fictional)> a ex:Bookshop ;
+    ex:name "Little corner Bookshop" ;
+    rdfs:label "Little corner Bookshop" ;
+    <http://www.example.org/city> <urn:name:Tangamandapio> ;
+    <http://www.example.org/stocks> <urn:name:Animal%20Farm>, <urn:name:Nineteen%20Eighty-Four>, <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland> .
+
+<urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland> a <urn:example:bookshop:Book> ;
+    rdfs:label "Alice’s Adventures in Wonderland" ;
+    <http://www.example.org/author> <urn:name:Lewis%20Carroll> ;
+    <http://www.example.org/publicationYear> 1865 .
+
+<urn:name:Nineteen%20Eighty-Four> a <urn:example:bookshop:Book> ;
+    rdfs:label "Nineteen Eighty-Four" ;
+    <http://www.example.org/author> <urn:name:George%20Orwell> ;
+    <http://www.example.org/publicationYear> 1949 .
+
+<urn:name:Animal%20Farm> a <urn:example:bookshop:Book> ;
+    rdfs:label "Animal Farm" ;
+    <http://www.example.org/author> <urn:name:George%20Orwell> ;
+    <http://www.example.org/publicationYear> 1945 .
+
+<urn:name:Lewis%20Carroll> a <urn:example:bookshop:Author> ;
+    rdfs:label "Lewis Carroll" ;
+    ex:name "Lewis Carroll" ;
+    <http://www.example.org/birthDate> "1832-01-27"^^xsd:date .
+
+<urn:name:George%20Orwell> a <urn:example:bookshop:Author> ;
+    rdfs:label "George Orwell" ;
+    ex:name "George Orwell" ;
+    <http://www.example.org/birthDate> "1903-06-25"^^xsd:date .

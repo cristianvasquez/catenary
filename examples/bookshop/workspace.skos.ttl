@@ -1,0 +1,11 @@
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<urn:name:unnamed%20collection%201> a skos:Collection ;
+    skos:prefLabel "Cities" ;
+    skos:member <urn:name:Tangamandapio>, <urn:name:Tanganana> .
+
+<urn:name:Tangamandapio> a skos:Concept ;
+    skos:prefLabel "Tangamandapio" .
+
+<urn:name:Tanganana> a skos:Concept ;
+    skos:prefLabel "Tanganana" .

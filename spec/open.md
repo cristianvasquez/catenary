@@ -83,6 +83,10 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 | LAYOUT1 | ADR 0014: the layout must treat a hub (logical constraint, generalization set) as a node; a hub placement without a position gets one from the layout. Layered gives tall results for hub graphs. The ui-manifest Surfaces view gives 3200 × 6367 px. Layered also reserves no room for edge labels. Direct edges still cross cards: 11 crossings in Shapes after Layered. | Decide whether Layered can choose DOWN at the view level, which changes UI §7.5. Try ELK inline edge labels, as @rdf-viz/layout does. Measure with the drawn geometry (toSchema). Measured 2026-10-04: Layered packs the 136 boxes of the catalog "proposed shapes" view into one column about 36,000 units tall. |
 | VISUAL1 | White borders disappear on a light canvas. Edge labels overlap, and group title padding ignores font size. | Check theme contrast, short edges and large fonts. Treat geometry limits separately from data correctness. |
 
+## Example limitations
+
+- **BOOKSHOP1:** The bundled bookshop example loads with one warning: the `Cities member` helper placement is not shown. The helper is a named node shape with `sh:in` and no target class. Preserve the supplied RDF. Resolve its display with the helper ownership rules (OWN1). The regression test in `workspace-files.test.ts` checks this warning.
+
 ## Verification gaps
 
 - **Last verification (2026-10-07, Node 22.23.3, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (5.2 s), test (566/566, 24.8 s), build (8.6 s) and e2e (6/6, 65.4 s).

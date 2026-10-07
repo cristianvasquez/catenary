@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,6 +41,24 @@ const viewId = (store: ModelStore, label: string) => Object.values(docOf(store).
 const instanceId = (store: ModelStore, label: string) => Object.values(docOf(store).instances).find(i => i.label === label)!.id;
 
 describe('workspace files', () => {
+    it('loads the bundled bookshop example with both views, six domain instances and its value set', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'catenary-bookshop-'));
+        dirs.push(dir);
+        cpSync(new URL('../../../examples/bookshop/', import.meta.url), dir, { recursive: true });
+        const store = await opened(join(dir, 'workspace.trig'));
+        expect(store.warnings.filter(w => !w.startsWith('not committed:'))).toEqual([
+            'Bookshop model: node for unknown instance urn:name:Cities%20member kept in the file, not shown'
+        ]);
+        const model = docOf(store);
+        expect(Object.values(model.views).map(v => v.label).sort()).toEqual(['Bookshop', 'Bookshop model']);
+        expect(Object.values(model.instances).map(i => i.label).sort()).toEqual([
+            'Alice’s Adventures in Wonderland', 'Animal Farm', 'Cities', 'George Orwell',
+            'Lewis Carroll', 'Little corner Bookshop', 'Nineteen Eighty-Four', 'Tangamandapio', 'Tanganana'
+        ]);
+        expect(store.files.views).toHaveLength(2);
+        expect(store.files.files).toHaveLength(3);
+    });
+
     it('files without roles (ADR 0004): every RDF file of the folder is read; shapes go to the graph of their file, the rest to the model graph', async () => {
         const f = files();
         mkdirSync(join(f.dir, 'sub'));

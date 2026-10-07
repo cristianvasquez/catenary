@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smoke test of the desktop app: starts it on a copy of examples/catalog, drives it with the CLI protocol and checks the file paths,
+// Smoke test of the desktop app: starts it on a copy of examples/bookshop, drives it with the CLI protocol and checks the file paths,
 // the writes, Git, the watcher, the plugins and the native modules. Made for the Windows package (CI workflow windows.yml); runs on
 // Linux too. The workspace path has a space and a non-ASCII letter. The test never uses workspace/ and stops the processes it started.
 // Usage: node scripts/smoke-desktop.mjs [package-dir] [--crlf | --launcher]
@@ -67,14 +67,14 @@ function copyTree(from, to) {
 
 mkdirSync(run);
 if (!launcher) {
-    copyTree(join(root, 'examples/catalog'), ws);
+    copyTree(join(root, 'examples/bookshop'), ws);
     // The line ends of the copy, whatever the checkout gave (core.autocrlf on Windows): LF, or CRLF with --crlf.
     for (const f of readdirSync(ws, { recursive: true }).map(f => join(ws, f)).filter(f => /\.(ttl|trig)$/.test(f))) {
         writeFileSync(f, readFileSync(f, 'utf8').replace(/\r?\n/g, crlf ? '\r\n' : '\n'));
     }
     git('init', '-q');
     git('add', '-A');
-    git('commit', '-q', '-m', 'catalog');
+    git('commit', '-q', '-m', 'bookshop');
 }
 
 const plugins = pkg ? join(pkg, 'resources/app/plugins') : join(root, 'app/plugins');
@@ -136,7 +136,8 @@ try {
     const paths = [...s.files.files, ...s.files.views].map(f => f.path);
     const outside = paths.filter(p => !p.startsWith(ws + sep) || !existsSync(p));
     check(`model and view files inside the workspace and on disk (${paths.length})`, paths.length >= 4 && !outside.length, outside);
-    check('no read warnings except Git', (await cli('model', { path: 'warnings' })).every(w => /commit/.test(w)), await cli('model', { path: 'warnings' }));
+    check('no unexpected read warnings', (await cli('model', { path: 'warnings' })).every(w => /commit/.test(w)
+        || w === 'Bookshop model: node for unknown instance urn:name:Cities%20member kept in the file, not shown'), await cli('model', { path: 'warnings' }));
 
     // Paths in the frontend: Theia URIs and the backend paths must give the same strings (commands.ts, file-kinds-decorator.ts compare them).
     const front = await evaluate(`
@@ -187,11 +188,11 @@ async function edits() {
 
     // A rename patches the text of data.ttl (a Turtle text patch) and keeps its line ends.
     const data = join(ws, 'data.ttl');
-    const renamed = await rpc('execute', { kind: 'rename', id: 'n-urn_3aname_3aEnglish', label: 'English language' });
+    const renamed = await rpc('execute', { kind: 'rename', id: 'n-urn_3aname_3aGeorge_2520Orwell', label: 'Orwell (smoke test)' });
     check('rename', renamed.result?.ok === true, renamed);
     n = await settled(n);
     const patched = readFileSync(data, 'utf8');
-    check('data.ttl patched', patched.includes('"English language"'), patched.slice(0, 300));
+    check('data.ttl patched', patched.includes('"Orwell (smoke test)"'), patched.slice(0, 300));
     check(`data.ttl keeps ${crlf ? 'CRLF' : 'LF'} line ends`, crlf ? !/[^\r]\n/.test(patched) : !patched.includes('\r'), JSON.stringify(patched.slice(0, 200)));
     await rpc('undo');
     n = await settled(n);

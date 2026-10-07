@@ -1,0 +1,147 @@
+@prefix adms: <http://www.w3.org/ns/adms#>.
+@prefix dcat: <http://www.w3.org/ns/dcat#>.
+@prefix dct: <http://purl.org/dc/terms/>.
+@prefix dpm: <osg://vocab/data-product-draft#>.
+@prefix dprod: <https://ekgf.github.io/dprod/>.
+@prefix ex: <http://www.example.org/>.
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+@prefix locn: <http://www.w3.org/ns/locn#>.
+@prefix odrl: <http://www.w3.org/ns/odrl/2/>.
+@prefix org: <http://www.w3.org/ns/org#>.
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
+@prefix prov: <http://www.w3.org/ns/prov#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix schema: <https://schema.org/>.
+@prefix sh: <http://www.w3.org/ns/shacl#>.
+@prefix skos: <http://www.w3.org/2004/02/skos/core#>.
+@prefix time: <http://www.w3.org/2006/time#>.
+@prefix vann: <http://purl.org/vocab/vann/>.
+@prefix vcard: <http://www.w3.org/2006/vcard/ns#>.
+@prefix view: <osg://vocab/view#>.
+@prefix ws: <osg://vocab/workspace#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+<urn:name:workspace> {
+  <urn:name:workspace> a ws:Workspace;
+    sh:declare
+      <urn:name:workspace-declare-adms>,
+      <urn:name:workspace-declare-dcat>,
+      <urn:name:workspace-declare-dct>,
+      <urn:name:workspace-declare-dpm>,
+      <urn:name:workspace-declare-dprod>,
+      <urn:name:workspace-declare-ex>,
+      <urn:name:workspace-declare-foaf>,
+      <urn:name:workspace-declare-locn>,
+      <urn:name:workspace-declare-odrl>,
+      <urn:name:workspace-declare-org>,
+      <urn:name:workspace-declare-owl>,
+      <urn:name:workspace-declare-prov>,
+      <urn:name:workspace-declare-rdf>,
+      <urn:name:workspace-declare-rdfs>,
+      <urn:name:workspace-declare-schema>,
+      <urn:name:workspace-declare-sh>,
+      <urn:name:workspace-declare-skos>,
+      <urn:name:workspace-declare-time>,
+      <urn:name:workspace-declare-vann>,
+      <urn:name:workspace-declare-vcard>,
+      <urn:name:workspace-declare-view>,
+      <urn:name:workspace-declare-ws>,
+      <urn:name:workspace-declare-xsd>;
+    ws:defaultFile "data.ttl";
+    ws:placeConcepts "workspace.skos.ttl";
+    ws:placeInstances "data.ttl";
+    ws:placeShapes "workspace.shapes.ttl".
+
+  <urn:name:workspace-declare-adms> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/adms#"^^xsd:anyURI;
+    sh:prefix "adms".
+
+  <urn:name:workspace-declare-dcat> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/dcat#"^^xsd:anyURI;
+    sh:prefix "dcat".
+
+  <urn:name:workspace-declare-dct> a sh:PrefixDeclaration;
+    sh:namespace "http://purl.org/dc/terms/"^^xsd:anyURI;
+    sh:prefix "dct".
+
+  <urn:name:workspace-declare-dpm> a sh:PrefixDeclaration;
+    sh:namespace "osg://vocab/data-product-draft#"^^xsd:anyURI;
+    sh:prefix "dpm".
+
+  <urn:name:workspace-declare-dprod> a sh:PrefixDeclaration;
+    sh:namespace "https://ekgf.github.io/dprod/"^^xsd:anyURI;
+    sh:prefix "dprod".
+
+  <urn:name:workspace-declare-ex> a sh:PrefixDeclaration;
+    sh:namespace "http://www.example.org/"^^xsd:anyURI;
+    sh:prefix "ex".
+
+  <urn:name:workspace-declare-foaf> a sh:PrefixDeclaration;
+    sh:namespace "http://xmlns.com/foaf/0.1/"^^xsd:anyURI;
+    sh:prefix "foaf".
+
+  <urn:name:workspace-declare-locn> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/locn#"^^xsd:anyURI;
+    sh:prefix "locn".
+
+  <urn:name:workspace-declare-odrl> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/odrl/2/"^^xsd:anyURI;
+    sh:prefix "odrl".
+
+  <urn:name:workspace-declare-org> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/org#"^^xsd:anyURI;
+    sh:prefix "org".
+
+  <urn:name:workspace-declare-owl> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI;
+    sh:prefix "owl".
+
+  <urn:name:workspace-declare-prov> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/prov#"^^xsd:anyURI;
+    sh:prefix "prov".
+
+  <urn:name:workspace-declare-rdf> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI;
+    sh:prefix "rdf".
+
+  <urn:name:workspace-declare-rdfs> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI;
+    sh:prefix "rdfs".
+
+  <urn:name:workspace-declare-schema> a sh:PrefixDeclaration;
+    sh:namespace "https://schema.org/"^^xsd:anyURI;
+    sh:prefix "schema".
+
+  <urn:name:workspace-declare-sh> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI;
+    sh:prefix "sh".
+
+  <urn:name:workspace-declare-skos> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI;
+    sh:prefix "skos".
+
+  <urn:name:workspace-declare-time> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2006/time#"^^xsd:anyURI;
+    sh:prefix "time".
+
+  <urn:name:workspace-declare-vann> a sh:PrefixDeclaration;
+    sh:namespace "http://purl.org/vocab/vann/"^^xsd:anyURI;
+    sh:prefix "vann".
+
+  <urn:name:workspace-declare-vcard> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2006/vcard/ns#"^^xsd:anyURI;
+    sh:prefix "vcard".
+
+  <urn:name:workspace-declare-view> a sh:PrefixDeclaration;
+    sh:namespace "osg://vocab/view#"^^xsd:anyURI;
+    sh:prefix "view".
+
+  <urn:name:workspace-declare-ws> a sh:PrefixDeclaration;
+    sh:namespace "osg://vocab/workspace#"^^xsd:anyURI;
+    sh:prefix "ws".
+
+  <urn:name:workspace-declare-xsd> a sh:PrefixDeclaration;
+    sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI;
+    sh:prefix "xsd".
+}

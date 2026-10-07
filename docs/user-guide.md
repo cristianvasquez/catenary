@@ -6,7 +6,7 @@ This guide describes what a user can do with Catenary. The exact rules for each 
 
 ## Open or create a workspace
 
-The first `pnpm start` or `pnpm desktop` copies `examples/catalog` to `~/.local/share/catenary/workspaces/example`, or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy and does not change the tracked example. Set `CATENARY_WORKSPACE` to open another folder. A non-empty default workspace is never overwritten.
+The first `pnpm start` or `pnpm desktop` copies `examples/bookshop` to `~/.local/share/catenary/workspaces/example`, or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy and does not change the tracked example. Set `CATENARY_WORKSPACE` to open another folder. A non-empty default workspace is never overwritten.
 
 1. Select File → Open Workspace.
 2. Select a folder or a `workspace.trig` file.

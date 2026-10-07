@@ -1,7 +1,0 @@
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
-@prefix ws: <osg://vocab/workspace#>.
-
-<urn:name:workspace> {
-  <urn:name:workspace> a ws:Workspace;
-    ws:defaultFile "data.ttl".
-}

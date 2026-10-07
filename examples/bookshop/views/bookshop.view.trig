@@ -1,0 +1,118 @@
+@prefix ex: <http://www.example.org/>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix view: <osg://vocab/view#>.
+
+<urn:name:Bookshop> {
+  <urn:name:Bookshop> a view:View;
+    rdfs:label "Bookshop".
+
+  <urn:name:Bookshop/m/ylpc7r> a view:Note;
+    view:arrow <urn:name:Bookshop%20model>;
+    view:text "Example instances that conform to the Bookshop model. To lookup the model, follow the link\n".
+
+  <urn:name:Bookshop/p/014989b917c9> a view:Placement;
+    view:element <urn:name:Nineteen%20Eighty-Four>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 800;
+    view:y 180.
+
+  <urn:name:Bookshop/p/04c647e16602> a view:Placement;
+    rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Animal%20Farm> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/0900cf55c240> a view:Placement;
+    rdf:reifies <<( <urn:name:Animal%20Farm> ex:author <urn:name:George%20Orwell> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/1d20bca980c1> a view:Placement;
+    view:element <urn:name:George%20Orwell>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 1550;
+    view:y 380.
+
+  <urn:name:Bookshop/p/1f6ef5ed9255> a view:Placement;
+    view:element <urn:name:Tangamandapio>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 140;
+    view:y 580.
+
+  <urn:name:Bookshop/p/360b79389761> a view:Placement;
+    rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/74343fb0885b> a view:Placement;
+    rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:city <urn:name:Tangamandapio> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/7c666b263f37> a view:Placement;
+    rdf:reifies <<( <urn:name:Bookshop/m/ylpc7r> view:arrow <urn:name:Bookshop%20model> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/80b8860c4b8e> a view:Placement;
+    view:element <urn:name:Bookshop%20model>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 200;
+    view:x 650;
+    view:y -510.
+
+  <urn:name:Bookshop/p/96daa3b2b213> a view:Placement;
+    view:color "4";
+    view:element <urn:name:Bookshop/m/ylpc7r>;
+    view:height 140;
+    view:view <urn:name:Bookshop>;
+    view:width 280;
+    view:x 160;
+    view:y -480.
+
+  <urn:name:Bookshop/p/b53dac522e4e> a view:Placement;
+    view:element <urn:name:Lewis%20Carroll>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 1520;
+    view:y -10.
+
+  <urn:name:Bookshop/p/d4266577fdac> a view:Placement;
+    rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Nineteen%20Eighty-Four> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/e18fafd4ac6d> a view:Placement;
+    rdf:reifies <<( <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland> ex:author <urn:name:Lewis%20Carroll> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/e53bf753041c> a view:Placement;
+    view:element <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 820;
+    view:y -210.
+
+  <urn:name:Bookshop/p/ea2df5ac1c56> a view:Placement;
+    rdf:reifies <<( <urn:name:Nineteen%20Eighty-Four> ex:author <urn:name:George%20Orwell> )>>;
+    view:view <urn:name:Bookshop>.
+
+  <urn:name:Bookshop/p/ee17a6d31c68> a view:Placement;
+    view:element <urn:name:Animal%20Farm>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 300;
+    view:x 800;
+    view:y 570.
+
+  <urn:name:Bookshop/p/ff7f64fcb815> a view:Placement;
+    view:element <urn:name:Wonderland%20Books%20(fictional)>;
+    view:height 200;
+    view:view <urn:name:Bookshop>;
+    view:width 340;
+    view:x 120;
+    view:y 180.
+}

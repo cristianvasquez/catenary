@@ -3,7 +3,7 @@
 # terminal and to the log file. The window and the backend end together.
 # Each workspace has its own Electron profile, so each workspace runs in its own process with its own backend. Electron is
 # single-instance per profile: a second launch on the same workspace focuses the open window. --user-data-dir overrides the profile.
-# Usage: scripts/desktop.sh [workspace-dir] [electron arguments…]   (default: a copy of examples/catalog in the Catenary data directory)
+# Usage: scripts/desktop.sh [workspace-dir] [electron arguments…]   (default: a copy of examples/bookshop in the Catenary data directory)
 set -euo pipefail
 root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 if [[ $# -gt 0 && "$1" != -* ]]; then

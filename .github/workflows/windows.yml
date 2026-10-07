@@ -46,7 +46,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm package:win --example examples/catalog
+      - run: pnpm package:win --example examples/bookshop
       - run: node scripts/check-windows-package.mjs
       - name: Desktop smoke test (Linux)
         run: xvfb-run -a node scripts/smoke-desktop.mjs
