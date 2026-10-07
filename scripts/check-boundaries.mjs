@@ -7,8 +7,9 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { builtinModules } from 'module';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packages = ['packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
 const forbidden = [
     { dir: 'packages/rdf-files/src', module: '@catenary/model', why: 'rdf-files is generic: other projects use it' },
@@ -31,7 +32,7 @@ for (const pkg of packages) {
     const declared = new Set(Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies, ...manifest.devDependencies }));
     const dir = path.join(root, pkg);
     for (const file of files(path.join(dir, 'src'))) {
-        const rel = path.relative(root, file);
+        const rel = path.relative(root, file).split(path.sep).join('/');
         for (const s of specifiers(file)) {
             if (s.startsWith('.')) {
                 if (path.relative(dir, path.resolve(path.dirname(file), s)).startsWith('..')) errors.push(`${rel}: '${s}' leaves the package`);

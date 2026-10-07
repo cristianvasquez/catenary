@@ -37,7 +37,7 @@ A user opens a folder of RDF files and edits the model in diagrams, forms and te
 
 ## Status
 
-Catenary runs as a browser app and as an Electron app on Linux. The release packages for Windows and macOS are built but not tested on these systems. Known defects and open decisions are in [open work](../spec/open.md).
+Catenary runs as a browser app and as an Electron app on Linux. The release packages for Windows and macOS are built on Linux. A CI workflow checks the Windows package on a Windows runner. The macOS packages are not tested on macOS. Known defects and open decisions are in [open work](../spec/open.md).
 
 ## Where to read next
 

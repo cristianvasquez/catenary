@@ -40,6 +40,8 @@ pnpm desktop          # Electron app on the example workspace
 pnpm install-desktop  # Linux launcher entry
 pnpm package linux-x64   # portable package in dist/: linux-x64, win32-x64, darwin-x64, darwin-arm64
 pnpm package linux-x64 --appimage  # also dist/Catenary-linux-x64.AppImage
+node scripts/check-windows-package.mjs   # layout and binaries of the Windows package (pnpm package:win first)
+xvfb-run -a node scripts/smoke-desktop.mjs   # start the desktop app and check paths, writes, Git, watcher
 pnpm test             # source-based tests
 pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
 pnpm verify           # check → test → build, stops at the first failure
@@ -47,6 +49,8 @@ pnpm verify --e2e     # also run browser smoke tests
 ```
 
 By default, the first start copies [`examples/catalog`](examples/catalog/readme.md) to `~/.local/share/catenary/workspaces/example` or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy, not the tracked example, and does not overwrite a non-empty workspace. Set `CATENARY_WORKSPACE` to use another folder. For another desktop workspace, use `bash scripts/desktop.sh <folder>`. Each workspace gets its own Electron profile in `~/.config/catenary/profiles/<hash>`, so each workspace runs in its own process with its own backend. A second launch on the same workspace focuses the open window. `--user-data-dir=<dir>` overrides the profile. Backend logs of all instances also go to `~/.local/state/catenary/backend.log`.
+
+The Windows package is built on Linux. The workflow `.github/workflows/windows.yml` checks it on a Windows runner. It runs on demand (Actions → Windows → Run workflow) and when a change touches the package scripts, the desktop app or the lockfile. It runs the tests of paths, files, the watcher and Git with real Windows paths, and it starts `Catenary.exe` and `Catenary.cmd` with `scripts/smoke-desktop.mjs dist\Catenary-win32-x64 [--crlf | --launcher]`.
 
 The install script builds `drivelist` in a temporary directory because node-gyp fails on some paths with spaces. Both applications load the downloaded plugins for Source Control with `--plugins=local-dir:plugins`.
 

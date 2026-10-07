@@ -18,11 +18,26 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** The Electron profile of a workspace. Keep equal to scripts/desktop.sh. An empty path is a window without a workspace. */
-export function profileDir(workspace: string): string {
-    const base = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'catenary', 'profiles');
-    if (!workspace) return path.join(base, 'no-workspace');
-    return path.join(base, createHash('sha256').update(workspace).digest('hex').slice(0, 16));
+/**
+ * The Electron profile of a workspace. Keep equal to scripts/desktop.sh. An empty path is a window without a workspace. On Windows,
+ * file names are not case-sensitive and `/` is a separator: `C:\ws` and `c:/WS` have one profile.
+ */
+export function profileDir(workspace: string, p: path.PlatformPath = path): string {
+    const base = p.join(process.env.XDG_CONFIG_HOME || p.join(os.homedir(), '.config'), 'catenary', 'profiles');
+    if (!workspace) return p.join(base, 'no-workspace');
+    const key = p.sep === '\\' ? p.resolve(workspace).toLowerCase() : workspace;
+    return p.join(base, createHash('sha256').update(key).digest('hex').slice(0, 16));
+}
+
+/**
+ * The folder of a window URL hash. Theia writes the workspace as an encoded URI path: `/ws` on Linux, `/c:/ws` or `//server/share/ws`
+ * on Windows. On Windows, `/c:/ws` is not a file path: `path.resolve` makes it `\c:\ws`.
+ */
+export function hashWorkspace(hash: string, p: path.PlatformPath = path): string {
+    const uriPath = decodeURI(hash);
+    if (!uriPath || p.sep !== '\\') return uriPath;
+    if (uriPath.startsWith('//')) return p.normalize('\\\\' + uriPath.slice(2));
+    return p.resolve(uriPath.replace(/^\/(?=[A-Za-z]:)/, '')).replace(/^[a-z]:/, d => d.toUpperCase());
 }
 
 /** The arguments of a new process on `workspace`: this process's arguments without its workspace and its --user-data-dir. */
@@ -114,7 +129,7 @@ export class CatenaryElectronMainWindowService extends ElectronMainWindowService
     override openNewWindow(url: string, options: { external?: boolean }): undefined {
         const hash = options.external ? '' : new URL(url).hash.slice(1);
         if (!hash) return super.openNewWindow(url, options);
-        this.catenaryApp.openInProcess(decodeURI(hash));
+        this.catenaryApp.openInProcess(hashWorkspace(hash));
         return undefined;
     }
 }

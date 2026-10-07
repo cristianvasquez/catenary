@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
     FolderWatcher, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
@@ -211,7 +211,7 @@ describe('git', () => {
         git(root, 'init', '-q');
         return root;
     };
-    const names = (files: string[]) => files.map(f => f.slice(f.lastIndexOf('/') + 1)).sort();
+    const names = (files: string[]) => files.map(f => basename(f)).sort();
 
     it('reports changed files and commits only the given files', async () => {
         const root = repo();
@@ -242,6 +242,19 @@ describe('git', () => {
         expect(await commitFiles([join(root, 'a.ttl'), join(root, 'never.ttl')], 'remove')).toBeUndefined();
         expect(git(root, 'log', '--format=%s', '-1').trim()).toBe('remove');
         expect(git(root, 'ls-files').trim()).toBe('');
+    });
+
+    // Git gives the real path of the repository: on Windows the long name of a short 8.3 name (C:\Users\RUNNER~1), else the target of a
+    // link. The paths of the caller and the commit must not depend on it.
+    it('a folder reached through a link: paths in the spelling of the caller, and the commit works', async () => {
+        const real = repo();
+        const link = join(tempDir(), 'link');
+        symlinkSync(real, link, 'junction');
+        writeFileSync(join(link, 'a.ttl'), 'a');
+        const changes = await gitChanges(link);
+        expect(changes.ok && changes.files).toEqual([join(link, 'a.ttl')]);
+        expect(await commitFiles([join(link, 'a.ttl')], 'linked')).toBeUndefined();
+        expect(git(real, 'log', '--format=%s', '-1').trim()).toBe('linked');
     });
 
     it('says when a folder is not in a repository', async () => {

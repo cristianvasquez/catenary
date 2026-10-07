@@ -1,0 +1,110 @@
+name: Windows
+
+# The Windows package is built on Linux (scripts/package.sh win32-x64). This workflow checks it on a real Windows runner:
+#  - package:  build the zip on Linux, check its layout and binaries, run the desktop smoke test on Linux, upload the zip.
+#  - unit:     the tests of paths, files, the watcher and Git on Windows (real win32 paths, no path.win32 simulation).
+#  - smoke:    extract the zip on Windows, start Catenary.exe and Catenary.cmd, and drive them with scripts/smoke-desktop.mjs.
+
+# Not on every push: about 10 minutes of runners for a platform without daily use. It runs on a change of the package or the desktop
+# app (the paths below), and on demand: Actions → Windows → Run workflow (or `gh workflow run windows.yml --ref <branch>`).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/windows.yml
+      - scripts/package.sh
+      - scripts/check-windows-package.mjs
+      - scripts/smoke-desktop.mjs
+      - electron-app/**
+      - modeler/src/electron-main/**
+      - pnpm-lock.yaml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows.yml
+      - scripts/package.sh
+      - scripts/check-windows-package.mjs
+      - scripts/smoke-desktop.mjs
+      - electron-app/**
+      - modeler/src/electron-main/**
+      - pnpm-lock.yaml
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Native Theia modules: native-keymap needs X11 and xkbfile, keytar needs libsecret (as in ci.yml).
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm package:win --example examples/catalog
+      - run: node scripts/check-windows-package.mjs
+      - name: Desktop smoke test (Linux)
+        run: xvfb-run -a node scripts/smoke-desktop.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Catenary-win32-x64
+          path: dist/Catenary-win32-x64.zip
+          compression-level: 0
+          retention-days: 7
+
+  unit:
+    runs-on: windows-latest
+    steps:
+      # The test fixtures compare text: keep the LF line ends of the repository. The smoke job checks CRLF files.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # No install scripts: they build the Linux desktop app (drivelist, Electron for linux-x64). The unit tests do not need them.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # The import rules: their path handling differs on Windows. The rest of `pnpm check` (GHC on the manifests, tsc) is the same on
+      # every platform; ci.yml runs it.
+      - run: node scripts/check-boundaries.mjs
+      # The tests of paths, files, the watcher and Git: what differs on Windows. The other tests are pure rules on RDF and diagrams,
+      # the same on every platform; ci.yml runs all of them on Linux. On the Windows runner the full suite took 5 minutes, and its
+      # CPU-heavy tests made Vitest time out ("Timeout calling onTaskUpdate") although all tests passed.
+      # Separate processes: in the thread pool, a Vitest worker ended with a V8 fatal error ("unreachable code") on Windows.
+      - run: >-
+          pnpm test --pool=forks
+          packages/model/test/paths.test.ts packages/rdf/test/paths.test.ts packages/rdf-files/test/rdf-files.test.ts
+          packages/rdf/test/watch.test.ts packages/rdf/test/workspace-files.test.ts packages/rdf/test/workspace.test.ts
+          packages/rdf/test/review-save.test.ts packages/rdf/test/text-patch.test.ts packages/rdf/test/trig.test.ts
+          modeler/test/electron-profile.test.ts
+
+  smoke:
+    needs: package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: Catenary-win32-x64
+      - name: Extract the package
+        shell: pwsh
+        run: Expand-Archive -Path Catenary-win32-x64.zip -DestinationPath dist
+      - run: node scripts/check-windows-package.mjs dist\Catenary-win32-x64
+      - name: Catenary.exe on a copy of the catalog
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64
+      - name: Catenary.exe on CRLF files
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64 --crlf
+      - name: Catenary.cmd on the bundled example
+        run: node scripts/smoke-desktop.mjs dist\Catenary-win32-x64 --launcher

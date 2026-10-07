@@ -11,8 +11,9 @@ import { showsShapes } from '../src/view-read';
 import { ModelGraph } from '../src/graph';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 import { viewPart } from './view-part-reference';
+import { fileURLToPath } from 'node:url';
 
-const FIXTURES = new URL('./fixtures/', import.meta.url).pathname;
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
 afterEach(async () => {
     await store.idle();

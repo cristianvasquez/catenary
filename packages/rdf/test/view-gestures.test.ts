@@ -8,8 +8,9 @@ import {
 } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { fileURLToPath } from 'node:url';
 
-const FIXTURES = new URL('./fixtures/', import.meta.url).pathname;
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
 afterEach(async () => {
     await store.idle();
