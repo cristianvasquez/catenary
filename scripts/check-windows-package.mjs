@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Static check of the Windows package (scripts/package-windows.sh) on any platform: the layout, no Linux or macOS binary left, each
+// Static check of the Windows package (scripts/package.sh win32-x64) on any platform: the layout, no Linux or macOS binary left, each
 // .exe/.dll/.node is Windows x64, each native file that the bundle loads is there or replaced, and the launcher has CRLF.
 // Usage: node scripts/check-windows-package.mjs [package-dir] [--allow-no-plugins]   (default: dist/Catenary-win32-x64)
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
@@ -74,10 +74,12 @@ const mainJs = bundles[readdirSync(backend).filter(f => f.endsWith('.js')).index
 check('drivelist binding replaced by the stub', !mainJs.includes('bindings("drivelist")') && mainJs.includes('var drivelistBindings = { list(cb)'));
 check('ripgrep path has .exe on win32', /native\/rg\$\{process\.platform === "win32" \? "\.exe" : ""\}/.test(mainJs));
 
-// Launcher: CRLF, the executable and the plugin folder relative to the launcher.
+// Launcher: CRLF and the executable relative to the launcher. The plugin folder: catenary-main.js sets THEIA_DEFAULT_PLUGINS.
 const cmd = readFileSync(join(pkg, 'Catenary.cmd'), 'latin1');
 check('Catenary.cmd has CRLF line ends only', /\r\n$/.test(cmd) && !/[^\r]\n/.test(cmd), JSON.stringify(cmd));
-check('Catenary.cmd starts %~dp0Catenary.exe with the plugin folder', cmd.includes('"%~dp0Catenary.exe"') && cmd.includes('local-dir:"%~dp0resources\\app\\plugins"'), cmd);
+check('Catenary.cmd starts %~dp0Catenary.exe', cmd.includes('"%~dp0Catenary.exe"'), cmd);
+const entry = existsSync(join(app, main ?? '')) ? readFileSync(join(app, main), 'utf8') : '';
+check(`${main} sets the bundled plugin folder`, /THEIA_DEFAULT_PLUGINS/.test(entry) && /plugins/.test(entry), entry.slice(0, 400));
 if (cmd.includes('%~dp0example')) check('example workspace in the package', existsSync(join(pkg, 'example/workspace.trig')));
 
 const plugins = existsSync(join(app, 'plugins')) ? readdirSync(join(app, 'plugins')) : [];

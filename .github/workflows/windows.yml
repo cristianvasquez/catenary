@@ -1,6 +1,6 @@
 name: Windows
 
-# The Windows package is built on Linux (scripts/package-windows.sh). This workflow checks it on a real Windows runner:
+# The Windows package is built on Linux (scripts/package.sh win32-x64). This workflow checks it on a real Windows runner:
 #  - package:  build the zip on Linux, check its layout and binaries, run the desktop smoke test on Linux, upload the zip.
 #  - unit:     the tests of paths, files, the watcher and Git on Windows (real win32 paths, no path.win32 simulation).
 #  - smoke:    extract the zip on Windows, start Catenary.exe and Catenary.cmd, and drive them with scripts/smoke-desktop.mjs.
@@ -12,7 +12,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/windows.yml
-      - scripts/package-windows.sh
+      - scripts/package.sh
       - scripts/check-windows-package.mjs
       - scripts/smoke-desktop.mjs
       - electron-app/**
@@ -22,7 +22,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/windows.yml
-      - scripts/package-windows.sh
+      - scripts/package.sh
       - scripts/check-windows-package.mjs
       - scripts/smoke-desktop.mjs
       - electron-app/**

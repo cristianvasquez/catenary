@@ -81,7 +81,8 @@ const plugins = pkg ? join(pkg, 'resources/app/plugins') : join(root, 'app/plugi
 const profile = `--user-data-dir=${join(tmp, 'profile')}`;
 // Catenary.cmd gives the example folder and the plugins; it starts Catenary.exe with `start` and ends at once.
 const [exe, args, cwd] = launcher ? ['cmd.exe', ['/d', '/c', join(pkg, 'Catenary.cmd'), profile], pkg]
-    : pkg ? [join(pkg, 'Catenary.exe'), [ws, `--plugins=local-dir:${plugins}`, profile], pkg]
+    // The package sets its plugin folder itself (catenary-main.js: THEIA_DEFAULT_PLUGINS), as when a user starts Catenary.exe.
+    : pkg ? [join(pkg, 'Catenary.exe'), [ws, profile], pkg]
         : [join(realpathSync(join(root, 'node_modules/electron')), 'dist/electron'), ['.', ws, `--plugins=local-dir:${plugins}`, profile], join(root, 'electron-app')];
 // Linux CI runners and containers have no usable Chromium sandbox (no SUID helper, user namespaces off or root).
 if (!windows) args.push('--no-sandbox');
@@ -215,7 +216,7 @@ async function edits() {
     check('default file read back as native path', defaultFile.path === added, defaultFile);
 
     const text = readFileSync(log, 'utf8');
-    // keymapping.node: package-windows.sh removes native-keymap (no Windows prebuild); Theia then uses the browser keyboard layout.
+    // keymapping.node: package.sh removes native-keymap (no Windows prebuild); Theia then uses the browser keyboard layout.
     const native = text.split('\n').filter(l => /Failed to load native module|Could not load native|No prebuild|ERR_DLOPEN|not a valid Win32|Cannot find module .*\.node/.test(l))
         .filter(l => !/keymapping\.node/.test(l));
     check('no native module errors in the app output (keymapping.node is left out)', native.length === 0, native);

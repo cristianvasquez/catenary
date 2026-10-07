@@ -96,7 +96,7 @@ Paths are relative to the directory in the first column.
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
-| | `package-windows.sh`, `check-windows-package.mjs`, `smoke-desktop.mjs` | Windows package, its static check, desktop smoke test (`.github/workflows/windows.yml`) |
+| | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test (`.github/workflows/windows.yml`) |
 
 ## Hosts
 
