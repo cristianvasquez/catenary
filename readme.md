@@ -26,7 +26,7 @@ Read in this order, from overview to detail:
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
 | [Agent guide](AGENTS.md) | Work rules for agents and documentation style |
 
-The contracts use Haskell notation. They do not compile, and `pnpm verify` does not check them.
+The contracts are Haskell modules. `pnpm check` typechecks them with GHC, so a mismatch of names or types between them fails. Install GHC first (`apt-get install ghc`, or ghcup).
 
 ## Run
 
@@ -42,7 +42,7 @@ pnpm package:win      # dist/Catenary-win32-x64.zip, built on Linux
 node scripts/check-windows-package.mjs   # layout and binaries of the Windows package
 xvfb-run -a node scripts/smoke-desktop.mjs   # start the desktop app and check paths, writes, Git, watcher
 pnpm test             # source-based tests
-pnpm check            # package boundaries and TypeScript
+pnpm check            # package boundaries, manifest typecheck (GHC) and TypeScript
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
 ```

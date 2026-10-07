@@ -61,6 +61,7 @@ import { SEARCH_ID, SearchContribution, SearchWidget } from './search/search-wid
 import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsContribution, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { WorkspaceFileQuestion } from './prefixes/workspace-placement';
 import { ModelPropertiesProvider, ModelPropertiesWidget } from './properties/properties-widget';
+import { SidePanelSizes } from './side-panel-sizes';
 import '../../css/modeler.css';
 
 export const ViewLanguage: GLSPDiagramLanguage = {
@@ -157,6 +158,7 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         // Model tab (model tree). The files: the Theia file navigator (ADR 0004).
         const explorerProps = { contextMenuPath: EXPLORER_CONTEXT_MENU, multiSelect: true, search: true, globalSelection: true, expandOnlyOnExpansionToggleClick: false };
         single(RecentWorkspaces);
+        single(SidePanelSizes);
         bind(ModelExplorerWidget).toDynamicValue(ctx => createTreeContainer(ctx.container, {
             props: explorerProps, widget: ModelExplorerWidget, tree: ModelTree
         }).get(ModelExplorerWidget));
