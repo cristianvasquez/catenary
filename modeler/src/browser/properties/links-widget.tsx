@@ -26,7 +26,7 @@ export const LINKS_CONTEXT_MENU: MenuPath = ['catenary-links-context'];
 /** Not a CatenaryNode (no `kind`/`key`): a selection in this tree does not change the selected element. */
 export interface LinkNode extends SelectableTreeNode {
     /** 'head': first row, the class and the name of the element. */
-    link: 'head' | 'folder' | 'view' | 'out' | 'in' | 'end';
+    link: 'head' | 'folder' | 'view' | 'out' | 'in' | 'end' | 'instance';
     /** Selected elements that the node is about. */
     elements: string[];
     /** View of a 'view' node. */
@@ -179,6 +179,14 @@ export class LinksWidget extends TreeWidget {
             list.forEach(n => add(f, n));
         }
 
+        const shapes = elements.filter(e => e.kind === 'shape');
+        if (shapes.length) {
+            const f = folder('instances', 'Instances', shapes.map(e => e.id), this.links.instances.length);
+            for (const row of this.links.instances) {
+                add(f, { id: `instance:${row.id}`, name: row.label, link: 'instance', elements: row.shapes, target: row.id });
+            }
+        }
+
         // Ends of the selected relations.
         const relations = elements.filter(e => e.ends);
         if (relations.length) {
@@ -232,7 +240,7 @@ export class LinksWidget extends TreeWidget {
         if (!LinkNode.is(n)) return undefined;
         if (n.link === 'view' && n.view) return { view: n.view, ids: n.elements };
         if (n.link === 'out' || n.link === 'in') return { ids: n.relation ? [n.relation] : n.target ? [n.target] : [] };
-        if (n.link === 'end') return { ids: n.target ? [n.target] : [] };
+        if (n.link === 'end' || n.link === 'instance') return { ids: n.target ? [n.target] : [] };
         if (n.link === 'head') return { ids: n.elements };
         return { ids: [] };
     }
@@ -378,4 +386,4 @@ export class LinksContribution extends AbstractViewContribution<LinksWidget>
     }
 }
 
-const EMPTY: SelectionLinks = { elements: [], views: [], rows: [] };
+const EMPTY: SelectionLinks = { elements: [], views: [], rows: [], instances: [] };

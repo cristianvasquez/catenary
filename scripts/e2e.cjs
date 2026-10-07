@@ -559,6 +559,19 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
+test('browser: Links lists instances of a selected shape outside the current view', { timeout: 45000 }, t => withFixtureApp(t, 'shape-instances', async ({ page, cli }) => {
+  const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Instance list shape', targetClass: 'urn:test:InstanceList' })).result;
+  assert.equal(shape.ok, true);
+  const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:InstanceList', label: 'Unplaced list instance' })).result;
+  assert.equal(instance.ok, true);
+  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
+  cli('run', 'catenary.toggleLinks');
+  const panel = page.locator('#catenary-links');
+  await panel.getByText(/^Instances\s*1$/).waitFor();
+  await panel.getByText('Unplaced list instance', { exact: true }).waitFor();
+  assert.equal(await panel.getByText('Unplaced list instance', { exact: true }).count(), 1);
+}));
+
 test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async ({ page, cli }) => {
   const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Linked view' }));
   assert.equal(created.result.ok, true);

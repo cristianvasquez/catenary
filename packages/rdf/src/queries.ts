@@ -180,7 +180,34 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
         };
     });
     const views = found.views.filter(x => doc.views[x.view]).map(x => ({ ...x, label: doc.views[x.view].label }));
-    return { elements, views, rows };
+    const instances = new Map<string, { id: string; label: string; shapes: string[] }>();
+    for (const shape of elements.filter(e => e.kind === 'shape')) {
+        const term = elementTerm(shape.id);
+        if (!term) continue;
+        const found = g.store.select(`${PREFIXES} SELECT DISTINCT ?s WHERE {
+            VALUES ?shape { ${iriText(term.value)} }
+            { ${things()} }
+            { {
+                { { GRAPH ?sg { ?shape sh:targetClass ?class } FILTER (?sg != ${NOT_REPORT}) }
+                UNION { GRAPH ?sg { ?shape a rdfs:Class } FILTER (?sg != ${NOT_REPORT}) BIND (?shape AS ?class) } }
+                { ${things([], '?s', '?targetType', '?tg', 'InstanceTarget')} }
+                FILTER (?targetType = ?class || EXISTS { GRAPH ?cg { ?targetType rdfs:subClassOf+ ?class } FILTER (?cg != ${NOT_REPORT}) })
+            }
+            UNION { GRAPH ?sg { ?shape sh:targetNode ?s } FILTER (?sg != ${NOT_REPORT}) }
+            UNION { GRAPH ?sg { ?shape sh:targetSubjectsOf ?p } GRAPH ?dg { ?s ?p ?o } FILTER (?sg != ${NOT_REPORT} && ?dg != ${NOT_REPORT}) }
+            UNION { GRAPH ?sg { ?shape sh:targetObjectsOf ?p } GRAPH ?dg { ?o ?p ?s } FILTER (?sg != ${NOT_REPORT} && ?dg != ${NOT_REPORT}) }
+            }
+            FILTER (isIRI(?s))
+        }`);
+        const names = labels(g, found.map(b => b.s.value));
+        for (const b of found) {
+            const id = elementId(b.s as NamedNode);
+            const row = instances.get(id) ?? { id, label: names.get(b.s.value) ?? shortIri(b.s.value), shapes: [] };
+            row.shapes.push(shape.id);
+            instances.set(id, row);
+        }
+    }
+    return { elements, views, rows, instances: [...instances.values()].sort((a, b) => compareLabels(a.label, b.label) || a.id.localeCompare(b.id)) };
 }
 
 /** Kind names of the Links panel head (an instance: its class). */

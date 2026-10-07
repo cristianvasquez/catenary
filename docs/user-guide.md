@@ -25,7 +25,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 | Model (left) | The Model explorer: elements by type, relations by predicate, concepts by scheme. Folders load when you open them. |
 | Search (left) | Faceted search on text, type and "Linked to". At most 200 results. |
 | Main area | View canvases, text editors, Workspace settings. |
-| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files). |
+| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
 

@@ -93,6 +93,32 @@ describe('links query', () => {
 });
 
 describe('selectionLinks: the Links panel data (ADR 0007)', () => {
+    it('law_shapeInstances: lists distinct targets outside views with shared labels', async () => {
+        const g = new ModelGraph(new OxigraphStore());
+        const shapes = rdf.namedNode(fileGraphIri('/tmp/instance-links-shapes.ttl'));
+        g.setShapesGraphs([...g.shapesGraphs(), shapes]);
+        const prefix = `@prefix sh: <${NS.sh}> . @prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .`;
+        for (const q of await parseQuads(prefix + `
+            ex:S a sh:NodeShape ; sh:targetClass ex:C ; sh:targetNode ex:a .
+            ex:T a sh:NodeShape ; sh:targetSubjectsOf ex:p ; sh:targetObjectsOf ex:p .
+            ex:Empty a sh:NodeShape . ex:Sub rdfs:subClassOf ex:C .`)) {
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, shapes));
+        }
+        for (const q of await parseQuads(prefix + `
+            ex:a a ex:C ; rdfs:label "Alpha" ; ex:p ex:b .
+            ex:b a ex:Sub ; rdfs:label "Beta" . ex:c a ex:Other .`)) {
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        }
+        const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
+        const d = doc(g), idx = readShapes(g.shapesAndVocabulary()), m = await meta();
+        const result = selectionLinks(g, idx, d, m, [id('S'), id('T')]);
+        expect(result.instances).toEqual([
+            { id: id('a'), label: 'Alpha', shapes: [id('S'), id('T')] },
+            { id: id('b'), label: 'Beta', shapes: [id('S'), id('T')] }
+        ]);
+        expect(selectionLinks(g, idx, d, m, [id('Empty')]).instances).toEqual([]);
+        expect(selectionLinks(g, idx, d, m, [id('a')]).instances).toEqual([]);
+    });
     it('elements: placements resolve to their element; kind, label, kind name and relation ends agree with the read model', async () => {
         const g = await example(), m = await meta();
         const d = doc(g);

@@ -336,6 +336,8 @@ export interface LinkElement {
 /** The Links panel data of a selection (ADR 0007): the links of its elements, with the names and states the panel shows. */
 export interface SelectionLinks {
     elements: LinkElement[];
+    /** Known instances targeted by selected node shapes, independent of view placement. */
+    instances: { id: string; label: string; shapes: string[] }[];
     /** Views of the read model only. */
     views: (ViewLink & { label: string })[];
     rows: (LinkRow & {

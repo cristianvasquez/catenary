@@ -1212,6 +1212,14 @@ linkRows e sts =
 law_selfLinkOutgoingOnly :: Iri -> Iri -> Bool
 law_selfLinkOutgoingOnly e p = p /= "rdf:type" ==> linkRows e [(Node e, p, Node e)] == [OutgoingRow (Node e, p, Node e)]
 
+-- | Selected node shapes show an Instances folder, including targets outside the current view.
+-- Use SHACL class, node, subject and object targets. Include declared subclasses and implicit class targets.
+-- Deduplicate instances across selected shapes. Sort rows by display label. Enter and double-click navigate to the instance.
+shapeInstances :: Eq a => [[a]] -> [a]
+shapeInstances = nub . concat
+law_shapeInstances :: Eq a => [a] -> Bool
+law_shapeInstances xs = shapeInstances [xs, xs] == nub xs
+
 -- 8.9 Outline -----------------------------------------------------------------------
 
 -- | Outline follows the active document. A canvas Outline lists frames, cards and placed relations.

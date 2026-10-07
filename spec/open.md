@@ -89,7 +89,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Last verification (2026-10-07, Node 22.23.3, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (5.2 s), test (566/566, 24.8 s), build (8.6 s) and e2e (6/6, 65.4 s).
+- **Last verification (2026-10-07, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (4.6 s), test (573/573, 17.4 s), build (8.4 s) and e2e (7/7, 66.2 s). Includes the Links Instances folder for an unplaced instance.
 
 - **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.
