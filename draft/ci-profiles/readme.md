@@ -61,33 +61,39 @@ Five change profiles, ordered by risk. Each profile includes all checks of the l
 
 ## 3. Decision matrix
 
-● = blocking. ○ = runs, does not block the merge. M = runs on `main` after the merge (blocks the release, see 6.3). – = does not run. Times are estimates from the measured steps.
+Design rule: no profile blocks the merge longer than today (about 5 min). A new check gets time from three sources: parallel jobs, less install work, and checks that move from "before the merge" to "before the release". A check that is too slow for this rule runs in parallel without blocking, and the release waits for it (6.3).
 
-| Check | Time | `docs` | `cosmetic` | `standard` | `critical` | `platform` |
-|---|---|---|---|---|---|---|
-| Classify the change (`scripts/risk-profile.mjs`) | 5 s | ● | ● | ● | ● | ● |
-| Markdown link and anchor check (new, no install) | 5 s | ● | ● | ● | ● | ● |
-| Install without scripts (`--ignore-scripts`) | 25 s | – | ● | ● | – | – |
-| Full install with `postinstall` | 45 s | – | – | – | ● | ● |
-| CSS parse of changed files (postcss) | 5 s | – | ● | ● | ● | ● |
-| Browser form test (first test of `e2e.cjs` by `--test-name-pattern`: CSS on the SHACL form; needs the `packages/model` build, not the app build) | 30 s | – | ● | ● | ● | ● |
-| Import rules (`check-boundaries.mjs`) | 1 s | – | – | ● | ● | ● |
-| Manifests (GHC) | ~10 s | – | – | ● | ● | ● |
-| Typecheck (`tsc -b`, test config) | ~30 s | – | – | ● | ● | ● |
-| Unit tests, affected only (`vitest related` + path map, section 4.3) | 20–150 s | – | – | ● | – | – |
-| Unit tests, full suite, sharded in 2 jobs | ~90 s wall | – | M | M | ● | ● |
-| Build `app` (`theia build`) | ~25 s | – | M | ● | ● | ● |
-| Build `electron-app` | ~15 s | – | M | M | ● | ● |
-| Full e2e (`pnpm e2e`) | ~2 min | – | M | ● if `modeler/src/browser/**` changed, else M | ● | ● |
-| CLI and RPC contract smoke (new: backend on a fixture copy, `catenary rpc`) | ~40 s | – | – | M | ● | ● |
-| Windows unit subset (paths, files, watcher, Git) | ~4 min | – | – | – | ● if paths, files, watcher or Git changed, else nightly | ● |
-| Package one target + desktop smoke on Linux (xvfb) | ~3 min | – | – | – | ○ | ● |
-| Windows package + smoke on `windows-latest` | ~4 min | – | – | – | nightly | ● if Windows-relevant, else nightly |
-| All release targets, dry run, no publish | ~6 min | – | – | – | – | ● if `release.yml` or `package.sh` changed |
-| Review by a code owner of the changed area | – | – | – | – | ● | ● |
-| **Blocking wall time (estimate)** | | **< 30 s** | **≈ 1.5 min** | **3–5 min** | **6–8 min** | **8–12 min** |
+● = blocking. ○ = runs in parallel, reports on the PR, does not block the merge, blocks the release. M = runs on `main` after the merge, blocks the release. – = does not run. Times are estimates from the measured steps.
 
-Today every profile costs 4.5–5.5 min. `standard` keeps about the same time but gains the e2e tests for browser changes. `critical` and `platform` take longer than today, because they add checks that do not exist today.
+| Check | Job | Time | `docs` | `cosmetic` | `standard` | `critical` | `platform` |
+|---|---|---|---|---|---|---|---|
+| Classify the change (`scripts/risk-profile.mjs`) | classify | 5 s | ● | ● | ● | ● | ● |
+| Markdown link and anchor check (new, no install) | classify | 5 s | ● | ● | ● | ● | ● |
+| Install without scripts (`--ignore-scripts`) | each job except build | 25 s | – | ● | ● | ● | ● |
+| CSS parse of changed files (postcss) | fast | 5 s | – | ● | ● | ● | ● |
+| Browser form test (first test of `e2e.cjs` by `--test-name-pattern`: CSS on the SHACL form; needs the `packages/model` build, not the app build) | fast | 30 s | – | ● | ● | ● | ● |
+| Import rules, manifests (GHC), typecheck | fast | 42 s | – | – | ● | ● | ● |
+| Unit tests, affected only (`vitest related` + path map, section 4.3) | fast | 20–150 s | – | – | ● | – | – |
+| Unit tests, full suite, 3 shards (`vitest --shard`) | unit-1..3 | ~60 s each | – | M | M | ● | ● |
+| Full install with `postinstall`, build `app` | build | 45 s + 25 s | – | M | ● | ● | ● |
+| CLI and RPC contract smoke (new: backend on a fixture copy, `catenary rpc`) | build | ~40 s | – | – | M | ● | ● |
+| Build `electron-app` | build | ~15 s | – | M | M | ○ | ● |
+| Full e2e (`pnpm e2e`) | e2e | ~3 min | – | M | ○ if `modeler/src/browser/**` changed, else M | ○ | ○ |
+| Windows unit subset (paths, files, watcher, Git) | windows-unit | ~4 min | – | – | – | ○ if paths, files, watcher or Git changed, else nightly | ○ |
+| Package one target + desktop smoke on Linux (xvfb) | package-smoke | ~4 min | – | – | – | M | ● if packaging files changed, else ○ |
+| Windows package + smoke on `windows-latest` | windows.yml | ~4.5 min | – | – | – | nightly | ● if packaging files changed, else nightly |
+| All release targets, dry run, no publish | release.yml | ~6.5 min | – | – | – | – | ○ if `release.yml` or `package.sh` changed |
+| **Blocking wall time (estimate)** | | | **< 30 s** | **≈ 1.5 min** | **≈ 2.5–3 min** | **≈ 3 min** | **≈ 3 min, ≈ 5 min with packaging files** |
+| **Today** | | | 4.5–5.5 min | 4.5–5.5 min | 4.5–5.5 min | 4.5–5.5 min | 4.5–5.5 min, packaging also starts Windows (4.5 min) and Release (6.5 min) |
+
+Where the time comes from:
+
+1. Parallel jobs. Today one job runs check (42 s), test (157 s) and build (37 s) in sequence. In the target, `fast`, the unit shards and `build` start at the same time. The longest of them sets the wall time.
+2. Three test shards. Each shard runs on its own runner with 2 workers, so the 157 s of tests take about 60 s of wall time. The cost is more runner minutes, not more wall time.
+3. Less install work. Only the `build`, `e2e` and package jobs need `postinstall` (Electron, drivelist, plugins). The other jobs install with `--ignore-scripts`, as the Windows unit job already does. Check in phase 1 that the unit tests pass without the install scripts.
+4. Release instead of merge. The slow checks that are new (full e2e, Windows unit subset) do not block the merge. They run in parallel and report on the PR. A red result blocks the release of that commit, and a red result on `main` opens a `ci-escape` issue (6.3).
+
+The trade-off: a high-risk PR can merge before its e2e or Windows result is in. A defect of that kind can then reach `main`, but it cannot reach a release. For a repository with one maintainer and tag-based releases, that is the right place for the stop. If a PR must not merge before every check is green, add the label `risk:hold`: the gate then waits for the ○ checks too.
 
 ## 4. Rules to assign a profile
 
@@ -175,9 +181,9 @@ Real commits of this repository, with the profile that the rules give them.
 | Event | Runs |
 |---|---|
 | `pull_request` | Classify, then the jobs of the profile |
-| `push` to `main` | Full set: everything with ● or M in the `platform` column, except the release dry run |
+| `push` to `main` | Full set: everything with ●, ○ or M in the `platform` column, except the release dry run. From phase 5 also: build the Linux and Windows packages, start them (xvfb, `windows-latest`), keep them as artifacts of the SHA. |
 | `push` to other branches | Nothing. A branch without a PR gets checks on demand (`workflow_dispatch`) or locally with `pnpm verify`. |
-| Nightly schedule on `main` | Full set plus Windows unit subset, Windows package smoke and Linux package smoke |
+| Nightly schedule on `main` | Full set plus Windows unit subset and Windows package smoke |
 | Tag `v*` | Release pipeline only. No CI run. |
 
 ### 6.2 Jobs and the gate
@@ -186,22 +192,23 @@ Real commits of this repository, with the profile that the rules give them.
 pull_request
   └─ classify (5 s) ──► profile, file list, reason
         ├─ lint-docs            ● all profiles
-        ├─ fast   (install --ignore-scripts, css parse, form test, check, affected tests)
-        ├─ unit-1 / unit-2      (full suite, sharded: packages/rdf | the rest)       critical, platform
-        ├─ build-e2e            (full install, build app [+ electron-app], e2e, CLI smoke)
-        ├─ windows-unit         (windows-latest)                                     by rule
-        ├─ package-smoke        (one target, xvfb)                                    platform
-        └─ gate  ◄── needs all; passes when each job that the profile requires passed
+        ├─ fast                 (install --ignore-scripts, css parse, form test, check, affected tests)
+        ├─ unit-1 / -2 / -3     (full suite, vitest --shard)                         critical, platform
+        ├─ build                (full install, build app [+ electron-app], CLI smoke)
+        ├─ e2e                  (after build; non-blocking)                          by rule
+        ├─ windows-unit         (windows-latest; non-blocking)                       by rule
+        ├─ package-smoke        (one target, xvfb)                                   platform
+        └─ gate  ◄── passes when each blocking (●) job of the profile passed
 ```
 
-Branch protection requires only `gate`. Jobs that the profile does not need are skipped, and a skipped job does not fail the gate. A required job that is skipped or cancelled fails the gate. This avoids the GitHub problem that a path-filtered required check never reports.
+Branch protection requires only `gate`. Jobs that the profile does not need are skipped, and a skipped job does not fail the gate. A blocking job that is skipped or cancelled fails the gate. The non-blocking (○) jobs post their result on the PR. The release gate (6.4) reads them later. This avoids the GitHub problem that a path-filtered required check never reports.
 
 ### 6.3 Blocking and non-blocking
 
 | Stage | Blocks the merge | Blocks the release | On failure |
 |---|---|---|---|
 | PR checks with ● | Yes | Indirectly | Fix in the PR |
-| PR checks with ○ | No | No | Comment on the PR |
+| PR checks with ○ | No | Yes, for the merged commit | Result on the PR. After the merge, as for M. |
 | Post-merge full set on `main` (M) | No | Yes | Open an issue with label `ci-escape`, the PR, its profile and the failed check. Fix or revert before the next tag. |
 | Nightly | No | Yes, if it is the latest result for the SHA | Same as post-merge |
 
@@ -209,25 +216,27 @@ A post-merge failure of a PR that ran a reduced profile is an escape. Escapes dr
 
 ### 6.4 Release pipeline (`release.yml`)
 
-1. `gate`: read the check results of the tag SHA. Continue only if the post-merge full set on `main` passed for this exact SHA. Stop with a message otherwise. Do not run the tests again.
-2. `package`: build all targets once on `ubuntu-22.04`.
-3. `smoke`: start each package that is published. Linux tar.gz and AppImage under xvfb, the Windows zip on `windows-latest` (the steps of `windows.yml` smoke), the macOS apps after the ad hoc signature.
+1. `gate`: read the check results of the tag SHA. Continue only if the post-merge full set on `main`, including the ○ checks, passed for this exact SHA. Stop with a message otherwise. Do not run the tests again.
+2. `package`: from phase 5, download the Linux and Windows packages that the post-merge run built and started. Build only the macOS packages. Before phase 5, build all targets once on `ubuntu-22.04`, start the Linux package under xvfb and the Windows zip on `windows-latest`.
+3. `macos`: sign ad hoc, make the disk images, start the app once (`open -W` with a timeout).
 4. `release`: write `SHA256SUMS` and publish. A hyphen in the tag makes a prerelease.
 
 The `windows.yml` package job downloads the package artifact of the same SHA when one exists. It does not build again.
+
+Release time, tag to published release (estimates): today about 6.5 min, with no package started. Before phase 5, about 8 min: the same build plus the smoke tests, which run in parallel with the macOS signature. After phase 5, about 3–4 min: the Linux and Windows packages already exist and passed their smoke test on `main`, so the release only builds and signs macOS and publishes.
 
 ## 7. Safeguards against a wrong low profile
 
 1. Allowlist for low profiles. Only `docs` and `cosmetic` patterns can produce those profiles. An unknown path gets `standard`.
 2. Highest profile wins over all files of the whole PR diff.
-3. Labels only raise. Lowering needs a change to `.github/risk-profiles.yml`, and that change is `platform` with code-owner review.
+3. Labels only raise. Lowering needs a change to `.github/risk-profiles.yml`, and that change is `platform`, so it gets the full set.
 4. Content tripwires (4.4) find risky code in files with a low-risk path.
 5. Unit tests for the classifier. The examples table in section 5 becomes a test fixture. A change of the rules must keep these answers or change the table in the same PR.
 6. Fallback to more tests. A classifier error, an empty `vitest related` result for a changed `.ts` file or a missing merge base runs the full `platform` set.
 7. Post-merge full set on every `main` commit. A reduced PR profile never reduces what runs on `main`.
 8. Shadow runs. In the first four weeks, every PR also runs the full set as a non-blocking job. Later, run it on 1 of 5 reduced-profile PRs, chosen by the PR number. A shadow failure that the reduced profile did not find counts as an escape.
 9. Release gate. No package is published without a green full set on the exact SHA.
-10. Mandatory review for `critical` and `platform` through `CODEOWNERS` on the paths of rules 1 to 6.
+10. Non-blocking is not optional. A ○ check that fails on a merged commit blocks the release of that commit until a later commit fixes it. `risk:hold` makes a PR wait for its ○ checks before the merge.
 
 ## 8. Metrics
 
@@ -235,9 +244,9 @@ Collect a baseline for two weeks before reduced profiles block anything. The Git
 
 | Metric | Definition | Target |
 |---|---|---|
-| Time to green, per profile | p50 and p90 from the PR head push to a green `gate` | `docs` p50 < 1 min, `cosmetic` p50 < 2 min, `standard` p50 ≤ today (≈ 5 min) |
+| Time to green, per profile | p50 and p90 from the PR head push to a green `gate` | `docs` p50 < 1 min, `cosmetic` p50 < 2 min, `standard` and `critical` p50 < 3.5 min, `platform` p50 < 5 min. No profile above today (≈ 5 min). |
 | Release lead time | From the merge commit on `main` to the published release of that SHA | Less than today: no repeated CI run, no build per workflow |
-| Runner minutes per merged PR | Sum over all workflows, Windows and macOS minutes weighted by the GitHub multiplier | −40 % for `docs` and `cosmetic` PRs, no target for `critical` |
+| Runner minutes per merged PR | Sum over all workflows, Windows and macOS minutes weighted by the GitHub multiplier | −80 % for `docs` and `cosmetic` PRs. `critical` and `platform` may use more (parallel shards): report it, no target. |
 | Duplicate runs | Runs of the same workflow on the same SHA | 0 |
 | Escape rate, per reduced profile | Post-merge or shadow failures of PRs with that profile ÷ PRs with that profile | ≤ 1 in 50 PRs. Above that, tighten the rule that let the change through. |
 | Classifier raise rate | PRs where a human added a `risk:*` label | Rising values mean that the rules are too weak |
@@ -256,9 +265,9 @@ Each phase is one PR. Each phase can be undone alone. A repository variable `CI_
 |---|---|---|---|
 | 0 | Remove pure duplicates: `ci.yml` on `push` to `main` only plus `pull_request`. No CI on tags. `release.yml` on tags and `workflow_dispatch` only. Start the metrics collection. | None: the same checks run on each PR SHA. | Two weeks of baseline data |
 | 1 | Add `scripts/risk-profile.mjs`, `.github/risk-profiles.yml` and the classifier tests. Run it in shadow: print the profile, still run the full set. | None | The classifier output matches a manual review of 20 PRs |
-| 2 | Close the gaps: e2e and the CLI smoke in CI for `critical`, `platform` and browser changes. Add the source paths of 4.2 rule 6 and `packages/rdf-files/src/{paths,file-sync,git}.ts` to the Windows trigger. Release gate and package smoke in `release.yml`. | More time for high-risk PRs | e2e passes on `main` three times in a row without a flake |
+| 2 | Close the gaps: e2e and the CLI smoke in CI for `critical`, `platform` and browser changes. Add the source paths of 4.2 rule 6 and `packages/rdf-files/src/{paths,file-sync,git}.ts` to the Windows trigger. Release gate and package smoke in `release.yml`. | More runner minutes. No more wall time: the new checks run in parallel and do not block the merge. | e2e passes on `main` three times in a row without a flake |
 | 3 | Make `docs` and `cosmetic` blocking with their reduced sets. Keep the full set as a non-blocking shadow job. Add the `gate` job and make it the only required check. | Low: CSS and Markdown only | 4 weeks, escape rate ≤ 1 in 50 |
-| 4 | `standard` uses affected tests. Shard the full suite in 2 jobs for `critical` and `platform`. Skip `electron-app` builds outside `platform` and `critical`. | Medium | 4 weeks, escape rate ≤ 1 in 50 |
+| 4 | Split the single `verify` job into parallel jobs. `standard` uses affected tests. Shard the full suite in 3 jobs for `critical` and `platform`. Install with `--ignore-scripts` outside the build and package jobs. Skip `electron-app` builds outside `platform`. | Medium | 4 weeks, escape rate ≤ 1 in 50 |
 | 5 | Build once, promote the artifact: `windows.yml` and `release.yml` use the package of the SHA. Reduce the shadow runs to 1 in 5. | Low | Release lead time below the baseline |
 | 6 | Review every quarter: the escapes, the raise rate and the slowest checks. Change the rules in `.github/risk-profiles.yml` with the classifier tests. | – | – |
 
@@ -266,7 +275,7 @@ Do not remove a test to make a profile faster. A slow test moves to the profile 
 
 ## 10. Target state
 
-- One required check, `gate`, on each PR. The classifier selects the jobs. Each job runs once per SHA.
+- One required check, `gate`, on each PR. The classifier selects the jobs. Each job runs once per SHA. No profile waits longer than today before the merge.
 - `main` always runs the full set after the merge. The nightly run adds Windows and package smoke tests.
 - A tag runs no tests. It checks that the full set passed on the SHA, builds each package once, starts each package and publishes.
 - The browser tests, the CLI contract smoke and the Windows tests run where the rules say. They no longer depend on an agent who remembers them.
@@ -283,24 +292,24 @@ Do not remove a test to make a profile faster. A slow test moves to the profile 
 **Normal application feature** (a new panel action in `modeler/src/browser`, a rule in `packages/model/src/selection.ts`, tests)
 
 1. `classify` → `standard` (rule 7). No tripwire.
-2. `fast`: check (import rules, GHC, typecheck), then affected tests. The model changed, so the path map runs the full suite.
-3. `build-e2e` in parallel: build `app`, run the full e2e, because `modeler/src/browser` changed.
-4. `gate` passes after about 4–5 min, the same as today, but with e2e coverage that does not exist today.
-5. Merge. `main` runs the full set with the `electron-app` build and the CLI smoke.
+2. `fast`: check (import rules, GHC, typecheck), then affected tests. The model changed, so the path map selects the full suite, and the 3 unit shards run instead of the affected tests in `fast`.
+3. `build` in parallel: full install, build `app`.
+4. `gate` passes after about 2.5–3 min. Today: about 5 min.
+5. `e2e` starts after `build`, because `modeler/src/browser` changed. It reports on the PR after about 4 min, but does not hold the merge. A red result blocks the release of the merged commit.
+6. Merge. `main` runs the full set with the `electron-app` build and the CLI smoke.
 
 **Database or API change** (the TriG writer in `packages/rdf/src/trig.ts`, a new field in `modeler/src/common/protocol.ts`)
 
-1. `classify` → `critical` (rules 4 and 5). `CODEOWNERS` requests a review.
-2. `fast`: check. `unit-1` (`packages/rdf/test`) and `unit-2` (all other tests) in parallel.
-3. `build-e2e`: full install, both builds, full e2e, CLI smoke: a backend on a copy of the fixtures, `catenary rpc` for the changed query, and an RDF comparison of the written file with the `rdf` CLI.
-4. The writer changed, so `windows-unit` runs the paths, files, watcher and Git tests on `windows-latest`.
-5. `package-smoke` (Linux, xvfb) runs as non-blocking information.
-6. `gate` passes after about 6–8 min and the review. Merge. `main` and the nightly run repeat the full set and the Windows package smoke.
+1. `classify` → `critical` (rules 4 and 5).
+2. In parallel: `fast` (check), `unit-1..3` (full suite in 3 shards), `build` (full install, build `app`, CLI smoke: a backend on a copy of the fixtures, `catenary rpc` for the changed query, an RDF comparison of the written file with the `rdf` CLI).
+3. `gate` passes after about 3 min. Today: about 5 min, without the CLI smoke.
+4. Non-blocking, in parallel: `e2e` (after `build`) and, because the writer changed, `windows-unit` (paths, files, watcher and Git on `windows-latest`). Both report on the PR within about 5 min. Add `risk:hold` to wait for them before the merge.
+5. Merge. `main` repeats the full set. The release of this commit needs every check green, including e2e and Windows.
 
 **Publishing-only release** (tag `v0.2.0` on a commit of `main`)
 
 1. The tag starts `release.yml` only. `ci.yml` does not run.
 2. `gate` reads the checks of the tag SHA. The post-merge full set passed, so the release continues. If it failed or is missing, the job stops and names the failed check.
-3. `package` builds the Linux, Windows and macOS packages once.
-4. `smoke` starts the Linux tar.gz and AppImage under xvfb, the Windows zip on `windows-latest`, and the macOS apps after the ad hoc signature.
-5. `release` writes `SHA256SUMS` and publishes. No unit test runs again. Today: a CI run of 4 min that the release ignores, then 6.5 min of packaging with no package started.
+3. `package` downloads the Linux and Windows packages of the SHA. The post-merge run built them and started them.
+4. `macos` builds, signs and starts the two macOS apps.
+5. `release` writes `SHA256SUMS` and publishes. No test runs again. About 3–4 min. Today: a CI run of 4 min that the release ignores, then 6.5 min of packaging with no package started.
