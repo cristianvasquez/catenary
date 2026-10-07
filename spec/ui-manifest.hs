@@ -1013,13 +1013,13 @@ cardTextSize = maybe 22 (clampSize 8 72)
 
 -- 7.4 Edge routing ------------------------------------------------------------------
 
--- | Edge styles: orthogonal (default), polyline, curved, direct.
+-- | Edge styles: orthogonal, polyline, curved, direct (default).
 -- Except direct, route around boxes and pills, not frames. Keep explicit sides. Put labels on the longest horizontal segment.
 -- Route again after geometry changes. Self-links keep their loop.
 -- Limit: dense routes and labels can overlap. Direct routes cross boxes.
 data EdgeStyle = Orthogonal | Polyline | Curved | Direct deriving (Eq, Enum, Bounded)
 defaultEdgeStyle :: EdgeStyle
-defaultEdgeStyle = Orthogonal
+defaultEdgeStyle = Direct
 routesAroundBoxes :: EdgeStyle -> Bool
 routesAroundBoxes s = s /= Direct
 labelSegment :: [((Double, Double), (Double, Double))] -> Maybe ((Double, Double), (Double, Double))

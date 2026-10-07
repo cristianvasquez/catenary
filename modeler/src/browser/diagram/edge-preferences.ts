@@ -10,7 +10,7 @@ import { EDGE_STYLES, EdgeStyle } from './edge-route';
 import { ViewEditors } from './view-editors';
 
 export const EDGE_STYLE = 'catenary.edgeStyle';
-export const EDGE_STYLE_DEFAULT: EdgeStyle = 'orthogonal';
+export const EDGE_STYLE_DEFAULT: EdgeStyle = 'direct';
 
 let current: EdgeStyle = EDGE_STYLE_DEFAULT;
 /** The edge style that the edge views draw with. */

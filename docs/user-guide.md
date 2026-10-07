@@ -82,7 +82,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 
 The toolbar has Show Text, Select in Explorer and More actions (Reset Prefixes to Defaults).
 
-Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace.
+Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace. The default edge style is Direct.
 
 ## Export
 
