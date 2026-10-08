@@ -37,6 +37,8 @@ export class Workspace {
     protected viewFiles = new Map<string, ViewFile>();
     /** Folder of the view file of the view that the running `createView` makes (its `folder`); undefined: `views/`. */
     newViewFolder?: string;
+    /** The view file of the view that the running `createView` makes (its `file`); undefined: a free name in `newViewFolder`. */
+    newViewFile?: string;
     /** The model files that are not views, by path. Their shapes are in the graph of the file, the rest in the model graph. */
     protected modelFiles = new Map<string, ModelFile>();
     /** Files that Catenary reads but does not write (path -> why), besides the formats it does not write (`writeProblem`). */
@@ -238,14 +240,33 @@ export class Workspace {
     }
 
     /**
-     * A view file for each view that has none: `<label>.view.trig` (`-2`, … when taken) in the folder of `createView`, else in `views/`
-     * next to the workspace file.
+     * Why `file` cannot be the file of a new view, or undefined. It is a TriG file in the workspace folder that is not on disk and not
+     * a file of the workspace. The name does not matter: the read finds the views in a file by its content (`declaredViews`).
+     */
+    newViewFileProblem(file: string): string | undefined {
+        const name = portableRelative(this.folder, file);
+        if (!isInside(this.folder, file)) return `${name}: the file must be in the folder of the workspace file.`;
+        if (!/\.trig$/i.test(file)) return `${path.basename(file)}: a view file is a TriG file (.trig).`;
+        const known = [this.workspace, ...this.viewFiles.values(), ...this.modelFiles.values()];
+        if (known.some(f => pathKey(f.path) === pathKey(file)) || existsSync(file)) return `${name} exists. Type another file name.`;
+        return undefined;
+    }
+
+    /**
+     * A view file for each view that has none: the `file` of `createView`, else `<label>.view.trig` (`-2`, … when taken) in the folder
+     * of `createView`, else in `views/` next to the workspace file.
      */
     assignViewFiles(): void {
         const folder = this.newViewFolder ?? defaultViewsFolder(this.workspace.path);
         const taken = new Set([...this.viewFiles.values()].map(f => f.path));
         for (const v of this.graph.views()) {
             if (this.viewFiles.has(v.value)) continue;
+            if (this.newViewFile && !taken.has(this.newViewFile)) {
+                taken.add(this.newViewFile);
+                this.viewFiles.set(v.value, { path: this.newViewFile });
+                this.newViewFile = undefined;
+                continue;
+            }
             const base = this.graph.label(v, v).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'view';
             let file = path.join(folder, `${base}${VIEW_EXT}`);
             for (let i = 2; taken.has(file) || existsSync(file); i++) file = path.join(folder, `${base}-${i}${VIEW_EXT}`);
@@ -743,7 +764,21 @@ type FileRead = { kind: 'view'; path: string; view: string; triples: Quad[]; tex
 /** Until n3 reads annotations correctly: a file with the annotation syntax is read only (a write could remove statements that the read lost). */
 const NO_WRITE_ANNOTATION = 'has RDF 1.2 annotation syntax ({| … |}); the reader (n3 2.7.12) can lose statements after it (rdfjs/N3.js #677, #673). Read only: Catenary does not write this file.';
 
-/** Read one model file. Statements in named graphs are merged, with a warning. A view file (`*.view.trig`): see `viewProblem`. */
+/**
+ * The views that RDF quads declare: the subjects of `rdf:type view:View`, in any graph (a SPARQL query on the quads of one file).
+ * A file that declares a view is a view file, whatever its name.
+ */
+export function declaredViews(quads: Quad[]): string[] {
+    if (!quads.some(q => q.object.equals(V.View))) return [];
+    const rows = new OxigraphStore(quads).select(`PREFIX rdf: <${NS.rdf}> PREFIX view: <${NS.view}>
+        SELECT DISTINCT ?view WHERE { { ?view rdf:type view:View } UNION { GRAPH ?g { ?view rdf:type view:View } } }`);
+    return rows.map(r => r.view.value).sort(cmp);
+}
+
+/**
+ * Read one model file. Statements in named graphs are merged, with a warning. A file that declares a view (`declaredViews`), or a
+ * `*.view.trig` file, is a view file: see `viewProblem`.
+ */
 async function readModelFile(file: string): Promise<FileRead> {
     let triples: Quad[], text: string;
     try {
@@ -751,13 +786,11 @@ async function readModelFile(file: string): Promise<FileRead> {
         const quads = await parseRdf(text, file);
         triples = quads.map(toTriple);
         const noWrite = /\.(ttl|trig)$/i.test(file) && await hasAnnotation(text) ? NO_WRITE_ANNOTATION : undefined;
-        if (isViewFile(file)) {
+        if (isViewFile(file) || declaredViews(quads).length) {
+            if (!/\.trig$/i.test(file)) return { kind: 'error', path: file, error: 'a view must be in a TriG file, in a graph named by the view IRI.' };
             const problem = viewProblem(quads);
             if (problem) return { kind: 'error', path: file, error: problem };
             return { kind: 'view', path: file, view: quads[0].graph.value, triples, text, warnings: [], noWrite };
-        }
-        if (triples.some(q => q.predicate.equals(P.type) && q.object.equals(V.View))) {
-            return { kind: 'error', path: file, error: `a view must be in a *${VIEW_EXT} file, in a graph named by the view IRI.` };
         }
         const named = quads.filter(q => q.graph.termType !== 'DefaultGraph').length;
         const warnings = named ? [`${path.basename(file)}: ${named} statements in named graphs are read without the graph names; a write writes them so.`] : [];

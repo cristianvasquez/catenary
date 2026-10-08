@@ -492,9 +492,15 @@ export class ModelStore implements ModelQueries {
             if (folder !== this.folder && !isInside(this.folder, folder)) return { ok: false, error: `The folder ${command.folder} is not in the workspace folder.` };
             ws.newViewFolder = folder;
         }
+        if (command.kind === 'createView' && command.file) {
+            const file = path.resolve(this.folder, command.file);
+            const problem = ws.newViewFileProblem(file);
+            if (problem) return { ok: false, error: problem };
+            ws.newViewFile = file;
+        }
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         const { result: r, patch } = this.graph.transact(g => executeCommand(g, this.metamodel, command));
-        if (!r.ok) { ws.newViewFolder = undefined; return r; }
+        if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
             this.commitNotes.push(command.kind);
             this.track(patch);
@@ -505,7 +511,7 @@ export class ModelStore implements ModelQueries {
             this.contentChanged(patch, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
             this.changed('edit', patch);
         }
-        ws.newViewFolder = undefined;
+        ws.newViewFolder = ws.newViewFile = undefined;
         const v = r.value;
         if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
         return { ok: true, id: typeof v === 'string' ? v : undefined };

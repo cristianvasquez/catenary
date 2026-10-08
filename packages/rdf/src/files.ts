@@ -1,6 +1,6 @@
 // The files of a workspace: the manifest of the workspace file, and the model files (ADR 0004). RDF formats: rdf-files.
 // Workspace file (TriG): the manifest graph only. Model files: every other RDF file of the folder of the workspace file and its
-// subfolders; a `*.view.trig` file is a view. Manifest paths are relative to the workspace file.
+// subfolders; a file that declares a view:View (any name; `*.view.trig` by default) is a view. Manifest paths are relative to the workspace file.
 
 import { NS, isViewFile } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';

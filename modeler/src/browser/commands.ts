@@ -442,7 +442,7 @@ export class ExplorerFocusContext implements KeybindingContext {
     }
 }
 
-/** A view file of the open workspace (`*.view.trig` in its views folder) opens in its view editor. Other files: the next handler. */
+/** A view file of the open workspace (a file that declares a view, any name) opens in its view editor. Other files: the next handler. */
 @injectable()
 export class ViewFileOpenHandler implements OpenHandler {
     readonly id = 'catenary-view-file';
@@ -477,11 +477,12 @@ export class TrigOpenHandler implements OpenHandler {
 
     /**
      * The open workspace file: its settings view. Another .trig that is not a model file of the open workspace: open it as a workspace.
-     * Not a view file: ViewFileOpenHandler opens it. An equal priority lets the registration order decide.
+     * Not a view file (`*.view.trig`, or a file that declares a view): ViewFileOpenHandler opens it.
      */
     canHandle(uri: URI): number {
         if (uri.scheme !== 'file' || uri.path.ext !== '.trig' || isViewFile(uri.path.fsPath())) return 0;
-        return this.model.snapshot.files.files.some(f => f.path === uri.path.fsPath()) ? 0 : 200;
+        const { files, views } = this.model.snapshot.files;
+        return [...files, ...views].some(f => f.path === uri.path.fsPath()) ? 0 : 200;
     }
 
     async open(uri: URI): Promise<object | undefined> {

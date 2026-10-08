@@ -19,7 +19,7 @@ import Data.List (isInfixOf, nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
-  , (==>), elementId, firstFree, manifestOnly, relationId, sameSet, unique )
+  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet, unique )
 
 --------------------------------------------------------------------------------
 -- Part I. The model as the user sees it
@@ -539,6 +539,13 @@ law_enterInNoteIsNewline = inputEnd NoteInput EnterKey == Nothing
 -- A new node shape: the accepted name also sets its target class, in the same undo step. The class is the known class with
 -- that name, else the name IRI. Reason: a shape usually targets the class of its name.
 -- Rename, placement and connection to existing elements start no follow-up.
+-- New View first asks for the name of the view file (DialogInput). It proposes a free views/unnamed-view.view.trig (or the selected
+-- folder); a name without .trig gets it. Cancel creates nothing. The view gets the default label "unnamed view N", and the follow-up
+-- starts. A later rename does not change the file name. Reason: the read finds a view by the content of its file, not by its name.
+newViewFileInput :: String -> FilePath
+newViewFileInput t = if isTrig t then t else t ++ ".trig"
+law_newViewFileIsTrig :: String -> Bool
+law_newViewFileIsTrig t = isTrig (newViewFileInput t)
 data Field = LabelField | PathField | NoteTextField deriving Eq
 data FieldPlace = InlineField | ElementSectionField | LabelDialog deriving Eq
 followUp :: Element -> Field

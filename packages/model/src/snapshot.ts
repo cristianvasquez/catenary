@@ -8,12 +8,15 @@ export interface MetamodelInfo extends Classes {
     source?: string;
 }
 
-/** The extension of a view file: TriG with one graph, named by the view IRI (ADR 0011). */
+/**
+ * The extension of the view files that Catenary names (a view file: TriG with one graph, named by the view IRI, ADR 0011). A view file
+ * can have any `.trig` name: the read finds a view by the content of the file.
+ */
 export const VIEW_EXT = '.view.trig';
-/** A view file is never a workspace file or another model file. */
+/** A `*.view.trig` file is a view file, never a workspace file or another model file. A file with another name can be a view file too. */
 export const isViewFile = (file: string) => file.toLowerCase().endsWith(VIEW_EXT);
 
-/** A view file (`*.view.trig` in the views folder): one view. */
+/** A view file (a TriG file that declares one view, any name): one view. */
 export interface ViewFileInfo {
     /** View id. */
     view: string;

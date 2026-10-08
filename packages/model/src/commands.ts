@@ -64,8 +64,11 @@ export type EditCommand =
      * attaches to that side in that view. `to` equal to the current end changes only the side.
      */
     | { kind: 'reconnectRelation'; relation: string; end: 'source' | 'target'; to: string; view?: string; side?: Side }
-    /** New view. `folder`: absolute path of the folder of its view file, inside the workspace folder; default: `views/`. */
-    | { kind: 'createView'; label: string; folder?: string }
+    /**
+     * New view. `file`: path of its view file (absolute, or relative to the workspace folder), a new TriG file inside the workspace
+     * folder; any name. Else `folder`: absolute path of the folder of its view file, inside the workspace folder; default: `views/`.
+     */
+    | { kind: 'createView'; label: string; folder?: string; file?: string }
     // ---- shapes (the shapes graphs; see ShapesModel)
     /**
      * New node shape in the primary shapes file; with a view (a shapes view), its card is placed at `at`. Its IRI is minted from
