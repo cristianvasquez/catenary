@@ -9,6 +9,7 @@ export * from './explorer';
 export * from './form';
 export * from './ids';
 export * from './labels';
+export * from './markdown';
 export * from './metamodel';
 export * from './notation';
 export * from './notation-graph';

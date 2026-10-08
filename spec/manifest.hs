@@ -156,7 +156,6 @@ law_idAlphabet i = all (\c -> isAsciiLower c || isAsciiUpper c || isDigit c || c
 data WorkspaceFile = WorkspaceFile
   { settings :: WorkspaceSettings
   , prefixes :: [(String, Iri)]                  -- sh:declare / sh:prefix / sh:namespace; setPrefixes
-  , exportViews :: [Iri]                         -- ws:exportViews, an RDF list; setExportViews
   }
 -- | The settings that setSettings replaces. TypeScript: WorkspaceSettings in modeler/src/common/protocol.ts.
 data WorkspaceSettings = WorkspaceSettings
@@ -325,7 +324,7 @@ defaultFileTx :: WorkspaceSettings -> Tx FilePath   -- defaultFileChoice on the 
 
 -- | Prefixes: one table per backend, from the workspace file. Prefix declarations in model files do not fill it.
 -- No declarations: use defaults without a rewrite of the workspace file. Reject two prefixes for one namespace.
--- Settings, prefixes, export order and migration dismissal are not undo steps (law_settingsNoUndo, §5.2).
+-- Settings, prefixes and migration dismissal are not undo steps (law_settingsNoUndo, §5.2).
 -- A change of exclusions reloads membership. Person preferences are not part of this contract.
 validPrefixes :: [(String, Iri)] -> Bool
 validPrefixes = unique . map snd
@@ -333,8 +332,6 @@ setSettings :: WorkspaceSettings -> IO CommandResult
 setSettings s = runOp (SetSettings s)
 setPrefixes :: [(String, Iri)] -> IO CommandResult
 setPrefixes ps = runOp (SetPrefixes ps)
-setExportViews :: [Id] -> IO CommandResult
-setExportViews vs = runOp (SetExportViews vs)
 law_prefixesRejected :: Backend -> [(String, Iri)] -> Bool
 law_prefixesRejected b ps = failed (fst (step b (SetPrefixes ps))) == not (validPrefixes ps)
 
@@ -575,7 +572,7 @@ data Backend
 data CommandResult = Success (Maybe Id) [Id] | Failure Error
 data Op
   = Open FilePath | Create FilePath (Maybe Placement) | Execute EditCommand | Undo | Redo | Save
-  | SetSettings WorkspaceSettings | SetPrefixes [(String, Iri)] | SetExportViews [Id] | DismissMigration Id
+  | SetSettings WorkspaceSettings | SetPrefixes [(String, Iri)] | DismissMigration Id
   | SetProtected FilePath Bool | ImportFile FilePath
   | DiskChange [FilePath]                         -- the watcher (§10.4), not an RPC
 step :: Backend -> Op -> (CommandResult, Backend)
@@ -646,14 +643,13 @@ law_redoRestores :: Backend -> EditCommand -> Bool
 law_redoRestores b c =
   let b' = snd (step b (Execute c))
   in sameSet (storeQuads (snd (step (snd (step b' Undo)) Redo))) (storeQuads b')
--- | Settings, prefixes, export order and migration dismissal are not undo steps.
+-- | Settings, prefixes and migration dismissal are not undo steps.
 law_settingsNoUndo :: Backend -> Op -> Bool
 law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b op))) == undoStack (historyOf b)
   where
     notUndoable (SetSettings _) = True
     notUndoable (SetProtected _ _) = True
     notUndoable (SetPrefixes _) = True
-    notUndoable (SetExportViews _) = True
     notUndoable (DismissMigration _) = True
     notUndoable Save = True
     notUndoable _ = False
@@ -1205,8 +1201,10 @@ canWrite f _ = writable f
 -- 11.1 RPC --------------------------------------------------------------------------------
 
 -- | RPC carries JSON only. Interface: modeler/src/common/protocol.ts, ModelService.
--- Writes: open, create, execute, undo, redo, save, setSettings, setPrefixes, setExportViews, dismissMigration, setProtected,
+-- Writes: open, create, execute, undo, redo, save, setSettings, setPrefixes, dismissMigration, setProtected,
 -- importFile (each is an Op). Undo and redo answer as execute: a step that changes a protected file is refused (§2.6).
+-- checkMarkdownExport and exportMarkdown read Markdown files and write an export folder (spec/ui-manifest.hs §9).
+-- They are not Ops: they do not change the model, its files or its history.
 -- Reads: getSnapshot and the queries of packages/model/src/queries.ts (ModelQueries, MODEL_QUERIES), by group below.
 -- The pure rules on scoped Docs: packages/model/src/prompts.ts.
 -- sources gives every source file of an element with an optional 1-based disk line. It does not parse all RDF spellings.
@@ -1236,7 +1234,7 @@ law_sourceLinePositive s = maybe True (>= 1) (sourceLine s)
 -- 11.2 Snapshots ---------------------------------------------------------------------------
 
 -- | Each connection receives onDidChange snapshots (packages/model/src/snapshot.ts):
--- revision, files, shapesVersion, movedIds, warnings, migrations, prefixes, export order, undo and dirty state,
+-- revision, files, shapesVersion, movedIds, warnings, migrations, prefixes, undo and dirty state,
 -- the metamodel and counts (instances, report results, violations), and the last change:
 -- its reason and, for an edit, undo or redo, its views, elements, shapes flag and layout flag.
 -- The layout flag marks a change of placement geometry or style only. A panel skips a read that the change cannot affect.

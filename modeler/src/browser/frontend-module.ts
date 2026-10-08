@@ -40,7 +40,8 @@ import { OutlineViewTreeModel } from '@theia/outline-view/lib/browser/outline-vi
 import { OutlineDecoratorService, OutlineTreeDecorator } from '@theia/outline-view/lib/browser/outline-decorator-service';
 import { bindRootContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { ViewDiagramManager, ViewEditors, ViewLabels } from './diagram/view-editors';
-import { ViewsExport } from './diagram/views-export';
+import { MarkdownExport } from './diagram/markdown-export';
+import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
 import { ExplorerFocusContext, ModelExplorerContribution, CatenaryFileOpenHandler } from './commands';
 import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
@@ -137,7 +138,8 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         // View editors
         single(ViewLabels);
         single(ViewEditors, FrontendApplicationContribution);
-        single(ViewsExport);
+        single(MarkdownExport);
+        single(InsertView);
         single(ViewHistory, FrontendApplicationContribution);
         single(DiagramSelectionSync, FrontendApplicationContribution);
         single(CanvasInteractions, FrontendApplicationContribution);

@@ -96,6 +96,7 @@ pnpm -s catenary --port 3917 run catenary.newInstance
 pnpm -s catenary --port 3917 prompt
 pnpm -s catenary --port 3917 answer --pick Dataset
 pnpm -s catenary --port 3917 answer --cancel
+pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/docs"' '"/tmp/catenary-out"'
 ```
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window; a headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.

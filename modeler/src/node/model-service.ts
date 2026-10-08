@@ -2,8 +2,9 @@
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { CommandResult, EditCommand, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
-import { ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
+import { CommandResult, EditCommand, ExportView, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote, idIri } from '@catenary/model';
+import { MarkdownExportCheck, MarkdownExportResult, ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
+import { checkOf, prepareMarkdownExport, writeMarkdownExport } from './markdown-export';
 import { ModelStore } from '@catenary/rdf';
 
 @injectable()
@@ -37,12 +38,29 @@ export class ModelServiceImpl implements ModelService, Disposable {
     setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return this.store.setSettings(settings); }
     setProtected(file: string, on: boolean): Promise<CommandResult> { return this.store.setProtected(file, on); }
     importFile(source: string): Promise<ImportResult> { return this.store.importFile(source); }
-    setExportViews(ids: string[]): Promise<CommandResult> { return this.store.setExportViews(ids); }
+    async checkMarkdownExport(source: string, destination: string): Promise<MarkdownExportCheck> {
+        return checkOf(await prepareMarkdownExport(source, destination, this.views()));
+    }
+    async exportMarkdown(source: string, destination: string, svgs: Record<string, string>): Promise<MarkdownExportResult> {
+        const prepared = await prepareMarkdownExport(source, destination, this.views());
+        if ('error' in prepared) return { ok: false, error: prepared.error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] };
+        return writeMarkdownExport(prepared, svgs);
+    }
     async dismissMigration(id: string): Promise<void> { this.store.dismissMigration(id); }
     save(): Promise<CommandResult> { return this.store.save(); }
     async undo(): Promise<CommandResult> { return this.store.undo(); }
     async redo(): Promise<CommandResult> { return this.store.redo(); }
     async execute(command: EditCommand): Promise<CommandResult> { return this.store.execute(command); }
+
+    /** The views of the model by IRI. A view id is the encoded IRI (@catenary/model iriId): the IRI is the identity in a document. */
+    protected views(): Map<string, ExportView> {
+        const views = new Map<string, ExportView>();
+        for (const [id, label] of Object.entries(this.store.viewLabels())) {
+            const iri = idIri(id);
+            if (iri) views.set(iri, { id, label });
+        }
+        return views;
+    }
 
     // The read queries: methods of the prototype, so that the RPC proxy and the CLI call them by name.
     static {

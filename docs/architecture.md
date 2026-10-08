@@ -73,6 +73,7 @@ Paths are relative to the directory in the first column.
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types |
 | | `labels.ts`, `search.ts`, `paths.ts`, `selection.ts`, `prompts.ts` | Labels, search criteria, portable paths, selection by kind, dialog and picker content |
+| | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
@@ -87,12 +88,14 @@ Paths are relative to the directory in the first column.
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts` | Metamodel, shapes index, shapes proposed from data |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notation files (copied next to the backend bundle) and the input of the notation engine |
-| `modeler/src/common` | `protocol.ts`, `cli-protocol.ts`, `views-html.ts`, `view-order.ts` | RPC, CLI and export contracts |
+| `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
+| | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |
 | | `glsp/` | GLSP server, one session per view, operation handlers, layout |
 | `modeler/src/browser` | `actions.ts`, `action-service.ts`, `action-commands.ts`, `action-menus.ts`, `follow-up.ts` | Actions, prompts, creation follow-up |
 | | `selection-model.ts`, `model-client.ts`, `commands.ts`, `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
-| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes, export. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
+| | `insert-view.ts` | Insert View in a Markdown editor |
+| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |

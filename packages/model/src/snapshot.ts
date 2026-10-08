@@ -146,8 +146,6 @@ export interface ModelSnapshot {
     movedIds: Record<string, string>;
     /** Prefix table in use. `stored`: the primary workspace file declares it; else it is the default table, not in the file. */
     prefixes: { table: Record<string, string>; stored: boolean };
-    /** View ids of the last HTML export of the workspace, in export order (manifest ws:exportViews). Undefined: none stored. */
-    exportViews?: string[];
     dirty: boolean;
     canUndo: boolean;
     canRedo: boolean;
