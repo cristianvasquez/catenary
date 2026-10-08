@@ -41,12 +41,13 @@ describe('copy and paste', () => {
         expect(boxes(doc(g).views[second], 'card')).toMatchObject([{ element: copy.id, x: 10, y: 20 }]);
     });
 
-    it('duplicates the relations between copied cards, with their edge layouts; keeps the relative layout', async () => {
+    it('duplicates relations and appearance, packs the copies, and leaves existing placements fixed', async () => {
         const g = await example();
         const m = await meta();
         const ctx = byLabel(g, 'Product context');
         const product = byLabel(g, 'Product usage data'), api = byLabel(g, 'Events API');
         const nodes = boxes(doc(g).views[ctx], 'card').filter(n => n.element === product || n.element === api);
+        const before = structuredClone(doc(g).views[ctx].boxes);
         const layout = edgeLayout(doc(g).views[ctx], Object.values(doc(g).relations).find(r => r.subject === product && r.object === api)!.id)!;
         const instances = Object.keys(doc(g).instances).length;
         const clip = copyFromView(doc(g), ctx, [product, api])!;
@@ -59,12 +60,17 @@ describe('copy and paste', () => {
         const copied = Object.values(d.relations).filter(r => ids.includes(r.subject) || ids.includes(r.object));
         expect(copied.map(r => [r.subject, r.predicate, r.object])).toEqual([[mep2, INPUT_PORT, api2]]);
         expect(edgeLayout(d.views[ctx], copied[0].id)).toMatchObject({ fromSide: layout.fromSide, toSide: layout.toSide, color: layout.color });
-        const minX = Math.min(...nodes.map(n => n.x)), minY = Math.min(...nodes.map(n => n.y));
         for (const n of nodes) {
             const id = n.element === product ? mep2 : api2;
             const p = boxes(d.views[ctx], 'card').find(x => x.element === id)!;
-            expect([p.x - 5000, p.y - 5000, p.width, p.height, p.color]).toEqual([n.x - minX, n.y - minY, n.width, n.height, n.color]);
+            expect([p.width, p.height, p.color]).toEqual([n.width, n.height, n.color]);
         }
+        expect(d.views[ctx].boxes.filter(b => before.some(p => p.id === b.id))).toEqual(before);
+        const pasted = boxes(d.views[ctx], 'card').filter(b => ids.includes(b.element));
+        expect(Math.min(...pasted.map(b => b.x))).toBe(5000);
+        expect(Math.min(...pasted.map(b => b.y))).toBe(5000);
+        expect(pasted[0].x + pasted[0].width <= pasted[1].x || pasted[1].x + pasted[1].width <= pasted[0].x
+            || pasted[0].y + pasted[0].height <= pasted[1].y || pasted[1].y + pasted[1].height <= pasted[0].y).toBe(true);
     });
 
     it('each paste of the same copy creates new instances; one undo step each', async () => {
@@ -110,7 +116,7 @@ describe('copy and paste', () => {
 });
 
 describe('cut and paste', () => {
-    it('paste of a cut adds the same instances to another view, with relative layout and edge layouts', async () => {
+    it('paste of a cut adds the same instances and edge layouts, with packed new placements', async () => {
         const g = await example();
         const m = await meta();
         const ctx = byLabel(g, 'Product context');
@@ -128,12 +134,13 @@ describe('cut and paste', () => {
         const pasted = boxes(doc(g).views[second], 'card');
         expect(pasted.map(n => n.element)).toEqual(elements);
         expect(Object.keys(doc(g).instances)).toHaveLength(instances);
-        const minX = Math.min(...nodes.map(n => n.x)), minY = Math.min(...nodes.map(n => n.y));
         pasted.forEach((p, i) => {
-            expect(p.x - 1000).toBe(nodes[i].x - minX);
-            expect(p.y - 2000).toBe(nodes[i].y - minY);
             expect([p.width, p.height]).toEqual([nodes[i].width, nodes[i].height]);
+            for (const other of pasted) if (other !== p) expect(p.x + p.width <= other.x || other.x + other.width <= p.x
+                || p.y + p.height <= other.y || other.y + other.height <= p.y).toBe(true);
         });
+        expect(Math.min(...pasted.map(b => b.x))).toBe(1000);
+        expect(Math.min(...pasted.map(b => b.y))).toBe(2000);
         expect(doc(g).views[second].edges).toHaveLength(clip.edges.length);
     });
 

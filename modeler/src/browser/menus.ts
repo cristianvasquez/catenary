@@ -52,6 +52,7 @@ export class ModelerMenus implements MenuContribution {
         addMenuItems(menus, FILE_SAVE, c.SAVE.id);
         addMenuItems(menus, CommonMenus.EDIT_UNDO, [c.UNDO.id, 'Undo'], [c.REDO.id, 'Redo']);
         addMenuItems(menus, CommonMenus.EDIT_FIND, ModelCommands.FIND_ELEMENT.id);
+        addMenuItems(menus, CommonMenus.EDIT_CLIPBOARD, ModelCommands.COPY_AS_RDF.id);
         addMenuItems(menus, GO_FIND, [ModelCommands.FIND_ELEMENT.id, 'Go to Element…'], [ModelCommands.NEXT_OCCURRENCE.id, 'Next View of Found Element'],
             [ModelCommands.PREVIOUS_OCCURRENCE.id, 'Previous View of Found Element']);
         addMenuItems(menus, GO_HISTORY, [ModelCommands.BACK.id, 'Back'], [ModelCommands.FORWARD.id, 'Forward']);

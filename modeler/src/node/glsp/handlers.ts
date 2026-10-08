@@ -4,7 +4,7 @@
 import {
     Action, ActionHandler, ChangeBoundsOperation, Command,
     CreateNodeOperation, CreateNodeOperationHandler, CutOperation, DeleteElementOperation, OperationHandler,
-    PasteOperation, RedoAction, RequestClipboardDataAction, SelectAction, SetClipboardDataAction,
+    PasteOperation, RedoAction, RequestClipboardDataAction, SelectAction, SetClipboardDataAction, FitToScreenAction,
     TriggerNodeCreationAction, UndoAction
 } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
@@ -213,9 +213,9 @@ export class PasteHandler extends OperationHandler {
             await this.session.message('The clipboard does not hold view elements.');
             return undefined;
         }
-        await this.session.edit({ kind: 'pasteIntoView', view: this.session.viewId, clip, at: op.editorContext.lastMousePosition }, r => [SelectAction.create({
+        await this.session.edit({ kind: 'pasteIntoView', view: this.session.viewId, clip, at: op.editorContext.lastMousePosition, cardScale: this.session.state.cardScale }, r => [SelectAction.create({
             selectedElementsIDs: r.ids ?? [], deselectedElementsIDs: true
-        })]);
+        }), ...(r.ids?.length ? [FitToScreenAction.create(r.ids, { padding: 40, maxZoom: 1, animate: false })] : [])]);
         return undefined;
     }
 }

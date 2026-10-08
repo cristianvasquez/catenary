@@ -787,10 +787,20 @@ releaseAll v g = Uncollect v g Nothing
 -- | Clipboard: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. Paste goes to the last pointer position.
 -- The clip lives in window memory. The system clipboard holds its ID, not RDF. Another window or application cannot paste it.
 -- Browser context menus do not show clipboard commands. Copy and cut effects: spec/manifest.hs §6.4.
+-- Copy as RDF appears in Edit and the canvas context menu. It copies readable Turtle without placement metadata.
+-- Raw RDF paste shows figures derived by the canvas notations. Default appearance applies to new placements only.
+-- Named graphs open a warning: flattening discards graph names. Flatten and paste continues; Cancel changes nothing.
+-- Invalid RDF changes nothing. Successful paste selects new placements and reports when no new figures exist.
 type ClipId = String
 data WindowId = WindowId String deriving Eq
 pastable :: WindowId -> WindowId -> ClipId -> [ClipId] -> Bool   -- window of the clip, pasting window, clip ID, clips in memory
 pastable from to c held = from == to && c `elem` held
+rawRdfPaste :: Id -> String -> Bool -> Maybe Point -> EditCommand
+rawRdfPaste = PasteRdf
+flattenPasteAllowed :: Bool -> Bool -> Bool          -- has named graphs, consent
+flattenPasteAllowed named consent = not named || consent
+law_namedGraphPasteNeedsConsent :: Bool -> Bool
+law_namedGraphPasteNeedsConsent named = named ==> not (flattenPasteAllowed named False)
 
 -- 5.9 Notes -------------------------------------------------------------------------
 
@@ -1092,6 +1102,18 @@ selfLoopClearance :: Double -> Double
 selfLoopClearance zoom = max 80 (64 / max 0.001 zoom)
 
 -- 7.5 Layout ------------------------------------------------------------------------
+
+-- | Paste packs only new placements near the pointer. Existing placements remain fixed obstacles.
+-- Copied frames move with their contents. Dimensions, appearance and copied edge sides stay unchanged.
+-- Packing uses drawn sizes at the current card text scale and reserves space for private pills.
+-- After paste, fit the new placements into the viewport, with padding 40 and zoom at most 1.
+pasteFitPadding, pasteMaxZoom :: Double
+pasteFitPadding = 40
+pasteMaxZoom = 1
+pastePositions :: [(Id, (Double, Double))] -> [(Id, (Double, Double))] -> Bool
+pastePositions old new = all (`elem` new) old
+law_pasteKeepsOldPositions :: [(Id, (Double, Double))] -> [(Id, (Double, Double))] -> Bool
+law_pasteKeepsOldPositions old added = pastePositions old (old ++ added)
 
 -- | Apply Layout runs only on request. Layered uses ELK left-to-right. Force uses cola.js and overlap removal.
 -- Both replace the arrangement. Routing stays a rendering task, not ELK output. Layout clears edge sides.

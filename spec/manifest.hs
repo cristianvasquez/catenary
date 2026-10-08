@@ -779,6 +779,7 @@ data EditCommand
   | AddToCollection Id Id [Id]
   | Uncollect Id Id (Maybe [Id])
   | PasteIntoView Id ViewClip (Maybe Point)
+  | PasteRdf Id String Bool (Maybe Point)                   -- parsed N-Quads, flatten consent, paste position
   -- shapes and SKOS (§8)
   | CreateNodeShape String (Maybe Iri) (Maybe Id) (Maybe Point)
   | ProposeShapes (Maybe [Iri])
@@ -818,6 +819,7 @@ viewNamed c = case c of
   AddToCollection v _ _ -> Just v
   Uncollect v _ _ -> Just v
   PasteIntoView v _ _ -> Just v
+  PasteRdf v _ _ _ -> Just v
   _ -> Nothing
 viewExists :: Backend -> Id -> Bool
 law_missingViewRejected :: Backend -> EditCommand -> Bool
@@ -943,7 +945,7 @@ law_collectRemovesOwnPlacements b v ms =
 -- 6.4 Copy, cut and paste ---------------------------------------------------------------
 
 -- | Copy makes new instances with their types, fields, owned values and the relations between copied instances.
--- It keeps box geometry, color, display and copied relation layouts. Paste moves the clip to the requested top-left point.
+-- It keeps box dimensions, color, display and copied relation layouts. Paste packs new placements near the requested point.
 -- Cut removes the source placements at once. Paste after cut reuses the same IRIs and skips cards the target view has.
 -- Copy reads source content at paste time. Deleted source instances do not return. A clip from another model matches same IRIs only.
 -- Frames include their contained boxes. Entity groups copy as member cards. Groups and notes copy their content.
@@ -960,6 +962,28 @@ law_pasteCutReusesIris :: Backend -> Id -> ViewClip -> Bool
 law_pasteCutReusesIris b v clip =
   let b' = snd (step b (Execute (PasteIntoView v clip Nothing)))
   in clipIsCut clip ==> all (`elem` elementsOf b) (elementsOf b')
+
+-- | Raw RDF paste adds missing statements without replacing values or changing explicit resource IRIs.
+-- Existing statements keep their origins. New statements use the normal subject and file routing rules (§2.4).
+-- Parsing replaces blank nodes with skolem IRIs (§1). Named graphs require consent before flattening and triple deduplication.
+-- Notations derive figures from the pasted subjects and statements. Arrival places their connectors, hubs and required endpoints.
+-- Data, placements and layout form one transaction and one undo step. Unsupported figures do not prevent data insertion.
+modelRdf :: Backend -> [Quad]                       -- domain triples, graph normalized for comparison
+clipboardHasNamedGraphs :: String -> Bool           -- parsed clipboard N-Quads
+law_pasteRdfAdditive :: Backend -> Id -> String -> Bool -> Bool
+law_pasteRdfAdditive b v text flatten =
+  let (r, b') = step b (Execute (PasteRdf v text flatten Nothing))
+  in not (failed r) ==> all (`elem` modelRdf b') (modelRdf b)
+law_namedGraphConsent :: Backend -> Id -> String -> Bool
+law_namedGraphConsent b v text =
+  clipboardHasNamedGraphs text ==> failed (fst (step b (Execute (PasteRdf v text False Nothing))))
+
+-- | Copy as RDF returns readable Turtle of selected resources, selected triples and owned nested values.
+-- Referenced descriptions require selection or ownership. Export excludes placement metadata and merges duplicate triples.
+copiedDomainRdf :: Backend -> Id -> [Id] -> [Quad]
+isPlacementQuad :: Quad -> Bool
+law_rdfCopyWithoutPlacement :: Backend -> Id -> [Id] -> Bool
+law_rdfCopyWithoutPlacement b v ids = not (any isPlacementQuad (copiedDomainRdf b v ids))
 
 -- 7. Arrival and removal -----------------------------------------------------
 
@@ -1382,6 +1406,11 @@ readyForRuntimeCheck s = not (buildStale s) && not (restartNeeded s) && not (or 
 -- Add a stub here for each new primitive. Do not give a stub behavior: write behavior as an equation in its section.
 manifestOnly :: a
 manifestOnly = error "signature-level manifest only"
+
+modelRdf = manifestOnly
+clipboardHasNamedGraphs = manifestOnly
+copiedDomainRdf = manifestOnly
+isPlacementQuad = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

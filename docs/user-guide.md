@@ -51,6 +51,11 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
 - Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste creates new instances; cut and paste moves the placements.
+- Paste arranges new placements near the pointer. Existing placements stay fixed. Copied frames move with their contents.
+- The canvas fits the pasted placements so they remain visible.
+- Paste raw RDF to add missing statements and show figures from the canvas notations. Existing resource IRIs remain unchanged.
+- New statements use the configured file destinations. Named graphs require confirmation before paste discards their graph names.
+- Copy as RDF in Edit or the canvas context menu copies readable Turtle. It includes selected statements and owned values, without placement metadata.
 - Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
 - Show Text / Show Canvas switches between the canvas and the TriG text of the same file.
 

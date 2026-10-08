@@ -93,7 +93,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Latest verification (type-to-filter fix):** `pnpm verify --e2e` passed check (5.0 s), test (686/686, 18.9 s), build (8.9 s) and e2e (10/10, 86.7 s). Logs: `/tmp/catenary-verify-dQLqlK`. The explorer browser test covers typing on focused rows and removal of nonmatching branches in both explorer modes. The file-tree test also checks empty results and Escape. It also covers file-tree menus, fuzzy highlights, folder placement, tree reuse, file transfer and undo. The Theia Markdown destination folder dialog has no browser test: the export test gives the destination as a command argument.
+- **Latest verification (RDF clipboard and paste layout):** `pnpm verify --e2e` passed check (14.6 s), test (713/713, 93.4 s), build (27.0 s) and e2e (12/12, 143.6 s). Logs: `/tmp/catenary-verify-FaBaIP`. The clipboard browser test covers raw RDF, current clipboard text, Turtle export, instance duplication, named-graph consent and undo. Lower-layer tests cover file routing, save/reload, duplicate rejection and layout of new placements. Haskell manifest checks were not run, as requested. The Markdown destination folder dialog still has no browser test.
 
 - **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.

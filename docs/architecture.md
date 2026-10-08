@@ -69,6 +69,7 @@ Paths are relative to the directory in the first column.
 |---|---|---|
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts` | Read-model records, JSON terms, element IDs, snapshot schema |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
+| | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, prefixes, form conversion |
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
@@ -84,6 +85,7 @@ Paths are relative to the directory in the first column.
 | | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, statement origin, file of new subjects, save and sync |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
+| | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or one request |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts` | Metamodel, shapes index, shapes proposed from data |

@@ -18,6 +18,7 @@ export * from './notation-join';
 export * from './notation-schema';
 export * from './outline';
 export * from './paths';
+export * from './paste-layout';
 export * from './prompts';
 export * from './properties';
 export * from './queries';
