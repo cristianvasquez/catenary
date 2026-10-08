@@ -175,7 +175,7 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         const victim = tree({ 'keep.md': 'x' });
         const rel = path.relative(out, path.join(victim, 'keep.md')).split(path.sep).join('/');
         mkdirSync(path.join(out, EXPORT_RESOURCES));
-        writeFileSync(path.join(out, OWNERSHIP_FILE), JSON.stringify({ files: { [rel]: 'x' } }));
+        writeFileSync(path.join(out, OWNERSHIP_FILE), JSON.stringify({ generator: 'Catenary', files: { [rel]: 'x' } }));
         expect((await writeMarkdownExport(await prepared(src, out), svgs)).ok).toBe(true);
         expect(read(victim, 'keep.md')).toBe('x');
     });
@@ -190,6 +190,37 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         expect(r.error).toMatch(/1 file was written before it/);
         expect(statSync(path.join(out, 'b')).isFile()).toBe(true);
         expect(JSON.parse(read(out, OWNERSHIP_FILE)).files).toHaveProperty('a.md');
+    });
+
+    it('a destination folder in the source folder whose name starts with ".." is in the source folder', async () => {
+        const src = tree({ 'a.md': 'x' });
+        expect(await prepareMarkdownExport(src, path.join(src, '..export'), VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
+    });
+
+    it('exports hidden files; skips hidden folders', async () => {
+        const src = tree({ '.notes.md': 'n', '.git/x.md': 'g', 'a.md': 'a' });
+        expect((await prepared(src, tree({}))).plan.documents.map(d => d.path)).toEqual(['.notes.md', 'a.md']);
+    });
+
+    it('a source file at the path of a rendered SVG is a conflict, not a silent replacement', async () => {
+        const svg = svgPath('urn:name:Main');
+        const src = tree({ 'a.md': `![](urn:name:Main) ![old](${svg})`, [svg]: '<svg>old</svg>' });
+        const out = tree({});
+        const r = await writeMarkdownExport(await prepared(src, out), svgs);
+        expect(r.ok).toBe(false);
+        expect(r.conflicts).toEqual([`${svg}: two outputs have this path.`]);
+        expect(listing(out)).toEqual([]);
+    });
+
+    it('an ownership record that Catenary did not write is a conflict and stays as it is', async () => {
+        const src = tree({ 'a.md': 'x' });
+        for (const text of ['{"files": {}}', 'not json']) {
+            const out = tree({ [OWNERSHIP_FILE]: text });
+            const r = await writeMarkdownExport(await prepared(src, out), svgs);
+            expect(r.conflicts).toEqual([`${OWNERSHIP_FILE}: the file exists and is not a record of a Catenary export.`]);
+            expect(read(out, OWNERSHIP_FILE)).toBe(text);
+            expect(listing(out)).toEqual([OWNERSHIP_FILE]);
+        }
     });
 
     it('leaves the source folder unchanged', async () => {

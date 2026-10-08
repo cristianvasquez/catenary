@@ -23,7 +23,8 @@ const sha256 = (data: Buffer | string) => createHash('sha256').update(data).dige
 /** The path of `p` relative to `folder`, with `/`; undefined when `p` is not in the folder (or is the folder). */
 function inside(folder: string, p: string): string | undefined {
     const rel = path.relative(folder, p);
-    return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : undefined;
+    const parent = rel === '..' || rel.startsWith(`..${path.sep}`);
+    return rel && !parent && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : undefined;
 }
 
 /** A relative output path with `/`: no empty, `.` or `..` names, not the ownership record. */
@@ -45,15 +46,14 @@ async function realPathOf(p: string): Promise<string> {
     }
 }
 
-/** The Markdown documents of a folder and its subfolders, with paths relative to it. No hidden folders, no linked folders. */
+/** The Markdown documents of a folder and its subfolders, with paths relative to it. No hidden folders (hidden files count), no linked folders. */
 async function listDocuments(root: string): Promise<string[]> {
     const out: string[] = [];
     const walk = async (dir: string): Promise<void> => {
         const entries = (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         for (const e of entries) {
-            if (e.name.startsWith('.')) continue;
             const full = path.join(dir, e.name);
-            if (e.isDirectory()) await walk(full);
+            if (e.isDirectory()) { if (!e.name.startsWith('.')) await walk(full); }
             else if (isMarkdownPath(e.name) && (e.isFile() || (e.isSymbolicLink() && inside(root, await fs.realpath(full).catch(() => root)) !== undefined))) {
                 out.push(inside(root, full)!);
             }
@@ -139,12 +139,18 @@ function unresolvedMessage(plan: MarkdownExportPlan): string {
     return `${n} view reference${n === 1 ? '' : 's'} name${n === 1 ? 's' : ''} no view. Nothing was exported.`;
 }
 
-async function readOwnership(dest: string): Promise<Record<string, string>> {
+/** The record of an earlier export: {} when there is none; undefined when a file at its path is not a record of Catenary. */
+async function readOwnership(dest: string): Promise<Record<string, string> | undefined> {
+    const file = path.join(dest, ...OWNERSHIP_FILE.split('/'));
+    const stat = await fs.lstat(file).catch(() => undefined);
+    if (!stat) return {};
+    if (!stat.isFile()) return undefined;
     try {
-        const files = JSON.parse(await fs.readFile(path.join(dest, ...OWNERSHIP_FILE.split('/')), 'utf8'))?.files;
-        return files && typeof files === 'object' ? Object.fromEntries(Object.entries(files).filter(([, h]) => typeof h === 'string')) as Record<string, string> : {};
+        const record = JSON.parse(await fs.readFile(file, 'utf8'));
+        if (record?.generator !== 'Catenary' || !record.files || typeof record.files !== 'object') return undefined;
+        return Object.fromEntries(Object.entries(record.files).filter(([, h]) => typeof h === 'string')) as Record<string, string>;
     } catch {
-        return {};
+        return undefined;
     }
 }
 
@@ -171,25 +177,31 @@ export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record
     const result: MarkdownExportResult = { ok: false, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: plan.problems };
     if (plan.unresolved.length) return { ...result, error: unresolvedMessage(plan), unresolved: plan.unresolved };
 
-    // All output in memory before the first write.
+    // All output in memory before the first write. Two outputs at one path (a source file at the path of an SVG): a conflict.
     const output = new Map<string, Buffer>();
-    for (const d of plan.documents) output.set(d.path, Buffer.from(d.text, 'utf8'));
+    const conflict = (rel: string, why: string) => result.conflicts.push(`${rel}: ${why}`);
+    const put = (rel: string, data: Buffer) => {
+        if (output.has(rel)) conflict(rel, 'two outputs have this path.');
+        else output.set(rel, data);
+    };
+    for (const d of plan.documents) put(d.path, Buffer.from(d.text, 'utf8'));
     for (const v of plan.views) {
         const svg = svgs[v.iri];
         if (typeof svg !== 'string' || !svg.includes('<svg')) return { ...result, error: `No SVG of the view "${v.label}" (${v.iri}). Nothing was exported.` };
-        output.set(v.path, Buffer.from(svg, 'utf8'));
+        put(v.path, Buffer.from(svg, 'utf8'));
     }
     for (const c of plan.copies) {
         try {
-            output.set(c.path, await fs.readFile(c.from));
+            put(c.path, await fs.readFile(c.from));
         } catch (e) {
             return { ...result, error: `Cannot read ${c.from}: ${(e as Error).message}. Nothing was exported.` };
         }
     }
 
-    const owned = await readOwnership(dest);
+    const record = await readOwnership(dest);
+    if (!record) conflict(OWNERSHIP_FILE, 'the file exists and is not a record of a Catenary export.');
+    const owned = record ?? {};
     const pending: [string, Buffer][] = [];
-    const conflict = (rel: string, why: string) => result.conflicts.push(`${rel}: ${why}`);
     for (const [rel, data] of output) {
         const file = path.join(dest, ...rel.split('/'));
         if (!safePath(rel)) { conflict(rel, 'the path is not allowed.'); continue; }
@@ -223,9 +235,9 @@ export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record
         else result.kept.push(rel);
     }
 
-    const record: Record<string, string> = Object.fromEntries(Object.entries(owned).filter(([rel]) => output.has(rel) || stale.includes(rel)));
-    for (const rel of result.unchanged) record[rel] = sha256(output.get(rel)!);
-    const save = () => writeAtomic(path.join(dest, ...OWNERSHIP_FILE.split('/')), Buffer.from(JSON.stringify({ generator: 'Catenary', files: sortKeys(record) }, null, 2) + '\n'));
+    const next: Record<string, string> = Object.fromEntries(Object.entries(owned).filter(([rel]) => output.has(rel) || stale.includes(rel)));
+    for (const rel of result.unchanged) next[rel] = sha256(output.get(rel)!);
+    const save = () => writeAtomic(path.join(dest, ...OWNERSHIP_FILE.split('/')), Buffer.from(JSON.stringify({ generator: 'Catenary', files: sortKeys(next) }, null, 2) + '\n'));
     try {
         for (const [rel, data] of pending) {
             try {
@@ -235,12 +247,12 @@ export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record
                 throw e;
             }
             result.written.push(rel);
-            record[rel] = sha256(data);
+            next[rel] = sha256(data);
         }
         for (const rel of stale) {
             await fs.rm(path.join(dest, ...rel.split('/')), { force: true });
             result.removed.push(rel);
-            delete record[rel];
+            delete next[rel];
         }
         await save();
     } catch (e) {

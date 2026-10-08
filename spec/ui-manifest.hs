@@ -1389,6 +1389,7 @@ resolveEmbed views iri = lookup iri views
 
 -- | Export Markdown… is in the context menu of a folder in the file navigator. The folder is the source.
 -- Subfolders are included and keep their paths. Hidden folders (a name that starts with ".") and linked folders are not read.
+-- Hidden files in other folders are documents.
 -- A folder dialog asks for the destination. It starts at the last destination of the same source folder (window storage).
 -- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. Without arguments it uses the navigator selection and asks.
 -- The export reads and checks everything, renders each embedded view once, and then writes. A check error writes nothing.
@@ -1421,7 +1422,8 @@ linkChanges _ = False
 
 -- | _resources/.catenary-export.json records each file that an export wrote, with the SHA-256 of its content.
 -- An export writes a file that does not exist, a file with the output content, or a recorded file without later changes.
--- Any other file at an output path is a conflict, and the export writes nothing. A link, a folder or a folder link out of the
+-- Any other file at an output path is a conflict, and the export writes nothing. Two outputs at one path are a conflict.
+-- A record file that Catenary did not write (no generator "Catenary") is a conflict. A link, a folder or a folder link out of the
 -- destination at an output path is also a conflict. Reason: never overwrite a file that the export does not own.
 -- A recorded file that the export no longer writes is removed when it did not change. Else it is kept, reported and no longer recorded.
 -- The export does not write or remove other files. Each write goes to a temporary file and then a rename.
