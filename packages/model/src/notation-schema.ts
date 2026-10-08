@@ -58,6 +58,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
 
     const shown = new Map(vf.join.boxes.map(b => [b.figure.id, b]));
     const cards: ElementSchema[] = [], sets: ElementSchema[] = [], leaves: ElementSchema[] = [], edges: ElementSchema[] = [];
+    const shapeCards = new Map<string, string>();
     const ids = new Set<string>();
     const latent: { p: PropertyShape; source: string; target: string }[] = [];
     const pending: { p: PropertyShape; source: string; target: string; member: boolean }[] = [];
@@ -109,6 +110,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             const shape = shapes.nodeShapes[iriId(f.focus.value)];
             if (!shape) continue;
             ids.add(shape.id);
+            shapeCards.set(shape.id, boxId(f));
             const rows: (ShapeRow & { group?: string })[] = [];
             for (const r of b.rows) {
                 const part = r.part;
@@ -132,7 +134,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             const violations = shape.properties.reduce((sum, pid) => sum + (problems.get(pid) ?? 0), 0);
             cards.push({
                 type: TYPES.SHAPE, id: boxId(f), element: shape.id, ...geometry, size: { width, height },
-                className: 'NodeShape', name: shape.label, subtitle: shape.targetClass ? shortIri(shape.targetClass) : 'no target class',
+                className: 'NodeShape', name: shape.label, subtitle: [shape.targetClass ? shortIri(shape.targetClass) : '', shape.targetSubjectsOf?.length ? `subjects of ${shape.targetSubjectsOf.map(shortIri).join(' or ')}` : ''].filter(Boolean).join(' · ') || 'no target',
                 color: pl?.color ?? '', closed: !!shape.closed, violations, display: simple ? 'simple' : 'detailed', hiddenSources: opts.hidden?.shapeSources(shape.id) ?? 0,
                 children: simple ? [] : rows as unknown as ElementSchema[]
             });
@@ -185,6 +187,17 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     });
     const alternativeLane = edgeLanes(alternatives.map(a => [a.source, a.target]));
     for (const a of alternatives) edges.push({ type: TYPES.ALTERNATIVE, id: a.id, sourceId: a.source, targetId: a.target, ...alternativeLane(a.source, a.target) });
+    const targeting = Object.values(shapes.properties).flatMap(p => {
+        const predicate = p.path.kind === 'iri' ? p.path.iri : undefined;
+        if (!predicate || !shapeCards.has(p.owner)) return [];
+        return Object.values(shapes.nodeShapes).filter(shape => shape.id !== p.owner && shape.targetSubjectsOf?.includes(predicate) && shapeCards.has(shape.id))
+            .map(shape => ({ p, target: shape.id }));
+    });
+    const targetingLane = edgeLanes(targeting.map(({ p, target }) => [shapeCards.get(p.owner)!, shapeCards.get(target)!]));
+    for (const { p, target } of targeting) {
+        const source = shapeCards.get(p.owner)!, end = shapeCards.get(target)!;
+        edges.push({ type: TYPES.TARGETING, id: `${p.id}_target_${target}`, sourceId: source, targetId: end, name: formatPath(p.path), ...targetingLane(source, end) });
+    }
 
     // Logical constraints: a hub placement draws its member lines; the client places the circle at the middle of their labels.
     const drawn = new Set(edges.filter(e => e.type === TYPES.PROPERTY).map(e => e.id));

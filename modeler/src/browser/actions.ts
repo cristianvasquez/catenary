@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -301,6 +301,18 @@ export class ModelActions {
      */
     async expandShape(from: string, view: string, at: Point, anchor: Anchor): Promise<void> {
         const choices = await this.service.shapeSourceChoices(view, from);
+        if (!choices) return;
+        const { title, items } = choices;
+        const add = (ids: string[]) => this.executeAndSelect(view, { kind: 'addToView', view, ids, at }, ids);
+        await this.pick(title, [
+            ...(items.length > 1 ? [{ label: `Show all ${items.length} in the view`, run: () => add(items.flatMap(i => i.ids)) }] : []),
+            ...items.map(i => ({ label: i.label, description: i.description, run: () => add(i.ids) }))
+        ], [], anchor);
+    }
+
+    /** Halo button of an instance card: applicable node shapes not shown in the view. */
+    async expandTargetShapes(from: string, view: string, at: Point, anchor: Anchor): Promise<void> {
+        const choices = await this.service.shapeTargetChoices(view, from);
         if (!choices) return;
         const { title, items } = choices;
         const add = (ids: string[]) => this.executeAndSelect(view, { kind: 'addToView', view, ids, at }, ids);
@@ -777,6 +789,16 @@ export class ModelActions {
         if (!text.trim()) return this.setNodeShape(shape, { targetClass: '' });
         const iri = await this.typedClass(text);
         if (iri) await this.setNodeShape(shape, { targetClass: iri });
+    }
+
+    async setTargetSubjectsOfText(shape: string, text: string): Promise<void> {
+        const targets: string[] = [];
+        for (const line of text.split('\n').map(v => v.trim()).filter(Boolean)) {
+            const target = parseIri(line);
+            if ('error' in target) { this.messages.warn(target.error); return; }
+            if (target.iri) targets.push(target.iri);
+        }
+        await this.setNodeShape(shape, { targetSubjectsOf: [...new Set(targets)] });
     }
 
     /** A typed class: an IRI, the known class with that name, else a urn:name IRI; a name of two classes: a warning, undefined. */

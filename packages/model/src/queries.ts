@@ -64,6 +64,8 @@ export interface ModelQueries {
     neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined;
     /** Halo incoming button of a node shape card: the node shapes with a property to `from` that the view does not show. */
     shapeSourceChoices(viewId: string, from: string): Choices | undefined;
+    /** Halo button of an instance card: node shapes with sh:targetSubjectsOf that applies to `from`, outside the view. */
+    shapeTargetChoices(viewId: string, from: string): Choices | undefined;
     /**
      * Link button of an instance card: per relation type, the instances it can link to (placed in the view first, at most 50, `more`: the
      * others) and the new end it can create. `text`: only candidates whose label contains it.
@@ -114,6 +116,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     relationChoices: ['source', 'target'],
     neighborChoices: ['viewId', 'from', 'dir'],
     shapeSourceChoices: ['viewId', 'from'],
+    shapeTargetChoices: ['viewId', 'from'],
     linkChoices: ['dir', 'from', 'viewId', 'text'],
     newLabel: ['kind', 'opts'],
     knownPredicates: [],

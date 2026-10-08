@@ -12,6 +12,8 @@ import { SKOLEM_BASE, skolemize } from '../src/skolem';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { emptyMetamodel, metamodelFromQuads } from '../src/shapes';
+import { S } from '../src/shapes-read';
+import { elementId } from '../src/ids';
 const NS_SKOS = 'http://www.w3.org/2004/02/skos/core#';
 import { DCAT, DCT, parseQuads, run } from './helpers';
 
@@ -67,6 +69,32 @@ describe('shapes graphs to the shapes read model', () => {
         // The nested scheme shape is not a node shape of the model.
         expect(Object.values(s.nodeShapes).some(n => n.uri.startsWith(SKOLEM_BASE))).toBe(false);
         expect(Object.values(s.valueSets).map(v => [v.kind, v.label, v.members.map(m => m.label)])).toEqual([['scheme', 'Product domain', ['Product analytics']]]);
+    });
+
+    it('maps sh:targetSubjectsOf without treating its predicate as a class', async () => {
+        const g = await load(`<${EX}subject> <${EX}status> "active" .`);
+        const shape = rdf.namedNode(EX + 'StatusSubject');
+        const predicate = rdf.namedNode(EX + 'status');
+        g.add(shape, S.type, S.NodeShape, GRAPH);
+        g.add(shape, S.targetSubjectsOf, predicate, GRAPH);
+        g.add(shape, S.targetSubjectsOf, rdf.namedNode(EX + 'phase'), GRAPH);
+        const id = elementId(shape);
+
+        expect(shapesOf(g).nodeShapes[id]).toMatchObject({ uri: shape.value, targetSubjectsOf: [EX + 'phase', predicate.value] });
+        expect(shapesOf(g).nodeShapes[id].targetClass).toBeUndefined();
+        expect(shapesOf(g).nodeShapes[id].raw).not.toContain(`sh:targetSubjectsOf <${predicate.value}>`);
+        const view = exec(g, { kind: 'createView', label: 'Subject targets' }) as string;
+        exec(g, { kind: 'addToView', view, ids: [id], at: { x: 0, y: 0 } });
+        expect(schema(g, view).filter(x => x.type === 'node:shape').map(x => x.element)).toEqual([id]);
+
+        exec(g, { kind: 'setNodeShape', id, patch: { targetSubjectsOf: [EX + 'phase'] } });
+        expect(g.match(shape, S.targetSubjectsOf, predicate, GRAPH)).toHaveLength(0);
+        expect(g.match(shape, S.targetSubjectsOf, rdf.namedNode(EX + 'phase'), GRAPH)).toHaveLength(1);
+        exec(g, { kind: 'setNodeShape', id, patch: { targetSubjectsOf: [EX + 'phase', EX + 'status', EX + 'status'] } });
+        expect(shapesOf(g).nodeShapes[id].targetSubjectsOf).toEqual([EX + 'phase', EX + 'status']);
+        expect(shapesOf(g).nodeShapes[id].raw.some(r => r.startsWith('sh:targetSubjectsOf'))).toBe(false);
+        exec(g, { kind: 'setNodeShape', id, patch: { targetSubjectsOf: [] } });
+        expect(g.match(shape, S.targetSubjectsOf, null, GRAPH)).toHaveLength(0);
     });
 
 
@@ -571,8 +599,10 @@ describe('shape edits', () => {
 
     it('undoes a shape edit with the store patch', async () => {
         const g = await load();
+        const shape = rdf.namedNode(EX + 'Dataset');
+        g.add(shape, S.targetSubjectsOf, rdf.namedNode(EX + 'status'), GRAPH);
         const before = shapesCanonical(g);
-        const { patch } = g.transact(x => executeCommand(x, emptyMetamodel(), { kind: 'setNodeShape', id: shapeId(x, EX + 'Dataset'), patch: { closed: true } }));
+        const { patch } = g.transact(x => executeCommand(x, emptyMetamodel(), { kind: 'setNodeShape', id: shapeId(x, EX + 'Dataset'), patch: { targetSubjectsOf: [EX + 'phase', EX + 'other'] } }));
         expect(shapesCanonical(g)).not.toBe(before);
         g.undo(patch);
         expect(shapesCanonical(g)).toBe(before);

@@ -691,6 +691,32 @@ test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave an
   assert.ok(cli('eval', 'ctx.shell.currentWidget.editor.document.getText()').includes('Local edit'));
 }));
 
+test('browser: subject targets retain all predicates through Properties edits', { timeout: 45000 }, t => withFixtureApp(t, 'subject-targets', async ({ page, cli }) => {
+  const view = cli('ui').currentView;
+  const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Subject targets', view, at: { x: 0, y: 0 } })).result;
+  assert.equal(shape.ok, true);
+  cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { targetSubjectsOf: ['urn:test:first', 'urn:test:second'] } }));
+  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
+  const panel = page.locator('#catenary-properties');
+  if (!await panel.locator('.catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
+  const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: /^sh:targetSubjectsOf$/ }) }).locator('textarea');
+  await field.waitFor();
+  assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
+  await field.fill('<urn:test:second>\n<urn:test:third>');
+  await field.blur();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === 'Subject targets'));
+  for (let i = 0; i < 50; i++) {
+    if (JSON.stringify(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf) === JSON.stringify(['urn:test:second', 'urn:test:third'])) break;
+    await page.waitForTimeout(100);
+  }
+  assert.deepEqual(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf, ['urn:test:second', 'urn:test:third']);
+  await page.locator('.shape-class', { hasText: 'subjects of second or third' }).first().waitFor();
+  await field.fill('');
+  await field.blur();
+  for (let i = 0; i < 50 && cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf; i++) await page.waitForTimeout(100);
+  assert.equal(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf, undefined);
+}));
+
 test('browser: Links lists instances of a selected shape outside the current view', { timeout: 45000 }, t => withFixtureApp(t, 'shape-instances', async ({ page, cli }) => {
   const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Instance list shape', targetClass: 'urn:test:InstanceList' })).result;
   assert.equal(shape.ok, true);

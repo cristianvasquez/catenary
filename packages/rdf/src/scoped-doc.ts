@@ -3,7 +3,7 @@
 // Every view has an entry: the views that the scope does not read have their label only (no boxes, edges or arrows).
 
 import type { NamedNode, Term } from '@rdfjs/types';
-import { Doc, NS, ShapesModel, View, elementOfId, emptyDoc } from '@catenary/model';
+import { Doc, NS, ShapesModel, View, boxes, elementOfId, emptyDoc } from '@catenary/model';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
@@ -196,14 +196,14 @@ export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {
  * For each instance card of `view`: the number of instances related to it ('in': subjects of its relations, 'out': objects) that the
  * view does not show. The rule of `hiddenNeighborCounts` (@catenary/model) on SPARQL rows of the cards, without the records of all instances.
  */
-export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View): Map<string, { in: number; out: number }> {
+export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View): Map<string, { in: number; out: number; targets?: number }> {
     const cards = new Map<string, string>();
     for (const b of view.boxes) {
         if (b.kind !== 'card') continue;
         const t = elementTerm(b.element);
         if (t?.termType === 'NamedNode' && g.isInstance(t)) cards.set(t.value, b.element);
     }
-    const out = new Map<string, { in: number; out: number }>();
+    const out = new Map<string, { in: number; out: number; targets?: number }>();
     if (!cards.size) return out;
     const shownSets = Object.values(shapes.valueSets).filter(s => view.boxes.some(b => b.kind === 'card' && b.element === s.id));
     const shown = (iri: string) => cards.has(iri) || view.boxes.some(b => b.kind === 'card' && elementTerm(b.element)?.value === iri)
@@ -228,5 +228,13 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         add(r.s.value, dir, r.x.value);
     }
     for (const [self, o] of others) out.set(cards.get(self)!, { in: o.in.size, out: o.out.size });
+    const shownShapes = new Set(boxes(view, 'card').map(c => c.element));
+    for (const [uri, id] of cards) {
+        const targets = Object.values(shapes.nodeShapes).filter(shape => !shownShapes.has(shape.id)
+            && shape.targetSubjectsOf?.some(predicate => g.match(rdf.namedNode(uri), rdf.namedNode(predicate), null, g.model).length > 0)).length;
+        const row = out.get(id);
+        if (targets && row) row.targets = targets;
+        else if (targets) out.set(id, { in: 0, out: 0, targets });
+    }
     return out;
 }

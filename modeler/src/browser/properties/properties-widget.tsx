@@ -150,7 +150,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         </Row>;
     }
 
-    /** The node shapes of the classes of an instance; a click shows the shape as a double-click on its Model explorer row does. */
+    /** The node shapes that apply to an instance; a click shows the shape as a double-click on its Model explorer row does. */
     protected shapeRow(inst: InstanceProperties): React.ReactNode {
         const { shapes } = inst;
         if (!shapes.length) return undefined;
@@ -481,6 +481,9 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 <Row label='Name' term='sh:name'><TextInput field='label' value={shape.label} onCommit={v => this.exec({ kind: 'rename', id, label: v.trim() })} /></Row>
                 <Row label='Target class' term='sh:targetClass' tip='A name, prefix:local or <iri>. A name gives the class with that name (shapes or instance types), else a urn:name IRI (canonical-md). Empty: none. A change can ask for a data change (patch queue).'>
                     <TextInput value={shape.targetClass ? compactIri(shape.targetClass) : ''} onCommit={v => void this.actions.setTargetClassText(id, v)} />
+                </Row>
+                <Row label='Target subjects of' term='sh:targetSubjectsOf' tip='Enter one predicate per line. This shape checks subjects of any listed predicate. Empty: none.'>
+                    <TextInput multiline value={shape.targetSubjectsOf?.map(compactIri).join('\n') ?? ''} onCommit={v => void this.actions.setTargetSubjectsOfText(id, v)} />
                 </Row>
                 <div className='catenary-row'>
                     <label className='catenary-check' title='No properties other than the ones of the shape (rdf:type is ignored).'>

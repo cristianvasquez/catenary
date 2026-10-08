@@ -22,7 +22,7 @@ export interface InstanceProperties extends Instance {
     kind: 'instance';
     /** Predicate IRI -> IRIs of the instances that are objects (relations). */
     targets: Record<string, string[]>;
-    /** Node shapes with an sh:targetClass that is one of the types; by label. */
+    /** Node shapes that apply through sh:targetClass or sh:targetSubjectsOf; by label. */
     shapes: { id: string; uri: string; label: string }[];
     /** The results of the report graph with the instance as focus node. */
     results: ResultRow[];

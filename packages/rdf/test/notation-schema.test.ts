@@ -26,6 +26,27 @@ const of = (g: ModelGraph, view: string, type: string) => schema(g, view).filter
 const element = (g: ModelGraph, view: string, id: unknown) => elementOfId(project(g).doc.views[view], id as string);
 
 describe('SHACL elements from the notation engine', () => {
+    it('draws a derived edge from a property to a shape that targets its subjects', async () => {
+        const { g, view } = await setup(`
+            <urn:source> a sh:NodeShape ; sh:property <urn:property> .
+            <urn:property> sh:path <urn:status> .
+            <urn:target> a sh:NodeShape ; sh:targetSubjectsOf <urn:first>, <urn:status> .`, '', ['urn:source', 'urn:target']);
+        const edge = of(g, view, TYPES.TARGETING);
+        expect(edge).toHaveLength(1);
+        expect([element(g, view, edge[0].sourceId), element(g, view, edge[0].targetId)]).toEqual([iriId('urn:source'), iriId('urn:target')]);
+        expect(edge[0].name).toBe('<urn:status>');
+        expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('subjects of first or status');
+    });
+
+    it('law_subjectTargetUnion: draws connectors for every matching predicate and shows class and subject targets', async () => {
+        const { g, view } = await setup(`
+            <urn:source> a sh:NodeShape ; sh:property <urn:p1>, <urn:p2> .
+            <urn:p1> sh:path <urn:first> . <urn:p2> sh:path <urn:second> .
+            <urn:target> a sh:NodeShape ; sh:targetClass <urn:Class> ; sh:targetSubjectsOf <urn:first>, <urn:second> .`, '', ['urn:source', 'urn:target']);
+        expect(of(g, view, TYPES.TARGETING).map(e => e.name).sort()).toEqual(['<urn:first>', '<urn:second>']);
+        expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('Class · subjects of first or second');
+    });
+
     it('numbers the lanes of the lines between two cards; a self-line has its own lanes', async () => {
         const { g, view } = await setup(`
             <urn:a> a sh:NodeShape ; sh:property <urn:ab1>, <urn:aa1>, <urn:ac>, <urn:ab2>, <urn:aa2> .

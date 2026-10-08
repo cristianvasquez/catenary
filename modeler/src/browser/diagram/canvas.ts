@@ -518,6 +518,8 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             }
             case 'expandOut': return void this.gesture(w, { kind: 'element', id })
                 .then(i => this.actions.expand('out', id, viewIdOf(w), this.beside(w, i.box, button, 'out'), { x: b.right + 8, y: b.top }));
+            case 'expandTargets': return void this.gesture(w, { kind: 'element', id })
+                .then(i => this.actions.expandTargetShapes(id, viewIdOf(w), this.beside(w, i.box, button, 'out'), { x: b.right + 8, y: b.top }));
         }
     }
 

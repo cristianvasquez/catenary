@@ -6,6 +6,8 @@ import { InstanceProperties, NS, PropertyShapeProperties, RelationProperties, Vi
 import { describeInstance } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { rdf } from '../src/terms';
+import { S } from '../src/shapes-read';
 
 const SKOS_DATA = `@prefix skos: <${NS.skos}> .
 <urn:k:S> a skos:ConceptScheme ; skos:prefLabel "Scheme" .
@@ -58,6 +60,19 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
             seen.form += +!!cls;
         }
         expect(Object.values(seen).every(n => n > 0)).toBe(true);
+    });
+
+    it('instance: lists a target-subject shape as an applicable shape', () => {
+        const inst = Object.values(docOf(store).instances)[0];
+        const g = (store as unknown as { graph: import('../src/graph').ModelGraph }).graph;
+        const shape = rdf.namedNode('urn:test:SubjectShape');
+        const predicate = rdf.namedNode('urn:test:status');
+        g.add(shape, S.targetSubjectsOf, rdf.namedNode('urn:test:first'), g.shapesGraphs()[0]);
+        g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
+        g.add(rdf.namedNode(inst.uri), predicate, rdf.literal('active'), g.model);
+
+        const p = store.properties(inst.id) as InstanceProperties;
+        expect(p.shapes).toContainEqual({ id: expect.any(String), uri: shape.value, label: 'SubjectShape' });
     });
 
     it('instance: the link candidates of the form are of its sh:class classes and leave out the instance itself', () => {

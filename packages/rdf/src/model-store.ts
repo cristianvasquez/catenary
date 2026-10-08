@@ -9,7 +9,7 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, idIri, viewFigures, FileContent, ExplorerDrag
+    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
@@ -144,7 +144,7 @@ export class ModelStore implements ModelQueries {
     }
 
     /** For each instance card of the view: the number of related instances in and out that the view does not show (card halo). */
-    hiddenNeighborCounts(view: View): Map<string, { in: number; out: number }> {
+    hiddenNeighborCounts(view: View): Map<string, { in: number; out: number; targets?: number }> {
         return hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
     }
 
@@ -308,6 +308,21 @@ export class ModelStore implements ModelQueries {
 
     shapeSourceChoices(viewId: string, from: string): Choices | undefined {
         return shapeSourceChoices(this.viewDoc(viewId), viewId, from);
+    }
+
+    shapeTargetChoices(viewId: string, from: string): Choices | undefined {
+        const doc = this.viewDoc(viewId), view = doc.views[viewId];
+        const instance = view && doc.instances[elementOfId(view, from)];
+        if (!view || !instance) return undefined;
+        const shown = new Set(boxes(view, 'card').map(card => card.element));
+        const shapes = Object.values(doc.shapes.nodeShapes).filter(shape => !shown.has(shape.id)
+            && shape.targetSubjectsOf?.some(predicate => this.graph.match(rdf.namedNode(instance.uri), rdf.namedNode(predicate), null, this.graph.model).length > 0));
+        if (!shapes.length) return undefined;
+        return {
+            title: `${instance.label}: applicable node shapes (${shapes.length} not in the view)`,
+            items: shapes.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+                .map(shape => ({ label: shape.label, description: `subjects of ${shape.targetSubjectsOf!.map(shortIri).join(' or ')}`, ids: [shape.id] }))
+        };
     }
 
     /** The link picker (link-choices.ts): SPARQL scoped to the instance, its relation types, the view and the typed text. */

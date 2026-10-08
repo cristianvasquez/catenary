@@ -79,6 +79,8 @@ export interface NodeShape {
     uri: string;
     label: string;                  // sh:name, else rdfs:label, else the local name
     targetClass?: string;
+    /** Predicates of sh:targetSubjectsOf. Any matching predicate selects a subject. */
+    targetSubjectsOf?: string[];
     closed?: boolean;
     description?: string;
     /** Shapes file that holds the shape (absolute path, or the graph IRI when unknown). */
@@ -536,7 +538,10 @@ export function verbalizeConstraint(shapes: ShapesModel, c: LogicalConstraint): 
 
 /** Node shape and its properties, one sentence each. */
 export function verbalizeShape(shapes: ShapesModel, s: NodeShape, schemeLabel: (iri: string) => string = localName): string[] {
-    const lines = [s.targetClass ? `A ${s.label} is an instance of ${shortIri(s.targetClass)}.` : `${s.label} has no target class: it checks only the nodes that other shapes send to it (sh:node).`];
+    const lines: string[] = [];
+    if (s.targetClass) lines.push(`A ${s.label} is an instance of ${shortIri(s.targetClass)}.`);
+    if (s.targetSubjectsOf?.length) lines.push(`A ${s.label} checks subjects of ${s.targetSubjectsOf.map(shortIri).join(' or ')}.`);
+    if (!lines.length) lines.push(`${s.label} has no target class: it checks only the nodes that other shapes send to it (sh:node).`);
     if (s.closed) lines.push(`A ${s.label} has no properties other than these (closed).`);
     for (const id of s.properties) {
         const p = shapes.properties[id];
