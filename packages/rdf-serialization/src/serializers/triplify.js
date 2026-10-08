@@ -1,5 +1,6 @@
 import TurtleSerializer from '@rdfjs/serializer-turtle/lib/TurtleSerializer.js'
 import { activeNamespaces } from '@rdfjs/serializer-turtle/lib/utils.js'
+import toNT from '@rdfjs/to-ntriples'
 import rdf from 'rdf-ext'
 import { directionalToNT, isDirectional } from './ntriples.js'
 
@@ -51,6 +52,18 @@ class Rdf12TurtleSerializer extends TurtleSerializer {
       return `<<( ${this.toNT(term.subject)} ${this.toNT(term.predicate)} ${this.toNT(term.object)} )>>`
     }
     if (isDirectional(term)) return directionalToNT(term, (t) => super.toNT(t))
+    if (term.termType === 'NamedNode' || term.termType === 'Literal') {
+      const namedNode = term.termType === 'NamedNode' ? term : term.datatype
+      const shortened = this.prefixes.shrink(namedNode)
+      if (shortened) {
+        const local = shortened.value.slice(shortened.value.indexOf(':') + 1)
+        // Keep QName output to a conservative ASCII subset of Turtle PN_LOCAL.
+        // In particular, '/' is not legal in a prefixed name local part.
+        if (!/^[A-Za-z_][A-Za-z0-9._~-]*$/.test(local) || local.endsWith('.')) {
+          return toNT(term)
+        }
+      }
+    }
     return super.toNT(term)
   }
 

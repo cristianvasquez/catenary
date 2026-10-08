@@ -29,8 +29,8 @@ export interface InstanceProperties extends Instance {
     /** The other instances as the SHACL form sees them (link candidates): sorted N-Triples lines. */
     candidates: string;
     /** The protected files (absolute paths) with statements of the instance. Absent: none. */
-    protectedFiles?: string[];
-    /** The statements of the instance in protected files, as `lockedKey(predicate, object)`. A change of them is refused. */
+    importedFiles?: string[];
+    /** The statements of the instance in imported files, as `lockedKey(predicate, object)`. A change of them is refused. */
     locked?: string[];
 }
 

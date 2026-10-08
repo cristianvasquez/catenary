@@ -59,18 +59,21 @@ export class ModelActions {
     }
 
     /**
-     * Import an RDF file (spec/manifest.hs §2.6): a protected Turtle copy in imported/, with IRIs for its blank nodes. A message names
-     * the copy and the prefixes that the workspace got. `uri`: the file, without a dialog.
+     * Import RDF files (spec/manifest.hs §2.6): for each, a read-only Turtle copy in imported/, marked as imported, with IRIs for its
+     * blank nodes. The dialog selects one or more files. A message names the copies and the prefixes that the workspace got.
+     * `uris`: the files, without a dialog.
      */
-    async importFile(uri?: URI): Promise<void> {
-        const source = await this.pickFile('Import RDF File', IMPORT_FILTER, uri);
-        if (!source) return;
-        const r = await this.model.service.importFile(source);
+    async importFiles(uris?: URI[]): Promise<void> {
+        const picked = uris ?? await this.fileDialog.showOpenDialog(
+            { title: 'Import RDF Files', canSelectFiles: true, canSelectFolders: false, canSelectMany: true, filters: IMPORT_FILTER }, await this.workspaceRoot());
+        const sources = (Array.isArray(picked) ? picked : picked ? [picked] : []).map(u => u.path.fsPath());
+        if (!sources.length) return;
+        const r = await this.model.service.importFiles(sources);
         if (!r.ok) return void this.messages.error(r.error);
         const ws = this.model.snapshot.file;
-        const copy = (ws && relativePath(dirName(ws), r.file)) ?? r.file;
+        const copies = r.files.map(f => (ws && relativePath(dirName(ws), f)) ?? baseName(f)).join(', ');
         const prefixes = r.prefixes.length ? ` Prefixes added: ${r.prefixes.map(p => `${p}:`).join(' ')}.` : '';
-        this.messages.info(`${baseName(source)} is imported as ${copy}, protected.${prefixes}`);
+        this.messages.info(`Imported as ${copies}, read only.${prefixes}`);
     }
 
     async openModel(uri?: URI): Promise<void> {

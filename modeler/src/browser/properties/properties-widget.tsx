@@ -325,9 +325,9 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                         : <span className='catenary-none'>none</span>}</div>
                 </Row>
                 {this.shapeRow(inst)}
-                {inst.protectedFiles ? <Row label='Protected' inline tip={`Values from protected files do not change. New values go to ${this.model.snapshot.files.defaultFile
+                {inst.importedFiles ? <Row label='Imported' inline tip={`Values from imported files are read only. New values go to ${this.model.snapshot.files.defaultFile
                     ? baseName(this.model.snapshot.files.defaultFile.path) : 'the default file'} (Workspace settings, Everything else).`}>
-                    <div className='catenary-pills'>{inst.protectedFiles.map(f => <span key={f} className='catenary-pill' title={f}>
+                    <div className='catenary-pills'>{inst.importedFiles.map(f => <span key={f} className='catenary-pill' title={f}>
                         <span className='codicon codicon-lock' /> {baseName(f)}</span>)}</div>
                 </Row> : undefined}
                 {locked.size ? <Row label='IRI' tip={IRI_HELP}><span className='catenary-value' title={inst.uri}>{inst.uri}</span></Row> : this.iriRow(inst.id, inst.uri)}
@@ -341,7 +341,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
             {extra.length ? <Section title='Not in shapes' scope={`${extra.reduce((n, [, vs]) => n + vs.length, 0)} statements`} {...this.fold('extra')}>{extra.map(([p, vs]) =>
                 <Row key={p} label={predicateName(meta, p)} tip={p}>{vs.map((v, i) => <div key={i} className='catenary-value'>
                     <span>{v.value}</span>
-                    {locked.has(lockedKey(p, v)) ? <span className='codicon codicon-lock' title='From a protected file' />
+                    {locked.has(lockedKey(p, v)) ? <span className='codicon codicon-lock' title='From an imported file (read only)' />
                         : <IconButton icon='close' title='Remove the value' onClick={() => this.exec({ kind: 'setStatements', id: inst.id, values: { [p]: vs.filter((_, j) => j !== i) } })} />}
                 </div>)}</Row>)}</Section> : undefined}
             {cls?.unsupported.length ? <Section title='Not supported'>{cls.unsupported.map(u => <div key={u} className='catenary-help'>{u}</div>)}</Section> : undefined}

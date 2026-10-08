@@ -40,4 +40,26 @@ describe('vendored RDF serialization', () => {
         expect([...roundTrip]).toHaveLength(1);
         expect([...roundTrip][0].graph.value).toBe(ex + 'graph');
     });
+
+    it('does not write slashes inside prefixed names', async () => {
+        const shape = rdf.namedNode(ex + 'shape');
+        const defaultValue = rdf.namedNode('http://publications.europa.eu/resource/authority/language/ENG');
+        const artifact = rdf.namedNode('http://example.org/contracts/dprod-contracts.ttl');
+        const predicate = rdf.namedNode(ex + 'value');
+        const text = await triplify([
+            rdf.quad(shape, predicate, defaultValue),
+            rdf.quad(shape, rdf.namedNode(ex + 'artifact'), artifact)
+        ], {
+            ex,
+            atold: 'http://publications.europa.eu/resource/authority/',
+            dproddev: 'http://example.org/'
+        });
+
+        expect(text).toContain(`<${defaultValue.value}>`);
+        expect(text).toContain(`<${artifact.value}>`);
+        expect(text).not.toContain('atold:language/ENG');
+        expect(text).not.toContain('dproddev:contracts/');
+        const roundTrip = await rdf.io.dataset.fromText('text/turtle', text);
+        expect([...roundTrip]).toHaveLength(2);
+    });
 });

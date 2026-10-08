@@ -23,7 +23,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 
 | Area | Content |
 |---|---|
-| Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, P a protected file. Right-click a model file to protect or unprotect it. |
+| Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
 | Model (left) | The Model explorer: elements by type, relations by predicate, concepts by scheme. Folders load when you open them. |
 | Search (left) | Faceted search on text, type and "Linked to". At most 200 results. |
 | Main area | View canvases, text editors, Workspace settings. |
@@ -87,27 +87,28 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **New subjects**: for Shapes, SKOS / Collections and Everything else, select Auto or File. Auto puts a new subject near subjects of its kind: shapes in the file with most node shapes, a concept or collection in the file of its scheme or collection, another subject in the file with most subjects of its class. With File, type a path or click Browse… A path that does not exist becomes a new file at the first write. Everything else also takes a new subject that Auto cannot place, for example the first subject of a new class. With Auto, that is the first Turtle file with statements.
 - **Prefixes**: hover a row to edit or remove it. Add a prefix in the last row. Above 12 prefixes, a filter shows. A warning icon marks a namespace that does not end with `/` or `#`.
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
-- **Protected**: globs of protected files, relative to the workspace folder. Import File… is in this section and in the File menu.
+- **Imported**: globs of imported (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
 
 The toolbar has Show Text, Select in Explorer and More actions (Reset Prefixes to Defaults).
 
 Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace. The default edge style is Direct.
 
-## Protected files
+## Imported files
 
-A protected file is an official file that Catenary must not change. Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
+An imported file is an official file that Catenary must not change. It is read only: Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
 
-- Right-click a file in the file navigator and select Protect or Unprotect. The workspace file stores the path.
-- If a change edits a protected file, Catenary asks whether to unprotect it. Select Unprotect to make the change, or Cancel to keep the file as it is.
-- Properties shows a Protected row with the protected files of an instance. Protected values outside the form show as plain text.
-- Protect writes pending changes first. A file with blank nodes in a format that Catenary does not write (N3, RDF/XML) cannot be protected. Import it instead.
+- Right-click a file in the file navigator and select Mark as Imported or Mark as Own. The workspace file stores the path.
+- If a change edits an imported file, Catenary asks whether to mark it as own. Select Mark as Own to make the change, or Cancel to keep the file as it is.
+- Properties shows an Imported row with the imported files of an instance. Imported values outside the form show as plain text.
+- Mark as Imported writes pending changes first. A file with blank nodes in a format that Catenary does not write (N3, RDF/XML) cannot be marked. Import it instead.
+- Validation does not check imported files as a whole, so large files do not slow down each edit. It checks your own statements, all statements about their subjects, and the types of the resources that they refer to.
 
-To import an official file from outside the workspace:
+To import official files:
 
-1. Select File → Import RDF File… or Import File… in Workspace settings.
-2. Select the RDF file.
+1. Select File → Import RDF Files… or Import Files… in Workspace settings.
+2. Select one or more RDF files.
 
-Catenary writes a Turtle copy to `imported/<name>.ttl` and protects the copy. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
+A file that is already in the workspace is marked as imported where it is. For a file from outside the workspace, Catenary writes a Turtle copy to `imported/<name>.ttl` and marks the copy as imported. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
 
 ## Documents with views
 

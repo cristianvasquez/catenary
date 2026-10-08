@@ -68,11 +68,12 @@ export class ValidationRunner {
     protected timer?: unknown;
 
     /**
-     * `source`: the dataset and the metamodel at the time of the run (an open replaces them). `changed`: the violations changed.
+     * `source`: the dataset and the metamodel at the time of the run (an open replaces them), and the statements of the model graph
+     * to validate (`data`; undefined: all of them). `changed`: the violations changed.
      * `timers`: tests give their own.
      */
     constructor(
-        protected readonly source: () => { graph: ModelGraph; metamodel: Metamodel },
+        protected readonly source: () => { graph: ModelGraph; metamodel: Metamodel; data?: () => Quad[] | undefined },
         protected readonly changed: () => void,
         protected readonly timers: Timers = realTimers
     ) {}
@@ -96,12 +97,13 @@ export class ValidationRunner {
     }
 
     protected async validate(run: number): Promise<void> {
-        const { graph: g, metamodel } = this.source();
+        const { graph: g, metamodel, data: own } = this.source();
         try {
             // The SKOS statements of the shapes files are data too: a value "in scheme X" is checked against them.
             const vocabulary = g.shapesTriples().filter(q => q.predicate.value.startsWith(NS.skos)
                 || (q.predicate.value === NS.rdf + 'type' && q.object.value.startsWith(NS.skos)));
-            const data = [...g.modelTriples(), ...vocabulary];
+            // Imported files: only the statements that own data needs (Workspace.validationTriples).
+            const data = [...own?.() ?? g.modelTriples(), ...vocabulary];
             // The ids after the run: a change during the run made it stale (checked below), so the graph is the validated one.
             const instanceId = (iri: string) => {
                 const t = rdf.namedNode(iri);

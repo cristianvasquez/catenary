@@ -1,7 +1,7 @@
 // Workspace settings view (ADR 0004): the manifest of the workspace file, in the main area. It opens on the workspace file (double-click
 // in the file navigator, File → Workspace Settings). Sections: the file of new subjects by kind (Auto or a file,
 // PlaceBox; Everything else also sets the default file), the prefixes (ModelStore.setPrefixes), the exclude globs (ModelStore.setSettings), the
-// protect globs and Import (ModelStore.setSettings, importFile). Each change writes the manifest at once (ADR 0003). No change is an undo step.
+// imported globs and Import (ModelStore.setSettings, importFiles). Each change writes the manifest at once (ADR 0003). No change is an undo step.
 
 import { CommandService, URI } from '@theia/core';
 import { AbstractViewContribution, ReactWidget } from '@theia/core/lib/browser';
@@ -38,7 +38,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
     @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
     @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
 
-    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'protect'. Cleared by the next change of the row. */
+    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'imported'. Cleared by the next change of the row. */
     protected problems: Record<string, string | undefined> = {};
     /** The prefix row in edit mode. */
     protected editing?: string;
@@ -107,7 +107,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.placesSection()}
                 {this.prefixSection()}
                 {this.excludeSection()}
-                {this.protectSection()}
+                {this.importedSection()}
             </div>
         </div>;
     }
@@ -231,27 +231,27 @@ export class WorkspaceSettingsWidget extends ReactWidget {
         </Section>;
     }
 
-    /** The protect globs: files that Catenary reads and does not change. Import adds the path of each copy. */
-    protected protectSection(): React.ReactNode {
-        const protect = this.model.snapshot.files.protect ?? [];
-        const count = this.model.snapshot.files.files.filter(f => f.protected).length;
-        return <Section title={`Protected ${protect.length}`} scope={`${count} model ${count === 1 ? 'file' : 'files'}`}
+    /** The imported globs: read-only files that Catenary reads and does not change. Import adds the path of each copy. */
+    protected importedSection(): React.ReactNode {
+        const imported = this.model.snapshot.files.imported ?? [];
+        const count = this.model.snapshot.files.files.filter(f => f.imported).length;
+        return <Section title={`Imported ${imported.length}`} scope={`${count} model ${count === 1 ? 'file' : 'files'}`}
             help='Files that Catenary reads and does not change: an edit of their statements is refused. New statements about their subjects go to the file of Everything else. Globs relative to the workspace folder: *, **, ?'>
             <div className='catenary-settings-list'>
-                {protect.map(g => <div key={g} className='catenary-settings-row glob'>
+                {imported.map(g => <div key={g} className='catenary-settings-row glob'>
                     <code>{g}</code>
                     <span className='acts'><span className='codicon codicon-close action-label catenary-icon-button' role='button' title={`Remove ${g}`}
-                        onClick={() => this.setSettings('protect', { protect: protect.filter(x => x !== g) })} /></span>
+                        onClick={() => this.setSettings('imported', { imported: imported.filter(x => x !== g) })} /></span>
                 </div>)}
-                <AddRow fields={['glob, for example official/**']} problem={this.problems.protect} onAdd={async ([g]) => {
-                    if (!g) return this.report('protect', Promise.resolve({ ok: false, error: 'Enter a glob.' }));
-                    if (protect.includes(g)) return this.report('protect', Promise.resolve({ ok: false, error: `The glob "${g}" exists.` }));
-                    return this.setSettings('protect', { protect: [...protect, g] });
+                <AddRow fields={['glob, for example official/**']} problem={this.problems.imported} onAdd={async ([g]) => {
+                    if (!g) return this.report('imported', Promise.resolve({ ok: false, error: 'Enter a glob.' }));
+                    if (imported.includes(g)) return this.report('imported', Promise.resolve({ ok: false, error: `The glob "${g}" exists.` }));
+                    return this.setSettings('imported', { imported: [...imported, g] });
                 }} />
             </div>
             <div className='catenary-buttons'>
-                <Button label='Import File…' onClick={() => this.commands.executeCommand(IMPORT_FILE)} />
-                <span className='catenary-help'>Copies an RDF file to imported/ as Turtle, with IRIs for its blank nodes, and protects the copy.</span>
+                <Button label='Import Files…' onClick={() => this.commands.executeCommand(IMPORT_FILE)} />
+                <span className='catenary-help'>Copies RDF files to imported/ as Turtle, with IRIs for their blank nodes, and marks the copies as imported.</span>
             </div>
         </Section>;
     }

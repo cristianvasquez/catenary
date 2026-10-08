@@ -118,12 +118,12 @@ describe('generic thing reads for pickers and forms', () => {
 
     it('Properties reads split statements and shared labels without Doc membership', async () => {
         const g = await load(fixture);
-        const p = properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, protectedFiles: () => [] }, iriId('urn:from')) as InstanceProperties;
+        const p = properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, importedFiles: () => [] }, iriId('urn:from')) as InstanceProperties;
         expect(p.label).toBe('Source');
         expect(p.types).toEqual(['urn:Source']);
         expect(p.targets).toEqual({ 'urn:connect': ['urn:a'] });
         expect(p.fields['urn:leak']).toBeUndefined();
-        expect(properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, protectedFiles: () => [] }, iriId('urn:report-only'))).toBeUndefined();
+        expect(properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, importedFiles: () => [] }, iriId('urn:report-only'))).toBeUndefined();
     });
 
     it('Outline reads generic placements and connections across data graphs', async () => {
@@ -153,7 +153,7 @@ describe('generic thing reads for pickers and forms', () => {
         const r = readResults(g, meta);
         expect(r).toHaveLength(1);
         expect(r[0]).toMatchObject({ instance: iriId('urn:b'), label: 'Beta', message: 'Bad value' });
-        const p = properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, protectedFiles: () => [] }, iriId('urn:b')) as InstanceProperties;
+        const p = properties({ g, meta, idx: readShapes([]), fileOf: () => undefined, importedFiles: () => [] }, iriId('urn:b')) as InstanceProperties;
         expect(p.results).toEqual([{ focus: 'urn:b', focusLabel: 'Beta', pathName: undefined, severity: 'Violation', message: 'Bad value' }]);
     });
 
