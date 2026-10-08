@@ -41,6 +41,7 @@ import { ValidationRunner } from './validation-runner';
 import { Workspace, createWorkspace, fileContent } from './workspace';
 import { search } from './search';
 import { selected } from './selection';
+import { copyAsRdf, prepareRdfPaste } from './clipboard';
 
 export type { ChangeReason };
 
@@ -598,6 +599,9 @@ export class ModelStore implements ModelQueries {
         if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
         return { ok: true, id: typeof v === 'string' ? v : undefined };
     }
+
+    prepareRdfPaste(text: string, mediaType?: string) { return prepareRdfPaste(text, mediaType); }
+    copyAsRdf(viewId: string, ids: string[]) { return copyAsRdf(this.graph, viewId, ids); }
 
     undo(): CommandResult { return this.replay('undo'); }
     redo(): CommandResult { return this.replay('redo'); }

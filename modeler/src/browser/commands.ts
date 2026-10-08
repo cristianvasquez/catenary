@@ -80,6 +80,7 @@ export namespace ModelCommands {
     export const COLLAPSE = cmd('catenary.collapseExplorer', 'Collapse Folders', 'codicon codicon-collapse-all');
     // View editor
     export const REMOVE_FROM_VIEW = cmd('catenary.removeFromView', 'Remove from View');
+    export const COPY_AS_RDF = cmd('catenary.copyAsRdf', 'Copy as RDF');
     export const TOGGLE_HIDDEN = cmd('catenary.toggleHidden', 'Show Hidden Edges', 'codicon codicon-eye');
     export const NEW_GROUP = cmd('catenary.newGroup', 'New Group…', 'codicon codicon-symbol-namespace');
     export const COLLECT = cmd('catenary.collect', 'Collect into One Box', 'codicon codicon-group-by-ref-type');
@@ -445,6 +446,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         addMenuItems(menus, MODEL_MENU_CREATE, c.NEW_VIEW.id, c.NEW_INSTANCE.id, c.PROPOSE_ALL_SHAPES.id, ['catenary.toggleModel', 'Model Explorer']);
         addMenuItems(menus, EXPLORER_SURFACE, c.DELETE_UNPLACED.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, DIAGRAM_SURFACE, c.NEW_GROUP.id, c.NEW_INSTANCE_HERE.id, c.NEW_NODE_SHAPE_HERE.id, c.TOGGLE_HIDDEN.id, c.LAYOUT_VIEW.id);
+        addMenuItems(menus, [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_3_clipboard'], c.COPY_AS_RDF.id);
         const o = OpenModelCommands;
         addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_FILE_AS_MODEL.id, o.OPEN_FILE_EXPLORER.id);
         // After New File and New Folder (Theia: no order, sorted by label).

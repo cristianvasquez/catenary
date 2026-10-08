@@ -6,10 +6,10 @@ import {
     KeyboardToolPalette, generateUuid, gridModule, configureActionHandler, IActionHandler, ViewerOptions,
     Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
     helperLineModule, initializeDiagramContainer, accessibilityModule, toolPaletteModule, createIcon, FocusTrackerTool, PaletteItem,
-    ChangeBoundsOperation, CompoundOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions
+    ChangeBoundsOperation, CompoundOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction
 } from '@eclipse-glsp/client';
 import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
-import { CommandRegistry, CommandService } from '@theia/core';
+import { CommandRegistry, CommandService, MessageService } from '@theia/core';
 import { Container, inject, injectable } from '@theia/core/shared/inversify';
 import { TYPES as CATENARY, boxOf, ownerOfLabel } from '@catenary/model';
 import { DIAGRAM_TYPE, viewIdOfUri } from '../../common/protocol';
@@ -22,6 +22,7 @@ import { NoteEditor } from '../notes/note-editor';
 import { editCanvasName } from './name-edit';
 import { ViewEditors } from './view-editors';
 import { CardScaleStartup } from './card-scale';
+import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
@@ -121,6 +122,58 @@ const selectionForwarderModule = new FeatureModule((_bind, _unbind, _isBound, re
  */
 @injectable()
 export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
+    @inject(FontPreferences) protected readonly fonts: FontPreferences;
+    @inject(ModelFrontend) protected readonly model: ModelFrontend;
+    @inject(ModelActions) protected readonly actions: ModelActions;
+    @inject(SelectionModel) protected readonly selection: SelectionModel;
+    @inject(MessageService) protected readonly messages: MessageService;
+
+    override handlePaste(event: ClipboardEvent): void {
+        if (!event.clipboardData || !this.shouldPaste(event)) return;
+        const data = event.clipboardData;
+        try {
+            const token = JSON.parse(data.getData('text/plain'));
+            if (token && typeof token === 'object' && Object.keys(token).length === 1
+                && typeof token.clipboardId === 'string' && this.clipboardService.get(token.clipboardId)) {
+                super.handlePaste(event);
+                return;
+            }
+        } catch { /* Plain RDF is not a Catenary clip token. */ }
+        const mediaType = ['text/turtle', 'application/trig', 'application/n-triples', 'application/n-quads',
+            'application/ld+json', 'application/rdf+xml', 'text/n3'].find(type => data.types.includes(type));
+        const text = data.getData(mediaType ?? 'text/plain');
+        const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
+        if (!view) return;
+        const at = this.editorContext.get().lastMousePosition;
+        event.preventDefault();
+        void this.pasteRdf(view, text, mediaType, at);
+    }
+
+    protected async pasteRdf(view: string, text: string, mediaType?: string, at?: { x: number; y: number }): Promise<void> {
+        try {
+            const parsed = await this.model.service.prepareRdfPaste(text, mediaType);
+            if (!parsed.ok) { this.messages.warn(parsed.error); return; }
+            if (parsed.namedGraphs.length && !await this.actions.confirm('Paste RDF with Named Graphs',
+                'This RDF contains named graphs. Continuing will merge their statements into the model and discard the graph names.',
+                'Flatten and paste')) return;
+            const r = await this.model.execute({ kind: 'pasteRdf', view, rdf: parsed.rdf, flatten: parsed.namedGraphs.length > 0, at, cardScale: this.fonts.cardScale });
+            if (!r.ok) return;
+            this.selection.set({ view, ids: r.ids ?? [] });
+            if (!r.ids?.length) { this.messages.info('RDF added; no new figures in this canvas.'); return; }
+            // The RPC response and the GLSP update use different connections. Fit after the arriving model is available.
+            const shown = await new Promise<string[]>(resolve => {
+                let frames = 0;
+                const check = () => {
+                    const ids = r.ids!.filter(id => this.editorContext.modelRoot.index.getById(id));
+                    if (ids.length || ++frames >= 120) resolve(ids);
+                    else requestAnimationFrame(check);
+                };
+                check();
+            });
+            if (shown.length) await this.actionDispatcher.dispatch(FitToScreenAction.create(shown, { padding: 40, maxZoom: 1, animate: false }));
+        } catch (e) { this.messages.warn(`RDF paste failed: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+
     override handleCut(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldCopy(event)) return;
         const clipboardId = generateUuid();

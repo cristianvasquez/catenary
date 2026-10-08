@@ -13,8 +13,13 @@ import type { ElementProperties } from './properties';
 import type { SearchFacets, SearchResult } from './search';
 import type { Problem } from './validation';
 import type { FileContent } from './snapshot';
+import type { RdfCopy, RdfPaste } from './commands';
 
 export interface ModelQueries {
+    /** Parse clipboard RDF without editing the model. MIME type, when supplied, selects the parser. */
+    prepareRdfPaste(text: string, mediaType?: string): Promise<RdfPaste>;
+    /** Selected domain statements and owned values, as Turtle without placement metadata. */
+    copyAsRdf(viewId: string, ids: string[]): Promise<RdfCopy>;
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
     formData(instanceId: string): string;
     /** Model explorer (ADR 0006): rows of a node key (none: the top folders); `currentView`: the view of the current view editor. */
@@ -91,6 +96,8 @@ export interface ModelQueries {
 
 /** The parameter names of each query (the RPC service and the CLI list them). The type requires one entry for each query. */
 export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly string[] } = {
+    prepareRdfPaste: ['text', 'mediaType'],
+    copyAsRdf: ['viewId', 'ids'],
     formData: ['instanceId'],
     explorerChildren: ['key', 'currentView', 'file', 'filter'],
     explorerPaths: ['id'],
