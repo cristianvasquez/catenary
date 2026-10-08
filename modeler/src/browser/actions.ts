@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -355,8 +355,9 @@ export class ModelActions {
     // ------------------------------------------------------------ views
 
     /**
-     * New view "unnamed view N", opened. A dialog asks for the name of its view file, in `folder` (default: views/). Rename the view
-     * (F2) in the view editor or Properties: the file name does not change, the read finds the view by the content of the file.
+     * New view "unnamed view N", opened. A dialog asks for the name of its view file, in `folder` (default: views/). The file dialog is
+     * the only one: no label follow-up. Rename the view (F2) in the view editor or Properties when you want; the file name does not
+     * change, the read finds the view by the content of the file.
      */
     async newView(folder?: string): Promise<void> {
         const file = await this.askViewFile(folder);
@@ -364,25 +365,26 @@ export class ModelActions {
         const r = await this.model.execute({ kind: 'createView', label: await this.service.newLabel('view'), file });
         if (!r.ok) return;
         await this.editors.open(r.id!);
-        await this.followUp(r.id!);
     }
 
     /**
-     * Ask for the file of a new view: a path relative to the workspace folder, proposed in `folder` (default: views/). A name without
-     * `.trig` gets it. Undefined: canceled. The backend checks that the file is new and in the workspace folder.
+     * Ask for the file of a new view: a path relative to the workspace folder, proposed in `folder` (default: views/), or next to `copyOf`
+     * (a duplicate: `<file>-copy`). A name without `.trig` gets it. Undefined: canceled. The backend checks that the file is new and in
+     * the workspace folder.
      */
-    protected async askViewFile(folder?: string): Promise<string | undefined> {
+    protected async askViewFile(folder?: string, copyOf?: string): Promise<string | undefined> {
         const wsFile = this.model.snapshot.file;
         if (!wsFile) return undefined;
         const root = dirName(wsFile);
-        const dir = folder === undefined ? 'views' : relativePath(root, folder) ?? '';
         const known = new Set([...this.model.snapshot.files.files, ...this.model.snapshot.files.views].map(f => relativePath(root, f.path)));
-        const initial = freeViewFile(dir, known);
+        const source = copyOf && relativePath(root, copyOf);
+        const initial = source ? copyViewFile(source, known) : freeViewFile(folder === undefined ? 'views' : relativePath(root, folder) ?? '', known);
         const name = baseName(initial);
+        const ext = /\.view\.trig$/i.test(initial) ? VIEW_EXT : '.trig';
         const value = await new SingleTextInputDialog({
-            title: 'New View: file name',
+            title: copyOf ? 'Duplicate View: file name' : 'New View: file name',
             initialValue: initial,
-            initialSelectionRange: { start: initial.length - name.length, end: initial.length - VIEW_EXT.length },
+            initialSelectionRange: { start: initial.length - name.length, end: initial.length - ext.length },
             validate: v => !v.trim() ? 'Type a file name.' : known.has(viewFileInput(v)) ? `${viewFileInput(v)} exists.` : ''
         }).open();
         return value === undefined ? undefined : viewFileInput(value);
@@ -416,11 +418,17 @@ export class ModelActions {
         await this.editors.fit(w);
     }
 
+    /**
+     * A copy of the view `id` ("<label> copy"), opened. A dialog asks for the name of its view file, proposed next to the file of the
+     * view (`<name>-copy`). No label follow-up: rename the copy when you want.
+     */
     async duplicateView(id: string): Promise<void> {
-        const r = await this.model.execute({ kind: 'duplicateView', id });
+        const source = this.model.snapshot.files.views.find(v => v.view === id)?.path;
+        const file = await this.askViewFile(undefined, source);
+        if (file === undefined) return;
+        const r = await this.model.execute({ kind: 'duplicateView', id, file });
         if (!r.ok) return;
         await this.editors.open(r.id!);
-        await this.followUp(r.id!);
     }
 
     /** Arrow from one box of the view to another; one end is a note. */

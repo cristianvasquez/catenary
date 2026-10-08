@@ -27,10 +27,21 @@ export const viewFileInput = (text: string): string => {
     return /\.trig$/i.test(t) ? t : `${t}.trig`;
 };
 
-/** A proposed file for a new view in `dir` (relative, '' for the workspace folder) that is not `taken`: `unnamed-view.view.trig`, `-2`, … */
-export function freeViewFile(dir: string, taken: ReadonlySet<string | undefined>): string {
-    const at = (i: number) => `${dir ? dir.replace(/\/$/, '') + '/' : ''}unnamed-view${i === 1 ? '' : '-' + i}.view.trig`;
+/**
+ * A proposed file for a new view in `dir` (relative, '' for the workspace folder) that is not `taken`: `<base><ext>`, then
+ * `<base>-2<ext>`, … Default: `unnamed-view.view.trig`.
+ */
+export function freeViewFile(dir: string, taken: ReadonlySet<string | undefined>, base = 'unnamed-view', ext = '.view.trig'): string {
+    const at = (i: number) => `${dir ? dir.replace(/\/$/, '') + '/' : ''}${base}${i === 1 ? '' : '-' + i}${ext}`;
     let i = 1;
     while (taken.has(at(i))) i++;
     return at(i);
+}
+
+/** The proposed file of a copy of the view in `file`: `<name>-copy` in its folder, with its extension (`.view.trig` or `.trig`). */
+export function copyViewFile(file: string, taken: ReadonlySet<string | undefined>): string {
+    const ext = /\.view\.trig$/i.test(file) ? '.view.trig' : '.trig';
+    const name = baseName(file).slice(0, -ext.length);
+    const dir = /[\\/]/.test(file) ? dirName(file).replace(/\\/g, '/') : '';
+    return freeViewFile(dir, taken, `${name}-copy`, ext);
 }

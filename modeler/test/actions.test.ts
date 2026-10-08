@@ -185,3 +185,33 @@ it('openView: a view of the open workspace opens; else its workspace opens first
     expect(messages.warn).toHaveBeenCalledTimes(1);
     expect(editors.open).toHaveBeenCalledTimes(2);
 });
+
+it('New View: the file dialog is the only dialog; the view opens as "unnamed view N" with no label follow-up', async () => {
+    const execute = vi.fn(async (_c: EditCommand): Promise<CommandResult> => ({ ok: true, id: 'v' }));
+    const editors = { open: vi.fn(async () => ({})) };
+    const follow = vi.fn();
+    const actions = Object.assign(new ModelActions(), {
+        model: { execute, service: { newLabel: async () => 'unnamed view 1' } }, editors,
+        askViewFile: async () => 'views/road.trig', followUp: follow
+    });
+    await actions.newView();
+    expect(execute).toHaveBeenCalledWith({ kind: 'createView', label: 'unnamed view 1', file: 'views/road.trig' });
+    expect(editors.open).toHaveBeenCalledWith('v');
+    expect(follow).not.toHaveBeenCalled();
+});
+
+it('Duplicate View: asks for the file of the copy, proposed next to the source; the copy opens with no label follow-up', async () => {
+    const execute = vi.fn(async (_c: EditCommand): Promise<CommandResult> => ({ ok: true, id: 'copy' }));
+    const editors = { open: vi.fn(async () => ({})) };
+    const follow = vi.fn();
+    const ask = vi.fn(async () => 'views/road-copy.trig');
+    const actions = Object.assign(new ModelActions(), {
+        model: { execute, snapshot: { files: { views: [{ view: 'v', path: '/ws/views/road.trig' }] } } }, editors,
+        askViewFile: ask, followUp: follow
+    });
+    await actions.duplicateView('v');
+    expect(ask).toHaveBeenCalledWith(undefined, '/ws/views/road.trig');
+    expect(execute).toHaveBeenCalledWith({ kind: 'duplicateView', id: 'v', file: 'views/road-copy.trig' });
+    expect(editors.open).toHaveBeenCalledWith('copy');
+    expect(follow).not.toHaveBeenCalled();
+});
