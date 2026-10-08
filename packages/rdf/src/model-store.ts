@@ -68,12 +68,12 @@ const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'displa
 export type Listener = (change: ModelChange) => void;
 
 /** A command refused because it changes protected files (absolute paths). */
-function protectedFailure(folder: string, files: string[]): CommandResult {
+function importedFailure(folder: string, files: string[]): CommandResult {
     const names = files.map(f => portableRelative(folder, f));
     const one = names.length === 1;
     return {
-        ok: false, protected: files,
-        error: `${names.join(', ')} ${one ? 'is' : 'are'} protected: the change is not made. To change ${one ? 'it' : 'them'}, unprotect ${one ? 'it' : 'them'} in the file navigator.`
+        ok: false, imported: files,
+        error: `${names.join(', ')} ${one ? 'is an imported file' : 'are imported files'}: the change is not made. To change ${one ? 'it' : 'them'}, mark ${one ? 'it' : 'them'} as own in the file navigator.`
     };
 }
 
@@ -84,7 +84,8 @@ export class ModelStore implements ModelQueries {
     /** The open workspace: its files and the dataset. Undefined: none is open. */
     protected ws?: Workspace;
     protected readonly history = new History();
-    protected readonly validation = new ValidationRunner(() => ({ graph: this.graph, metamodel: this.metamodel }), () => this.changed('validation'));
+    protected readonly validation = new ValidationRunner(
+        () => ({ graph: this.graph, metamodel: this.metamodel, data: () => this.ws?.validationTriples() }), () => this.changed('validation'));
     shapesVersion = 0;
     revision = 0;
 
@@ -221,7 +222,7 @@ export class ModelStore implements ModelQueries {
         const ws = this.ws!;
         return properties({
             g: this.graph, meta: this.metamodel, idx, fileOf: t => ws.filesOfSubject(t)[0],
-            protectedFiles: q => ws.filesOfQuad(q).filter(f => ws.isProtected(f))
+            importedFiles: q => ws.filesOfQuad(q).filter(f => ws.isImported(f))
         }, id);
     }
 
@@ -520,22 +521,22 @@ export class ModelStore implements ModelQueries {
             if (folder !== this.folder && !isInside(this.folder, folder)) return { ok: false, error: `The folder ${command.folder} is not in the workspace folder.` };
             ws.newViewFolder = folder;
         }
-        if (command.kind === 'createView' && command.folder && ws.isProtected(path.join(ws.newViewFolder!, 'view.view.trig'))) {
+        if (command.kind === 'createView' && command.folder && ws.isImported(path.join(ws.newViewFolder!, 'view.view.trig'))) {
             ws.newViewFolder = undefined;
-            return { ok: false, error: `The folder ${command.folder} is protected.` };
+            return { ok: false, error: `The folder ${command.folder} is for imported files.` };
         }
         if (command.kind === 'createView' && command.file) {
             const file = path.resolve(this.folder, command.file);
-            const problem = ws.newViewFileProblem(file) ?? (ws.isProtected(file) ? `${command.file} is protected.` : undefined);
+            const problem = ws.newViewFileProblem(file) ?? (ws.isImported(file) ? `${command.file} is an imported file.` : undefined);
             if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
             ws.newViewFile = file;
         }
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
-        // Protected files (manifest ws:protect): a command that changes their statements fails as a whole (no partial change).
+        // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
             const r = executeCommand(g, this.metamodel, command);
-            const files = r.ok ? ws.protectedChanges(g.changes()) : [];
-            return files.length ? protectedFailure(this.folder, files) : r;
+            const files = r.ok ? ws.importedChanges(g.changes()) : [];
+            return files.length ? importedFailure(this.folder, files) : r;
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
@@ -559,14 +560,14 @@ export class ModelStore implements ModelQueries {
 
     /**
      * Apply the last patch of the undo (backwards) or redo stack. The patch queue goes back to its state of that step. A step that
-     * changes a file that is protected now is refused, as an edit is (the step stays on its stack).
+     * changes a file that is imported now is refused, as an edit is (the step stays on its stack).
      */
     protected replay(reason: 'undo' | 'redo'): CommandResult {
         const next = this.history.peek(reason);
         if (!next || !this.ws) return { ok: true };
         const applied: Patch = reason === 'undo' ? [...next.patch].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })) : next.patch;
-        const files = this.ws.protectedChanges(applied);
-        if (files.length) return protectedFailure(this.folder, files);
+        const files = this.ws.importedChanges(applied);
+        if (files.length) return importedFailure(this.folder, files);
         const step = this.history.take(reason)!;
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         this.graph[reason](step.patch);
@@ -839,16 +840,16 @@ export class ModelStore implements ModelQueries {
      * Change the settings of the manifest (ADR 0004): the default file and the file of each kind (a model file, or a new RDF file in
      * the workspace folder; a kind: also "near"), the exclude globs. Written at once. A new exclude glob reads the files again. No undo step.
      */
-    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): Promise<CommandResult> {
+    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): Promise<CommandResult> {
         return this.serial(() => this.applySettings(settings));
     }
 
-    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): Promise<CommandResult> {
+    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): Promise<CommandResult> {
         const ws = this.ws;
         if (!ws) return { ok: false, error: 'No workspace is open.' };
-        // A file to protect must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
-        if (settings.protect?.some(g => !ws.protectGlobs.includes(g)) && ws.dirty) {
-            this.commitNotes.push('before protect');
+        // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
+        if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && ws.dirty) {
+            this.commitNotes.push('before import mark');
             await this.write();
         }
         const r = ws.applySettings(settings);
@@ -865,84 +866,122 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Protect or unprotect one file (a path relative to the workspace folder, or absolute): add its path to the protect globs, or
-     * remove the globs that are its path. A file that another glob still protects stays protected (error that names the glob).
+     * Mark one file as imported or as own (a path relative to the workspace folder, or absolute): add its path to the imported globs,
+     * or remove the globs that are its path. A file that another glob still matches stays imported (error that names the glob).
      */
-    setProtected(file: string, on: boolean): Promise<CommandResult> {
+    setImported(file: string, on: boolean): Promise<CommandResult> {
         return this.serial(async () => {
             const ws = this.ws;
             if (!ws) return { ok: false, error: 'No workspace is open.' };
             const abs = path.resolve(this.folder, file);
             if (!isInside(this.folder, abs)) return { ok: false, error: `${file}: the file must be in the folder of the workspace file.` };
             const rel = portableRelative(this.folder, abs);
-            const globs = ws.protectGlobs;
-            if (on) return ws.isProtected(abs) ? { ok: true } : this.applySettings({ protect: [...globs, rel] });
-            const r = await this.applySettings({ protect: globs.filter(g => g !== rel) });
+            const globs = ws.importedGlobs;
+            if (on) return ws.isImported(abs) ? { ok: true } : this.applySettings({ imported: [...globs, rel] });
+            const r = await this.applySettings({ imported: globs.filter(g => g !== rel) });
             if (!r.ok) return r;
-            const glob = ws.protectGlobs.find(g => ws.isProtected(abs, [g]));
-            return glob ? { ok: false, error: `${rel} stays protected by the glob "${glob}". Remove the glob in the Workspace settings.` } : r;
+            const glob = ws.importedGlobs.find(g => ws.isImported(abs, [g]));
+            return glob ? { ok: false, error: `${rel} stays imported by the glob "${glob}". Remove the glob in the Workspace settings.` } : r;
         });
     }
 
     /**
-     * Import an RDF file from outside the workspace (§2.6): write a Turtle copy with IRIs for its blank nodes to imported/<name>.ttl
-     * (-2, … when taken), protect the copy, and add the prefixes of the file that the workspace table does not have. A prefix whose
-     * name or namespace the table has with another value is not added (a note). Then the workspace is read again: no undo across it.
+     * Import RDF files (§2.6). A model file or view file of the workspace is marked as imported where it is (no copy). Another file gets
+     * a Turtle copy with IRIs for its blank nodes in imported/<name>.ttl (-2, … when taken), marked as imported. The prefixes of the
+     * files that the workspace table does not have are added; a prefix whose name or namespace the table has with another value is not
+     * (a note). All files or none. With copies, the workspace is read again once: no undo across it.
      */
-    importFile(source: string): Promise<ImportResult> {
+    importFiles(sources: string[]): Promise<ImportResult> {
         return this.serial(async (): Promise<ImportResult> => {
             const ws = this.ws;
             if (!ws) return { ok: false, error: 'No workspace is open.' };
-            const name = path.basename(source);
-            let text: string, quads: Quad[];
-            try {
-                text = await fs.readFile(source, 'utf8');
-                quads = await parseRdf(text, source);
-            } catch (e) {
-                return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
+            if (!sources.length) return { ok: false, error: 'No file to import.' };
+            // Read all files first: a file that cannot be read imports nothing.
+            const reads: { name: string; text: string; quads?: Quad[]; source: string; inPlace?: string }[] = [];
+            for (const source of sources) {
+                const name = path.basename(source);
+                const inPlace = ws.knownFile(path.resolve(source));
+                try {
+                    const text = await fs.readFile(source, 'utf8');
+                    const quads = inPlace ? undefined : await parseRdf(text, source);
+                    if (quads && !quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
+                    reads.push({ name, text, quads, source, inPlace });
+                } catch (e) {
+                    return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
+                }
             }
-            if (!quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
-            const table = { ...PREFIXES }, added: string[] = [], skipped: string[] = [];
-            for (const [prefix, ns] of Object.entries(declaredPrefixes(text, source))) {
-                if (table[prefix] === ns) continue;
-                if (!prefix || table[prefix] !== undefined || Object.values(table).includes(ns)) { skipped.push(prefix); continue; }
-                table[prefix] = ns;
-                added.push(prefix);
+            const table = { ...PREFIXES }, added: string[] = [], skipped = new Set<string>();
+            for (const r of reads) {
+                for (const [prefix, ns] of Object.entries(declaredPrefixes(r.text, r.source))) {
+                    if (table[prefix] === ns) continue;
+                    if (!prefix || table[prefix] !== undefined || Object.values(table).includes(ns)) { skipped.add(prefix); continue; }
+                    table[prefix] = ns;
+                    added.push(prefix);
+                }
             }
-            if (added.length && prefixesProblem(table)) return { ok: false, error: `${name}: not imported: ${prefixesProblem(table)}` };
-            const base = name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
-            const folder = path.join(this.folder, IMPORT_FOLDER);
-            let target = path.join(folder, `${base}.ttl`);
-            for (let i = 2; existsSync(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
-            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, protect: ws.protectGlobs };
-            const undo = async (error: string): Promise<ImportResult> => {
-                ws.prefixes = before.prefixes;
-                setPrefixes(before.table);
-                ws.applySettings({ protect: before.protect });
-                return { ok: false, error: `${name}: not imported: ${error}` };
+            const names = reads.map(r => r.name).join(', ');
+            if (added.length && prefixesProblem(table)) return { ok: false, error: `${names}: not imported: ${prefixesProblem(table)}` };
+            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, imported: ws.importedGlobs };
+            // Files of the workspace: marked where they are. The write gives their blank nodes IRIs first (as Mark as Imported).
+            const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
+            if (own.length) {
+                if (ws.dirty) {
+                    this.commitNotes.push('before import mark');
+                    await this.write();
+                }
+                const marked = ws.applySettings({ imported: [...before.imported, ...own] });
+                if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
+            }
+            const note = () => {
+                if (skipped.size) this.note(`${names}: prefixes not added (the workspace has the name or the namespace with another value): ${[...skipped].map(p => `${p}:`).join(' ')}`);
             };
             if (added.length) { ws.prefixes = table; setPrefixes(table); }
-            // The default graph: a model file has no graph names (open.md STORE1).
-            const triples = skolemize(quads.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
+            const copies = reads.filter(r => !r.inPlace);
+            if (!copies.length) {
+                // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
+                if (added.length) { this.graph.shapesChanged(); this.rebuildMetamodel(); }
+                ws.syncShapesTarget();
+                this.commitNotes.push(`import ${names}`);
+                this.content++;
+                this.changed('files');
+                note();
+                return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
+            }
+            const folder = path.join(this.folder, IMPORT_FOLDER);
+            const targets = new Map<typeof reads[number], string>();
+            for (const r of copies) {
+                const base = r.name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
+                let target = path.join(folder, `${base}.ttl`);
+                for (let i = 2; existsSync(target) || [...targets.values()].includes(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
+                targets.set(r, target);
+            }
+            const undo = async (error: string): Promise<ImportResult> => {
+                for (const t of targets.values()) await fs.rm(t, { force: true });
+                ws.prefixes = before.prefixes;
+                setPrefixes(before.table);
+                ws.applySettings({ imported: before.imported });
+                return { ok: false, error: `${names}: not imported: ${error}` };
+            };
             try {
                 await fs.mkdir(folder, { recursive: true });
-                await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
+                for (const [r, target] of targets) {
+                    // The default graph: a model file has no graph names (open.md STORE1).
+                    const triples = skolemize(r.quads!.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
+                    await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
+                }
             } catch (e) {
                 return undo((e as Error).message);
             }
-            ws.applySettings({ protect: [...before.protect, portableRelative(this.folder, target)] });
-            ws.written.push(target);
-            this.commitNotes.push(`import ${name}`);
+            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] });
+            ws.written.push(...targets.values());
+            this.commitNotes.push(`import ${names}`);
             this.content++;
             const w = await this.write();
-            if (!w.ok) {
-                await fs.rm(target, { force: true });
-                return undo(w.error);
-            }
+            if (!w.ok) return undo(w.error);
             const opened = await this.doOpen(ws.path);
             if (!opened.ok) return opened;
-            if (skipped.length) this.note(`${name}: prefixes not added (the workspace has the name or the namespace with another value): ${skipped.map(p => `${p}:`).join(' ')}`);
-            return { ok: true, file: target, prefixes: added };
+            note();
+            return { ok: true, files: reads.map(r => r.inPlace ?? targets.get(r)!), prefixes: added };
         });
     }
 

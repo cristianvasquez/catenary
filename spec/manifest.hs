@@ -163,7 +163,7 @@ data WorkspaceSettings = WorkspaceSettings
   { defaultFile :: Maybe FilePath                -- ws:defaultFile
   , placement :: Placement
   , exclude :: [String]                          -- ws:exclude globs
-  , protect :: [String]                          -- ws:protect globs (§2.6)
+  , imported :: [String]                         -- ws:imported globs (§2.6)
   }
 workspaceGraph, workspaceNamespace :: Iri
 workspaceGraph = "urn:name:workspace"
@@ -338,33 +338,45 @@ setExportViews vs = runOp (SetExportViews vs)
 law_prefixesRejected :: Backend -> [(String, Iri)] -> Bool
 law_prefixesRejected b ps = failed (fst (step b (SetPrefixes ps))) == not (validPrefixes ps)
 
--- 2.6 Protected files and import ----------------------------------------------------
+-- 2.6 Imported files and import ------------------------------------------------------
 
--- | A ws:protect glob protects the model files and view files that it matches. Catenary reads them and does not change them.
+-- | A ws:imported glob marks the model files and view files that it matches as imported. An imported file is read only:
+-- Catenary reads it and does not change it. Files that no glob matches are own files.
 -- Reason: an official file stays as published, and own additions stay in own files.
--- A command, an undo or a redo that changes a protected file fails as a whole. The failure names the files.
--- A new statement about a protected subject goes to the default file (§3.2: a protected file is a read-only file).
--- A protected file is not a file of new subjects. Protecting such a file sets its kind to near and clears ws:defaultFile.
--- Protect writes the pending changes first. It refuses a file that keeps blank nodes on disk: their IRIs change at each read.
--- Unprotect removes the globs equal to the path. A file that another glob matches stays protected, and the error names the glob.
--- When a change fails on protected files, the window asks to unprotect them. After Unprotect, it runs the change again.
-isProtected :: [String] -> FilePath -> Bool       -- ws:protect globs, a path relative to the workspace folder
-isProtected globs p = any (`globMatches` p) globs
-protectedFiles :: Backend -> [FilePath]
+-- A command, an undo or a redo that changes an imported file fails as a whole. The failure names the files.
+-- A new statement about an imported subject goes to the default file (§3.2: an imported file is a read-only file).
+-- An imported file is not a file of new subjects. Marking such a file sets its kind to near and clears ws:defaultFile.
+-- Validation reads only the part of imported files that own statements need (§9).
+-- Mark as Imported writes the pending changes first. It refuses a file that keeps blank nodes on disk: their IRIs change at each read.
+-- Mark as Own removes the globs equal to the path. A file that another glob matches stays imported, and the error names the glob.
+-- When a change fails on imported files, the window asks to mark them as own. After Mark as Own, it runs the change again.
+isImported :: [String] -> FilePath -> Bool        -- ws:imported globs, a path relative to the workspace folder
+isImported globs p = any (`globMatches` p) globs
+-- | The legacy name ws:protect reads as ws:imported. Writers store ws:imported only.
+importedGlobsRead :: [String] -> [String] -> [String]   -- the values of ws:imported, the values of ws:protect
+importedGlobsRead imported legacy = sort (nub (imported ++ legacy))
+importedFiles :: Backend -> [FilePath]
 fileStatements :: Backend -> FilePath -> [Quad]   -- the statements of one file in the store (Workspace.filesOfQuad)
-law_protectedUnchanged :: Backend -> Op -> Bool
-law_protectedUnchanged b op =
+law_importedUnchanged :: Backend -> Op -> Bool
+law_importedUnchanged b op =
   let (r, b') = step b op
-  in (changesStatements op && not (failed r)) ==> all (\f -> sameSet (fileStatements b' f) (fileStatements b f)) (protectedFiles b)
+  in (changesStatements op && not (failed r)) ==> all (\f -> sameSet (fileStatements b' f) (fileStatements b f)) (importedFiles b)
   where
     changesStatements (Execute _) = True
     changesStatements Undo = True
     changesStatements Redo = True
     changesStatements _ = False
-setProtected :: FilePath -> Bool -> IO CommandResult
-setProtected p on = runOp (SetProtected p on)
+setImported :: FilePath -> Bool -> IO CommandResult   -- True: Mark as Imported; False: Mark as Own
+setImported p on = runOp (SetImported p on)
 
--- | Import copies an RDF file from outside the workspace to imported/<name>.ttl (-2, -3, … when taken) and protects the copy.
+-- | Import marks a model file or view file of the workspace as imported where it is (no copy): the intent is to import that file.
+-- It copies another RDF file to imported/<name>.ttl (-2, -3, … when taken) and marks the copy as imported.
+-- One import takes one or more files, all or none: a file that cannot be read imports nothing. With copies, the workspace is read again once.
+data ImportAction = MarkInPlace FilePath | CopyTo FilePath deriving Eq
+importAction :: [FilePath] -> [FilePath] -> String -> FilePath -> ImportAction   -- workspace files, taken paths, name, source
+importAction workspaceFiles taken name source
+  | source `elem` workspaceFiles = MarkInPlace source
+  | otherwise = CopyTo (importPath name taken)
 -- The copy is Turtle in the default graph, with an IRI for each blank node (§1, skolemize). A file without statements is refused.
 -- A prefix of the source joins the workspace table when the table has neither its name nor its namespace with another value.
 -- The other prefixes stay out, with a warning. Then the workspace is read again, so the history is empty (§10.4).
@@ -380,8 +392,8 @@ importPrefixes table = foldl add (table, [])
       | otherwise = (t ++ [(p, ns)], skipped)
 law_importPrefixesValid :: [(String, Iri)] -> [(String, Iri)] -> Bool
 law_importPrefixesValid t declared = validPrefixes t ==> validPrefixes (fst (importPrefixes t declared))
-importFile :: FilePath -> IO CommandResult
-importFile p = runOp (ImportFile p)
+importFiles :: [FilePath] -> IO CommandResult
+importFiles ps = runOp (ImportFiles ps)
 
 -- 3. Store -------------------------------------------------------------------
 
@@ -417,7 +429,7 @@ addQuad :: Quad -> Tx ()
 -- 3.2 Statement origin ------------------------------------------------------------
 
 -- | Statement origin: existing triples keep their files. An addition prefers its prior origin, then the file of its subject,
--- then the file of a referring statement. A preferred read-only file gives the default file. Protected files are read only (§2.6).
+-- then the file of a referring statement. A preferred read-only file gives the default file. Imported files are read only (§2.6).
 -- A deletion from a read-only file cannot persist. IRI replacement and undo keep statement origins.
 origin :: Quad -> Tx [FilePath]
 priorOrigin, subjectFile, referrerFile :: Quad -> Tx (Maybe FilePath)
@@ -576,7 +588,7 @@ data CommandResult = Success (Maybe Id) [Id] | Failure Error
 data Op
   = Open FilePath | Create FilePath (Maybe Placement) | Execute EditCommand | Undo | Redo | Save
   | SetSettings WorkspaceSettings | SetPrefixes [(String, Iri)] | SetExportViews [Id] | DismissMigration Id
-  | SetProtected FilePath Bool | ImportFile FilePath
+  | SetImported FilePath Bool | ImportFiles [FilePath]
   | DiskChange [FilePath]                         -- the watcher (§10.4), not an RPC
 step :: Backend -> Op -> (CommandResult, Backend)
 runOp :: Op -> IO CommandResult                    -- step on the backend of this process
@@ -651,7 +663,7 @@ law_settingsNoUndo :: Backend -> Op -> Bool
 law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b op))) == undoStack (historyOf b)
   where
     notUndoable (SetSettings _) = True
-    notUndoable (SetProtected _ _) = True
+    notUndoable (SetImported _ _) = True
     notUndoable (SetPrefixes _) = True
     notUndoable (SetExportViews _) = True
     notUndoable (DismissMigration _) = True
@@ -1094,6 +1106,21 @@ validates s = not (layoutOnly s) && (dataChanged s || shapesChanged s)
 -- | A run reports only when no newer edit started after it.
 reportIsCurrent :: Int -> Int -> Bool                -- the revision of the run, the current revision
 reportIsCurrent run current = run == current
+-- | With imported files (§2.6), validation reads the statements of own files, all statements of their subjects, and the rdf:type
+-- statements of the IRIs that they refer to. The rest of the imported files is not validated.
+-- Reason: imported files are read only and can be large. Validating all of them makes each edit slow, and their results cannot be fixed.
+-- Without imported files, validation reads the whole model graph.
+validationData :: [Quad] -> [Quad] -> [Quad]      -- the statements of own files, the statements of the model graph
+validationData own model = nub (own ++ ofSubjects ++ typesOfTargets)
+  where
+    subjects = map subjectOf own
+    targets = [o | q <- own, o@(NamedNode _) <- [objectOf q], o `notElem` subjects]
+    ofSubjects = [q | q <- model, subjectOf q `elem` subjects]
+    typesOfTargets = [q | q <- model, predicateOf q == rdfType, subjectOf q `elem` targets]
+rdfType :: Iri
+rdfType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+law_ownStatementsValidated :: [Quad] -> [Quad] -> Bool
+law_ownStatementsValidated own model = all (`elem` validationData own model) own
 law_reportNotInPatch :: Backend -> EditCommand -> Bool
 law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
   where
@@ -1205,8 +1232,8 @@ canWrite f _ = writable f
 -- 11.1 RPC --------------------------------------------------------------------------------
 
 -- | RPC carries JSON only. Interface: modeler/src/common/protocol.ts, ModelService.
--- Writes: open, create, execute, undo, redo, save, setSettings, setPrefixes, setExportViews, dismissMigration, setProtected,
--- importFile (each is an Op). Undo and redo answer as execute: a step that changes a protected file is refused (§2.6).
+-- Writes: open, create, execute, undo, redo, save, setSettings, setPrefixes, setExportViews, dismissMigration, setImported,
+-- importFiles (each is an Op). Undo and redo answer as execute: a step that changes an imported file is refused (§2.6).
 -- Reads: getSnapshot and the queries of packages/model/src/queries.ts (ModelQueries, MODEL_QUERIES), by group below.
 -- The pure rules on scoped Docs: packages/model/src/prompts.ts.
 -- sources gives every source file of an element with an optional 1-based disk line. It does not parse all RDF spellings.
@@ -1355,7 +1382,7 @@ priorOrigin = manifestOnly
 subjectFile = manifestOnly
 referrerFile = manifestOnly
 readOnlyFile = manifestOnly
-protectedFiles = manifestOnly
+importedFiles = manifestOnly
 fileStatements = manifestOnly
 currentSettings = manifestOnly
 docElements = manifestOnly

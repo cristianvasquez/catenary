@@ -68,18 +68,18 @@ export class ModelFrontend {
     get isOpen(): boolean { return !!this.snapshot.file; }
 
     /**
-     * Run a command. Shows the error, if any, also an exception in the backend. A command that changes protected files asks to
-     * unprotect them; after Unprotect it runs again.
+     * Run a command. Shows the error, if any, also an exception in the backend. A command that changes imported files asks to
+     * mark them as own; after Mark as Own it runs again.
      */
     execute(command: EditCommand): Promise<CommandResult> {
-        return this.withUnprotect(command.kind, () => this.service.execute(command));
+        return this.withMarkOwn(command.kind, () => this.service.execute(command));
     }
 
-    /** Undo or redo one step of the model, as `execute`: a step that changes protected files asks to unprotect them. */
-    undo(): Promise<CommandResult> { return this.withUnprotect('undo', () => this.service.undo()); }
-    redo(): Promise<CommandResult> { return this.withUnprotect('redo', () => this.service.redo()); }
+    /** Undo or redo one step of the model, as `execute`: a step that changes imported files asks to mark them as own. */
+    undo(): Promise<CommandResult> { return this.withMarkOwn('undo', () => this.service.undo()); }
+    redo(): Promise<CommandResult> { return this.withMarkOwn('redo', () => this.service.redo()); }
 
-    protected async withUnprotect(name: string, call: () => Promise<CommandResult>): Promise<CommandResult> {
+    protected async withMarkOwn(name: string, call: () => Promise<CommandResult>): Promise<CommandResult> {
         const run = async (): Promise<CommandResult> => {
             try {
                 return await call();
@@ -88,13 +88,13 @@ export class ModelFrontend {
             }
         };
         const r = await run();
-        if (r.ok || !r.protected?.length) {
+        if (r.ok || !r.imported?.length) {
             if (!r.ok) this.messages.warn(r.error);
             return r;
         }
-        if (!await this.askUnprotect(r.protected)) return r;
-        for (const file of r.protected) {
-            const u = await this.service.setProtected(file, false);
+        if (!await this.askMarkOwn(r.imported)) return r;
+        for (const file of r.imported) {
+            const u = await this.service.setImported(file, false);
             if (!u.ok) {
                 this.messages.warn(u.error);
                 return u;
@@ -106,16 +106,16 @@ export class ModelFrontend {
     }
 
     /** The change needs protected files (absolute paths): ask to unprotect them. */
-    protected async askUnprotect(files: string[]): Promise<boolean> {
+    protected async askMarkOwn(files: string[]): Promise<boolean> {
         const ws = this.snapshot.file;
         const names = files.map(f => (ws && relativePath(dirName(ws), f)) ?? baseName(f));
         const one = names.length === 1;
         // Loaded here: the browser module needs a DOM, and the unit tests of this module run in Node.
         const { ConfirmDialog } = await import('@theia/core/lib/browser');
         return !!await new ConfirmDialog({
-            title: one ? 'Protected File' : 'Protected Files',
-            msg: `This change edits ${one ? 'the protected file' : 'the protected files'} ${names.join(', ')}. Unprotect ${one ? 'it' : 'them'} and make the change?`,
-            ok: 'Unprotect', cancel: 'Cancel'
+            title: one ? 'Imported File' : 'Imported Files',
+            msg: `This change edits ${one ? 'the imported file' : 'the imported files'} ${names.join(', ')}. Mark ${one ? 'it' : 'them'} as own and make the change?`,
+            ok: 'Mark as Own', cancel: 'Cancel'
         }).open();
     }
 

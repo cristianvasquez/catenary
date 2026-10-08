@@ -23,7 +23,9 @@ export const WS = {
     placeInstances: rdf.namedNode(NS.ws + 'placeInstances'),
     /** A glob (relative to the workspace folder) of files that are not model files. */
     exclude: rdf.namedNode(NS.ws + 'exclude'),
-    /** A glob (relative to the workspace folder) of protected model files: Catenary reads them and does not change them. */
+    /** A glob (relative to the workspace folder) of imported model files: Catenary reads them and does not change them (read only). */
+    imported: rdf.namedNode(NS.ws + 'imported'),
+    /** Legacy name of ws:imported (read, not written). */
     protect: rdf.namedNode(NS.ws + 'protect'),
     /** The views of the last HTML export, in order: an RDF list of view IRIs. */
     exportViews: rdf.namedNode(NS.ws + 'exportViews')
@@ -74,8 +76,8 @@ export interface Manifest {
     placement: Placement;
     /** Globs, relative to the workspace folder. */
     exclude: string[];
-    /** Globs of protected files, relative to the workspace folder. */
-    protect: string[];
+    /** Globs of imported files, relative to the workspace folder. */
+    imported: string[];
     /** Prefix table (prefix -> namespace). Undefined: the file declares none; the defaults apply. */
     prefixes?: Record<string, string>;
     /** View IRIs of the last HTML export, in export order. Undefined: none stored. */
@@ -169,7 +171,7 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
         exclude: literals(WS.exclude).sort(),
-        protect: literals(WS.protect).sort(),
+        imported: [...new Set([...literals(WS.imported), ...literals(WS.protect)])].sort(),
         ...(Object.keys(prefixes).length ? { prefixes } : {}), ...(head ? { exportViews } : {})
     };
 }
@@ -186,7 +188,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
         // Every kind: a reader sees the placement without the defaults of this program.
         ...PLACE_KINDS.map(k => rdf.quad(g, PLACE_PREDICATES[k], m.placement[k] === NEAR ? rdf.literal(NEAR) : rel(m.placement[k]), g)),
         ...m.exclude.map(e => rdf.quad(g, WS.exclude, rdf.literal(e), g)),
-        ...m.protect.map(e => rdf.quad(g, WS.protect, rdf.literal(e), g)),
+        ...m.imported.map(e => rdf.quad(g, WS.imported, rdf.literal(e), g)),
         ...Object.entries(m.prefixes ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([prefix, ns]) => {
             const d = rdf.namedNode(`${MANIFEST_GRAPH}-declare-${prefix}`);
             return [
@@ -209,7 +211,7 @@ function listQuads(g: Quad['graph'], p: Quad['predicate'], items: Quad['object']
     ];
 }
 
-/** The folder of imported files, relative to the workspace folder. The import protects each file that it writes there. */
+/** The folder of imported files, relative to the workspace folder. The import marks each file that it writes there as imported. */
 export const IMPORT_FOLDER = 'imported';
 
 /**

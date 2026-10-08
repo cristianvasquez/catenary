@@ -185,10 +185,10 @@ export type ClipMode = 'copy' | 'cut';
 
 /** Result of a command. `id` is the id of a created element, if any; `ids` the ids of all of them (paste). */
 /** `protected`: the command changes these protected files (absolute paths), so it is refused (manifest ws:protect). */
-export type CommandResult = { ok: true; id?: string; ids?: string[] } | { ok: false; error: string; protected?: string[] };
+export type CommandResult = { ok: true; id?: string; ids?: string[] } | { ok: false; error: string; imported?: string[] };
 
-/** The answer of an import: the path of the copy and the prefixes that it added to the workspace. */
-export type ImportResult = { ok: true; file: string; prefixes: string[] } | { ok: false; error: string };
+/** The answer of an import: the paths of the copies, in the order of the sources, and the prefixes that it added to the workspace. */
+export type ImportResult = { ok: true; files: string[]; prefixes: string[] } | { ok: false; error: string };
 
 /** Sides of the edge in the view. */
 export type EdgeSides = Pick<EdgeLayout, 'fromSide' | 'toSide'>;
