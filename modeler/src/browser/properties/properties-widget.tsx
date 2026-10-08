@@ -19,6 +19,9 @@ import {
     rangeKey, valueSetOf, Range, SimpleRange
 } from '@catenary/model';
 import { ViewEditors } from '../diagram/view-editors';
+import { ViewNotesEditors, ViewNotesField } from '../notes/view-notes';
+import { VIEW_NOTES_SCHEME } from '../notes/view-notes-resource';
+import { TextEditorSelection } from '@theia/editor/lib/browser/editor';
 import { Button, Choice, ElementPanel, Head, IconButton, IRI_HELP, IriInput, Link, Row, Section, TextInput, Warning } from './controls';
 import { ELEMENT_SCHEME, viewIdOfUri } from '../../common/protocol';
 import { CatenaryNode } from '../explorer/model-explorer';
@@ -53,6 +56,7 @@ const RANGE_TERMS: Record<Range['kind'], string | undefined> = {
 export class ModelPropertiesWidget extends ElementPanel implements PropertyViewContentWidget {
     static readonly ID = 'catenary-properties';
     @inject(ViewEditors) protected readonly editors: ViewEditors;
+    @inject(ViewNotesEditors) protected readonly notes: ViewNotesEditors;
     @inject(OpenerService) protected readonly openers: OpenerService;
 
     /** Edits from the SHACL form that the backend has not yet answered. */
@@ -646,6 +650,9 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 {this.iriRow(vid, view.uri, 'Graph IRI')}
                 <Row label='Label'><TextInput field='label' value={view.label} onCommit={v => this.exec({ kind: 'rename', id: vid, label: v.trim() })} /></Row>
             </Section>
+            <Section title='Notes'>
+                <ViewNotesField key={vid} model={this.model} editors={this.notes} view={vid} value={view.description} />
+            </Section>
             <Section title='Content' help={VIEW_HELP}>
                 <div>{view.cards} model element(s), {view.shapes} node shape(s), {view.notes} note(s), {view.references} view reference(s), {view.relations} relation(s), {view.hidden} hidden.</div>
             </Section>
@@ -680,7 +687,8 @@ export class ModelPropertiesProvider extends DefaultPropertyViewWidgetProvider {
 
     /** A Theia selection from a view editor, from an explorer (not only folders and files) or from Problems rows of an element. */
     override canHandle(selection: Object | undefined): number {
-        const ours = GlspSelection.is(selection) ? !!viewIdOfUri(selection.sourceUri ?? '')
+        const ours = TextEditorSelection.is(selection) && selection.uri.scheme === VIEW_NOTES_SCHEME ? true
+            : GlspSelection.is(selection) ? !!viewIdOfUri(selection.sourceUri ?? '')
             : Array.isArray(selection) && selection.length > 0 && (
                 (selection.every(CatenaryNode.is) && selection.some(CatenaryNode.isElement))
                 || selection.every(n => n?.uri instanceof URI && n.uri.scheme === ELEMENT_SCHEME));

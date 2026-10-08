@@ -146,6 +146,8 @@ export interface View {
     id: string;
     label: string;
     uri: string;         // graph IRI
+    /** Free-text Markdown explanation, stored in the view graph. */
+    description?: string;
     /** Cards, groups, notes, view references and collections. */
     boxes: ViewBox[];
     edges: EdgeLayout[];

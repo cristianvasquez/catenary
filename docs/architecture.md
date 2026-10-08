@@ -92,7 +92,7 @@ Paths are relative to the directory in the first column.
 | | `glsp/` | GLSP server, one session per view, operation handlers, layout |
 | `modeler/src/browser` | `actions.ts`, `action-service.ts`, `action-commands.ts`, `action-menus.ts`, `follow-up.ts` | Actions, prompts, creation follow-up |
 | | `selection-model.ts`, `model-client.ts`, `commands.ts`, `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
-| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes, export. `pending-*.ts`: moves and new members shown before the server confirms them |
+| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes, export. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
 | | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |

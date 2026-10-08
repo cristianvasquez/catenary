@@ -32,6 +32,33 @@ function workspace(): { dir: string; a: string; b: string } {
 const settled = () => vi.runAllTimersAsync();
 
 describe('model store', () => {
+    it('law_viewDescriptionStorage: saves Markdown in the view file, reads Properties, and undoes one edit', async () => {
+        const { a } = workspace();
+        const store = new ModelStore();
+        await store.open(a);
+        const view = Object.keys(docOf(store).views)[0];
+        const text = '# Explanation\n\n- **Bold** and _italic_\n\n```text\n<example>\n```\n';
+        expect(store.properties(view)).toMatchObject({ kind: 'view', description: '' });
+        expect(store.execute({ kind: 'setViewDescription', view, text, expectedText: '' }).ok).toBe(true);
+        expect(store.view(view)?.description).toBe(text);
+        expect(store.properties(view)).toMatchObject({ description: text });
+        store.undo();
+        expect(store.properties(view)).toMatchObject({ description: '' });
+        store.redo();
+        expect(store.properties(view)).toMatchObject({ description: text });
+        expect((await store.save()).ok).toBe(true);
+        expect((await store.open(a)).ok).toBe(true);
+        expect(store.properties(view)).toMatchObject({ description: text });
+        expect(store.execute({ kind: 'setViewDescription', view, text: '', expectedText: text }).ok).toBe(true);
+        expect(store.view(view)?.description).toBeUndefined();
+        store.undo();
+        expect(store.properties(view)).toMatchObject({ description: text });
+        const copy = store.execute({ kind: 'duplicateView', id: view });
+        expect(copy.ok).toBe(true);
+        if (!copy.ok) throw new Error(copy.error);
+        expect(store.properties(copy.id!)).toMatchObject({ description: text });
+    });
+
     it('reports a view IRI change as a moved view id, for the edit, its undo and its redo', async () => {
         const { a } = workspace();
         const store = new ModelStore();

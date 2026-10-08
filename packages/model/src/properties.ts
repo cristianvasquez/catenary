@@ -51,6 +51,7 @@ export interface PropertyShapeProperties {
 /** A view: its identity and what it holds. */
 export interface ViewProperties {
     kind: 'view';
+    description: string;
     id: string;
     uri: string;
     label: string;
@@ -72,7 +73,7 @@ export function viewProperties(part: Doc, viewId: string): ViewProperties | unde
     const cards = boxes(view, 'card');
     const shapes = cards.filter(n => part.shapes.nodeShapes[n.element]).length;
     return {
-        kind: 'view', id: view.id, uri: view.uri, label: view.label, cards: cards.length - shapes, shapes, notes: boxes(view, 'note').length,
+        kind: 'view', description: view.description ?? '', id: view.id, uri: view.uri, label: view.label, cards: cards.length - shapes, shapes, notes: boxes(view, 'note').length,
         references: boxes(view, 'reference').length, relations: rels.length, hidden: rels.filter(r => isHidden(view, r.id)).length
     };
 }

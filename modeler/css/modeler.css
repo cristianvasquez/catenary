@@ -9,6 +9,10 @@
     --catenary-danger: var(--theia-errorForeground);
 }
 
+/* View notes move from Properties to a native Markdown editor. */
+.catenary-view-notes textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.catenary-notes-tools { display: flex; justify-content: flex-end; }
+
 /* ---------------------------------------------------------------- view editor */
 
 .sprotty-graph { background: var(--catenary-bg); }

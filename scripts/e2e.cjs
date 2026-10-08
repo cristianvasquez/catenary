@@ -556,6 +556,68 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
+test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async ({ page, cli }) => {
+  const status = cli('status');
+  assert.equal(status.build.stale, false);
+  assert.equal(status.build.restartNeeded, false);
+  assert.ok(status.windows.every(w => !w.reloadNeeded));
+  await page.locator('.card-name').getByText('Product usage data', { exact: true }).click();
+  const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Explained view' })).result;
+  assert.equal(created.ok, true);
+  const view = created.id;
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); ctx.selection.set({ view: undefined, ids: [${JSON.stringify(view)}] }); await ctx.shell.revealWidget('property-view'); return true`);
+  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(view)}] }); return true`);
+  const panel = page.locator('#catenary-properties');
+  const field = panel.getByRole('textbox', { name: 'View notes (Markdown)', exact: true });
+  await panel.getByRole('heading', { name: 'Notes', exact: true }).waitFor();
+  await field.fill('# Purpose\n\nAn explanation.');
+  await panel.getByRole('button', { name: 'Open notes in editor', exact: true }).click();
+  const editor = page.locator('.catenary-view-notes-editor');
+  await editor.locator('.monaco-editor').waitFor();
+  assert.equal(await field.count(), 0, 'Properties removes the textarea while Monaco is open');
+  assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.getControl().getModel().getLanguageId()'), 'markdown');
+  assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.document.getText()'), '# Purpose\n\nAn explanation.');
+  assert.equal(cli('ui').currentView, view, 'the diagram stays open beside the editor');
+  const canvasBounds = await page.locator('.sprotty-graph:visible').boundingBox();
+  const editorBounds = await editor.boundingBox();
+  assert.ok(canvasBounds && editorBounds && editorBounds.x >= canvasBounds.x + canvasBounds.width - 2, 'editor is beside the visible diagram');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' More notes.');
+  let expected = '# Purpose\n\nAn explanation. More notes.';
+  for (let i = 0; i < 50 && cli('rpc', 'properties', JSON.stringify(view)).result.description !== expected; i++) await page.waitForTimeout(100);
+  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, expected, 'typing saves without a button');
+  assert.equal(await panel.getByRole('button', { name: 'Save description', exact: true }).count(), 0);
+  // Keep a native save in flight while more input arrives. The older completion must not mark the newer text clean.
+  cli('eval', `globalThis.notesExecute = ctx.model.execute.bind(ctx.model); globalThis.notesSaving = false; ctx.model.execute = async c => { const r = await globalThis.notesExecute(c); if (c.kind === 'setViewDescription') { globalThis.notesSaving = true; await new Promise(resolve => setTimeout(resolve, 500)); } return r; }; return true`);
+  await page.keyboard.type(' Slow save.');
+  await page.waitForFunction(() => globalThis.notesSaving);
+  await page.keyboard.type(' New input.');
+  expected += ' Slow save. New input.';
+  for (let i = 0; i < 50 && cli('rpc', 'properties', JSON.stringify(view)).result.description !== expected; i++) await page.waitForTimeout(100);
+  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, expected);
+  for (let i = 0; i < 50 && cli('eval', 'ctx.shell.currentWidget.editor.document.dirty'); i++) await page.waitForTimeout(100);
+  assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.document.dirty'), false);
+  cli('eval', 'ctx.model.execute = globalThis.notesExecute; delete globalThis.notesExecute; delete globalThis.notesSaving; return true');
+  // Edit and close in one browser turn: the 300 ms idle save cannot have run yet.
+  cli('eval', `const w = ctx.shell.currentWidget; w.editor.getControl().trigger('test', 'type', {text: ' Last words.'}); await w.closeWithSaving(); return true`);
+  await editor.waitFor({ state: 'detached' });
+  await field.waitFor();
+  assert.equal(await field.inputValue(), expected + ' Last words.');
+  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, expected + ' Last words.');
+  assert.equal(await page.getByRole('dialog').count(), 0, 'closing notes has no save prompt');
+  await panel.getByRole('button', { name: 'Open notes in editor', exact: true }).click();
+  await editor.locator('.monaco-editor').waitFor();
+  assert.equal(await field.count(), 0);
+  assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.document.getText()'), expected + ' Last words.');
+  // A concurrent edit must not make close discard the local buffer.
+  cli('eval', `const w = ctx.shell.currentWidget; w.editor.getControl().trigger('test', 'type', {text: 'Local edit'}); await ctx.model.execute({kind: 'setViewDescription', view: ${JSON.stringify(view)}, text: 'Other window'}); await w.closeWithSaving(); return true`);
+  await page.getByText('These notes changed elsewhere. Copy your text before reloading the editor.', { exact: true }).first().waitFor();
+  assert.equal(await editor.count(), 1, 'failed save leaves the editor open');
+  assert.equal(await field.count(), 0, 'failed save does not restore a second editor');
+  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, 'Other window');
+  assert.ok(cli('eval', 'ctx.shell.currentWidget.editor.document.getText()').includes('Local edit'));
+}));
+
 test('browser: Links lists instances of a selected shape outside the current view', { timeout: 45000 }, t => withFixtureApp(t, 'shape-instances', async ({ page, cli }) => {
   const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Instance list shape', targetClass: 'urn:test:InstanceList' })).result;
   assert.equal(shape.ok, true);

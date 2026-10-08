@@ -13,6 +13,24 @@ const meta = { classes: [] };
 const elementIdOf = (t: Term) => elementId(t as Parameters<typeof elementId>[0]);
 
 describe('view-owned elements', () => {
+    it('law_staleViewDescriptionRejected and law_viewEditsKeepData: guard drafts and change only the view graph', () => {
+        const g = emptyGraph();
+        const view = run(g, meta, { kind: 'createView', label: 'Description' }) as string;
+        const graph = Object.values(doc(g).views)[0].uri;
+        const { result, patch } = g.transact(x => executeCommand(x, meta, { kind: 'setViewDescription', view, text: 'New text', expectedText: '' }));
+        expect(result.ok).toBe(true);
+        expect(patch).toHaveLength(1);
+        expect(g.match(null, V.description)).toMatchObject([{ subject: { value: graph }, graph: { value: graph }, object: { value: 'New text' } }]);
+        const before = canonical(g.quads());
+        const stale = g.transact(x => executeCommand(x, meta, { kind: 'setViewDescription', view, text: 'Stale draft', expectedText: '' }));
+        expect(stale.result.ok).toBe(false);
+        expect(stale.patch).toHaveLength(0);
+        expect(canonical(g.quads())).toBe(before);
+        const missing = g.transact(x => executeCommand(x, meta, { kind: 'setViewDescription', view: 'missing', text: 'Draft' }));
+        expect(missing.result.ok).toBe(false);
+        expect(missing.patch).toHaveLength(0);
+    });
+
     it('stores notes and view references in view graphs and keeps them through a TriG round trip', async () => {
         const g = emptyGraph();
         const source = run(g, meta, { kind: 'createView', label: 'Source' }) as string;

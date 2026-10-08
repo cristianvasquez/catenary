@@ -8,7 +8,7 @@ import {
 } from '@theia/core/lib/browser';
 import { interfaces } from '@theia/core/shared/inversify';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
-import { MenuContribution } from '@theia/core';
+import { MenuContribution, ResourceResolver } from '@theia/core';
 import { FilterContribution } from '@theia/core/lib/common/contribution-filter';
 import { HiddenContributions } from './hidden-contributions';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences';
@@ -23,6 +23,8 @@ import { WaitingContextMenuService } from './action-menus';
 import { CommandContribution } from '@theia/core';
 import { KeybindingContribution } from '@theia/core/lib/browser';
 import { NoteEditor } from './notes/note-editor';
+import { ViewNotesEditors } from './notes/view-notes';
+import { ViewNotesResolver } from './notes/view-notes-resource';
 import { NoteMarkdown } from './notes/note-markdown';
 import { CanvasInteractions } from './diagram/canvas';
 import { ViewClipboard } from './diagram/clipboard';
@@ -126,6 +128,8 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         });
         single(NoteMarkdown);
         single(NoteEditor);
+        single(ViewNotesEditors, FrontendApplicationContribution);
+        single(ViewNotesResolver, ResourceResolver);
 
         // RDF source editors
         single(RdfLanguageContribution, FrontendApplicationContribution);

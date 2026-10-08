@@ -45,6 +45,12 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
 - Show Text / Show Canvas switches between the canvas and the TriG text of the same file.
 
+### View notes
+
+Select a view to edit its Markdown **Notes** in Properties. Like Label, the field saves when you leave it. Click its external-link icon to move editing into Theia’s Markdown editor beside the diagram. The Properties text area disappears while that editor is open.
+
+Notes save automatically after a short pause in typing. Close the editor when you finish. Closing saves the latest text and restores the Properties field, without a save prompt. A failed save keeps the editor open with your text. Notes stay in the view file, not a separate Markdown file.
+
 ## Shapes
 
 - A new node shape opens its name for edit. The typed name also sets the target class: the known class with that name, else a new class IRI from the name. Escape keeps the default name and sets no class.

@@ -67,6 +67,7 @@ export const V = {
     /** The view of a placement: `p view:element e ; view:view v` is a placement of e in v. */
     view: rdf.namedNode(NS.view + 'view'),
     text: rdf.namedNode(NS.view + 'text'),
+    description: rdf.namedNode(NS.view + 'description'),
     x: rdf.namedNode(NS.view + 'x'),
     y: rdf.namedNode(NS.view + 'y'),
     width: rdf.namedNode(NS.view + 'width'),

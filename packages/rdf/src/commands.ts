@@ -177,6 +177,8 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
         case 'setUri':
             // A shape wins (as for cards): a punned IRI changes everywhere except in rdf:type statements of the data (a migration).
             return ops.shapeCardTerm(g, c.id) ? shapes.setShapeUri(g, c.id, c.uri) : ops.setUri(g, c.id, c.uri);
+        case 'setViewDescription':
+            return ops.setViewDescription(g, c.view, c.text, c.expectedText);
         case 'setStatements':
             return ops.setStatements(g, meta, c.id, c.values);
         case 'delete':

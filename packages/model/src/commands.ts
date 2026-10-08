@@ -54,6 +54,7 @@ export type EditCommand =
      * display of cards, label of groups, text of notes. A field that an element does not have is ignored; a relation takes only
      * the color. `expectedText`: the command fails if a note has another text (another client changed it).
      */
+    | { kind: 'setViewDescription'; view: string; text: string; expectedText?: string }
     | { kind: 'setViewElements'; view: string; ids: string[]; patch: ViewElementPatch; expectedText?: string }
     /** Relation between instance ids or new instances. With a view, an end not in it is placed at `at`. */
     | { kind: 'createRelation'; subject: string | NewInstance; predicate: string; object: string | NewInstance; view?: string; at?: Point; sides?: EdgeSides }

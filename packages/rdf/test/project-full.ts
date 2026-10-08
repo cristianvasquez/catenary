@@ -113,6 +113,8 @@ export function project(g: ModelGraph): Projection {
             arrows: part(graph, 'arrows')
         };
         const view = projectView(graph, label, parts, cardIds, relationIds, viewIds, warnings, arrowStatements, properties);
+        const description = select(g, `${PREFIXES} SELECT ?text WHERE { GRAPH <${graph}> { <${graph}> view:description ?text } }`)[0]?.text;
+        if (description?.termType === 'Literal') view.description = description.value;
         doc.views[view.id] = view;
     }
     return { doc, warnings: [...new Set(warnings)] };

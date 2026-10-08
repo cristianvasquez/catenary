@@ -10,7 +10,7 @@ import { boxOf } from '@catenary/model';
 import { colorValue } from '../diagram/card-chrome';
 import { ModelFrontend } from '../model-client';
 
-function ensureMarkdown(): void {
+export function ensureMarkdown(): void {
     if (monaco.languages.getLanguages().some(l => l.id === 'markdown')) return;
     monaco.languages.register({ id: 'markdown', extensions: ['.md'], aliases: ['Markdown'] });
     monaco.languages.setMonarchTokensProvider('markdown', {

@@ -61,7 +61,7 @@ describe('view, properties of a view, display cards', () => {
         const rels = relationsInView(docOf(store), view);
         const shapes = boxes(view, 'card').filter(c => docOf(store).shapes.nodeShapes[c.element]).length;
         expect(store.properties(view.id)).toEqual({
-            kind: 'view', id: view.id, uri: view.uri, label: view.label, cards: boxes(view, 'card').length - shapes, shapes,
+            kind: 'view', description: '', id: view.id, uri: view.uri, label: view.label, cards: boxes(view, 'card').length - shapes, shapes,
             notes: boxes(view, 'note').length, references: boxes(view, 'reference').length, relations: rels.length,
             hidden: rels.filter(r => isHidden(view, r.id)).length
         });

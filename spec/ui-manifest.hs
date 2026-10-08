@@ -60,6 +60,7 @@ isDiagramEdit c = case c of
   SetLayout {} -> True
   SetEdgeLayout {} -> True
   HideEdges {} -> True
+  SetViewDescription {} -> True
   SetViewElements {} -> True
   CreateGroup {} -> True
   CreateNote {} -> True
@@ -1122,6 +1123,26 @@ moreActionsMenu :: [String] -> [String]            -- the other applicable actio
 moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" | "Delete from Model" `elem` as]
 cardinalityButtons :: [Cardinality]
 cardinalityButtons = [(Nothing, Just 1), (Just 1, Just 1), (Nothing, Nothing), (Just 1, Nothing)]
+
+-- | A view exposes Markdown Notes in Properties. Its external-link icon moves editing into a native Theia Markdown editor beside the diagram.
+-- Opening the editor saves the Properties field first and removes that text area. One editing surface prevents competing local drafts.
+-- Closing the editor restores the Properties text area. The diagram stays open.
+data ViewNotesSurface = NotesProperties | NotesMarkdown deriving Eq
+notesPropertiesVisible, notesMarkdownVisible :: ViewNotesSurface -> Bool
+notesPropertiesVisible surface = surface == NotesProperties
+notesMarkdownVisible surface = surface == NotesMarkdown
+law_notesSingleEditor :: ViewNotesSurface -> Bool
+law_notesSingleEditor surface = notesPropertiesVisible surface /= notesMarkdownVisible surface
+
+-- | Properties saves Notes on blur, like Label. Monaco saves after 300 ms without input and flushes pending text on close.
+-- Neither surface has Save or Revert buttons. A successful close needs no save prompt. A failed save keeps the editor and text.
+-- Each save uses one guarded command. The storage command and predicate retain their existing description names for compatibility.
+viewNotesEdit :: Id -> String -> String -> EditCommand
+viewNotesEdit v original text = SetViewDescription v text (Just original)
+law_notesGuarded :: Id -> String -> String -> Bool
+law_notesGuarded v original text = case viewNotesEdit v original text of
+  SetViewDescription v' text' expected -> v' == v && text' == text && expected == Just original
+  _ -> False
 
 -- 8.4 Files navigator ---------------------------------------------------------------
 

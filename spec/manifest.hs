@@ -412,6 +412,13 @@ runRead :: Backend -> IO a -> (a, Backend)
 
 -- 4.1 Notations and placements ----------------------------------------------------
 
+-- | A view stores its Markdown Notes as one view:description literal in its own graph.
+-- Absence means empty text. An empty edit removes the literal. Keeping the predicate preserves existing notes.
+viewDescriptionQuads :: Iri -> String -> [Quad]
+viewDescriptionQuads v text = [Quad (NamedNode v) "view:description" (Literal text "xsd:string" Nothing Nothing) v | not (null text)]
+law_viewDescriptionStorage :: Iri -> String -> Bool
+law_viewDescriptionStorage v text = all (\q -> subjectOf q == NamedNode v && graphOf q == v) (viewDescriptionQuads v text)
+
 -- | A view places elements and statements. Its notations give their figures (ADR 0014, spec/ui-manifest.hs §2.3).
 --   v nt:notations ( n1 n2 … )                           the cascade of the view; absent: the default cascade (nt:default)
 -- Notations are built into Catenary (packages/rdf/notations/). A workspace file does not define a notation.
@@ -667,6 +674,7 @@ data EditCommand
   | SetLayout Id [(Id, Rect)] [Id]                           -- bounds, connectors whose sides it clears
   | SetEdgeLayout Id Id EdgeLayoutPatch
   | HideEdges Id [Id] Bool
+  | SetViewDescription Id String (Maybe String)
   | SetViewElements Id [Id] ViewElementPatch (Maybe String)  -- expectedText of a note edit
   -- marks and entity groups (§6.3)
   | CreateGroup Id String (Maybe [Id]) (Maybe Rect)
@@ -705,6 +713,7 @@ viewNamed c = case c of
   SetLayout v _ _ -> Just v
   SetEdgeLayout v _ _ -> Just v
   HideEdges v _ _ -> Just v
+  SetViewDescription v _ _ -> Just v
   SetViewElements v _ _ _ -> Just v
   CreateGroup v _ _ _ -> Just v
   CreateNote v _ _ -> Just v
@@ -819,6 +828,11 @@ law_viewEditsKeepData :: Backend -> EditCommand -> Bool
 law_viewEditsKeepData b c =
   let outside = filter (not . isViewGraph b . graphOf)
   in isViewEdit c ==> sameSet (outside (storeQuads (snd (step b (Execute c))))) (outside (storeQuads b))
+-- | Description edits accept an expected value. A stale draft cannot replace a newer description.
+viewDescriptionText :: Backend -> Id -> String
+law_staleViewDescriptionRejected :: Backend -> Id -> String -> String -> Bool
+law_staleViewDescriptionRejected b v text expected =
+  viewDescriptionText b v /= expected ==> failed (fst (step b (Execute (SetViewDescription v text (Just expected)))))
 noteText :: Backend -> Id -> Maybe String
 law_staleNoteRejected :: Backend -> Id -> Id -> ViewElementPatch -> String -> Bool
 law_staleNoteRejected b v n patch expected =
@@ -1298,6 +1312,7 @@ mintIri = manifestOnly
 objectsOf = manifestOnly
 permitted = manifestOnly
 isViewGraph = manifestOnly
+viewDescriptionText = manifestOnly
 noteText = manifestOnly
 viewReferences = manifestOnly
 ownPlacementIn = manifestOnly

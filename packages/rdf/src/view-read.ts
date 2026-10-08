@@ -172,6 +172,8 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     for (const graph of [...views.keys()].sort(cmp)) {
         const empty = { cards: [], edges: [], arrows: [], groups: [], notes: [], references: [], fileReferences: [], collections: [] };
         const v = projectView(graph, labelOf(graph), graph === view.value ? parts : empty, cardIds, relationIds, viewIds, warnings, arrowStatements, properties);
+        const description = g.match(rdf.namedNode(graph), rdf.namedNode(NS.view + 'description'), null, rdf.namedNode(graph))[0]?.object;
+        if (description?.termType === 'Literal') v.description = description.value;
         doc.views[v.id] = v;
     }
     return doc;

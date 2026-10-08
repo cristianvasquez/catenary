@@ -89,7 +89,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Last verification (2026-10-07, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (4.6 s), test (573/573, 17.4 s), build (8.4 s) and e2e (7/7, 66.2 s). Includes the Links Instances folder for an unplaced instance.
+- **Last verification (2026-10-08, uncommitted Catenary tree):** `pnpm verify --e2e` passed check (7.0 s), test (616/616, 17.0 s), build (8.5 s) and e2e (8/8, 69.0 s). Includes Notes with exclusive Properties/native Markdown editing, autosave during slow writes, close-time saving, and conflict protection. Log: `/tmp/catenary-verify-LsS366`. The running backend still needs a restart to load this build.
 
 - **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.

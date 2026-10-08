@@ -575,6 +575,8 @@ export function duplicateView(g: ModelGraph, id: string): Result<string> {
     const copy = createView(g, `${g.label(subject, source)} copy`);
     if (!copy.ok) return copy;
     const target = viewTerm(g, copy.value)!;
+    const description = g.match(subject, V.description, null, source)[0]?.object;
+    if (description) g.set(target, V.description, description, target);
     // Each element of the view graph gets a new IRI in the copy; references between elements follow.
     // Marks first: a placement IRI derives from what it places, and a placement can place a mark (or an arrow between marks).
     const map = rdf.termMap<Term, NamedNode>();
@@ -647,6 +649,16 @@ export function createFileReference(g: ModelGraph, viewId: string, file: string,
  * note. A field that the element does not have is ignored. A relation takes only the color (its edge layout).
  * `expectedText` (a note) protects a local editor draft from overwriting another client's change.
  */
+/** One guarded edit of the Markdown explanation in the view graph. */
+export function setViewDescription(g: ModelGraph, viewId: string, text: string, expectedText?: string): Result {
+    const view = viewTerm(g, viewId);
+    if (!view) return gone('view', viewId);
+    const current = g.match(view, V.description, null, view)[0]?.object.value ?? '';
+    if (expectedText !== undefined && current !== expectedText) return fail('These notes changed elsewhere. Copy your text before reloading the editor.');
+    g.set(view, V.description, text === '' ? undefined : rdf.literal(text), view);
+    return ok(undefined);
+}
+
 export function setViewElement(g: ModelGraph, viewId: string, id: string, patch: ViewElementPatch, expectedText?: string): Result {
     const view = viewTerm(g, viewId);
     if (!view) return gone('view', viewId);
