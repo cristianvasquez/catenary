@@ -123,6 +123,95 @@ async function stopBackend(proc) {
   }
 }
 
+test('browser: raw RDF paste, graph consent, Copy as RDF, and ordinary instance copy', { timeout: 60000 }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catenary-clipboard-'));
+  const workspace = path.join(dir, 'workspace'), config = path.join(dir, 'config');
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(config);
+  fs.writeFileSync(path.join(workspace, 'workspace.trig'), `@prefix ws: <osg://vocab/workspace#> .
+    <urn:name:workspace> { <urn:name:workspace> a ws:Workspace; ws:placeInstances "data.ttl" . }`);
+  let backend, browser, page, passed = false;
+  const logs = [];
+  t.after(async () => {
+    try { await browser?.close(); } finally {
+      await stopBackend(backend);
+      if (passed) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  try {
+    const started = startBackend(workspace, config, data => logs.push(String(data)));
+    backend = started.proc;
+    const url = await started.ready, cli = catenaryCli(url);
+    browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium' });
+    page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    page.setDefaultTimeout(10000);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.locator('#theia-main-content-panel').waitFor();
+    cli('rpc', 'open', JSON.stringify(path.join(workspace, 'workspace.trig')));
+    const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Clipboard' })).result;
+    assert.equal(created.ok, true);
+    const view = created.id;
+    cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+    const canvas = page.locator('svg.sprotty-graph:visible');
+    await canvas.waitFor();
+    const card = name => canvas.locator('g.card').filter({ has: page.locator('.card-name', { hasText: new RegExp('^' + name + '$') }) });
+    const paste = async text => {
+      await canvas.click({ position: { x: 60, y: 70 } });
+      await page.evaluate(text => navigator.clipboard.writeText(text), text);
+      await page.keyboard.press('Control+V');
+    };
+    const ttl = '<urn:clipboard:alice> a <urn:Person>; <http://www.w3.org/2000/01/rdf-schema#label> "Alice" .';
+    await paste(ttl);
+    await card('Alice').waitFor();
+    const before = cli('rpc', 'view', JSON.stringify(view)).result.boxes[0];
+    await card('Alice').click({ button: 'right' });
+    await page.getByText('Copy as RDF', { exact: true }).last().click();
+    const exported = await page.evaluate(() => navigator.clipboard.readText());
+    assert.ok(exported.includes('urn:clipboard:alice'), 'selection writes model RDF to the system clipboard');
+    assert.ok(!exported.includes('view:') && !exported.includes('rdf:reifies'), 'export excludes placement metadata');
+    await paste(exported);
+    await page.waitForTimeout(300);
+    assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 1, 'raw RDF preserves resource identity');
+    await card('Alice').click();
+    await page.keyboard.press('Control+C');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Control+V');
+    await card('Alice 2').waitFor();
+    const afterCopy = cli('rpc', 'view', JSON.stringify(view)).result;
+    assert.deepEqual(afterCopy.boxes.find(b => b.id === before.id), before, 'ordinary copy leaves the old placement fixed');
+    // A JSON-LD property can match the ID of the live internal clip and still be raw RDF.
+    const token = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+    const jsonld = JSON.stringify({ '@context': { name: 'http://www.w3.org/2000/01/rdf-schema#label', clipboardId: 'urn:clipboard:identifier' },
+      '@id': 'urn:clipboard:jsonld', '@type': 'urn:Person', name: 'JSON-LD', clipboardId: token.clipboardId });
+    await paste(jsonld);
+    await card('JSON-LD').waitFor();
+    assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 3, 'JSON-LD is parsed even with a live clipboardId property');
+    // External clipboard content must replace the internal canvas clip, including Paste from the Edit command.
+    const bob = '<urn:clipboard:bob> a <urn:Person>; <http://www.w3.org/2000/01/rdf-schema#label> "Bob" .';
+    await page.evaluate(text => navigator.clipboard.writeText(text), bob);
+    cli('run', 'core.paste');
+    await card('Bob').waitFor();
+    const named = '<urn:source:graph> { <urn:clipboard:carol> a <urn:Person>; <http://www.w3.org/2000/01/rdf-schema#label> "Carol" . }';
+    const beforeGraph = cli('rpc', 'view', JSON.stringify(view)).result;
+    await paste(named);
+    await page.getByRole('button', { name: 'Flatten and paste', exact: true }).waitFor();
+    assert.deepEqual(cli('rpc', 'view', JSON.stringify(view)).result, beforeGraph, 'confirmation precedes all edits');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.deepEqual(cli('rpc', 'view', JSON.stringify(view)).result, beforeGraph, 'Cancel leaves the model unchanged');
+    await paste(named);
+    await page.getByRole('button', { name: 'Flatten and paste', exact: true }).click();
+    await card('Carol').waitFor();
+    cli('run', 'catenary.undo');
+    await page.waitForTimeout(300);
+    assert.deepEqual(cli('rpc', 'view', JSON.stringify(view)).result, beforeGraph, 'one undo restores the previous canvas');
+    passed = true;
+  } catch (error) {
+    if (page) await page.screenshot({ path: path.join(dir, 'failure.png'), fullPage: true });
+    fs.writeFileSync(path.join(dir, 'backend.log'), logs.join(''));
+    throw new Error(`${error.stack}\nArtifacts: ${dir}`);
+  }
+});
+
 test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and concepts, rows as edges, logical constraint, data migration → save', { timeout: 90000 }, async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catenary-shapes-'));
   const workspace = path.join(dir, 'workspace'), config = path.join(dir, 'config');

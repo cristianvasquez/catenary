@@ -1028,7 +1028,7 @@ const SH_TYPES = new Set(['NodeShape', 'PropertyShape', 'Shape'].map(t => NS.sh 
  * The subjects of the shapes of a file (termKey): subjects with a statement in the sh: namespace (a predicate, or rdf:type sh:…), and
  * the nodes below them that were blank nodes in a file (skolem IRIs: nested shapes, paths) and the RDF list cells below them.
  */
-function shapePart(quads: Quad[]): Set<string> {
+export function shapePart(quads: Quad[]): Set<string> {
     const bySubject = new Map<string, Quad[]>();
     for (const q of quads) (bySubject.get(termKey(q.subject)) ?? bySubject.set(termKey(q.subject), []).get(termKey(q.subject))!).push(q);
     const out = new Set<string>();

@@ -134,10 +134,15 @@ export type EditCommand =
     /** Take members (all without `ids`) out of a collection: their cards show again, next to it. An empty collection is deleted. */
     | { kind: 'uncollect'; view: string; id: string; ids?: string[] }
     /**
-     * Add the clip to a view. `at`: new top-left corner of the clip; without it, the positions do not change.
+     * Add the clip to a view. Pack new placements near `at`, else near the clip's top-left corner. Previous placements stay fixed.
      * A copy clip creates new instances; a cut clip adds the same instances.
      */
-    | { kind: 'pasteIntoView'; view: string; clip: ViewClip; at?: Point };
+    | { kind: 'pasteIntoView'; view: string; clip: ViewClip; at?: Point; cardScale?: number }
+    /** Parsed clipboard RDF as N-Quads. Named graphs require explicit flattening consent. One additive edit and layout. */
+    | { kind: 'pasteRdf'; view: string; rdf: string; flatten?: boolean; at?: Point; cardScale?: number };
+
+export type RdfPaste = { ok: true; rdf: string; namedGraphs: string[]; statements: number } | { ok: false; error: string };
+export type RdfCopy = { ok: true; text: string } | { ok: false; error: string };
 
 /** Changes of one element of a view. '' removes the color; display 'detailed' removes the display value. */
 export type ViewElementPatch = Partial<Rect> & { color?: string; display?: CardDisplay; label?: string; text?: string };

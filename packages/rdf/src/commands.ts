@@ -3,7 +3,7 @@
 
 import { Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeSides, EditCommand, boxes, Point, ViewClip, centered, gridPositions, isViewClip, nextLabel, rangeOfShape, selection, valueSetOf } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
-import { ModelGraph, P } from './graph';
+import { ModelGraph, P, V } from './graph';
 import { elementId, relationId } from './ids';
 import { deleteElements, renameElement } from './elements';
 import * as ops from './ops';
@@ -12,6 +12,7 @@ import { proposeShapes } from './shape-proposal';
 import { figureTermOf, showAsLine, syncFigures } from './figure-edits';
 import { rdf } from './terms';
 import { readView } from './view-read';
+import { layoutNewPlacements, pasteRdf } from './clipboard';
 
 const { ok, fail } = ops;
 const done = ok(undefined);
@@ -138,6 +139,8 @@ const alreadyInView = (n: number) => fail(n === 1 ? 'The instance is already in 
 const FROM_A_PROPERTY = new Set<EditCommand['kind']>(['showAsEdge', 'createPropertyShape', 'setPropertyShape']);
 
 export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> {
+    const pasting = c.kind === 'pasteIntoView' || c.kind === 'pasteRdf';
+    const before = pasting ? new Set(g.subjects(V.view, ops.viewTerm(g, c.view), null).map(t => elementId(t as NamedNode))) : undefined;
     const r = run(g, meta, elementIds(g, c));
     // One rule for every removal path: an arrow goes with its end. One rule for every placement path: relations and property edges
     // follow their ends.
@@ -145,6 +148,10 @@ export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): op
         ops.placeConnectors(g);
         syncFigures(g, !FROM_A_PROPERTY.has(c.kind));
         ops.pruneArrows(g);
+        if (pasting) {
+            const added = layoutNewPlacements(g, meta, c.view, before!, c.at, c.cardScale);
+            if (c.kind === 'pasteRdf') return ok(added);
+        }
     }
     return r;
 }
@@ -165,6 +172,8 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
     // A command that names a view needs that view.
     if ('view' in c && c.view !== undefined && !ops.viewTerm(g, c.view)) return ops.gone('view', c.view);
     switch (c.kind) {
+        case 'pasteRdf':
+            return pasteRdf(g, c.view, c.rdf, c.flatten === true, c.at ?? { x: 0, y: 0 });
         case 'createInstance': {
             const r = ops.createInstance(g, c.classIri, c.label);
             if (r.ok && c.view) placeAround(g, c.view, [r.value], c.at ?? { x: 0, y: 0 });

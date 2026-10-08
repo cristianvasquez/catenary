@@ -52,6 +52,10 @@ pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
 ```
 
+Canvas command `catenary.copyAsRdf` copies selected model RDF as readable Turtle without placement metadata.
+RPC queries `prepareRdfPaste(text, mediaType?)` and `copyAsRdf(viewId, ids)` parse and export clipboard RDF.
+The `pasteRdf` edit accepts parsed N-Quads, a view, an optional position, and explicit consent to flatten named graphs.
+
 By default, the first start copies [`examples/bookshop`](examples/bookshop/readme.md) to `~/.local/share/catenary/workspaces/example` or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy, not the tracked example, and does not overwrite a non-empty workspace. Set `CATENARY_WORKSPACE` to use another folder. For another desktop workspace, use `bash scripts/desktop.sh <folder>`. Each workspace gets its own Electron profile in `~/.config/catenary/profiles/<hash>`, so each workspace runs in its own process with its own backend. A second launch on the same workspace focuses the open window. `--user-data-dir=<dir>` overrides the profile. Backend logs of all instances also go to `~/.local/state/catenary/backend.log`.
 
 The Windows package is built on Linux. The workflow `.github/workflows/windows.yml` checks it on a Windows runner. It runs on demand (Actions → Windows → Run workflow) and when a change touches the package scripts, the desktop app or the lockfile. It runs the tests of paths, files, the watcher and Git with real Windows paths, and it starts `Catenary.exe` and `Catenary.cmd` with `scripts/smoke-desktop.mjs dist\Catenary-win32-x64 [--crlf | --launcher]`.

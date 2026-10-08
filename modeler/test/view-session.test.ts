@@ -3,16 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, ModelSubmissionHandler, UpdateModelAction
+    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, ModelSubmissionHandler, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
-import { EditCommand, cardOf } from '@catenary/model';
+import { EditCommand, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
 
 /** A diagram element by the id of what it shows: a card or a placed edge by its element (its id is the id of its placement). */
 const key = (e: { id: string; element?: unknown }) => (e.element as string | undefined) ?? e.id;
 import { ModelStore } from '@catenary/rdf';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
+import { PasteHandler } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
@@ -190,6 +191,24 @@ describe('model changes reaching view clients', () => {
         expect(a.sent[0]).toMatchObject({ kind: 'message', severity: 'WARNING' });
         expect(select).not.toHaveBeenCalled();
         expect(store.snapshot()).toEqual(before);
+    });
+
+    it('fits only arriving cut placements while selecting existing cards too (UI §7.5)', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        edit({ kind: 'setBounds', view: second, bounds: [{ id: instance, x: 20000, y: 20000 }] });
+        const existing = cardOf(docOf(store).views[second], instance)!;
+        const clip = copyFromView(docOf(store), first, [instance, other], 'cut')!;
+        edit({ kind: 'cutFromView', view: first, ids: [instance, other] });
+        const c = await client(store, second);
+        const handler = Object.assign(new PasteHandler(), { session: c.session });
+        await handler.createCommand(PasteOperation.create({
+            clipboardData: { [VIEW_CLIP_FORMAT]: JSON.stringify(clip) },
+            editorContext: { selectedElementIds: [], lastMousePosition: { x: 0, y: 0 } }
+        }));
+        const arriving = cardOf(docOf(store).views[second], other)!;
+        expect(c.sent.find(SelectAction.is)).toMatchObject({ selectedElementsIDs: expect.arrayContaining([existing.id, arriving.id]) });
+        expect(c.sent.find(FitToScreenAction.is)).toMatchObject({ elementIds: [arriving.id] });
+        expect(cardOf(docOf(store).views[second], instance)).toEqual(existing);
     });
 
     it('updates a reference when the target view is renamed or deleted, including undo', async () => {
