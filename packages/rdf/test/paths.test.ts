@@ -49,7 +49,7 @@ describe('paths on Windows', () => {
 });
 
 describe('manifest paths across platforms', () => {
-    const manifest = (defaultFile: string): Manifest => ({ defaultFile, placement: { shapes: defaultFile, concepts: NEAR, instances: NEAR }, exclude: [] });
+    const manifest = (defaultFile: string): Manifest => ({ defaultFile, placement: { shapes: defaultFile, concepts: NEAR, instances: NEAR }, exclude: [], protect: [] });
     const stored = (m: Manifest, workspace: string, platform: typeof win32) =>
         manifestQuads(m, workspace, platform).filter(q => q.predicate.equals(WS.defaultFile)).map(q => q.object.value);
 

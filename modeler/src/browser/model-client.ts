@@ -3,7 +3,7 @@
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { CommandResult, DEFAULT_PREFIXES, EditCommand, ModelSnapshot, setPrefixes } from '@catenary/model';
+import { CommandResult, DEFAULT_PREFIXES, EditCommand, ModelSnapshot, baseName, dirName, relativePath, setPrefixes } from '@catenary/model';
 import { ModelClient, ModelService } from '../common/protocol';
 
 export const ModelServiceProxy = Symbol('ModelServiceProxy');
@@ -67,16 +67,56 @@ export class ModelFrontend {
     get meta() { return this.snapshot.meta; }
     get isOpen(): boolean { return !!this.snapshot.file; }
 
-    /** Run a command. Shows the error, if any, also an exception in the backend. */
-    async execute(command: EditCommand): Promise<CommandResult> {
-        let r: CommandResult;
-        try {
-            r = await this.service.execute(command);
-        } catch (e) {
-            r = { ok: false, error: `"${command.kind}" failed in the backend: ${e instanceof Error ? e.message : String(e)}` };
+    /**
+     * Run a command. Shows the error, if any, also an exception in the backend. A command that changes protected files asks to
+     * unprotect them; after Unprotect it runs again.
+     */
+    execute(command: EditCommand): Promise<CommandResult> {
+        return this.withUnprotect(command.kind, () => this.service.execute(command));
+    }
+
+    /** Undo or redo one step of the model, as `execute`: a step that changes protected files asks to unprotect them. */
+    undo(): Promise<CommandResult> { return this.withUnprotect('undo', () => this.service.undo()); }
+    redo(): Promise<CommandResult> { return this.withUnprotect('redo', () => this.service.redo()); }
+
+    protected async withUnprotect(name: string, call: () => Promise<CommandResult>): Promise<CommandResult> {
+        const run = async (): Promise<CommandResult> => {
+            try {
+                return await call();
+            } catch (e) {
+                return { ok: false, error: `"${name}" failed in the backend: ${e instanceof Error ? e.message : String(e)}` };
+            }
+        };
+        const r = await run();
+        if (r.ok || !r.protected?.length) {
+            if (!r.ok) this.messages.warn(r.error);
+            return r;
         }
-        if (!r.ok) this.messages.warn(r.error);
-        return r;
+        if (!await this.askUnprotect(r.protected)) return r;
+        for (const file of r.protected) {
+            const u = await this.service.setProtected(file, false);
+            if (!u.ok) {
+                this.messages.warn(u.error);
+                return u;
+            }
+        }
+        const again = await run();
+        if (!again.ok) this.messages.warn(again.error);
+        return again;
+    }
+
+    /** The change needs protected files (absolute paths): ask to unprotect them. */
+    protected async askUnprotect(files: string[]): Promise<boolean> {
+        const ws = this.snapshot.file;
+        const names = files.map(f => (ws && relativePath(dirName(ws), f)) ?? baseName(f));
+        const one = names.length === 1;
+        // Loaded here: the browser module needs a DOM, and the unit tests of this module run in Node.
+        const { ConfirmDialog } = await import('@theia/core/lib/browser');
+        return !!await new ConfirmDialog({
+            title: one ? 'Protected File' : 'Protected Files',
+            msg: `This change edits ${one ? 'the protected file' : 'the protected files'} ${names.join(', ')}. Unprotect ${one ? 'it' : 'them'} and make the change?`,
+            ok: 'Unprotect', cancel: 'Cancel'
+        }).open();
     }
 
     async report(p: Promise<CommandResult>): Promise<boolean> {

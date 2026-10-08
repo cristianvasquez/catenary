@@ -23,6 +23,8 @@ export const WS = {
     placeInstances: rdf.namedNode(NS.ws + 'placeInstances'),
     /** A glob (relative to the workspace folder) of files that are not model files. */
     exclude: rdf.namedNode(NS.ws + 'exclude'),
+    /** A glob (relative to the workspace folder) of protected model files: Catenary reads them and does not change them. */
+    protect: rdf.namedNode(NS.ws + 'protect'),
     /** The views of the last HTML export, in order: an RDF list of view IRIs. */
     exportViews: rdf.namedNode(NS.ws + 'exportViews')
 };
@@ -72,6 +74,8 @@ export interface Manifest {
     placement: Placement;
     /** Globs, relative to the workspace folder. */
     exclude: string[];
+    /** Globs of protected files, relative to the workspace folder. */
+    protect: string[];
     /** Prefix table (prefix -> namespace). Undefined: the file declares none; the defaults apply. */
     prefixes?: Record<string, string>;
     /** View IRIs of the last HTML export, in export order. Undefined: none stored. */
@@ -153,6 +157,7 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
         exclude: literals(WS.exclude).sort(),
+        protect: literals(WS.protect).sort(),
         ...(Object.keys(prefixes).length ? { prefixes } : {}), ...(head ? { exportViews } : {})
     };
 }
@@ -169,6 +174,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
         // Every kind: a reader sees the placement without the defaults of this program.
         ...PLACE_KINDS.map(k => rdf.quad(g, PLACE_PREDICATES[k], m.placement[k] === NEAR ? rdf.literal(NEAR) : rel(m.placement[k]), g)),
         ...m.exclude.map(e => rdf.quad(g, WS.exclude, rdf.literal(e), g)),
+        ...m.protect.map(e => rdf.quad(g, WS.protect, rdf.literal(e), g)),
         ...Object.entries(m.prefixes ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([prefix, ns]) => {
             const d = rdf.namedNode(`${MANIFEST_GRAPH}-declare-${prefix}`);
             return [
@@ -191,6 +197,32 @@ function listQuads(g: Quad['graph'], p: Quad['predicate'], items: Quad['object']
     ];
 }
 
+/** The folder of imported files, relative to the workspace folder. The import protects each file that it writes there. */
+export const IMPORT_FOLDER = 'imported';
+
+/**
+ * The prefix declarations in the text of an RDF file (prefix -> namespace), in the order of the text: `@prefix` and `PREFIX` of
+ * Turtle, TriG and N3, `xmlns:` of RDF/XML, the string terms of a JSON-LD `@context` object. A text search, not a parse.
+ */
+export function declaredPrefixes(text: string, file: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (/\.(jsonld|json)$/i.test(file)) {
+        try {
+            const contexts = [JSON.parse(text)].flat().map(d => d?.['@context']).flat();
+            for (const c of contexts) {
+                if (!c || typeof c !== 'object') continue;
+                for (const [p, ns] of Object.entries(c)) if (typeof ns === 'string' && !p.startsWith('@') && /[#/]$/.test(ns)) out[p] = ns;
+            }
+        } catch {
+            // Not JSON: the read reports it.
+        }
+        return out;
+    }
+    const pattern = /\.(rdf|owl|xml)$/i.test(file) ? /\bxmlns:([A-Za-z][\w.-]*)\s*=\s*["']([^"']+)["']/g : /(?:@prefix|\bPREFIX)\s+([A-Za-z][\w.-]*)?:\s*<([^>]*)>/gi;
+    for (const m of text.matchAll(pattern)) if (m[2]) out[m[1] ?? ''] = m[2];
+    return out;
+}
+
 /**
  * 1-based line of the first statement about `iri` in an RDF text: the first line that starts with the IRI (subject of a Turtle, TriG
  * or N-Triples statement), else the first line that contains it. Forms: <iri>, prefix:local with a prefix of the file, "iri" (JSON-LD).
@@ -198,7 +230,7 @@ function listQuads(g: Quad['graph'], p: Quad['predicate'], items: Quad['object']
  */
 export function sourceLine(text: string, iri: string): number | undefined {
     const forms = [`<${iri}>`, `"${iri}"`];
-    for (const m of text.matchAll(/^\s*(?:@prefix|PREFIX)\s+([A-Za-z][\w.-]*)?:\s*<([^>]*)>/gim)) {
+    for (const m of text.matchAll(/(?:@prefix|\bPREFIX)\s+([A-Za-z][\w.-]*)?:\s*<([^>]*)>/gi)) {
         const local = iri.slice(m[2].length);
         if (m[2] && iri.startsWith(m[2]) && /^[\w-][\w.%-]*$/.test(local)) forms.push(`${m[1] ?? ''}:${local}`);
     }

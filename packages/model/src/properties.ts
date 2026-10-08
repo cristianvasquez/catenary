@@ -3,7 +3,7 @@
 
 import { Doc, Instance, boxes, isHidden, relationsInView } from './doc';
 import type { Description } from './form';
-import { NS } from './terms';
+import { NS, TermJSON, termKey } from './terms';
 import type { Violation } from './validation';
 
 /** A result of the SHACL report graph, as the panel shows it. */
@@ -28,7 +28,14 @@ export interface InstanceProperties extends Instance {
     results: ResultRow[];
     /** The other instances as the SHACL form sees them (link candidates): sorted N-Triples lines. */
     candidates: string;
+    /** The protected files (absolute paths) with statements of the instance. Absent: none. */
+    protectedFiles?: string[];
+    /** The statements of the instance in protected files, as `lockedKey(predicate, object)`. A change of them is refused. */
+    locked?: string[];
 }
+
+/** The key of a statement of an instance in `InstanceProperties.locked`. */
+export const lockedKey = (predicate: string, object: TermJSON): string => `${predicate} ${termKey(object)}`;
 
 /** An end of a relation. */
 export interface RelationEnd { id: string; uri: string; label: string; types: string[] }

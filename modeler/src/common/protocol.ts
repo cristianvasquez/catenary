@@ -2,7 +2,7 @@
 // The backend owns the document (one model, many views; see ModelStore for the files). The frontend and the GLSP diagram
 // sessions only send edit commands and receive snapshots.
 
-import type { CommandResult, EditCommand, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
+import type { CommandResult, EditCommand, ImportResult, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
 import type { RpcServer } from '@theia/core/lib/common/messaging/proxy-factory';
 
 export const MODEL_SERVICE_PATH = '/services/catenary';
@@ -46,6 +46,8 @@ export interface WorkspaceSettings {
     /** By kind: "near", or a file path relative to the workspace folder. */
     placement?: { shapes?: string; concepts?: string; instances?: string };
     exclude?: string[];
+    /** Globs of protected files, relative to the workspace folder (ws:protect). */
+    protect?: string[];
 }
 
 /** The model backend for one frontend: the read queries (ModelQueries, @catenary/model) and the operations below. */
@@ -60,6 +62,16 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     create(workspacePath: string, placement?: WorkspaceSettings['placement']): Promise<CommandResult>;
     /** Change the manifest settings (ADR 0004): placement by kind (paths relative to the workspace folder), exclude globs. */
     setSettings(settings: WorkspaceSettings): Promise<CommandResult>;
+    /**
+     * Protect or unprotect one file (a path relative to the workspace folder, or absolute): its path in the protect globs. An unprotect
+     * fails when another glob still protects the file. No undo step.
+     */
+    setProtected(file: string, on: boolean): Promise<CommandResult>;
+    /**
+     * Import an RDF file (absolute path): a Turtle copy with IRIs for its blank nodes in imported/, protected; its prefixes that the
+     * workspace does not have go to the workspace file. Reads the workspace again (no undo across it).
+     */
+    importFile(source: string): Promise<ImportResult>;
     /** Replace the prefix table of the workspace (manifest of the primary workspace file; saved with it). No undo step. */
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult>;
     /** Store the views of an HTML export, in order (manifest of the primary workspace file; saved with it). No undo step. */
@@ -68,8 +80,9 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     dismissMigration(id: string): Promise<void>;
     /** Write what is not written yet (after a failed write) and commit it. */
     save(): Promise<CommandResult>;
-    undo(): Promise<void>;
-    redo(): Promise<void>;
+    /** Undo or redo one step. A step that changes a protected file is refused (`protected`: the files); it stays on its stack. */
+    undo(): Promise<CommandResult>;
+    redo(): Promise<CommandResult>;
     execute(command: EditCommand): Promise<CommandResult>;
 }
 
