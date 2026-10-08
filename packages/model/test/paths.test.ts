@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, dirName, freeViewFile, relativePath, viewFileInput } from '../src';
+import { baseName, copyViewFile, dirName, freeViewFile, relativePath, viewFileInput } from '../src';
 
 describe('backend paths in the user interface', () => {
     it('baseName and dirName with / and \\', () => {
@@ -35,5 +35,11 @@ describe('backend paths in the user interface', () => {
         expect(freeViewFile('views', new Set())).toBe('views/unnamed-view.view.trig');
         expect(freeViewFile('', new Set(['unnamed-view.view.trig']))).toBe('unnamed-view-2.view.trig');
         expect(freeViewFile('a/', new Set(['a/unnamed-view.view.trig', 'a/unnamed-view-2.view.trig']))).toBe('a/unnamed-view-3.view.trig');
+    });
+
+    it('copyViewFile: <name>-copy next to the source, with its extension; -2, … when taken', () => {
+        expect(copyViewFile('views/road.view.trig', new Set())).toBe('views/road-copy.view.trig');
+        expect(copyViewFile('plans/road.trig', new Set(['plans/road-copy.trig']))).toBe('plans/road-copy-2.trig');
+        expect(copyViewFile('road.trig', new Set())).toBe('road-copy.trig');
     });
 });

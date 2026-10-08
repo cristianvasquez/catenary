@@ -525,7 +525,7 @@ export class ModelStore implements ModelQueries {
             ws.newViewFolder = undefined;
             return { ok: false, error: `The folder ${command.folder} is for imported files.` };
         }
-        if (command.kind === 'createView' && command.file) {
+        if ((command.kind === 'createView' || command.kind === 'duplicateView') && command.file) {
             const file = path.resolve(this.folder, command.file);
             const problem = ws.newViewFileProblem(file) ?? (ws.isImported(file) ? `${command.file} is an imported file.` : undefined);
             if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }

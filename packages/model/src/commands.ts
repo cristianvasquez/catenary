@@ -108,7 +108,8 @@ export type EditCommand =
     | { kind: 'removeConcept'; set: string; uri: string }
     /** Apply a data change of the patch queue. `id`: the queue entry, removed on success. */
     | { kind: 'migrateData'; migration: MigrationChange & { id?: string } }
-    | { kind: 'duplicateView'; id: string }
+    /** `file`: the view file of the copy, as in createView; default: a free `<label> copy` file in `views/`. */
+    | { kind: 'duplicateView'; id: string; file?: string }
     | { kind: 'createGroup'; view: string; label: string; around?: string[]; rect?: Rect }
     | { kind: 'createNote'; view: string; text: string; at: Point }
     | { kind: 'addViewReference'; view: string; target: string; at: Point }

@@ -239,7 +239,7 @@ modelFiles :: FilePath -> IO [FilePath]
 -- It has one named graph G and no statements outside G. G is the view IRI and the only view:View of the file.
 -- Reject other view files, a view:View in a file that is not TriG, and duplicate view IRIs.
 -- There is no read of the old *.view.ttl format.
--- A new view uses its createView file: a new TriG path inside the workspace that the user types (any name).
+-- A new view uses its createView file: a new TriG path inside the workspace that the user types (any name). duplicateView too.
 -- Without a file: a free views/<label>.view.trig path (-2, -3, … when taken), or the createView folder inside the workspace.
 -- A rename or IRI change keeps the file path. Deleting a view removes its file at the next write.
 fileNameOf :: String -> String                  -- a file name from a label
@@ -741,7 +741,7 @@ data EditCommand
   | ReconnectRelation Id RelationEnd Id (Maybe Side)
   -- views (§6.3)
   | CreateView String (Maybe FilePath) (Maybe FilePath)   -- label, folder, file
-  | DuplicateView Id
+  | DuplicateView Id (Maybe FilePath)                      -- view, file of the copy (as createView)
   | AddToView Id [Id] Point
   | ShowRelations Id [Id] Point
   | ShowAsEdge Id Id Point
@@ -898,7 +898,7 @@ law_setUriFollowsReferences b old new =
 isViewEdit :: EditCommand -> Bool
 isViewEdit c = isJust (viewNamed c) || case c of
   CreateView _ _ _ -> True
-  DuplicateView _ -> True
+  DuplicateView _ _ -> True
   _ -> False
 isViewGraph :: Backend -> Iri -> Bool
 law_viewEditsKeepData :: Backend -> EditCommand -> Bool

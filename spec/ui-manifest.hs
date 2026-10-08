@@ -571,6 +571,8 @@ law_enterInNoteIsNewline = inputEnd NoteInput EnterKey == Nothing
 -- folder); a name without .trig gets it. Cancel creates nothing. The view gets the default label "unnamed view N" and opens. No
 -- follow-up starts: the file dialog is the only dialog. Reason: one question per gesture; the user renames the view later, or never.
 -- A later rename does not change the file name. Reason: the read finds a view by the content of its file, not by its name.
+-- Duplicate View asks the same way for the file of the copy, proposed next to the source file (<name>-copy). The copy opens as
+-- "<label> copy" with no follow-up.
 newViewFileInput :: String -> FilePath
 newViewFileInput t = if isTrig t then t else t ++ ".trig"
 law_newViewFileIsTrig :: String -> Bool

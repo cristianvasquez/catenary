@@ -336,10 +336,14 @@ describe('workspace files', () => {
         ok(store.execute({ kind: 'rename', id, label: 'Road map' }));
         ok(await store.save());
         expect(f.read('plans/road.trig')).toContain('Road map');
+        const copy = store.execute({ kind: 'duplicateView', id, file: 'plans/road-copy.trig' });
+        ok(copy);
+        expect(store.files.views.find(v => v.view === (copy as { id: string }).id)?.path).toBe(join(f.dir, 'plans', 'road-copy.trig'));
+        expect(store.execute({ kind: 'duplicateView', id, file: 'plans/road-copy.trig' }).ok).toBe(false);
         for (const file of ['plans/road.trig', 'data.ttl', 'views/product-context.view.trig', 'plans/road.ttl', join(tmpdir(), 'out.trig')]) {
             expect(store.execute({ kind: 'createView', label: 'unnamed view 2', file }).ok).toBe(false);
         }
-        expect(Object.values(docOf(store).views).map(v => v.label).sort()).toEqual(['Product context', 'Road map']);
+        expect(Object.values(docOf(store).views).map(v => v.label).sort()).toEqual(['Product context', 'Road map', 'Road map copy']);
         const again = await opened(f.ws);
         expect(again.files.views.find(v => v.view === viewId(again, 'Road map'))?.path).toBe(join(f.dir, 'plans', 'road.trig'));
         expect(again.dirty).toBe(false);
