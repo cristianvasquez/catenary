@@ -497,7 +497,6 @@ export class ModelStore implements ModelQueries {
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
             movedIds: this.movedIds,
             prefixes: { table: { ...PREFIXES }, stored: !!this.ws?.prefixes },
-            ...(this.ws?.exportViews ? { exportViews: this.ws.exportViews.filter(v => this.graph.isView(rdf.namedNode(v))).map(v => elementId(rdf.namedNode(v))) } : {}),
             dirty: this.dirty,
             canUndo: this.canUndo,
             canRedo: this.canRedo
@@ -982,20 +981,6 @@ export class ModelStore implements ModelQueries {
             if (!opened.ok) return opened;
             note();
             return { ok: true, files: reads.map(r => r.inPlace ?? targets.get(r)!), prefixes: added };
-        });
-    }
-
-    /** The views of the last HTML export, in order (view ids). Manifest of the primary workspace file (saved with it). No undo step. */
-    setExportViews(ids: string[]): Promise<CommandResult> {
-        return this.serial(async () => {
-            if (!this.ws) return { ok: false, error: 'No model is open.' };
-            const views = ids.map(id => elementTerm(id));
-            const unknown = ids.filter((_, i) => !this.graph.isView(views[i]));
-            if (unknown.length) return { ok: false, error: `No view with the id ${unknown.join(', ')}.` };
-            this.ws.exportViews = views.map(v => v!.value);
-            this.content++;
-            this.changed('files');
-            return { ok: true };
         });
     }
 

@@ -514,7 +514,7 @@ test('browser: Turtle and TriG source language detection and token colors', { ti
 
 /**
  * A backend on a copy of the test fixtures, a browser page with the CLI bridge connected, and the cleanup. `run(app)` gets
- * { page, cli }. On a failure: the backend log and a screenshot stay in the temporary folder.
+ * { page, cli, url, dir, workspace }. On a failure: the backend log and a screenshot stay in the temporary folder.
  */
 async function withFixtureApp(t, name, run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `catenary-${name}-`));
@@ -546,7 +546,7 @@ async function withFixtureApp(t, name, run) {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.locator('#shell-tab-explorer-view-container').waitFor();
     for (let i = 0; i < 50 && !cli('status').windows.length; i++) await page.waitForTimeout(100);
-    await run({ page, cli });
+    await run({ page, cli, url, dir, workspace });
     passed = true;
   } catch (e) {
     fs.writeFileSync(path.join(dir, 'backend-browser.log'), logs.join('\n'));
@@ -744,4 +744,84 @@ test('browser: Properties keeps its content during a model change; the SHACL for
   });
   assert.ok(values.includes('Renamed target'), `the new form shows the new label: ${values.slice(0, 10)}`);
   console.log(`properties: form replaced once, min form height ${Math.round(r.minForm)} of ${Math.round(before.form)} px, panel never shorter`);
+}));
+
+test('browser: Insert View writes the view IRI at the cursor; Export Markdown of a folder renders each view once as SVG', { timeout: 90000 }, t => withFixtureApp(t, 'markdown', async ({ page, cli, url, dir, workspace }) => {
+  // The CLI exits with 3 while a prompt waits: read its output anyway.
+  const cliRaw = (...args) => {
+    const r = require('node:child_process').spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(url).port, ...args], { encoding: 'utf8', timeout: 60000 });
+    return JSON.parse(r.stdout);
+  };
+  const second = cli('exec', JSON.stringify({ kind: 'createView', label: 'Second view' })).result;
+  assert.equal(second.ok, true);
+  const labels = cli('rpc', 'viewLabels').result;
+  const iriOf = label => require('../packages/model/lib/ids.js').idIri(Object.keys(labels).find(id => labels[id] === label));
+  const context = iriOf('Product context'), secondIri = iriOf('Second view');
+  const docs = path.join(workspace, 'docs');
+  fs.mkdirSync(docs);
+  fs.writeFileSync(path.join(docs, 'Architecture.md'), '# Architecture\n\nThe system separates storage from presentation.\n\n');
+  fs.writeFileSync(path.join(docs, 'Data model.md'), `# Data model\n\n![](${context})\n\nBack to [Architecture](Architecture.md).\n`);
+
+  // Insert View: the picker shows labels; the embed holds the IRI, at the cursor.
+  await navigator(page, 'docs');
+  await navNode(page, 'Architecture.md').first().dblclick();
+  const editor = page.locator('#theia-main-content-panel .monaco-editor:visible');
+  await editor.waitFor();
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  let run = cliRaw('run', 'catenary.insertView');
+  assert.equal(run.status, 'waiting');
+  assert.deepEqual(run.prompt.items.map(i => i.label).sort(), ['Product context', 'Second view']);
+  assert.equal(cliRaw('answer', '--pick', 'Product context').status, 'done');
+  await page.keyboard.type('\n\n## Components\n\n');
+  run = cliRaw('run', 'catenary.insertView');
+  assert.equal(cliRaw('answer', '--pick', 'Second view').status, 'done');
+  const text = cli('eval', 'ctx.shell.currentWidget.editor.document.getText()');
+  assert.equal(text, `# Architecture\n\nThe system separates storage from presentation.\n\n![Product context](${context})\n\n## Components\n\n![Second view](${secondIri})`);
+  cli('eval', 'await ctx.shell.currentWidget.editor.document.save(); return true');
+  for (let i = 0; i < 50 && fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8') !== text; i++) await page.waitForTimeout(100);
+  assert.equal(fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8'), text);
+
+  // The folder menu of the navigator has Export Markdown; a file menu does not.
+  const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: new RegExp(`^${label}$`) });
+  await navNode(page, 'docs').first().click({ button: 'right' });
+  await menuItem('Export Markdown…').waitFor();
+  await page.keyboard.press('Escape');
+  await navNode(page, 'Architecture.md').first().click({ button: 'right' });
+  await menuItem('Open').first().waitFor();
+  assert.equal(await menuItem('Export Markdown…').count(), 0);
+  await page.keyboard.press('Escape');
+
+  // A label change does not break an embed: the export resolves by IRI.
+  assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: second.id, label: 'Renamed view' })).result.ok, true);
+  const out = path.join(dir, 'out');
+  const before = fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]);
+  run = cliRaw('--timeout', '60000', 'run', 'catenary.exportMarkdown', JSON.stringify(docs), JSON.stringify(out));
+  assert.equal(run.status, 'done', JSON.stringify(run));
+  assert.equal(run.result.ok, true, JSON.stringify(run.result));
+  const resources = fs.readdirSync(path.join(out, '_resources')).filter(f => f.endsWith('.svg'));
+  assert.equal(resources.length, 2, 'two views, one SVG each');
+  const arch = fs.readFileSync(path.join(out, 'Architecture.md'), 'utf8');
+  const links = [...arch.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)].map(m => [m[1], m[2]]);
+  assert.deepEqual(links.map(l => l[0]), ['Product context', 'Second view']);
+  assert.ok(links.every(l => /^_resources\/[a-z0-9-]+\.svg$/.test(l[1])), JSON.stringify(links));
+  assert.ok(fs.readFileSync(path.join(out, 'Data model.md'), 'utf8').includes(`![](${links[0][1]})`.replace('![]', '![Product context]')), 'the same view uses the same SVG');
+  assert.ok(fs.readFileSync(path.join(out, 'Data model.md'), 'utf8').includes('[Architecture](Architecture.md)'));
+  for (const [, link] of links) {
+    const svg = fs.readFileSync(path.join(out, link), 'utf8');
+    assert.match(svg, /^<svg[^>]*\swidth="\d+"[^>]*>/);
+    assert.ok(svg.includes('<g'), 'the SVG has the diagram');
+    for (const control of ['catenary-halo', 'sprotty-resize-handle', 'catenary-resize-handle', 'shape-add-row', 'selected']) {
+      assert.ok(!new RegExp(`class="[^"]*\\b${control}\\b`).test(svg), `no ${control} in the SVG`);
+    }
+  }
+  assert.deepEqual(fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]), before, 'the source documents do not change');
+
+  // A view IRI that names no view: an error with the file, the line and the IRI; nothing is written.
+  fs.writeFileSync(path.join(docs, 'Broken.md'), 'Text\n\n![](urn:name:No%20such%20view)\n');
+  run = cliRaw('--timeout', '60000', 'run', 'catenary.exportMarkdown', JSON.stringify(docs), JSON.stringify(out));
+  assert.equal(run.result.ok, false);
+  assert.deepEqual(run.result.unresolved, [{ file: 'Broken.md', line: 3, iri: 'urn:name:No%20such%20view' }]);
+  assert.ok(run.messages.some(m => m.text?.includes('Broken.md:3: urn:name:No%20such%20view')), JSON.stringify(run.messages));
+  assert.equal(fs.existsSync(path.join(out, 'Broken.md')), false);
 }));

@@ -60,8 +60,6 @@ export class Workspace {
     protected imported: string[];
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
     prefixes?: Record<string, string>;
-    /** View IRIs of the last HTML export, in order (manifest ws:exportViews). */
-    exportViews?: string[];
     /** Written or removed paths awaiting a successful commit. */
     written: string[] = [];
     /** pathKey of each file with changes in git that Catenary did not write. */
@@ -86,7 +84,6 @@ export class Workspace {
         this.exclude = manifest.exclude;
         this.imported = manifest.imported;
         this.prefixes = manifest.prefixes;
-        this.exportViews = manifest.exportViews;
     }
 
     /**
@@ -214,9 +211,7 @@ export class Workspace {
         return {
             ...(this.defaultFileSetting ? { defaultFile: this.defaultFileSetting } : {}), placement: { ...this.placement }, exclude: [...this.exclude],
             imported: [...this.imported],
-            ...(this.prefixes ? { prefixes: this.prefixes } : {}),
-            // Only views that exist: a deleted view leaves the file (its undo brings it back).
-            ...(this.exportViews ? { exportViews: this.exportViews.filter(v => this.graph.isView(rdf.namedNode(v))) } : {})
+            ...(this.prefixes ? { prefixes: this.prefixes } : {})
         };
     }
 

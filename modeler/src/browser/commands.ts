@@ -10,7 +10,7 @@ import { PERSPECTIVE_LAYOUTS_STORAGE_KEY } from '@theia/core/lib/browser/shell/s
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { EditorManager, EditorWidget } from '@theia/editor/lib/browser';
+import { EditorContextMenu, EditorManager, EditorWidget } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
 import { FileStatNode } from '@theia/filesystem/lib/browser';
@@ -21,7 +21,8 @@ import { FileContent, OpenMode, mixedFileProblem, openModes, previewModes } from
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
-import { ViewsExport } from './diagram/views-export';
+import { MarkdownExport } from './diagram/markdown-export';
+import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
 import { COLOR_NAMES, COLOR_ORDER, PRESETS } from './diagram/views';
 import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, CatenaryNode, CatenaryTreeWidget } from './explorer/model-explorer';
@@ -46,7 +47,8 @@ export namespace OpenModelCommands {
     export const OPEN_RECENT = cmd('catenary.openRecent', 'Open Recent Workspace…');
     export const OPEN_FILE_AS_MODEL = cmd('catenary.openFileAsModel', 'Open as Workspace');
     export const SAVE = cmd('catenary.save', 'Save Workspace');
-    export const EXPORT_VIEWS_HTML = cmd('catenary.exportViewsHtml', 'Export Views as HTML…');
+    export const EXPORT_MARKDOWN = cmd('catenary.exportMarkdown', 'Export Markdown…');
+    export const INSERT_VIEW = cmd('catenary.insertView', 'Insert View…');
     export const SHOW_TRIG = cmd('catenary.showTrig', 'Open Workspace File as Text');
     export const WORKSPACE_SETTINGS = cmd('catenary.openWorkspaceSettings', 'Workspace Settings');
     /** RDF files from outside the workspace: read-only Turtle copies in imported/ (spec/manifest.hs §2.6). Arguments: the paths. */
@@ -137,7 +139,8 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     @inject(WorkspaceSettingsContribution) protected readonly settings: WorkspaceSettingsContribution;
     @inject(RecentWorkspaces) protected readonly recent: RecentWorkspaces;
     @inject(StorageService) protected readonly storage: StorageService;
-    @inject(ViewsExport) protected readonly viewsExport: ViewsExport;
+    @inject(MarkdownExport) protected readonly markdownExport: MarkdownExport;
+    @inject(InsertView) protected readonly insertView: InsertView;
     @inject(SidePanelSizes) protected readonly panelSizes: SidePanelSizes;
     protected readonly showHidden = new Set<string>();
 
@@ -242,10 +245,24 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         registry.registerCommand(OpenModelCommands.NEW, { execute: () => a.newModel() });
         registry.registerCommand(OpenModelCommands.OPEN_RECENT, { execute: () => a.openRecent(this.recent.paths), isEnabled: () => this.recent.paths.length > 0 });
         registry.registerCommand(OpenModelCommands.SAVE, { execute: () => a.save(), isEnabled: open });
-        // Arguments (CLI, scripts): view ids, file path. Without them: a pick and a save dialog.
-        registry.registerCommand(OpenModelCommands.EXPORT_VIEWS_HTML, {
-            execute: (ids?: unknown, file?: unknown) => this.viewsExport.exportHtml(Array.isArray(ids) ? ids.map(String) : undefined, typeof file === 'string' ? file : undefined),
-            isEnabled: () => open() && this.model.snapshot.files.views.length > 0
+        // The folder of the navigator selection. Arguments (CLI, scripts): source folder, destination folder (absolute paths).
+        const selectedFolder = () => {
+            const sel = this.selection.selection;
+            const node = Array.isArray(sel) ? sel.find(FileStatNode.is) : undefined;
+            return node?.fileStat.isDirectory ? node.uri.path.fsPath() : undefined;
+        };
+        const folderArg = (source?: unknown) => (typeof source === 'string' ? source : source instanceof URI ? source.path.fsPath() : selectedFolder());
+        registry.registerCommand(OpenModelCommands.EXPORT_MARKDOWN, {
+            execute: (source?: unknown, destination?: unknown) => {
+                const folder = folderArg(source);
+                if (folder) return this.markdownExport.exportFolder(folder, typeof destination === 'string' ? destination : undefined);
+            },
+            isEnabled: (source?: unknown) => !!folderArg(source), isVisible: (source?: unknown) => !!folderArg(source)
+        });
+        // Argument (CLI, scripts): the IRI of the view. Without it: a view picker.
+        registry.registerCommand(OpenModelCommands.INSERT_VIEW, {
+            execute: (iri?: unknown) => this.insertView.insert(typeof iri === 'string' ? iri : undefined),
+            isEnabled: () => open() && !!this.insertView.editor(), isVisible: () => !!this.insertView.editor()
         });
         registry.registerCommand(OpenModelCommands.WORKSPACE_SETTINGS, { execute: () => this.settings.openView({ activate: true, reveal: true }), isEnabled: open });
         registry.registerCommand(OpenModelCommands.IMPORT_FILE, {
@@ -427,6 +444,8 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         // After New File and New Folder (Theia: no order, sorted by label).
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, { commandId: c.NEW_VIEW_IN_FOLDER.id, label: 'New View', when: 'explorerResourceIsFolder', order: 'z' });
         addMenuItems(menus, NavigatorContextMenu.MODIFICATION, o.MARK_IMPORTED.id, o.MARK_OWN.id);
+        menus.registerMenuAction(NavigatorContextMenu.MODIFICATION, { commandId: o.EXPORT_MARKDOWN.id, when: 'explorerResourceIsFolder', order: 'c' });
+        menus.registerMenuAction(EditorContextMenu.MODIFICATION, { commandId: o.INSERT_VIEW.id, order: 'a' });
     }
 
     override registerKeybindings(keybindings: KeybindingRegistry): void {

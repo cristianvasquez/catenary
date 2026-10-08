@@ -535,10 +535,6 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-settings-warn { margin-left: 6px; font-size: 13px; color: var(--theia-editorWarning-foreground); vertical-align: text-bottom; }
 .catenary-add { display: inline-flex; align-items: center; gap: 4px; min-width: 0; margin: 0; padding: 2px 10px; }
 .catenary-add .codicon { font-size: 14px; }
-.catenary-settings .catenary-view-order-bar { flex-wrap: wrap; margin-bottom: 6px; }
-.catenary-settings .catenary-view-order-bar .theia-button .codicon { font-size: 14px; vertical-align: text-bottom; }
-.catenary-settings .catenary-view-order-scroll { max-height: none; margin: 0; border-radius: 4px; }
-.catenary-view-order-list li.checked:focus { outline: 1px solid var(--theia-focusBorder); outline-offset: -1px; }
 
 /* Card display: simple (class and name, the name centered in the free space) or detailed. Toggle at the lower left of cards and groups. */
 .card-body.simple, .shape-body.simple { display: flex; flex-direction: column; }
@@ -546,29 +542,6 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .shape-body.simple .shape-name { flex: 1; display: flex; align-items: center; justify-content: center; white-space: normal; overflow-wrap: anywhere; margin-bottom: 14px; }
 .shape-type { font-size: calc(12px * var(--catenary-card-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); text-align: center; }
 
-/* ---------------------------------------------------------------- export views: order dialog */
-
-.catenary-view-order { min-width: 420px; max-width: 640px; }
-.catenary-view-order-bar { display: flex; align-items: center; gap: 6px; }
-.catenary-view-order-bar .catenary-help { flex: 1; margin: 0; }
-.catenary-view-order-bar .theia-button { min-width: 0; margin: 0; padding: 2px 10px; }
-.catenary-view-order-scroll { margin: 8px 0; max-height: 50vh; overflow: auto; border: 1px solid var(--catenary-border); }
-.catenary-view-order-list { list-style: none; margin: 0; padding: 0; }
-.catenary-view-order-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; user-select: none; }
-.catenary-view-order-list li:hover { background: var(--theia-list-hoverBackground); }
-.catenary-view-order-list li.checked { cursor: grab; }
-.catenary-view-order-list.dragging, .catenary-view-order-list.dragging li { cursor: grabbing; }
-.catenary-view-order-list.dragging li:not(.dragged):hover { background: none; }
-.catenary-view-order-list li.dragged { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); outline: 1px solid var(--theia-focusBorder); }
-.catenary-view-order-list li:not(.checked) .label { color: var(--catenary-muted); }
-.catenary-view-order-list label { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; }
-.catenary-view-order-list .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.catenary-view-order-list .folder { color: var(--catenary-muted); font-size: 11px; white-space: nowrap; }
-.catenary-view-order-list .number { min-width: 2.5ch; text-align: right; color: var(--catenary-muted); font-variant-numeric: tabular-nums; }
-.catenary-view-order-list .codicon-gripper { opacity: 0.5; }
-.catenary-view-order-list .catenary-icon-button.disabled { opacity: 0.3; pointer-events: none; }
-.catenary-view-order-heading { padding: 6px 6px 2px; font-size: 11px; color: var(--catenary-muted); border-top: 1px solid var(--catenary-border); }
-.catenary-view-order-list + .catenary-view-order-heading { margin-top: 4px; }
 /* A file reference whose file is not on disk (ADR 0004): muted, dashed. */
 .catenary-view-reference.broken { opacity: 0.55; }
 .catenary-view-reference.broken > .body { stroke-dasharray: 6 4; }

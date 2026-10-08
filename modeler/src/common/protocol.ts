@@ -2,7 +2,7 @@
 // The backend owns the document (one model, many views; see ModelStore for the files). The frontend and the GLSP diagram
 // sessions only send edit commands and receive snapshots.
 
-import type { CommandResult, EditCommand, ImportResult, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
+import type { CommandResult, EditCommand, ExportProblem, ImportResult, ModelQueries, ModelSnapshot, Remote, UnresolvedEmbed } from '@catenary/model';
 import type { RpcServer } from '@theia/core/lib/common/messaging/proxy-factory';
 
 export const MODEL_SERVICE_PATH = '/services/catenary';
@@ -50,6 +50,41 @@ export interface WorkspaceSettings {
     imported?: string[];
 }
 
+/** The check of a Markdown export (spec/ui-manifest.hs §9): the views to render, or why the export cannot run. */
+export interface MarkdownExportCheck {
+    ok: boolean;
+    error?: string;
+    /** The real path of the destination folder. */
+    destination?: string;
+    /** The number of documents in the source folder and its subfolders. */
+    documents: number;
+    /** Each embedded view once, in the order of its first embed. */
+    views: { iri: string; id: string; label: string }[];
+    /** Embeds that name no view, with the source file (relative to the source folder) and the line. */
+    unresolved: UnresolvedEmbed[];
+    /** Links that the export does not change and reports: missing targets, folders, absolute paths. */
+    problems: ExportProblem[];
+}
+
+/** The result of a Markdown export. Paths are relative to the destination folder. */
+export interface MarkdownExportResult {
+    ok: boolean;
+    error?: string;
+    written: string[];
+    /** Files with the same content as the output: not written again. */
+    unchanged: string[];
+    /** Files of an earlier export that this export does not write, removed. */
+    removed: string[];
+    /** Files of an earlier export that this export does not write, kept because they changed after that export. */
+    kept: string[];
+    /** Files that the export would overwrite and does not own: the export wrote nothing. */
+    conflicts: string[];
+    /** The write that failed; the files in `written` were written before it. */
+    failed?: { path: string; error: string };
+    unresolved?: UnresolvedEmbed[];
+    problems: ExportProblem[];
+}
+
 /** The model backend for one frontend: the read queries (ModelQueries, @catenary/model) and the operations below. */
 export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQueries> {
     getSnapshot(): Promise<ModelSnapshot>;
@@ -74,8 +109,13 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     importFiles(sources: string[]): Promise<ImportResult>;
     /** Replace the prefix table of the workspace (manifest of the primary workspace file; saved with it). No undo step. */
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult>;
-    /** Store the views of an HTML export, in order (manifest of the primary workspace file; saved with it). No undo step. */
-    setExportViews(ids: string[]): Promise<CommandResult>;
+    /**
+     * Check a Markdown export of the folder `source` (and its subfolders) to the folder `destination` (absolute paths): the views that it
+     * embeds, by IRI. Writes nothing.
+     */
+    checkMarkdownExport(source: string, destination: string): Promise<MarkdownExportCheck>;
+    /** Export the Markdown documents of `source` to `destination` with the SVG of each embedded view (view IRI → SVG text). */
+    exportMarkdown(source: string, destination: string, svgs: Record<string, string>): Promise<MarkdownExportResult>;
     /** Remove an entry of the patch queue without applying it. */
     dismissMigration(id: string): Promise<void>;
     /** Write what is not written yet (after a failed write) and commit it. */

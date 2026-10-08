@@ -26,14 +26,10 @@ export const WS = {
     /** A glob (relative to the workspace folder) of imported model files: Catenary reads them and does not change them (read only). */
     imported: rdf.namedNode(NS.ws + 'imported'),
     /** Legacy name of ws:imported (read, not written). */
-    protect: rdf.namedNode(NS.ws + 'protect'),
-    /** The views of the last HTML export, in order: an RDF list of view IRIs. */
-    exportViews: rdf.namedNode(NS.ws + 'exportViews')
+    protect: rdf.namedNode(NS.ws + 'protect')
 };
 
 const PLACE_PREDICATES = { shapes: WS.placeShapes, concepts: WS.placeConcepts, instances: WS.placeInstances };
-
-const LIST = { first: rdf.namedNode(NS.rdf + 'first'), rest: rdf.namedNode(NS.rdf + 'rest'), nil: rdf.namedNode(NS.rdf + 'nil') };
 
 /** SHACL prefix declarations of the manifest: <urn:name:workspace> sh:declare [ sh:prefix "dcat" ; sh:namespace "…"^^xsd:anyURI ]. */
 const DECLARE = {
@@ -80,8 +76,6 @@ export interface Manifest {
     imported: string[];
     /** Prefix table (prefix -> namespace). Undefined: the file declares none; the defaults apply. */
     prefixes?: Record<string, string>;
-    /** View IRIs of the last HTML export, in export order. Undefined: none stored. */
-    exportViews?: string[];
 }
 
 export { VIEW_EXT, isViewFile } from '@catenary/model';
@@ -158,21 +152,12 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         const prefix = one(DECLARE.prefix), ns = one(DECLARE.namespace);
         if (prefix !== undefined && ns) prefixes[prefix] = ns;
     }
-    // The first ws:exportViews list; IRI items only, a cycle or a broken list ends it.
-    const exportViews: string[] = [];
-    const head = quads.find(q => q.predicate.equals(WS.exportViews));
-    for (let cell = head?.object, seen = new Set<string>(); cell && !cell.equals(LIST.nil) && !seen.has(cell.value);) {
-        seen.add(cell.value);
-        const item = quads.find(q => q.subject.equals(cell!) && q.predicate.equals(LIST.first))?.object;
-        if (item?.termType === 'NamedNode') exportViews.push(item.value);
-        cell = quads.find(q => q.subject.equals(cell!) && q.predicate.equals(LIST.rest))?.object;
-    }
     return {
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
         exclude: literals(WS.exclude).sort(),
         imported: [...new Set([...literals(WS.imported), ...literals(WS.protect)])].sort(),
-        ...(Object.keys(prefixes).length ? { prefixes } : {}), ...(head ? { exportViews } : {})
+        ...(Object.keys(prefixes).length ? { prefixes } : {})
     };
 }
 
@@ -181,7 +166,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
     const dir = platform.dirname(workspaceFile);
     const g = rdf.namedNode(MANIFEST_GRAPH);
     const rel = (file: string) => rdf.literal(portableRelative(dir, file, platform));
-    // Nodes named after the manifest: `urn:name:workspace-declare-<prefix>`, `urn:name:workspace-exportViews-<n>`.
+    // Nodes named after the manifest: `urn:name:workspace-declare-<prefix>`.
     return [
         rdf.quad(g, rdf.namedNode(NS.rdf + 'type'), WS.Workspace, g),
         ...(m.defaultFile ? [rdf.quad(g, WS.defaultFile, rel(m.defaultFile), g)] : []),
@@ -197,17 +182,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
                 rdf.quad(d, DECLARE.prefix, rdf.literal(prefix), g),
                 rdf.quad(d, DECLARE.namespace, rdf.literal(ns, DECLARE.anyURI), g)
             ];
-        }),
-        ...(m.exportViews ? listQuads(g, WS.exportViews, m.exportViews.map(v => rdf.namedNode(v))) : [])
-    ];
-}
-
-/** (s p ( items )) in graph g: an RDF list, cells `<g>-<local name of p>-<n>`. */
-function listQuads(g: Quad['graph'], p: Quad['predicate'], items: Quad['object'][]): Quad[] {
-    const cells = items.map((_, i) => rdf.namedNode(`${g.value}-${p.value.replace(/^.*[#/]/, '')}-${i + 1}`));
-    return [
-        rdf.quad(g as Quad['subject'], p, cells[0] ?? LIST.nil, g),
-        ...cells.flatMap((c, i) => [rdf.quad(c, LIST.first, items[i], g), rdf.quad(c, LIST.rest, cells[i + 1] ?? LIST.nil, g)])
+        })
     ];
 }
 
