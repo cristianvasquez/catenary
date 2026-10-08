@@ -361,7 +361,11 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 
 -- 3.2 Documents ---------------------------------------------------------------------
 
--- | A file opens its view, the Workspace settings or a text editor. A view and the settings can switch to source text.
+-- | A file opens as what its content holds that Catenary edits, not by its name: a workspace (the manifest graph) opens the
+-- workspace (the open one: its Workspace settings), a view (a view:View) opens its view editor. A file with both, which is not
+-- normal, asks which. A file with neither opens as text. "Open With" opens any file as text.
+-- A view outside the open workspace first opens the workspace that reads its file: the nearest folder above it with one
+-- workspace file. A view in no workspace gives a message. A view and the settings can switch to source text.
 -- Opening a document makes it active. It does not change the selection. Selection and active document are independent.
 -- A browser URL with ?view=<view-id> opens that view after layout restoration, overriding the restored active tab.
 -- The view must belong to the current workspace. An unknown ID shows an error and keeps normal startup behavior.
@@ -369,6 +373,14 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- A file with several views is open (open.md D4).
 data Document = OpenView Element | OpenWorkspace | AsText FilePath deriving Eq
 documentsIn :: FilePath -> [Document]
+data FileHolds = FileHolds { holdsWorkspace :: Bool, holdsViews :: [Id] }
+-- | The documents of a double-click on a file. More than one: the user picks one.
+openChoices :: FilePath -> FileHolds -> [Document]
+openChoices p h = case [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h] of
+  [] -> [AsText p]
+  ds -> ds
+law_plainFileOpensAsText :: FilePath -> Bool
+law_plainFileOpensAsText p = openChoices p (FileHolds False []) == [AsText p]
 openDocument :: Document -> UiState -> UiState
 openDocument d s = s { documents = nub (documents s ++ [d]), active = Just d }
 law_openKeepsSelection :: Document -> UiState -> Bool

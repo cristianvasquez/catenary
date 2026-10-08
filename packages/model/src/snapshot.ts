@@ -25,6 +25,24 @@ export interface ViewFileInfo {
     dirty: boolean;
 }
 
+/** What a file holds that Catenary edits, from its content, not its name. A file can hold a workspace, views, both or none. */
+export interface FileContent {
+    /** It has the manifest graph: a workspace file. */
+    workspace: boolean;
+    /** The views that it declares. */
+    views: { id: string; label: string }[];
+    /** With views: the workspace that reads the file (the open one, else the nearest folder above with one workspace file). */
+    workspaceFile?: string;
+    /** Why the file is not RDF that Catenary reads. */
+    error?: string;
+}
+
+/** How a file can open: as its workspace, or as one of its views. None: it is a plain file (the text editor). */
+export type OpenMode = { kind: 'workspace' } | { kind: 'view'; id: string; label: string };
+export function openModes(c: FileContent): OpenMode[] {
+    return [...(c.workspace ? [{ kind: 'workspace' } as const] : []), ...c.views.map(v => ({ kind: 'view' as const, ...v }))];
+}
+
 /** What a model file contains (ADR 0004: from its triples, not from a role). */
 export type FileKind = 'shapes' | 'concepts' | 'instances';
 

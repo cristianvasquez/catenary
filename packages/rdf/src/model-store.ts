@@ -9,19 +9,19 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, idIri, viewFigures
+    TripleIndex, ViewFigures, idIri, viewFigures, FileContent
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
+import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
 import { executeCommand } from './commands';
 import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements } from './explorer';
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
-import { Placement, WORKSPACE_FILE, workspaceFileOf, sourceLine } from './files';
+import { Placement, WORKSPACE_FILE, enclosingWorkspace, workspaceFileOf, sourceLine } from './files';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
 import { History } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -37,7 +37,7 @@ import { ShapesIndex, shapesIndexOf } from './shapes-read';
 import { rdf, termKey } from './terms';
 import { reportProblems } from './validate';
 import { ValidationRunner } from './validation-runner';
-import { Workspace, createWorkspace } from './workspace';
+import { Workspace, createWorkspace, fileContent } from './workspace';
 import { search } from './search';
 import { selected } from './selection';
 
@@ -348,6 +348,19 @@ export class ModelStore implements ModelQueries {
         const views = Object.values(doc.views);
         return ids.filter(id => doc.instances[id] ? !views.some(v => v.boxes.some(b => b.kind === 'card' && b.element === id))
             : !!doc.relations[id] && !views.some(v => v.edges.some(e => e.id && e.relation === id)));
+    }
+
+    /**
+     * What a file holds that Catenary edits, from its content. With views: the workspace that reads it, the open one when it has the
+     * file as a view file, else the nearest folder above with one workspace file.
+     */
+    async fileContent(file: string): Promise<FileContent> {
+        const p = absolutePath(file);
+        const c = await fileContent(p);
+        const views = c.views.map(v => ({ id: elementId(rdf.namedNode(v.iri)), label: v.label }));
+        const own = c.views.some(v => { const f = this.ws?.viewFile(v.iri); return !!f && pathKey(f.path) === pathKey(p); });
+        const workspaceFile = views.length ? (own && this.ws ? this.ws.path : await enclosingWorkspace(p)) : undefined;
+        return { workspace: c.workspace, views, ...(workspaceFile ? { workspaceFile } : {}), ...(c.error ? { error: c.error } : {}) };
     }
 
     /** The subject term of an element id (a property shape: its term; a logical constraint: its node shape), or the triple of a relation. */
@@ -726,6 +739,9 @@ export class ModelStore implements ModelQueries {
             if (path.basename(given) === WORKSPACE_FILE && !existsSync(given) && existsSync(path.dirname(given))) given = path.dirname(given);
             const target = await workspaceFileOf(given);
             if ('error' in target) return { ok: false, error: target.error };
+            // The content decides, not the name: a view file is part of a workspace, not one.
+            const content = existsSync(target.file) ? await fileContent(target.file) : undefined;
+            if (content?.viewFile && !content.workspace) return { ok: false, error: `${path.basename(target.file)} is a view file. Open its workspace, then open the view.` };
             return this.doOpen(target.file, target.file !== given);
         });
     }

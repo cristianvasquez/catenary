@@ -42,7 +42,7 @@ import { bindRootContributionProvider } from '@theia/core/lib/common/contributio
 import { ViewDiagramManager, ViewEditors, ViewLabels } from './diagram/view-editors';
 import { ViewsExport } from './diagram/views-export';
 import { ViewHistory } from './diagram/view-history';
-import { ExplorerFocusContext, ModelExplorerContribution, TrigOpenHandler, ViewFileOpenHandler } from './commands';
+import { ExplorerFocusContext, ModelExplorerContribution, CatenaryFileOpenHandler } from './commands';
 import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
 import { FileKindsDecorator } from './file-kinds-decorator';
@@ -172,8 +172,7 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         bind(TabBarToolbarContribution).toService(ModelExplorerContribution);
         single(ModelerMenus, MenuContribution);
         single(ExplorerFocusContext, KeybindingContext);
-        single(TrigOpenHandler, OpenHandler);
-        single(ViewFileOpenHandler, OpenHandler);
+        single(CatenaryFileOpenHandler, OpenHandler);
         // ADR 0004: no Run and Debug, no Testing.
         bind(FilterContribution).to(HiddenContributions).inSingletonScope();
         single(FileKindsDecorator, NavigatorTreeDecorator);

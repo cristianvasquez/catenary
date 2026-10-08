@@ -62,6 +62,29 @@ export class ModelActions {
         if (file && await this.model.report(this.model.service.open(file))) await this.afterOpen();
     }
 
+    /**
+     * Open the view `id`. When the open workspace does not have it, first open `workspaceFile`: the workspace that reads the file of
+     * the view (FileContent). A view without a workspace: a message.
+     */
+    async openView(id: string, workspaceFile?: string): Promise<void> {
+        const has = async () => id in await this.model.service.viewLabels();
+        if (!this.model.isOpen || !await has()) {
+            if (!workspaceFile) {
+                this.messages.warn('This view is in no workspace. Move its file into the folder of a workspace, then open the workspace.');
+                return;
+            }
+            if (this.model.snapshot.file !== workspaceFile) {
+                if (!await this.canReplaceModel()) return;
+                if (!await this.model.report(this.model.service.open(workspaceFile))) return;
+            }
+            if (!await has()) {
+                this.messages.warn(`The workspace ${baseName(workspaceFile)} does not read this view. See the warnings of the workspace.`);
+                return;
+            }
+        }
+        await this.editors.open(id);
+    }
+
     /** Pick one of the recent workspace files and open it. */
     async openRecent(paths: readonly string[]): Promise<void> {
         const items = paths.map(path => ({ label: baseName(path), description: dirName(path), path }));

@@ -376,6 +376,30 @@ describe('workspace files', () => {
         expect(r).toMatchObject({ ok: false, error: expect.stringContaining('graphs other than the manifest') });
     });
 
+    it('fileContent: a file holds a workspace, views, both or none, by its content; a view gets the workspace that reads it', async () => {
+        const f = files();
+        const store = await opened(f.ws);
+        const view = (iri: string, label: string) => `<${iri}> { <${iri}> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
+        writeFileSync(join(f.dir, 'plan.trig'), view('urn:name:Plan', 'Plan'));
+        mkdirSync(join(f.dir, 'other', 'deep'), { recursive: true });
+        writeFileSync(join(f.dir, 'other', 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://w3id.org/catenary/workspace#Workspace> . }\n');
+        writeFileSync(join(f.dir, 'other', 'deep', 'far.trig'), view('urn:name:Far', 'Far'));
+        writeFileSync(join(f.dir, 'both.trig'), '<urn:name:workspace> { <urn:name:workspace> <urn:p> 1 . }\n' + view('urn:name:Both', 'Both'));
+        const lone = mkdtempSync(join(tmpdir(), 'catenary-lone-'));
+        dirs.push(lone);
+        writeFileSync(join(lone, 'lone.trig'), view('urn:name:Lone', 'Lone'));
+        await store.idle();
+        const plan = await store.fileContent(join(f.dir, 'plan.trig'));
+        expect(plan).toEqual({ workspace: false, views: [{ id: expect.any(String), label: 'Plan' }], workspaceFile: f.ws });
+        expect(await store.fileContent(f.ws)).toEqual({ workspace: true, views: [] });
+        expect(await store.fileContent(join(f.dir, 'data.ttl'))).toEqual({ workspace: false, views: [] });
+        expect(await store.fileContent(join(f.dir, 'both.trig'))).toMatchObject({ workspace: true, views: [{ label: 'Both' }], workspaceFile: f.ws });
+        expect(await store.fileContent(join(f.dir, 'other', 'deep', 'far.trig'))).toMatchObject({ views: [{ label: 'Far' }], workspaceFile: join(f.dir, 'other', 'workspace.trig') });
+        expect((await store.fileContent(join(lone, 'lone.trig'))).workspaceFile).toBeUndefined();
+        // A view file of any name does not open as a workspace.
+        expect(await new ModelStore().open(join(f.dir, 'plan.trig'))).toEqual({ ok: false, error: 'plan.trig is a view file. Open its workspace, then open the view.' });
+    });
+
     it('a view file does not open as a workspace: an error that names it', async () => {
         const f = files();
         mkdirSync(join(f.dir, 'views'), { recursive: true });

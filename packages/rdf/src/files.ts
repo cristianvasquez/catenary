@@ -2,7 +2,7 @@
 // Workspace file (TriG): the manifest graph only. Model files: every other RDF file of the folder of the workspace file and its
 // subfolders; a file that declares a view:View (any name; `*.view.trig` by default) is a view. Manifest paths are relative to the workspace file.
 
-import { NS, isViewFile } from '@catenary/model';
+import { NS } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { promises as fs } from 'fs';
 import * as path from 'path';
@@ -89,21 +89,33 @@ const isWorkspaceFile = async (file: string) => file.endsWith('.trig') && (await
 /** The name of the workspace file of a folder that has none: the folder opens with the default settings, and a settings change writes it. */
 export const WORKSPACE_FILE = 'workspace.trig';
 
+/** The workspace files of a folder: its `workspace.trig` when it has one, else the TriG files with the workspace namespace. */
+async function workspaceFilesIn(dir: string): Promise<string[]> {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (entries.some(e => e.name === WORKSPACE_FILE)) return [path.join(dir, WORKSPACE_FILE)];
+    const found: string[] = [];
+    for (const e of entries) if (e.isFile() && await isWorkspaceFile(path.join(dir, e.name))) found.push(path.join(dir, e.name));
+    return found.sort();
+}
+
 /**
  * The workspace file to open for a path. A file: the file. A folder: its `workspace.trig`, else its only workspace file, else
- * `workspace.trig` that is not on disk (the folder with the default settings). An error when the folder has several workspace files,
- * and for a view file: it is part of a workspace, not one.
+ * `workspace.trig` that is not on disk (the folder with the default settings). An error when the folder has several workspace files.
  */
 export async function workspaceFileOf(p: string): Promise<{ file: string } | { error: string }> {
-    if (isViewFile(p)) return { error: `${path.basename(p)} is a view file. Open its workspace, then open the view.` };
     if (!(await fs.stat(p).catch(() => undefined))?.isDirectory()) return { file: p };
-    const own = path.join(p, WORKSPACE_FILE);
-    const entries = await fs.readdir(p, { withFileTypes: true }).catch(() => []);
-    if (entries.some(e => e.name === WORKSPACE_FILE)) return { file: own };
-    const found: string[] = [];
-    for (const e of entries) if (e.isFile() && await isWorkspaceFile(path.join(p, e.name))) found.push(e.name);
-    if (found.length > 1) return { error: `${p} has ${found.length} workspace files (${found.sort().join(', ')}): open one of them.` };
-    return { file: found.length ? path.join(p, found[0]) : own };
+    const found = await workspaceFilesIn(p);
+    if (found.length > 1) return { error: `${p} has ${found.length} workspace files (${found.map(f => path.basename(f)).join(', ')}): open one of them.` };
+    return { file: found[0] ?? path.join(p, WORKSPACE_FILE) };
+}
+
+/** The workspace file of the nearest folder that contains `file` and has exactly one workspace file; undefined: none. */
+export async function enclosingWorkspace(file: string): Promise<string | undefined> {
+    for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+        const found = (await workspaceFilesIn(dir)).filter(f => pathKey(f) !== pathKey(file));
+        if (found.length === 1) return found[0];
+        if (found.length > 1 || path.dirname(dir) === dir) return undefined;
+    }
 }
 
 /**

@@ -163,3 +163,25 @@ it('Propose Missing Shapes shows the new shapes in a new view: free label, cards
     expect(calls).toEqual(['changed', 'fit']);
     expect(selection.selection).toEqual({ view: 'v', ids: ['s1', 's2'] });
 });
+
+it('openView: a view of the open workspace opens; else its workspace opens first; a view in no workspace gives a message', async () => {
+    const labels: Record<string, string> = { here: 'Here' };
+    const open = vi.fn(async (file: string) => { labels.far = 'Far'; return { ok: true, file }; });
+    const model = {
+        isOpen: true, snapshot: { file: '/ws/workspace.trig', dirty: false },
+        service: { viewLabels: async () => ({ ...labels }), open },
+        report: async (p: Promise<CommandResult>) => (await p).ok
+    };
+    const editors = { open: vi.fn(async () => ({})) };
+    const messages = { warn: vi.fn() };
+    const actions = Object.assign(new ModelActions(), { model, editors, messages });
+    await actions.openView('here', '/ws/workspace.trig');
+    expect(open).not.toHaveBeenCalled();
+    expect(editors.open).toHaveBeenLastCalledWith('here');
+    await actions.openView('far', '/other/workspace.trig');
+    expect(open).toHaveBeenCalledWith('/other/workspace.trig');
+    expect(editors.open).toHaveBeenLastCalledWith('far');
+    await actions.openView('lone');
+    expect(messages.warn).toHaveBeenCalledTimes(1);
+    expect(editors.open).toHaveBeenCalledTimes(2);
+});

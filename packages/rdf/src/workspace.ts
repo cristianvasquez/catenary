@@ -776,6 +776,23 @@ export function declaredViews(quads: Quad[]): string[] {
 }
 
 /**
+ * What a file holds that Catenary edits, from its content (not its name): the manifest graph (a workspace file), and the views that
+ * it declares (`declaredViews`), with their labels. `viewFile`: a valid view file. `error`: the file is not RDF that Catenary reads.
+ */
+export async function fileContent(file: string): Promise<{ workspace: boolean; views: { iri: string; label: string }[]; viewFile: boolean; error?: string }> {
+    let quads: Quad[];
+    try {
+        quads = await parseRdf(await readText(file), file);
+    } catch (e) {
+        return { workspace: false, views: [], viewFile: false, error: (e as Error).message };
+    }
+    const label = (iri: string) => quads.find(q => q.subject.value === iri && q.predicate.equals(P.label) && q.object.termType === 'Literal')?.object.value ?? iri;
+    const views = declaredViews(quads).map(iri => ({ iri, label: label(iri) }));
+    // viewFile: a view file that the read accepts (viewProblem).
+    return { workspace: quads.some(q => q.graph.value === MANIFEST_GRAPH), views, viewFile: views.length > 0 && !viewProblem(quads) };
+}
+
+/**
  * Read one model file. Statements in named graphs are merged, with a warning. A file that declares a view (`declaredViews`), or a
  * `*.view.trig` file, is a view file: see `viewProblem`.
  */
