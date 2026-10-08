@@ -233,6 +233,10 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 
 /* In a section of the Model container the tree has no height of its own (Theia sets it per view, e.g. .theia-Files). */
 .catenary-explorer { height: 100%; }
+.catenary-file-tree { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.catenary-file-tree > .theia-input { flex: none; margin: 4px; width: calc(100% - 8px); box-sizing: border-box; }
+.catenary-file-tree > .theia-Tree { flex: 1; min-height: 0; }
+.catenary-tree-name mark { background: var(--theia-editor-findMatchHighlightBackground); color: inherit; font-weight: bold; }
 .catenary-explorer .catenary-tree-icon { margin-right: 4px; }
 .catenary-tree-caption { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .catenary-tree-caption.folder { font-weight: 600; }

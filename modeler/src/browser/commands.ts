@@ -25,7 +25,7 @@ import { MarkdownExport } from './diagram/markdown-export';
 import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
 import { COLOR_NAMES, COLOR_ORDER, PRESETS } from './diagram/views';
-import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, CatenaryNode, CatenaryTreeWidget } from './explorer/model-explorer';
+import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, FILE_EXPLORER_ID, ModelExplorerWidget, CatenaryNode, CatenaryTreeWidget } from './explorer/model-explorer';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { WorkspaceSettingsContribution, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
@@ -46,6 +46,7 @@ export namespace OpenModelCommands {
     export const NEW = cmd('catenary.new', 'New Workspace…');
     export const OPEN_RECENT = cmd('catenary.openRecent', 'Open Recent Workspace…');
     export const OPEN_FILE_AS_MODEL = cmd('catenary.openFileAsModel', 'Open as Workspace');
+    export const OPEN_FILE_EXPLORER = cmd('catenary.openFileExplorer', 'Open in Model Explorer');
     export const SAVE = cmd('catenary.save', 'Save Workspace');
     export const EXPORT_MARKDOWN = cmd('catenary.exportMarkdown', 'Export Markdown…');
     export const INSERT_VIEW = cmd('catenary.insertView', 'Insert View…');
@@ -326,6 +327,11 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
                 execute, isVisible: applies, isEnabled: uri => applies(uri) && (!needsOpen || this.model.isOpen)
             }));
         navigator(OpenModelCommands.OPEN_FILE_AS_MODEL, uri => a.openModel(uri), trig, false);
+        navigator(OpenModelCommands.OPEN_FILE_EXPLORER, async uri => {
+            const widget = await this.widgetManager.getOrCreateWidget<ModelExplorerWidget>(FILE_EXPLORER_ID, { file: uri.path.fsPath() });
+            if (!widget.isAttached) this.shell.addWidget(widget, { area: 'left' });
+            await this.shell.activateWidget(widget.id);
+        }, uri => [...this.model.snapshot.files.files, ...this.model.snapshot.files.views].some(f => f.path === uri.path.fsPath()));
 
         registry.registerCommand(ModelCommands.BACK, { execute: () => this.history.back(), isEnabled: () => this.history.canGoBack() });
         registry.registerCommand(ModelCommands.FORWARD, { execute: () => this.history.forward(), isEnabled: () => this.history.canGoForward() });
@@ -440,7 +446,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         addMenuItems(menus, EXPLORER_SURFACE, c.DELETE_UNPLACED.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, DIAGRAM_SURFACE, c.NEW_GROUP.id, c.NEW_INSTANCE_HERE.id, c.NEW_NODE_SHAPE_HERE.id, c.TOGGLE_HIDDEN.id, c.LAYOUT_VIEW.id);
         const o = OpenModelCommands;
-        addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_FILE_AS_MODEL.id);
+        addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_FILE_AS_MODEL.id, o.OPEN_FILE_EXPLORER.id);
         // After New File and New Folder (Theia: no order, sorted by label).
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, { commandId: c.NEW_VIEW_IN_FOLDER.id, label: 'New View', when: 'explorerResourceIsFolder', order: 'z' });
         addMenuItems(menus, NavigatorContextMenu.MODIFICATION, o.MARK_IMPORTED.id, o.MARK_OWN.id);

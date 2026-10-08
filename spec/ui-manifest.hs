@@ -52,6 +52,7 @@ law_projectEditsKeepDomain c = isDiagramEdit c ==> sameSet (domainAfter c) domai
 isDiagramEdit :: EditCommand -> Bool
 isDiagramEdit c = case c of
   AddToView {} -> True
+  PlaceExplorerElements {} -> True
   ShowRelations {} -> True
   ShowAsEdge {} -> True
   RemoveFromView {} -> True
@@ -1237,7 +1238,7 @@ editorFor f Nothing = AsText f
 -- Concepts follow schemes and broader/narrower links. Reveal opens a chosen path. Ordinary selection opens no folder.
 -- Delete Elements Not Placed in a View walks the instances and relations of a folder at all depths.
 -- It tests own placements, not parts. It confirms before deletion.
--- Limit: logical constraints have no rows. Concept cycles can expand without end.
+-- Limit: logical constraints have no rows. A repeated ancestor key stops expansion.
 pageSize :: Int
 pageSize = 100
 folderPage :: Int -> [String] -> ([String], Maybe Int)   -- pages read, row labels: shown rows and the "N more" count
@@ -1251,6 +1252,21 @@ folderOf [] True = ["rdfs:Resource"]
 folderOf ts _ = ts
 notPlaced :: Element -> Bool                        -- Delete Elements Not Placed in a View: own placements only
 notPlaced e = null (placements e)
+
+-- | Open in Model Explorer opens a dockable tree for a file. Reopening that file focuses the same tree.
+-- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
+-- Fuzzy filtering matches characters in order, ranks word starts and consecutive matches, and highlights matching characters.
+-- Ancestors remain visible. Clearing the filter restores expansion state. The filter does not change drag membership.
+-- A folder drag carries all descendant elements, including hidden rows, with duplicates removed.
+-- A canvas drop places existing elements in one undo step. A folder drag never creates an instance.
+-- A file-tree drop confirms the total count and destination, then moves source statements in one undo step (§2.4).
+-- A same-file drop does nothing. File transfers require a file-scoped source tree.
+folderDrag :: [Id] -> [[Id]] -> [Id]
+folderDrag selected descendants = nub (selected ++ concat descendants)
+law_folderDragAll :: [Id] -> [[Id]] -> [Id] -> Bool
+law_folderDragAll selected descendants hidden =
+  sameSet (folderDrag selected descendants) (nub (selected ++ concat descendants))
+  && all (\i -> i `notElem` concat descendants || i `elem` folderDrag selected descendants) hidden
 
 -- 8.6 Search ------------------------------------------------------------------------
 

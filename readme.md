@@ -101,6 +101,8 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/do
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window; a headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
+The file navigator command **Open in Model Explorer** (`catenary.openFileExplorer`) opens a file-scoped tree. `explorerChildren(key, currentView, file, filter)` accepts source-file and fuzzy filters. `explorerDrag(selection)` resolves complete folder contents. The `moveElementsToFile` edit moves source statements, and `placeExplorerElements` places a mixed selection in one undo step.
+
 ## License
 
 Copyright (C) 2026 Cristian Vasquez.

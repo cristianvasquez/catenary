@@ -4,7 +4,7 @@
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import {
     Classes, ConceptDef, ExplorerPath, ShapesModel, ExplorerRow, NS, VIEW_CLASS, classDef, classKey, conceptPath, conceptRoots, formatPath, rangeText,
-    searchKind, valueSetOf, verbalizeProperty
+    searchKind, valueSetOf, verbalizeProperty, fuzzyMatch
 } from '@catenary/model';
 import { ModelGraph, VALIDATION_GRAPH, labelFromIri } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
@@ -103,6 +103,25 @@ export function explorerChildren(ctx: ExplorerContext, key?: string): ExplorerRo
         case 'shape': return propertyRows(ctx, arg);
         default: return [];
     }
+}
+
+/** Filter full query branches, not loaded frontend nodes. Ancestors survive when a descendant matches. */
+export function filteredExplorerChildren(ctx: ExplorerContext, key: string | undefined, includes: (id: string) => boolean, filter = ''): ExplorerRow[] {
+    const visit = (key: string | undefined, path: Set<string>): { row: ExplorerRow; score: number }[] => {
+        if (key && path.has(key)) return [];
+        const next = new Set(path);
+        if (key) next.add(key);
+        return explorerChildren(ctx, key).flatMap(row => {
+            const children = row.folder ? visit(row.key, next) : [];
+            const own = !!row.element && includes(row.element);
+            const match = fuzzyMatch(row.name, filter);
+            // A grouping row stays only when an in-scope descendant matches.
+            if (!(own && match) && !children.length) return [];
+            const score = Math.max(own && match ? match.score : -Infinity, ...children.map(c => c.score));
+            return [{ row: { ...row, ...(row.element && !own ? { element: undefined, card: undefined } : {}), ...(row.kind === 'folder' ? { badge: String(explorerElements(ctx, row.key).filter(includes).length) } : {}) }, score }];
+        }).sort((a, b) => b.score - a.score || a.row.name.localeCompare(b.row.name));
+    };
+    return visit(key, new Set()).map(r => r.row);
 }
 
 /** Class folder names use the shared label rule. */

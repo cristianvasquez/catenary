@@ -3,7 +3,7 @@
 
 import type { ActionTarget, SelectionActions } from './actions';
 import type { AppearanceData, GestureInfo, Occurrence, Showing, ViewGesture } from './view-ui';
-import type { ExplorerPath, ExplorerRow } from './explorer';
+import type { ExplorerDrag, ExplorerPath, ExplorerRow } from './explorer';
 import type { OutlineNode } from './outline';
 import type { SelectionLinks, View } from './doc';
 import type { Choices, DeletePlan, ElementRow, LinkSection, NewLabelKind, RelationChoices } from './prompts';
@@ -18,11 +18,12 @@ export interface ModelQueries {
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
     formData(instanceId: string): string;
     /** Model explorer (ADR 0006): rows of a node key (none: the top folders); `currentView`: the view of the current view editor. */
-    explorerChildren(key?: string, currentView?: string): ExplorerRow[];
+    explorerChildren(key?: string, currentView?: string, file?: string, filter?: string): ExplorerRow[];
     /** Paths to the rows of an element in the Model explorer (Reveal). */
     explorerPaths(id: string): ExplorerPath[];
     /** Element ids of the rows under a node key of the Model explorer, at any depth. */
-    explorerElements(key: string): string[];
+    explorerElements(key: string, file?: string): string[];
+    explorerDrag(selection: ExplorerDrag): string[];
     /** Properties panel (ADR 0007): the data of an instance, relation, property shape or view; no id: the counts of the store. */
     properties(id?: string): ElementProperties | undefined;
     /** Outline of a view (ADR 0007): groups, cards and shown relations; nodes of `selection` (ids, the view of the selection) are selected. */
@@ -89,9 +90,10 @@ export interface ModelQueries {
 /** The parameter names of each query (the RPC service and the CLI list them). The type requires one entry for each query. */
 export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly string[] } = {
     formData: ['instanceId'],
-    explorerChildren: ['key', 'currentView'],
+    explorerChildren: ['key', 'currentView', 'file', 'filter'],
     explorerPaths: ['id'],
-    explorerElements: ['key'],
+    explorerElements: ['key', 'file'],
+    explorerDrag: ['selection'],
     properties: ['id'],
     outline: ['viewId', 'selection'],
     problems: [],

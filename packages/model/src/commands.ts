@@ -12,6 +12,10 @@ export type Point = { x: number; y: number };
 /** Edit commands. Each command is one undo step. */
 export type EditCommand =
     | { kind: 'createInstance'; classIri: string; label: string; view?: string; at?: Point }
+    /** Move only statements supplied by source. Other origins and resource IRIs stay unchanged. */
+    | { kind: 'moveElementsToFile'; source: string; destination: string; ids: string[] }
+    /** Place a mixed explorer selection in one transaction, without creating instances. */
+    | { kind: 'placeExplorerElements'; view: string; ids: string[]; at: Point }
     /**
      * Label of an instance, view, node shape, value set or concept (id of its IRI: iriId): the label predicates that it has, else its default.
      * `targetClass`: a node shape also gets this target class (the creation follow-up names the shape and its class in one step).

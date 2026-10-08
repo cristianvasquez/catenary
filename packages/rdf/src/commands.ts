@@ -183,6 +183,29 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
             return ops.setStatements(g, meta, c.id, c.values);
         case 'delete':
             return deleteElements(g, c.ids);
+        case 'moveElementsToFile':
+            return fail('File moves require the ModelStore transaction.');
+        case 'placeExplorerElements': {
+            const cards = new Set<string>(), relations: string[] = [], views: string[] = [];
+            const model = shapes.shapesIndex(g).model;
+            for (const id of new Set(c.ids)) {
+                if (ops.viewTerm(g, id)) views.push(id);
+                else if (ops.relationTerms(g, id)) {
+                    const r = ops.relationTerms(g, id)!;
+                    cards.add(elementId(r.s)); cards.add(elementId(r.o)); relations.push(id);
+                } else if (model.properties[id]) cards.add(model.properties[id].owner);
+                else if (ops.cardTerm(g, id)) cards.add(id);
+                else return fail('This selection contains an element that cannot be placed in a view.');
+            }
+            if (!cards.size && !views.length) return fail('This folder has no elements to place.');
+            placeAround(g, c.view, [...cards], c.at);
+            for (const id of relations) ops.hideEdge(g, c.view, id, false);
+            for (const target of views) {
+                const result = run(g, meta, { kind: 'addViewReference', view: c.view, target, at: c.at });
+                if (!result.ok) return result;
+            }
+            return ok([...cards]);
+        }
         case 'addToView': {
             const known = c.ids.filter(id => ops.cardTerm(g, id));
             if (!known.length) return ops.gone('element', c.ids.join(', '));

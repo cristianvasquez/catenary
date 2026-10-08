@@ -320,6 +320,19 @@ defaultFileChoice ws name fs = fromMaybe (name ++ ".ttl") (defaultFile ws <|> li
     rank f = (factFormat f /= Turtle, factPath f)
 defaultFileTx :: WorkspaceSettings -> Tx FilePath   -- defaultFileChoice on the current files
 
+-- | A file transfer moves only selected statements supplied by its source file. Other origins and IRIs stay unchanged.
+-- Reason: dragging from one file must not change another file's definitions.
+-- Transfers require two writable model data files. A same-file transfer changes nothing.
+-- Structural shape nodes move with their parent. Reject a transfer that leaves a structural parent in the source file.
+transferOrigins :: FilePath -> FilePath -> [FilePath] -> [FilePath]
+transferOrigins source destination origins
+  | source == destination || source `notElem` origins = origins
+  | otherwise = nub (destination : filter (/= source) origins)
+law_fileTransferOrigins :: FilePath -> FilePath -> [FilePath] -> Bool
+law_fileTransferOrigins source destination origins =
+  all (\f -> f == source || f == destination || (f `elem` origins) == (f `elem` after)) (origins ++ after)
+  where after = transferOrigins source destination origins
+
 -- 2.5 Settings and prefixes -------------------------------------------------------
 
 -- | Prefixes: one table per backend, from the workspace file. Prefix declarations in model files do not fill it.
@@ -670,20 +683,23 @@ law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b o
 
 -- | The history model (packages/rdf/src/history.ts). The head of a stack is its top.
 -- A command records its patch, the entry of the migration queue that it applied and the entries that it proposed.
--- A command without a patch changes nothing. Undo and redo move one step and restore the queue of that step.
+-- A command without quad or origin changes changes nothing. Undo and redo restore both changes and the migration queue.
 -- A read from disk (open, reload, a watcher change) clears the history (§10.4).
 data Migration = Migration { migrationId :: Id, migrationReason :: String } deriving Eq
-data Step = Step { stepPatch :: Patch, queueBefore, queueAfter :: [Migration] } deriving Eq
+data OriginChange = OriginChange Quad [FilePath] [FilePath] deriving Eq
+data Step = Step { stepPatch :: Patch, stepOrigins :: [OriginChange], transferFiles :: [FilePath], queueBefore, queueAfter :: [Migration] } deriving Eq
 data History = History { undoStack, redoStack :: [Step], queue :: [Migration] } deriving Eq
 historyLimit :: Int
 historyLimit = 200
 record :: Patch -> Maybe Id -> [Migration] -> History -> History
-record p applied proposed h
-  | null p = h
+record p = recordWithOrigins p [] []
+recordWithOrigins :: Patch -> [OriginChange] -> [FilePath] -> Maybe Id -> [Migration] -> History -> History
+recordWithOrigins p origins files applied proposed h
+  | null p && null origins = h
   | otherwise = h { undoStack = take historyLimit (s : undoStack h), redoStack = [], queue = q }
   where
     q = filter (\m -> Just (migrationId m) /= applied) (queue h) ++ proposed
-    s = Step p (queue h) q
+    s = Step p origins files (queue h) q
 takeUndo, takeRedo :: History -> Maybe (Step, History)
 takeUndo h = case undoStack h of
   [] -> Nothing
@@ -701,10 +717,12 @@ law_undoThenRedo :: History -> Bool
 law_undoThenRedo h = maybe True (\(_, h') -> fmap snd (takeRedo h') == Just h) (takeUndo h)
 law_historyBounded :: Patch -> Maybe Id -> [Migration] -> History -> Bool
 law_historyBounded p a ms h = length (undoStack h) <= historyLimit ==> length (undoStack (record p a ms h)) <= historyLimit
+lastOriginChanges :: Backend -> [OriginChange]
+lastTransferFiles :: Backend -> [FilePath]
 law_backendUsesHistory :: Backend -> EditCommand -> Bool
 law_backendUsesHistory b c =
   let (r, b') = step b (Execute c)
-  in not (failed r) ==> undoStack (historyOf b') == undoStack (record (lastPatch b') Nothing [] (historyOf b))
+  in not (failed r) ==> undoStack (historyOf b') == undoStack (recordWithOrigins (lastPatch b') (lastOriginChanges b') (lastTransferFiles b') Nothing [] (historyOf b))
 
 -- 6. Edit commands -----------------------------------------------------------
 
@@ -732,6 +750,7 @@ data EditCommand
   | Rename Id String
   | SetUri Id (Maybe Iri)                                    -- Nothing: mint from the label
   | SetStatements Id [(Iri, [Term])]
+  | MoveElementsToFile FilePath FilePath [Id]                -- source, destination, elements
   | Delete [Id]
   | CreateRelation NewEnd Iri NewEnd (Maybe Id)              -- subject, predicate, object, view
   | ReconnectRelation Id RelationEnd Id (Maybe Side)
@@ -739,6 +758,7 @@ data EditCommand
   | CreateView String (Maybe FilePath) (Maybe FilePath)   -- label, folder, file
   | DuplicateView Id (Maybe FilePath)                      -- view, file of the copy (as createView)
   | AddToView Id [Id] Point
+  | PlaceExplorerElements Id [Id] Point                     -- mixed cards, properties, relations and views
   | ShowRelations Id [Id] Point
   | ShowAsEdge Id Id Point
   | RemoveFromView Id [Id]
@@ -778,6 +798,7 @@ data EditCommand
 viewNamed :: EditCommand -> Maybe Id
 viewNamed c = case c of
   AddToView v _ _ -> Just v
+  PlaceExplorerElements v _ _ -> Just v
   ShowRelations v _ _ -> Just v
   ShowAsEdge v _ _ -> Just v
   RemoveFromView v _ -> Just v
@@ -1380,6 +1401,8 @@ priorOrigin = manifestOnly
 subjectFile = manifestOnly
 referrerFile = manifestOnly
 readOnlyFile = manifestOnly
+lastOriginChanges = manifestOnly
+lastTransferFiles = manifestOnly
 importedFiles = manifestOnly
 fileStatements = manifestOnly
 currentSettings = manifestOnly

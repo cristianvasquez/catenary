@@ -6,6 +6,7 @@ export * from './commands';
 export * from './diagram-schema';
 export * from './doc';
 export * from './explorer';
+export * from './fuzzy';
 export * from './form';
 export * from './ids';
 export * from './labels';

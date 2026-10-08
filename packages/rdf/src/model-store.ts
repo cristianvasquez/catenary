@@ -9,7 +9,7 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, idIri, viewFigures, FileContent
+    TripleIndex, ViewFigures, idIri, viewFigures, FileContent, ExplorerDrag
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
@@ -17,13 +17,13 @@ import * as path from 'path';
 import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
 import { executeCommand } from './commands';
-import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements } from './explorer';
+import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements, filteredExplorerChildren } from './explorer';
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
-import { History } from './history';
+import { History, OriginChange } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
 import { formData, selectionLinks } from './queries';
@@ -165,8 +165,20 @@ export class ModelStore implements ModelQueries {
     }
 
     /** Rows of a node key of the Model explorer; no key: the top folders. Nothing when no model is open. */
-    explorerChildren(key?: string, currentView?: string): ExplorerRow[] {
-        return this.file ? explorerChildren(this.explorerContext(currentView), key) : [];
+    explorerChildren(key?: string, currentView?: string, file?: string, filter?: string): ExplorerRow[] {
+        if (!this.file) return [];
+        const ctx = this.explorerContext(currentView);
+        return file || filter ? filteredExplorerChildren(ctx, key, id => !file || this.elementInFile(id, file), filter) : explorerChildren(ctx, key);
+    }
+
+    protected elementInFile(id: string, file: string): boolean {
+        const ws = this.ws;
+        const known = ws?.knownFile(path.resolve(this.folder, file));
+        if (!ws || !known) return false;
+        const rel = relationTriple(id);
+        const term = this.shapesIndex().property.get(id)?.term ?? elementTerm(id);
+        const quads = rel ? this.graph.match(rel.s, rel.p, rel.o) : term ? this.graph.match(term) : [];
+        return quads.some(q => ws.filesOfQuad(q).includes(known));
     }
 
     /** Paths to the rows of an element in the Model explorer (Reveal). */
@@ -209,8 +221,13 @@ export class ModelStore implements ModelQueries {
     }
 
     /** Element ids of the rows under a node key of the Model explorer, at any depth. */
-    explorerElements(key: string): string[] {
-        return this.file ? explorerElements(this.explorerContext(), key) : [];
+    explorerElements(key: string, file?: string): string[] {
+        return this.file ? explorerElements(this.explorerContext(), key).filter(id => !file || this.elementInFile(id, file)) : [];
+    }
+
+    explorerDrag(selection: ExplorerDrag): string[] {
+        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])]
+            .filter(id => !selection.file || this.elementInFile(id, selection.file));
     }
 
     /** Model properties panel (ADR 0007): the data of an element (properties.ts); no id: the counts of the store. */
@@ -530,23 +547,36 @@ export class ModelStore implements ModelQueries {
             if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
             ws.newViewFile = file;
         }
+        const origins: OriginChange[] = [];
+        if (command.kind === 'moveElementsToFile') {
+            command = { ...command, source: ws.knownFile(path.resolve(this.folder, command.source)) ?? command.source,
+                destination: ws.knownFile(path.resolve(this.folder, command.destination)) ?? command.destination };
+            const imported = [command.source, command.destination].filter(f => ws.isImported(f));
+            if (imported.length) return importedFailure(this.folder, imported);
+            const problem = ws.transferProblem([command.source, command.destination]);
+            if (problem) return { ok: false, error: problem };
+        }
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
-            const r = executeCommand(g, this.metamodel, command);
+            const r = command.kind === 'moveElementsToFile'
+                ? ws.transfer(command.source, command.destination, command.ids, origins)
+                : executeCommand(g, this.metamodel, command);
             const files = r.ok ? ws.importedChanges(g.changes()) : [];
             return files.length ? importedFailure(this.folder, files) : r;
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
-        if (patch.length) {
+        if (patch.length || origins.length) {
             this.commitNotes.push(command.kind);
             this.track(patch);
+            ws.applyOrigins(origins);
         }
-        this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed);
+        this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed, origins,
+            command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
         this.graph.proposed = [];
-        if (patch.length) {
-            this.contentChanged(patch, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
-            this.changed('edit', patch);
+        if (patch.length || origins.length) {
+            this.contentChanged(origins.length ? undefined : patch, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
+            this.changed('edit', origins.length ? undefined : patch);
         }
         ws.newViewFolder = ws.newViewFile = undefined;
         const v = 'value' in r ? r.value : undefined;
@@ -565,14 +595,17 @@ export class ModelStore implements ModelQueries {
         const next = this.history.peek(reason);
         if (!next || !this.ws) return { ok: true };
         const applied: Patch = reason === 'undo' ? [...next.patch].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })) : next.patch;
-        const files = this.ws.importedChanges(applied);
+        const files = [...new Set([...this.ws.importedChanges(applied), ...next.transferFiles.filter(f => this.ws!.isImported(f))])];
         if (files.length) return importedFailure(this.folder, files);
+        const problem = this.ws.transferProblem(next.transferFiles);
+        if (problem) return { ok: false, error: problem };
         const step = this.history.take(reason)!;
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         this.graph[reason](step.patch);
         this.track(applied);
-        this.contentChanged(applied, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
-        this.changed(reason, step.patch);
+        this.ws.applyOrigins(step.origins, reason === 'undo');
+        this.contentChanged(step.origins.length ? undefined : applied, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
+        this.changed(reason, step.origins.length ? undefined : step.patch);
         return { ok: true };
     }
 

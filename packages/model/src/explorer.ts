@@ -19,7 +19,7 @@ export interface ExplorerRow {
     view?: string;
     /** Element id of the card that a drop on a view adds. */
     card?: string;
-    /** Class folder: the class of New Instance and of a drop on a view. */
+    /** Class folder: the class of the explicit New Instance action. */
     classIri?: string;
     badge?: string;
     /** Grey: an element with no placement in any view. */
@@ -37,6 +37,10 @@ export interface ExplorerRow {
 
 /** A path to the row of an element: node keys from a top folder to the row key; `name`: the name of the top folder. */
 export interface ExplorerPath { keys: string[]; name: string }
+
+/** A drag describes all selected folders, not their currently visible children. */
+export interface ExplorerDrag { file?: string; ids: string[]; folders: string[] }
+export const EXPLORER_DRAG = 'application/x-catenary-explorer';
 
 /** Key of the class folder of `iri`. */
 export const classKey = (iri: string) => 'class:' + iri;

@@ -556,6 +556,54 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
+test('browser: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
+  const source = path.join(workspace, 'data.ttl'), destination = path.join(workspace, 'shapes.ttl');
+  const exec = command => { const r = cli('exec', JSON.stringify(command)).result; assert.equal(r.ok, true, JSON.stringify(r)); return r; };
+  exec({ kind: 'createNodeShape', label: 'Transfer shape', targetClass: 'urn:test:Transfer' });
+  const first = exec({ kind: 'createInstance', classIri: 'urn:test:Transfer', label: 'Alpha Beta' }).id;
+  const second = exec({ kind: 'createInstance', classIri: 'urn:test:Transfer', label: 'Hidden member' }).id;
+  const view = exec({ kind: 'createView', label: 'Drop target' }).id;
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+  await page.locator('svg.sprotty-graph:visible').waitFor();
+  const openTree = async name => {
+    await navigator(page);
+    await navNode(page, name).first().click({ button: 'right' });
+    await page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: /^Open in Model Explorer$/ }).click();
+    const panel = page.locator(`[id=${JSON.stringify('catenary-file-explorer:' + path.join(workspace, name))}]`);
+    await panel.getByRole('textbox', { name: 'Filter model elements', exact: true }).waitFor();
+    return panel;
+  };
+  const tree = await openTree('data.ttl');
+  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
+  await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
+  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).count(), 0);
+  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).locator('mark').count(), 4);
+  const key = 'class:urn:test:Transfer';
+  const folderName = cli('rpc', 'explorerChildren', 'null', 'null', JSON.stringify(source)).result.find(r => r.key === key).name;
+  const folder = tree.locator('.theia-TreeNode').filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp('^' + folderName + '$') }) }).first();
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await folder.dispatchEvent('dragstart', { dataTransfer: transfer });
+  const payload = await transfer.evaluate(d => JSON.parse(d.getData('application/x-catenary-explorer')));
+  assert.deepEqual(payload, { file: source, ids: [], folders: [key] });
+  assert.equal(await transfer.evaluate(d => d.getData('application/x-catenary-class')), '');
+  await page.locator('svg.sprotty-graph:visible').dispatchEvent('drop', { dataTransfer: transfer, clientX: 650, clientY: 350 });
+  await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Hidden member' }).waitFor();
+  assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
+  // Reopening uses the existing widget and retains its filter.
+  const reopened = await openTree('data.ttl');
+  assert.equal(await reopened.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
+  const target = await openTree('shapes.ttl');
+  await target.locator('.catenary-file-tree').dispatchEvent('drop', { dataTransfer: transfer });
+  await page.getByText(`Move 2 elements from ${source} to ${destination}? Only statements from the source file move.`, { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  await target.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
+  await target.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
+  assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result, []);
+  assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(destination)).result.sort(), [first, second].sort());
+  assert.equal(cli('rpc', 'undo').result.ok, true);
+  assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
+}));
+
 test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async ({ page, cli }) => {
   const status = cli('status');
   assert.equal(status.build.stale, false);

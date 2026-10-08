@@ -15,7 +15,7 @@ import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-int
 import { CommandRegistry, MessageService, URI } from '@theia/core';
 import { ApplicationShell, ContextMenuRenderer, FrontendApplicationContribution, OpenerService, open } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { COMMON_DATATYPES, DEFAULT_SIZE, GestureInfo, LATENT_SUFFIX, Point, Rect, Side, TYPES, TargetList, ViewGesture, compactIri, formatPath, ownerOfLabel } from '@catenary/model';
+import { COMMON_DATATYPES, DEFAULT_SIZE, EXPLORER_DRAG, ExplorerDrag, GestureInfo, LATENT_SUFFIX, Point, Rect, Side, TYPES, TargetList, ViewGesture, compactIri, formatPath, ownerOfLabel } from '@catenary/model';
 import { VIEW_SCHEME } from '../../common/protocol';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ModelActions } from '../actions';
@@ -32,7 +32,6 @@ import { PendingMemberAction } from './pending-members';
 
 /** Drag data types from the Model Explorer. */
 export const DND_INSTANCES = 'application/x-catenary-instances';
-export const DND_CLASS = 'application/x-catenary-class';
 export const DND_RELATIONS = 'application/x-catenary-relations';
 export const DND_VIEW = 'application/x-catenary-view';
 /** Files dragged from the Theia file navigator (ApplicationShell.setDraggedEditorUris). */
@@ -295,8 +294,8 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         // effectAllowed 'copy' of the explorer, and the browser then cancels the drop.
         const accept = (e: DragEvent) => {
             const types = e.dataTransfer?.types ?? [];
-            if (types.includes(DND_INSTANCES) || types.includes(DND_CLASS) || types.includes(DND_RELATIONS) || types.includes(DND_VIEW)
-                || types.includes(DND_FILES)) {
+            if (types.includes(DND_INSTANCES) || types.includes(DND_RELATIONS) || types.includes(DND_VIEW)
+                || types.includes(DND_FILES) || types.includes(EXPLORER_DRAG)) {
                 e.preventDefault();
                 e.stopPropagation();
                 e.dataTransfer!.dropEffect = 'copy';
@@ -305,19 +304,22 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         host.addEventListener('dragenter', accept, true);
         host.addEventListener('dragover', accept, true);
         host.addEventListener('drop', e => {
+            const explorer = e.dataTransfer?.getData(EXPLORER_DRAG);
             const ids = e.dataTransfer?.getData(DND_INSTANCES);
-            const cls = e.dataTransfer?.getData(DND_CLASS);
             const relations = e.dataTransfer?.getData(DND_RELATIONS);
             const targetView = e.dataTransfer?.getData(DND_VIEW);
             // Files from the file navigator (ADR 0004): a view file is a view reference, another file a file reference.
             const files = (e.dataTransfer?.getData(DND_FILES) ?? '').split('\n').filter(Boolean).map(u => new URI(u).path.fsPath());
-            if (!ids && !cls && !relations && !targetView && !files.length) return;
+            if (!explorer && !ids && !relations && !targetView && !files.length) return;
             e.preventDefault();
             e.stopPropagation();
             const at = this.editors.toModel(w, e.clientX, e.clientY);
             const view = viewIdOf(w);
-            if (cls) this.actions.newInstance(cls, view, at);
-            else if (relations) this.actions.showRelations(view, relations.split('\n').filter(Boolean), at);
+            if (explorer) {
+                let selection: ExplorerDrag;
+                try { selection = JSON.parse(explorer); } catch { return; }
+                void this.model.service.explorerDrag(selection).then(ids => this.model.execute({ kind: 'placeExplorerElements', view, ids, at }));
+            } else if (relations) this.actions.showRelations(view, relations.split('\n').filter(Boolean), at);
             else if (targetView) this.actions.addViewReference(view, targetView, at);
             else if (files.length) void this.actions.addFileReferences(view, files, at);
             else this.actions.addToView(view, ids!.split('\n').filter(Boolean), at);

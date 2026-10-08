@@ -44,7 +44,7 @@ import { MarkdownExport } from './diagram/markdown-export';
 import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
 import { ExplorerFocusContext, ModelExplorerContribution, CatenaryFileOpenHandler } from './commands';
-import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
+import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, FILE_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
 import { FileKindsDecorator } from './file-kinds-decorator';
 import { NavigatorTreeDecorator } from '@theia/navigator/lib/browser/navigator-decorator-service';
@@ -169,6 +169,11 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
             props: explorerProps, widget: ModelExplorerWidget, tree: ModelTree
         }).get(ModelExplorerWidget));
         widgetFactory(MODEL_EXPLORER_ID, ModelExplorerWidget);
+        bind(WidgetFactory).toDynamicValue(ctx => ({ id: FILE_EXPLORER_ID, createWidget: (options: { file: string }) => {
+            const widget = ctx.container.get(ModelExplorerWidget);
+            widget.configure(options.file);
+            return widget;
+        } })).inSingletonScope();
         bindViewContribution(bind, ModelExplorerContribution);
         bind(FrontendApplicationContribution).toService(ModelExplorerContribution);
         bind(TabBarToolbarContribution).toService(ModelExplorerContribution);

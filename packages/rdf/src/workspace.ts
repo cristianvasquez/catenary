@@ -17,7 +17,9 @@ import {
     parseRdf, readManifest, serializeRdf, writeProblem
 } from './files';
 import { Change, ModelGraph, P, SKOS_TYPES, V, cmp, fileGraphIri, fileOfGraph, mint } from './graph';
-import { elementTerm } from './ids';
+import { elementTerm, relationTriple } from './ids';
+import { OriginChange } from './history';
+import { shapesIndexOf } from './shapes-read';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
 import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
@@ -512,6 +514,67 @@ export class Workspace {
         }
         for (const q of adds) this.setOrigin(tripleKey(q), new Set([this.place(q.subject)]), q);
         this.touch(changes.map(c => c.quad));
+    }
+
+    /** Refuse transfers to unknown, view, invalid or read-only files before changing anything. */
+    transferProblem(files: string[]): string | undefined {
+        for (const file of files) {
+            const record = this.modelFiles.get(file);
+            if (!record) return `${path.basename(file)} is not a model data file.`;
+            const problem = record.error ?? this.writeProblemOf(file);
+            if (problem) return problem;
+        }
+        return undefined;
+    }
+
+    /** Run inside a graph transaction. Provenance changes are applied only after that transaction succeeds. */
+    transfer(source: string, destination: string, ids: string[], origins: OriginChange[]): CommandResult {
+        const problem = this.transferProblem([source, destination]);
+        if (problem) return { ok: false, error: problem };
+        if (source === destination) return { ok: true };
+        const g = this.graph, index = shapesIndexOf(g);
+        const subjects = new Set<string>();
+        const relations = new Set<string>();
+        for (const id of ids) {
+            const rel = relationTriple(id);
+            if (rel) relations.add(tripleKey(rdf.quad(rel.s, rel.p, rel.o)));
+            else {
+                const term = index.property.get(id)?.term ?? elementTerm(id);
+                if (!term) return { ok: false, error: 'This element cannot move between files.' };
+                subjects.add(term.value);
+            }
+        }
+        const fromGraph = rdf.namedNode(fileGraphIri(source)), toGraph = rdf.namedNode(fileGraphIri(destination));
+        const shapes = g.match(null, null, null, fromGraph);
+        // Structural shape nodes travel with their selected parent. Referenced classes and named target shapes do not.
+        const structural = new Set(['property', 'or', 'and', 'xone', 'not', 'qualifiedValueShape', 'path', 'inversePath', 'alternativePath', 'zeroOrMorePath', 'oneOrMorePath', 'zeroOrOnePath', 'in', 'languageIn', 'ignoredProperties'].map(p => NS.sh + p));
+        structural.add(NS.rdf + 'first'); structural.add(NS.rdf + 'rest');
+        for (let more = true; more;) {
+            more = false;
+            for (const q of shapes) if (subjects.has(q.subject.value) && structural.has(q.predicate.value) && q.object.termType === 'NamedNode'
+                && !subjects.has(q.object.value) && shapes.some(s => s.subject.equals(q.object))) {
+                subjects.add(q.object.value); more = true;
+            }
+        }
+        if (shapes.some(q => structural.has(q.predicate.value) && subjects.has(q.object.value) && !subjects.has(q.subject.value))) {
+            return { ok: false, error: 'A nested shape has an unselected parent. Select its parent shapes before moving it.' };
+        }
+        for (const q of shapes) if (subjects.has(q.subject.value) || relations.has(tripleKey(q))) {
+            g.remove(q); g.add(q.subject, q.predicate, q.object, toGraph);
+        }
+        for (const triple of this.byFile.get(source)?.values() ?? []) if (subjects.has(triple.subject.value) || relations.has(tripleKey(triple))) {
+            const quad = rdf.quad(triple.subject, triple.predicate, triple.object, g.model);
+            const before = [...this.origin.get(tripleKey(quad)) ?? []];
+            origins.push({ quad, before, after: [...new Set([...before.filter(f => f !== source), destination])] });
+        }
+        return { ok: true };
+    }
+
+    applyOrigins(changes: OriginChange[], backwards = false): void {
+        for (const c of changes) {
+            this.setOrigin(tripleKey(c.quad), new Set(backwards ? c.before : c.after), c.quad);
+            if (this.stale !== 'all') for (const file of [...c.before, ...c.after]) this.stale.add('f:' + file);
+        }
     }
 
     /** The files of statement `k` (the triple of `q`) are `files`. */

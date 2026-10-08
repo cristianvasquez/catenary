@@ -2,6 +2,10 @@
 
 import type { Migration, MigrationChange } from '@catenary/model';
 import type { Patch } from './graph';
+import type { Quad } from '@rdfjs/types';
+
+/** Provenance is independent of quad presence: identical triples can belong to several files. */
+export interface OriginChange { quad: Quad; before: string[]; after: string[] }
 
 const UNDO_LIMIT = 200;
 
@@ -10,6 +14,8 @@ export type QueueEntry = Omit<Migration, 'count'>;
 /** One undo step: the patch, and the patch queue before and after it. */
 export interface Step {
     patch: Patch;
+    origins: OriginChange[];
+    transferFiles: string[];
     queue: [QueueEntry[], QueueEntry[]];
 }
 
@@ -27,13 +33,13 @@ export class History {
      * Record a command. The queue loses the entry that the command applied (`applied`) and gets the entries that it proposed. A command
      * without a patch changes nothing (its proposed entries still use ids).
      */
-    record(patch: Patch, applied: string | undefined, proposed: { change: MigrationChange; reason: string }[]): void {
+    record(patch: Patch, applied: string | undefined, proposed: { change: MigrationChange; reason: string }[], origins: OriginChange[] = [], transferFiles: string[] = []): void {
         const before = this.migrations;
         let queue = applied ? before.filter(m => m.id !== applied) : before;
         queue = [...queue, ...proposed.map(p => ({ id: `m${++this.seq}`, reason: p.reason, ...p.change }))];
-        if (!patch.length) return;
+        if (!patch.length && !origins.length) return;
         this.migrations = queue;
-        this.undoStack.push({ patch, queue: [before, queue] });
+        this.undoStack.push({ patch, origins, transferFiles, queue: [before, queue] });
         if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
         this.redoStack = [];
     }

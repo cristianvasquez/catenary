@@ -40,6 +40,11 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Open a view: select its file in the navigator, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
+- Open a file tree: right-click a model file and select **Open in Model Explorer**. Reopening the file focuses its existing panel.
+- Filter a tree: type ordered characters in its fuzzy filter. Matches can have gaps. The tree highlights matches and keeps their ancestors visible.
+- Drag a folder to place all its descendants, including elements hidden by the filter. A folder drag does not create instances.
+- Move elements: drag from one file tree to another. Confirm the element count and destination. Only statements supplied by the source file move. Other files and resource IRIs stay unchanged. Undo restores the transfer.
+- Move a shape with its structural nodes. If a nested shape has an unselected parent, select that parent before moving it. View files are not file-move destinations.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
 - Card controls (halo): Reveal, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
 - Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group; its relations and arrows end at the group.
