@@ -1,6 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { renderEdge } from '../src/browser/diagram/edge-chrome';
+import { edgeGeometry, renderEdge } from '../src/browser/diagram/edge-chrome';
 import type { VNode } from 'snabbdom';
+
+describe('centered edge labels (UI §7.4 edgeLabelFraction)', () => {
+    const props = {
+        source: { x: 0, y: 0, width: 200, height: 180 },
+        target: { x: 450, y: 20, width: 200, height: 120 },
+        fromSide: '' as const, toSide: '' as const, lane: 0, lanes: 1, zoom: 1,
+        name: 'prov:qualifiedAttribution', parts: [{ text: 'prov:qualifiedAttribution' }],
+        color: '', selected: false, hover: false, hidden: false
+    };
+
+    it('centers an elbow label on its horizontal run without start alignment', () => {
+        const geometry = edgeGeometry({ ...props, elbow: true });
+        const run = / ([\d.-]+),([\d.-]+) L([\d.-]+),([\d.-]+)$/.exec(geometry.path)!;
+        expect(geometry.label.x).toBeCloseTo((Number(run[1]) + Number(run[3])) / 2);
+        expect(geometry.label.y).toBe(Number(run[2]));
+        const edge = renderEdge({ ...props, elbow: true });
+        const label = (edge.children as VNode[]).find(n => n.data?.class?.['edge-label'])!;
+        expect(label.data!.attrs!.x).toBe(geometry.label.x);
+        expect(label.data!.class!.start).toBeUndefined();
+    });
+
+    it('keeps the logic handle above the label and away from controls below the edge', () => {
+        const edge = renderEdge({ ...props, elbow: true, selected: true, logicHandle: true, canPutBack: true, card: '1' });
+        const children = edge.children as VNode[];
+        const label = children.find(n => n.data?.class?.['edge-label'])!;
+        const handle = children.find(n => n.data?.class?.['logic-handle'])!;
+        const y = Number(/translate\([^,]+,([^)]+)\)/.exec(String(handle.data!.attrs!.transform))![1]);
+        const fontSize = Number.parseFloat(String(label.data!.style!.fontSize));
+        expect(y + 8).toBeLessThan(Number(label.data!.attrs!.y) - fontSize / 2);
+    });
+
+    it('places curved labels at the curve midpoint rather than toward the target', () => {
+        const geometry = edgeGeometry(props);
+        expect(geometry.label).toEqual(geometry.mid);
+        expect(geometry.label.x).toBeCloseTo((geometry.p1.x + geometry.p2.x - 9.6) / 2);
+    });
+});
 
 describe('return-to-row control', () => {
     it.each([true, false])('renders only when the property can return to a row (%s)', canPutBack => {

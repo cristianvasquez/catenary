@@ -501,7 +501,6 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-logic.selected > .link { stroke: var(--catenary-accent); }
 .catenary-verbal { font-style: italic; margin-bottom: 4px; }
 .catenary-migration { border-left: 3px solid var(--catenary-accent); padding: 4px 8px; margin-bottom: 8px; }
-.catenary-edge > .edge-label.start { text-anchor: start; }
 .catenary-inline-input { position: fixed; z-index: 10000; width: 320px; font-size: 14px; padding: 4px 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
 .catenary-name-input, .catenary-embedded-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; height: 100%; padding: 0 2px; font: inherit; color: var(--catenary-fg); background: var(--catenary-bg, #242424); border: 1px solid var(--catenary-accent); border-radius: 3px; outline: none; text-align: inherit; }
 .catenary-name-input { min-height: 22px; }

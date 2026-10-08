@@ -1064,6 +1064,10 @@ labelSegment segs = case sortOn (negate . len) [s | s@((_, y1), (_, y2)) <- segs
   [] -> Nothing
   where len ((x1, _), (x2, _)) = abs (x2 - x1)
 
+-- | Center each label on its chosen segment, or at the curve midpoint, to reduce overlap with target cards.
+edgeLabelFraction :: Double
+edgeLabelFraction = 0.5
+
 -- 7.5 Layout ------------------------------------------------------------------------
 
 -- | Apply Layout runs only on request. Layered uses ELK left-to-right. Force uses cola.js and overlap removal.

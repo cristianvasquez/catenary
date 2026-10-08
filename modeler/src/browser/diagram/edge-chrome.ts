@@ -87,7 +87,7 @@ function arrowHead(tip: Pt, n: Pt, size: number): string {
     return `M${tip.x},${tip.y} L${base.x - n.y * w},${base.y + n.x * w} L${base.x + n.y * w},${base.y - n.x * w} Z`;
 }
 
-/** `label`: the point of a path label (60 % along; logical constraints link to it). */
+/** `label`: the centered path label point; logical constraints link to it. */
 export interface EdgeGeometry { path: string; p1: Pt; p2: Pt; n1: Pt; n2: Pt; mid: Pt; label: Pt; tail: Pt; elbow?: boolean }
 
 /**
@@ -147,7 +147,7 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
         const h = { x: e2.x - run, y: p2.y };
         const d = Math.max(20, (h.x - p1.x) * 0.5);
         const path = `M${p1.x},${p1.y} C${p1.x + d},${p1.y} ${h.x - d},${h.y} ${h.x},${h.y} L${e2.x},${e2.y}`;
-        return { path, p1, p2, n1: NORMAL.right, n2: NORMAL.left, mid: { x: h.x, y: h.y }, label: { x: h.x + 10, y: h.y }, tail: { x: e2.x - 6 * k, y: e2.y }, elbow: true };
+        return { path, p1, p2, n1: NORMAL.right, n2: NORMAL.left, mid: { x: (h.x + e2.x) / 2, y: h.y }, label: { x: (h.x + e2.x) / 2, y: h.y }, tail: { x: e2.x - 6 * k, y: e2.y }, elbow: true };
     }
     const fromSide = p.fromSide || facingSide(p.source, p.target);
     const toSide = p.toSide || facingSide(p.target, p.source);
@@ -161,7 +161,7 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
     const c2 = { x: e2.x + n2.x * d, y: e2.y + n2.y * d };
     return {
         path: `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${e2.x},${e2.y}`, p1, p2, n1, n2,
-        mid: bez(p1, c1, c2, e2, 0.5), label: bez(p1, c1, c2, e2, 0.6), tail: bez(p1, c1, c2, e2, 0.9)
+        mid: bez(p1, c1, c2, e2, 0.5), label: bez(p1, c1, c2, e2, 0.5), tail: bez(p1, c1, c2, e2, 0.9)
     };
 }
 
@@ -175,7 +175,7 @@ export function renderEdge(p: EdgeProps): VNode {
             class: { 'edge-end': true }, attrs: { 'data-end': end, cx: at.x + n.x * gap * k, cy: at.y + n.y * gap * k, r: END_R * k, 'stroke-width': 2 * k }
         }));
     const label = p.parts
-        ? s('text', { class: { 'edge-label': true, parts: true, start: elbow }, attrs: { x: at.x, y: at.y - fontSize * 0.7 }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } },
+        ? s('text', { class: { 'edge-label': true, parts: true }, attrs: { x: at.x, y: at.y - fontSize * 0.7 }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } },
             p.parts.map(x => s('tspan', { class: { muted: !x.color }, style: x.color ? { fill: x.color } : {} }, [x.text])))
         : s('text', { class: { 'edge-label': true }, attrs: { x: mid.x, y: mid.y }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } }, [p.hidden ? `${p.name} (hidden)` : p.name]);
     const cardW = Math.max(26, 8 + (p.card?.length ?? 0) * 8) * k, cardH = 18 * k;
@@ -192,7 +192,7 @@ export function renderEdge(p: EdgeProps): VNode {
         s('circle', { attrs: { r: 8 * k, 'stroke-width': 1.5 * k } }),
         s('path', { attrs: { d: ARROW_PATHS.in, transform: `scale(${k})`, 'stroke-width': 1.5 } })
     ])] : [];
-    const handle = p.logicHandle && p.selected ? [s('g', { class: { 'logic-handle': true }, attrs: { transform: `translate(${at.x},${at.y + 14 * k})` } }, [
+    const handle = p.logicHandle && p.selected ? [s('g', { class: { 'logic-handle': true }, attrs: { transform: `translate(${at.x},${at.y - fontSize * 1.7 - 8 * k})` } }, [
         s('title', {}, ['Drag to another edge of this shape: logical constraint (or)']),
         s('circle', { attrs: { r: 8 * k, 'stroke-width': 1.5 * k } }),
         s('circle', { class: { dot: true }, attrs: { r: 3 * k } })
