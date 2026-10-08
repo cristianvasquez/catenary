@@ -1159,17 +1159,17 @@ moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" 
 cardinalityButtons :: [Cardinality]
 cardinalityButtons = [(Nothing, Just 1), (Just 1, Just 1), (Nothing, Nothing), (Just 1, Nothing)]
 
--- | An instance with statements in protected files (spec/manifest.hs §2.6) shows a Protected row with those files.
--- A protected label, IRI or value outside the SHACL form shows as text, without an edit or remove control.
--- The SHACL form edits all its values. A change of a protected value fails, and the window asks to unprotect the files.
--- Edits, undo and redo ask in the same way (spec/manifest.hs §2.6). Cancel keeps the files protected, and the form shows the model.
+-- | An instance with statements in imported files (spec/manifest.hs §2.6) shows an Imported row with those files.
+-- An imported label, IRI or value outside the SHACL form shows as text, without an edit or remove control.
+-- The SHACL form edits all its values. A change of an imported value fails, and the window asks to mark the files as own.
+-- Edits, undo and redo ask in the same way (spec/manifest.hs §2.6). Cancel keeps the files imported, and the form shows the model.
 data ValueControl = EditControl | TextOnly deriving Eq
-valueControl :: Bool -> ValueControl                -- the value is in a protected file
+valueControl :: Bool -> ValueControl                -- the value is in an imported file
 valueControl locked = if locked then TextOnly else EditControl
-data UnprotectAnswer = UnprotectAndRun | KeepProtected deriving Eq
-afterRefusal :: UnprotectAnswer -> [String]          -- what the window does after a change failed on protected files
-afterRefusal UnprotectAndRun = ["unprotect the files", "run the change again"]
-afterRefusal KeepProtected = []
+data MarkOwnAnswer = MarkOwnAndRun | KeepImported deriving Eq
+afterRefusal :: MarkOwnAnswer -> [String]            -- what the window does after a change failed on imported files
+afterRefusal MarkOwnAndRun = ["mark the files as own", "run the change again"]
+afterRefusal KeepImported = []
 
 -- | A view exposes Markdown Notes in Properties. Its external-link icon moves editing into a native Theia Markdown editor beside the diagram.
 -- Opening the editor saves the Properties field first and removes that text area. One editing surface prevents competing local drafts.
@@ -1197,14 +1197,15 @@ law_notesGuarded v original text = case viewNotesEdit v original text of
 -- Each file shows what its triples contain (views, shapes, instances). A view row opens its view.
 -- Opening a file selects its own editor when there is one, else source text.
 -- Each file tail shows one letter per kind: W workspace, V view, D default file, S shapes, C concepts, I instances,
--- P protected, ! not read. The context menu of a model file or view file has Protect, or Unprotect when it is protected.
+-- R imported (read only), ! not read. The context menu of a model file or view file has Mark as Imported, or Mark as Own
+-- when it is imported.
 data FileContent = HasViews | HasShapes | HasInstances deriving Eq
-data FileMark = MarkWorkspace | MarkView | MarkDefault | MarkShapes | MarkConcepts | MarkInstances | MarkProtected | MarkNotRead
+data FileMark = MarkWorkspace | MarkView | MarkDefault | MarkShapes | MarkConcepts | MarkInstances | MarkImported | MarkNotRead
   deriving (Eq, Enum, Bounded)
 markLetter :: FileMark -> Char
-markLetter m = "WVDSCIP!" !! fromEnum m
-protectMenuItem :: Bool -> String                  -- the file is protected
-protectMenuItem protected = if protected then "Unprotect" else "Protect"
+markLetter m = "WVDSCIR!" !! fromEnum m
+importMenuItem :: Bool -> String                   -- the file is imported
+importMenuItem imported = if imported then "Mark as Own" else "Mark as Imported"
 editorFor :: FilePath -> Maybe Element -> Document   -- a file, its view
 editorFor _ (Just v) = OpenView v
 editorFor f Nothing = AsText f
@@ -1379,19 +1380,19 @@ exportZoom = 1
 
 -- 10. Settings ---------------------------------------------------------------
 
--- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, protection,
+-- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files,
 -- export order.
 -- Person settings stay outside the workspace: fonts, theme, visible right-area sections.
 -- Workspace settings open as a main-area document, independent of the element selection (open.md D6).
 -- Each kind of new subject (Shapes, SKOS / Collections, Everything else) is Auto or a file. Auto stores "near".
 -- Everything else also sets the default file, the file of a subject that Auto cannot place. Its Auto stores no default file.
 -- Browse selects an existing file in the workspace folder. A typed path that does not exist makes a new file at the first write.
--- A protected file is not a file of new subjects: the change is rejected with its message.
--- Protected lists the ws:protect globs, with Add and Remove, and Import File. Import File is also in the File menu.
--- Import File asks for an RDF file, then shows the path of the copy and the prefixes that it added.
+-- An imported file is not a file of new subjects: the change is rejected with its message.
+-- Imported lists the ws:imported globs, with Add and Remove, and Import Files. Import Files is also in the File menu.
+-- Import Files asks for one or more RDF files, then shows the paths of the copies and the prefixes that the import added.
 -- A rejected change shows its message below its row, not as a notification.
 data SettingOwner = ProjectSetting | PersonSetting deriving Eq
-data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | Protection | ExportOrder | Fonts | Theme | VisibleSections
+data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | ExportOrder | Fonts | Theme | VisibleSections
   deriving (Eq, Enum, Bounded)
 ownerOfSetting :: Setting -> SettingOwner
 ownerOfSetting s = if s `elem` [Fonts, Theme, VisibleSections] then PersonSetting else ProjectSetting

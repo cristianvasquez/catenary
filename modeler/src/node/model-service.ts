@@ -35,8 +35,8 @@ export class ModelServiceImpl implements ModelService, Disposable {
     create(workspacePath: string, placement?: WorkspaceSettings['placement']): Promise<CommandResult> { return this.store.create(workspacePath, placement); }
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult> { return this.store.setPrefixes(prefixes); }
     setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return this.store.setSettings(settings); }
-    setProtected(file: string, on: boolean): Promise<CommandResult> { return this.store.setProtected(file, on); }
-    importFile(source: string): Promise<ImportResult> { return this.store.importFile(source); }
+    setImported(file: string, on: boolean): Promise<CommandResult> { return this.store.setImported(file, on); }
+    importFiles(sources: string[]): Promise<ImportResult> { return this.store.importFiles(sources); }
     setExportViews(ids: string[]): Promise<CommandResult> { return this.store.setExportViews(ids); }
     async dismissMigration(id: string): Promise<void> { this.store.dismissMigration(id); }
     save(): Promise<CommandResult> { return this.store.save(); }

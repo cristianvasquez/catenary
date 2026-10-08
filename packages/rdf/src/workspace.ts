@@ -57,7 +57,7 @@ export class Workspace {
     protected placement: Placement;
     protected exclude: string[];
     /** Globs of the protected files (manifest ws:protect): Catenary reads them and refuses each change of their statements. */
-    protected protect: string[];
+    protected imported: string[];
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
     prefixes?: Record<string, string>;
     /** View IRIs of the last HTML export, in order (manifest ws:exportViews). */
@@ -84,7 +84,7 @@ export class Workspace {
         this.defaultFileSetting = manifest.defaultFile;
         this.placement = manifest.placement;
         this.exclude = manifest.exclude;
-        this.protect = manifest.protect;
+        this.imported = manifest.imported;
         this.prefixes = manifest.prefixes;
         this.exportViews = manifest.exportViews;
     }
@@ -156,15 +156,15 @@ export class Workspace {
             defaultFile: { path: this.defaultFile, set: this.defaultFileSetting !== undefined },
             placement: { ...this.placement },
             exclude: [...this.exclude],
-            protect: [...this.protect],
+            imported: [...this.imported],
             files: [...this.modelFiles.values()].sort((a, b) => cmp(a.path, b.path))
                 .map(f => ({
-                    path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), ...(this.isProtected(f.path) ? { protected: true } : {}),
+                    path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), ...(this.isImported(f.path) ? { imported: true } : {}),
                     kinds: [...kinds.get(f.path) ?? []].sort()
                 })),
             views: views.map(v => {
                 const file = this.viewFiles.get(elementTerm(v)!.value)!.path;
-                return { view: v, path: file, dirty: saved.views.has(elementTerm(v)!.value), ...(this.isProtected(file) ? { protected: true } : {}) };
+                return { view: v, path: file, dirty: saved.views.has(elementTerm(v)!.value), ...(this.isImported(file) ? { imported: true } : {}) };
             })
         };
     }
@@ -207,7 +207,7 @@ export class Workspace {
     protected manifest(): Manifest {
         return {
             ...(this.defaultFileSetting ? { defaultFile: this.defaultFileSetting } : {}), placement: { ...this.placement }, exclude: [...this.exclude],
-            protect: [...this.protect],
+            imported: [...this.imported],
             ...(this.prefixes ? { prefixes: this.prefixes } : {}),
             // Only views that exist: a deleted view leaves the file (its undo brings it back).
             ...(this.exportViews ? { exportViews: this.exportViews.filter(v => this.graph.isView(rdf.namedNode(v))) } : {})
@@ -345,32 +345,32 @@ export class Workspace {
         };
     }
 
-    /** Undefined, or why Catenary does not write this file: its format (`writeProblem`), its content (`noWrite`), or protection. */
+    /** Undefined, or why Catenary does not write this file: its format (`writeProblem`), its content (`noWrite`), or an import mark (ws:imported). */
     protected writeProblemOf(file: string): string | undefined {
         return writeProblem(file) ?? (this.noWrite.has(file) ? `${path.basename(file)}: ${this.noWrite.get(file)}` : undefined)
-            ?? (this.isProtected(file) ? `${path.basename(file)} is protected.` : undefined);
+            ?? (this.isImported(file) ? `${path.basename(file)} is an imported file.` : undefined);
     }
 
-    /** A ws:protect glob matches the path of the file relative to the workspace folder. */
-    isProtected(file: string, globs = this.protect): boolean {
+    /** A ws:imported glob matches the path of the file relative to the workspace folder. */
+    isImported(file: string, globs = this.imported): boolean {
         if (!globs.length || !isInside(this.folder, file)) return false;
         const rel = portableRelative(this.folder, file);
         return globs.some(g => globRegExp(g).test(rel));
     }
 
-    /** The protect globs (manifest ws:protect). */
-    get protectGlobs(): string[] {
-        return [...this.protect];
+    /** The imported globs (manifest ws:imported). */
+    get importedGlobs(): string[] {
+        return [...this.imported];
     }
 
     /**
-     * The protected files that a patch changes (sorted): a statement of the model graph that leaves a protected file, any change of a
-     * shapes graph or a view graph of a protected file. A statement that the patch removes and adds again (or the reverse) is no
+     * The imported files that a patch changes (sorted): a statement of the model graph that leaves an imported file, any change of a
+     * shapes graph or a view graph of an imported file. A statement that the patch removes and adds again (or the reverse) is no
      * change. Call it before `track`: `origin` has the files of the statements before the patch. A new statement of the model graph
      * never goes to a protected file (`track`).
      */
-    protectedChanges(changes: readonly Change[]): string[] {
-        if (!this.protect.length) return [];
+    importedChanges(changes: readonly Change[]): string[] {
+        if (!this.imported.length) return [];
         const first = new Map<string, Change>(), last = new Map<string, Change>();
         for (const c of changes) {
             const k = `${tripleKey(c.quad)} ${termKey(c.quad.graph)}`;
@@ -381,9 +381,30 @@ export class Workspace {
         for (const [k, c] of last) {
             if (first.get(k)!.op !== c.op) continue;
             if (c.quad.graph.equals(this.graph.model) && c.op === 'add') continue;
-            for (const f of this.filesOfQuad(c.quad)) if (this.isProtected(f)) files.add(f);
+            for (const f of this.filesOfQuad(c.quad)) if (this.isImported(f)) files.add(f);
         }
         return [...files].sort(cmp);
+    }
+
+    /**
+     * The statements of the model graph that SHACL validation reads (spec/manifest.hs §9). Imported files are read only, and they can
+     * be large: their statements are not validated, except the ones that own statements need. So: the statements of own files, all
+     * statements of their subjects (also from imported files), and the rdf:type statements of the IRIs that they refer to.
+     * Undefined: no imported globs, so validation reads the whole model graph.
+     */
+    validationTriples(): Quad[] | undefined {
+        if (!this.imported.length) return undefined;
+        const out = new Map<string, Quad>();
+        for (const [file, quads] of this.byFile) if (!this.isImported(file)) for (const [k, q] of quads) out.set(k, q);
+        const subjects = new Map<string, Quad['subject']>(), objects = new Map<string, Quad['object']>();
+        for (const q of out.values()) {
+            subjects.set(termKey(q.subject), q.subject);
+            if (q.object.termType === 'NamedNode') objects.set(termKey(q.object), q.object);
+        }
+        const add = (q: Quad) => { const t = toTriple(q); out.set(tripleKey(t), t); };
+        for (const s of subjects.values()) this.graph.match(s, null, null, this.graph.model).forEach(add);
+        for (const [k, o] of objects) if (!subjects.has(k)) this.graph.match(o as Quad['subject'], P.type, null, this.graph.model).forEach(add);
+        return [...out.values()];
     }
 
     /** A file differs from the saved one. */
@@ -549,24 +570,24 @@ export class Workspace {
 
     /**
      * Check and apply settings of the manifest: the default file and the file of each kind (a model file, or a new RDF file in the
-     * workspace folder; a kind: also "near"), the exclude globs, the protect globs (§2.6). `reread`: the exclude globs changed, so the
+     * workspace folder; a kind: also "near"), the exclude globs, the imported globs (§2.6). `reread`: the exclude globs changed, so the
      * files must be read again.
      */
-    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): { error: string } | { reread: boolean } {
-        // Protection first: the files of new subjects are checked against the new globs. An error keeps the old globs.
-        const was = this.protect;
-        if (settings.protect) {
-            const globs = [...new Set(settings.protect.map(g => g.trim()).filter(Boolean))];
-            const problem = this.protectProblem(globs);
+    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): { error: string } | { reread: boolean } {
+        // Imported globs first: the files of new subjects are checked against the new globs. An error keeps the old globs.
+        const was = this.imported;
+        if (settings.imported) {
+            const globs = [...new Set(settings.imported.map(g => g.trim()).filter(Boolean))];
+            const problem = this.importedProblem(globs);
             if (problem) return { error: problem };
-            this.protect = globs;
+            this.imported = globs;
         }
         const r = this.applyPlaces(settings);
-        if ('error' in r) this.protect = was;
+        if ('error' in r) this.imported = was;
         return r;
     }
 
-    /** `applySettings` without the protect globs. */
+    /** `applySettings` without the imported globs. */
     protected applyPlaces(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[] }): { error: string } | { reread: boolean } {
         /** A path relative to the workspace folder: the file, or why it cannot be a file for new subjects. */
         const fileOf = (rel: string): { file: string } | { error: string } => {
@@ -593,27 +614,27 @@ export class Workspace {
             this.defaultFileSetting = r.file;
         }
         this.placement = next;
-        // A file of new subjects that the new globs protect: Auto again (its subjects go near their kind, else to the default file).
-        for (const k of PLACE_KINDS) if (this.placement[k] !== NEAR && this.isProtected(this.placement[k])) this.placement[k] = NEAR;
-        if (this.defaultFileSetting && this.isProtected(this.defaultFileSetting)) this.defaultFileSetting = undefined;
+        // A file of new subjects that the new globs imported: Auto again (its subjects go near their kind, else to the default file).
+        for (const k of PLACE_KINDS) if (this.placement[k] !== NEAR && this.isImported(this.placement[k])) this.placement[k] = NEAR;
+        if (this.defaultFileSetting && this.isImported(this.defaultFileSetting)) this.defaultFileSetting = undefined;
         if (!settings.exclude) return { reread: false };
         this.exclude = settings.exclude.map(g => g.trim()).filter(Boolean);
         return { reread: true };
     }
 
     /**
-     * Undefined, or why these protect globs cannot apply: a file that they protect newly has changes that are not written, or blank
+     * Undefined, or why these imported globs cannot apply: a file that they mark newly has changes that are not written, or blank
      * nodes on disk (the IRIs of a read would change at each read, and statements in other files would lose their subject).
      * The caller writes the pending changes first: a write gives the blank nodes of a file that Catenary writes their IRIs.
      */
-    protected protectProblem(globs: string[]): string | undefined {
+    protected importedProblem(globs: string[]): string | undefined {
         const saved = this.savedState();
         const dirty = new Set([...saved.files, ...[...saved.views].map(v => this.viewFiles.get(v)?.path)]);
         for (const f of [...this.modelFiles.values(), ...this.viewFiles.values()]) {
-            if (!this.isProtected(f.path, globs) || this.isProtected(f.path)) continue;
+            if (!this.isImported(f.path, globs) || this.isImported(f.path)) continue;
             const name = portableRelative(this.folder, f.path);
-            if (dirty.has(f.path)) return `${name} has changes that are not written. Protect it after the write.`;
-            if (f.blanks) return `${name} has blank nodes that Catenary cannot write as IRIs. Import the file instead: the import writes a copy with IRIs.`;
+            if (dirty.has(f.path)) return `${name} has changes that are not written. Mark it as imported after the write.`;
+            if (f.blanks) return `${name} has blank nodes that Catenary cannot write as IRIs. Import the file instead: Import File writes a copy with IRIs.`;
         }
         return undefined;
     }
@@ -755,7 +776,7 @@ export async function createWorkspace(workspacePath: string, placement: Partial<
         }
         const view = rdf.namedNode(mint('Main'));
         const viewQuads = [rdf.quad(view, P.type, V.View, view), rdf.quad(view, P.label, rdf.literal('Main'), view)];
-        const manifest: Manifest = { placement: chosen, exclude: [], protect: [], prefixes: { ...DEFAULT_PREFIXES } };
+        const manifest: Manifest = { placement: chosen, exclude: [], imported: [], prefixes: { ...DEFAULT_PREFIXES } };
         const viewFile = path.join(defaultViewsFolder(workspacePath), `main${VIEW_EXT}`);
         try {
             await fs.writeFile(workspacePath, await writeTrig(manifestQuads(manifest, workspacePath)), { flag: 'wx' });
