@@ -556,7 +556,7 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
-test('browser: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
+test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
   const source = path.join(workspace, 'data.ttl'), destination = path.join(workspace, 'shapes.ttl');
   const exec = command => { const r = cli('exec', JSON.stringify(command)).result; assert.equal(r.ok, true, JSON.stringify(r)); return r; };
   exec({ kind: 'createNodeShape', label: 'Transfer shape', targetClass: 'urn:test:Transfer' });
@@ -592,6 +592,21 @@ test('browser: file explorer menu, fuzzy filter, folder placement and source-onl
   // Reopening uses the existing widget and retains its filter.
   const reopened = await openTree('data.ttl');
   assert.equal(await reopened.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
+  // Typing while a row has focus must use the same filter, not Theia's highlight-only search.
+  const filter = reopened.getByRole('textbox', { name: 'Filter model elements', exact: true });
+  await filter.fill('');
+  await folder.locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
+  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
+  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).click();
+  await page.keyboard.type('albe');
+  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor({ state: 'hidden', timeout: 3000 });
+  assert.equal(await filter.inputValue(), 'albe');
+  await filter.fill('zzzz-no-such-element');
+  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor({ state: 'hidden' });
+  assert.equal(await reopened.locator('.catenary-tree-name').count(), 0);
+  await page.keyboard.press('Escape');
+  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
+  assert.equal(await filter.inputValue(), '');
   const target = await openTree('shapes.ttl');
   await target.locator('.catenary-file-tree').dispatchEvent('drop', { dataTransfer: transfer });
   await page.getByText(`Move 2 elements from ${source} to ${destination}? Only statements from the source file move.`, { exact: true }).waitFor();
@@ -602,6 +617,16 @@ test('browser: file explorer menu, fuzzy filter, folder placement and source-onl
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(destination)).result.sort(), [first, second].sort());
   assert.equal(cli('rpc', 'undo').result.ok, true);
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
+  // The main explorer has the same type-to-filter behavior.
+  cli('run', 'catenary.toggleModel');
+  const main = page.locator('#catenary-model-explorer');
+  await main.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + folderName + '$') }).click();
+  await page.keyboard.type('albe');
+  await main.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
+  assert.equal(await main.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
+  await main.locator('.catenary-tree-name').filter({ hasText: /^Agent$/ }).waitFor({ state: 'hidden' });
+  assert.equal(await main.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).count(), 0);
+  assert.equal(await main.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).count(), 1);
 }));
 
 test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async ({ page, cli }) => {

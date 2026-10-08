@@ -162,7 +162,8 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         bind(PreferenceContribution).toConstantValue(layoutPreferences);
 
         // Model tab (model tree). The files: the Theia file navigator (ADR 0004).
-        const explorerProps = { contextMenuPath: EXPLORER_CONTEXT_MENU, multiSelect: true, search: true, globalSelection: true, expandOnlyOnExpansionToggleClick: false };
+        // The explorer owns one backend filter. Theia's type-ahead search only highlights loaded rows.
+        const explorerProps = { contextMenuPath: EXPLORER_CONTEXT_MENU, multiSelect: true, search: false, globalSelection: true, expandOnlyOnExpansionToggleClick: false };
         single(RecentWorkspaces);
         single(SidePanelSizes);
         bind(ModelExplorerWidget).toDynamicValue(ctx => createTreeContainer(ctx.container, {

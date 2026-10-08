@@ -403,6 +403,33 @@ export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableS
 @injectable()
 export class ModelExplorerWidget extends CatenaryTreeWidget {
     protected filterTimer?: ReturnType<typeof setTimeout>;
+    protected filterInput: HTMLInputElement | null = null;
+
+    protected filterChanged(value: string): void {
+        this.modelTree.setFilter(value);
+        this.update();
+        clearTimeout(this.filterTimer);
+        this.filterTimer = setTimeout(() => { if (!this.isDisposed) void this.model.refresh(); }, 120);
+    }
+
+    /** Typing on a row and typing in the input use the same filter, including unloaded descendants. */
+    protected typeToFilter(event: KeyboardEvent): void {
+        if (!this.modelFrontend.isOpen || (event.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || event.isComposing) return;
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f') {
+            event.preventDefault(); event.stopPropagation();
+            this.filterInput?.focus(); this.filterInput?.select();
+            return;
+        }
+        if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+        event.preventDefault(); event.stopPropagation();
+        this.filterChanged(this.modelTree.filter + event.key);
+        this.filterInput?.focus();
+        // React updates the controlled input after this event. Keep the caret after the inserted character.
+        if (this.filterInput) {
+            this.filterInput.value = this.modelTree.filter;
+            this.filterInput.setSelectionRange(this.filterInput.value.length, this.filterInput.value.length);
+        }
+    }
 
     configure(file: string): void {
         this.modelTree.file = file;
@@ -426,13 +453,15 @@ export class ModelExplorerWidget extends CatenaryTreeWidget {
             const payload = e.dataTransfer.getData(EXPLORER_DRAG);
             void this.dropInFile(payload, tree.file);
         }}>
-            <input className='theia-input' aria-label='Filter model elements' placeholder='Fuzzy filter…' value={tree.filter}
-                onKeyDown={e => e.stopPropagation()} onChange={e => {
-                    tree.setFilter(e.target.value);
-                    this.update();
-                    clearTimeout(this.filterTimer);
-                    this.filterTimer = setTimeout(() => { if (!this.isDisposed) void this.model.refresh(); }, 120);
-                }} />
+            <input ref={input => { this.filterInput = input; }} className='theia-input' aria-label='Filter model elements' placeholder='Fuzzy filter…' value={tree.filter}
+                onKeyDown={e => {
+                    e.stopPropagation();
+                    if (e.key === 'Escape') {
+                        e.preventDefault(); this.filterChanged(''); this.node.focus();
+                    } else if (e.key === 'ArrowDown') {
+                        e.preventDefault(); this.node.focus();
+                    }
+                }} onChange={e => this.filterChanged(e.target.value)} />
             {super.renderTree(model)}
         </div>;
     }
@@ -458,6 +487,12 @@ export class ModelExplorerWidget extends CatenaryTreeWidget {
         this.title.label = 'Model';
         this.title.caption = 'Model: the resources of every graph by type, relations, concepts';
         this.title.iconClass = codicon('symbol-class');
+        const onKeyDown = (event: KeyboardEvent) => this.typeToFilter(event);
+        this.node.addEventListener('keydown', onKeyDown, true);
+        this.toDispose.push({ dispose: () => {
+            clearTimeout(this.filterTimer);
+            this.node.removeEventListener('keydown', onKeyDown, true);
+        } });
     }
 
     protected updateTitle(): void {}

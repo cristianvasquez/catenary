@@ -41,7 +41,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
 - Open a file tree: right-click a model file and select **Open in Model Explorer**. Reopening the file focuses its existing panel.
-- Filter a tree: type ordered characters in its fuzzy filter. Matches can have gaps. The tree highlights matches and keeps their ancestors visible.
+- Filter a tree: type while a row has focus, or use the fuzzy filter input. Matches can have gaps. The tree hides nonmatching branches and highlights matching characters. It keeps ancestors of matches visible. Press Escape in the input to clear the filter.
 - Drag a folder to place all its descendants, including elements hidden by the filter. A folder drag does not create instances.
 - Move elements: drag from one file tree to another. Confirm the element count and destination. Only statements supplied by the source file move. Other files and resource IRIs stay unchanged. Undo restores the transfer.
 - Move a shape with its structural nodes. If a nested shape has an unselected parent, select that parent before moving it. View files are not file-move destinations.

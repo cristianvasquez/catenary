@@ -1257,6 +1257,15 @@ notPlaced e = null (placements e)
 -- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
 -- Fuzzy filtering matches characters in order, ranks word starts and consecutive matches, and highlights matching characters.
 -- Ancestors remain visible. Clearing the filter restores expansion state. The filter does not change drag membership.
+-- Typing on a focused row uses the same filter input. Nonmatching branches disappear. Escape clears the input and restores the tree.
+-- Reason: a second highlight-only search leaves nonmatching rows visible and gives conflicting results.
+data ExplorerFilterInput = RowTyping String | FilterTyping String
+explorerFilterText :: ExplorerFilterInput -> String
+explorerFilterText (RowTyping text) = text
+explorerFilterText (FilterTyping text) = text
+law_typeToFilter :: String -> Bool
+law_typeToFilter text = explorerFilterText (RowTyping text) == explorerFilterText (FilterTyping text)
+
 -- A folder drag carries all descendant elements, including hidden rows, with duplicates removed.
 -- A canvas drop places existing elements in one undo step. A folder drag never creates an instance.
 -- A file-tree drop confirms the total count and destination, then moves source statements in one undo step (§2.4).
