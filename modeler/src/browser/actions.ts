@@ -355,8 +355,9 @@ export class ModelActions {
     // ------------------------------------------------------------ views
 
     /**
-     * New view "unnamed view N", opened. A dialog asks for the name of its view file, in `folder` (default: views/). Rename the view
-     * (F2) in the view editor or Properties: the file name does not change, the read finds the view by the content of the file.
+     * New view "unnamed view N", opened. A dialog asks for the name of its view file, in `folder` (default: views/). The file dialog is
+     * the only one: no label follow-up. Rename the view (F2) in the view editor or Properties when you want; the file name does not
+     * change, the read finds the view by the content of the file.
      */
     async newView(folder?: string): Promise<void> {
         const file = await this.askViewFile(folder);
@@ -364,7 +365,6 @@ export class ModelActions {
         const r = await this.model.execute({ kind: 'createView', label: await this.service.newLabel('view'), file });
         if (!r.ok) return;
         await this.editors.open(r.id!);
-        await this.followUp(r.id!);
     }
 
     /**
