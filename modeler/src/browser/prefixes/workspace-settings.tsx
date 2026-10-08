@@ -1,7 +1,7 @@
 // Workspace settings view (ADR 0004): the manifest of the workspace file, in the main area. It opens on the workspace file (double-click
 // in the file navigator, File → Workspace Settings). Sections: the file of new subjects by kind (Auto or a file,
 // PlaceBox; Everything else also sets the default file), the prefixes (ModelStore.setPrefixes), the exclude globs (ModelStore.setSettings), the
-// imported globs and Import (ModelStore.setSettings, importFiles), the views of the HTML export in order (ModelStore.setExportViews). Each change writes the manifest at once (ADR 0003). No change is an undo step.
+// imported globs and Import (ModelStore.setSettings, importFiles). Each change writes the manifest at once (ADR 0003). No change is an undo step.
 
 import { CommandService, URI } from '@theia/core';
 import { AbstractViewContribution, ReactWidget } from '@theia/core/lib/browser';
@@ -13,9 +13,6 @@ import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigato
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { DEFAULT_PREFIXES, NEAR_KIND, baseName, dirName, relativePath } from '@catenary/model';
 import { WorkspaceSettings } from '../../common/protocol';
-import { OrderRow, initialRows, setAllChecked } from '../../common/view-order';
-import { ViewOrderList } from '../diagram/view-order-list';
-import { ViewsExport } from '../diagram/views-export';
 import { ModelFrontend } from '../model-client';
 import { Button, Section, Warning } from '../properties/controls';
 import { PLACE_ROWS, PlaceBox, PlaceKind } from './workspace-placement';
@@ -39,49 +36,30 @@ export class WorkspaceSettingsWidget extends ReactWidget {
     @inject(CommandService) protected readonly commands: CommandService;
     @inject(FileDialogService) protected readonly fileDialog: FileDialogService;
     @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
-    @inject(ViewsExport) protected readonly viewsExport: ViewsExport;
     @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
 
-    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'imported', 'export'. Cleared by the next change of the row. */
+    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'imported'. Cleared by the next change of the row. */
     protected problems: Record<string, string | undefined> = {};
     /** The prefix row in edit mode. */
     protected editing?: string;
     protected filter = '';
     protected menuOpen = false;
-    /** All views in view order, with the folders of their files. Read again when the model changes and the view is visible. */
-    protected views: { id: string; label: string; folder: string }[] = [];
 
     @postConstruct()
     protected init(): void {
         this.id = WORKSPACE_SETTINGS_ID;
         this.title.label = 'Workspace';
-        this.title.caption = 'Settings of the workspace file (manifest): files of new subjects, prefixes, exclude, HTML export';
+        this.title.caption = 'Settings of the workspace file (manifest): files of new subjects, prefixes, exclude, protection';
         this.title.iconClass = 'codicon codicon-settings';
         this.title.closable = true;
         this.addClass('catenary-properties');
         this.addClass('catenary-workspace-settings');
-        this.toDispose.push(this.model.onDidChange(() => {
-            if (this.isVisible) void this.readViews();
-            this.update();
-        }));
+        this.toDispose.push(this.model.onDidChange(() => this.update()));
         const close = (e: MouseEvent) => {
             if (this.menuOpen && !(e.target instanceof Element && e.target.closest('.catenary-toolbar-more'))) { this.menuOpen = false; this.update(); }
         };
         document.addEventListener('mousedown', close);
         this.toDispose.push({ dispose: () => document.removeEventListener('mousedown', close) });
-        this.update();
-    }
-
-    protected override onAfterShow(msg: Parameters<ReactWidget['onAfterShow']>[0]): void {
-        super.onAfterShow(msg);
-        void this.readViews();
-    }
-
-    protected async readViews(): Promise<void> {
-        if (!this.model.isOpen) return;
-        const views = await this.viewsExport.views();
-        if (JSON.stringify(views) === JSON.stringify(this.views)) return;
-        this.views = views;
         this.update();
     }
 
@@ -130,7 +108,6 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.prefixSection()}
                 {this.excludeSection()}
                 {this.importedSection()}
-                {this.exportSection()}
             </div>
         </div>;
     }
@@ -276,26 +253,6 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 <Button label='Import Files…' onClick={() => this.commands.executeCommand(IMPORT_FILE)} />
                 <span className='catenary-help'>Copies RDF files to imported/ as Turtle, with IRIs for their blank nodes, and marks the copies as imported.</span>
             </div>
-        </Section>;
-    }
-
-    protected exportSection(): React.ReactNode {
-        const views = this.views;
-        if (!views.length) return undefined;
-        const order = views.map(v => v.id);
-        const rows = initialRows(views, this.model.snapshot.exportViews ?? []);
-        const checked = rows.filter(r => r.checked).map(r => r.id);
-        const store = (next: OrderRow[]) => this.report('export', this.model.service.setExportViews(next.filter(r => r.checked).map(r => r.id)));
-        return <Section title={`HTML export ${checked.length} of ${views.length}`} scope='order of Export Views as HTML'>
-            <div className='catenary-view-order-bar'>
-                <span className='catenary-help'>Drag a numbered row, or press Alt+↑ or Alt+↓ on it. A check adds the view at the end.</span>
-                <button className='theia-button secondary' onClick={() => store(setAllChecked(rows, true, order))}>All</button>
-                <button className='theia-button secondary' onClick={() => store(setAllChecked(rows, false, order))}>None</button>
-                <button className='theia-button main' disabled={!checked.length} title='Export the checked views in this order'
-                    onClick={() => this.viewsExport.exportHtml(checked)}><span className='codicon codicon-export' /> Export…</button>
-            </div>
-            <ViewOrderList rows={rows} order={order} offHeading='Not exported' onChange={store} />
-            {this.problems.export ? <div className='catenary-problem'><span className='codicon codicon-warning' /> {this.problems.export}</div> : undefined}
         </Section>;
     }
 }

@@ -9,7 +9,7 @@
 --   Part I    The model as the user sees it   §1 Elements and layers, §2 Views, placements and figures
 --   Part II   Window and actions              §3 Window state and selection, §4 Actions and keys
 --   Part III  Canvas                          §5 Canvas gestures, §6 Shapes on the canvas, §7 Appearance and layout
---   Part IV   Panels and workspace            §8 Panels, §9 View export, §10 Settings
+--   Part IV   Panels and workspace            §8 Panels, §9 Markdown documents and export, §10 Settings
 
 module Catenary.UiManifest where
 
@@ -19,7 +19,7 @@ import Data.List (isInfixOf, nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
-  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet, unique )
+  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet )
 
 --------------------------------------------------------------------------------
 -- Part I. The model as the user sees it
@@ -1350,41 +1350,100 @@ panelShows new lastAnswer = new <|> lastAnswer
 -- Comment toggle and bracket pairs. Limit: no language server, completion or source validation.
 data Token = Directive | IriToken | NameToken | LiteralToken | CommentToken | Punctuation deriving (Eq, Enum, Bounded)
 
--- 9. View export -------------------------------------------------------------
+-- 9. Markdown documents and export -------------------------------------------
 
--- | Export Views as HTML lists checked views in export order, then unchecked views. All/None changes the checks.
--- A newly checked view goes to the end. Drag, arrow controls or Alt+Up/Alt+Down reorder checked views.
--- The same list shows in Workspace settings. There each change stores the list, and Export exports it without the dialog.
--- Start with the previous export list, else the selected views, else the active view.
--- The workspace file stores changed choices, without an undo step. CLI view IDs do not change the stored list.
--- Output: one self-contained HTML file with title, linked contents and numbered SVG sections, in the current theme.
--- Render at zoom 1 without selection, halos, handles or edit controls. Close editors opened only for the export.
--- Limit: no icon font, so codicon glyphs can be blank. No scripts or external files.
--- CLI: catenary run catenary.exportViewsHtml '["<view id>"]' '"/abs/out.html"'. Without arguments it asks.
-exportListing :: [Id] -> [Id] -> [Id]               -- checked views in export order, all views
-exportListing checked allViews = checked ++ filter (`notElem` checked) allViews
-check, uncheck :: Id -> [Id] -> [Id]
-check v checked = if v `elem` checked then checked else checked ++ [v]
-uncheck v = filter (/= v)
-moveUp :: Id -> [Id] -> [Id]
-moveUp v (a : b : rest)
-  | b == v = b : a : rest
-  | otherwise = a : moveUp v (b : rest)
-moveUp _ xs = xs
-initialExport :: Maybe [Id] -> [Id] -> Maybe Id -> [Id]   -- previous list, selected views, active view
-initialExport (Just prev) _ _ = prev
-initialExport Nothing sel act = if null sel then maybe [] (: []) act else sel
-law_checkKeepsOrder :: Id -> [Id] -> Bool
-law_checkKeepsOrder v cs = take (length cs) (check v cs) == cs
-law_moveUpPermutes :: Id -> [Id] -> Bool
-law_moveUpPermutes v cs = unique cs ==> sameSet (moveUp v cs) cs
+-- 9.1 View embeds -------------------------------------------------------------
+
+-- | A Markdown file of the workspace is a document. A document can embed views between its paragraphs.
+-- An embed is a standard Markdown image with the complete view IRI as destination: ![Label](urn:name:Main).
+-- The IRI is the identity of the view. Reason: it is the defined identity; a label changes, and an element id is a transport encoding.
+-- The label is only the image text. An embed never stores an element id.
+-- An image or a link definition is an embed when its destination is a view IRI or a URI with a scheme that is not a document scheme.
+-- A link [text](iri) is never an embed: it stays a hyperlink. Code spans, fenced code and HTML comments hold no embeds.
+-- Limit: an http or https image that names no view is an ordinary image, not an unresolved embed. Indented code is read as text.
+data RefKind = ImageRef | LinkRef | DefinitionRef deriving Eq
+documentSchemes :: [String]
+documentSchemes = ["http", "https", "data", "file", "mailto", "ftp", "ftps", "tel", "blob"]
+isViewEmbed :: [Iri] -> RefKind -> String -> Bool    -- view IRIs, kind, destination
+isViewEmbed views kind dest
+  | kind == LinkRef = False
+  | dest `elem` views = True
+  | otherwise = maybe False (`notElem` documentSchemes) (uriScheme dest)
+uriScheme :: String -> Maybe String                   -- the scheme of an absolute URI (two letters or more), lower case
+law_linkIsNoEmbed :: [Iri] -> String -> Bool
+law_linkIsNoEmbed views dest = not (isViewEmbed views LinkRef dest)
+
+-- | Insert View is in the context menu and the command palette of a text editor of a Markdown file. It needs an open workspace.
+-- A picker lists the views by label, with the folder of the view file and the IRI. The embed replaces the selection at the cursor.
+-- CLI: catenary run catenary.insertView '"<view IRI>"' inserts without the picker.
+viewEmbedText :: String -> Iri -> String              -- label, view IRI
+viewEmbedText label iri = "![" ++ altText label ++ "](" ++ markdownDestination iri ++ ")"
+altText :: String -> String                           -- brackets and backslashes escaped, line breaks as spaces
+markdownDestination :: String -> String               -- in angle brackets when empty or with spaces, parentheses or angle brackets
+embedDestination :: String -> Maybe String            -- the destination of the first image of a text, without brackets and escapes
+law_embedKeepsIri :: String -> Iri -> Bool
+law_embedKeepsIri label iri = embedDestination (viewEmbedText label iri) == Just iri
+
+-- | An embed resolves by IRI against the views of the open model. A label change keeps the embed.
+-- A changed or removed view IRI makes the embed unresolved. Catenary reports it and does not repair it.
+resolveEmbed :: [(Iri, Id)] -> Iri -> Maybe Id       -- views by IRI, embed
+resolveEmbed views iri = lookup iri views
+
+-- 9.2 Export ------------------------------------------------------------------
+
+-- | Export Markdown… is in the context menu of a folder in the file navigator. The folder is the source.
+-- Subfolders are included and keep their paths. Hidden folders (a name that starts with ".") and linked folders are not read.
+-- Hidden files in other folders are documents.
+-- A folder dialog asks for the destination. It starts at the last destination of the same source folder (window storage).
+-- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. Without arguments it uses the navigator selection and asks.
+-- The export reads and checks everything, renders each embedded view once, and then writes. A check error writes nothing.
+-- Check errors: an unresolved embed (with its file, line and IRI), a destination that is the source folder or is in it
+-- (real paths, so a link does not hide it), a destination that is a file, and a conflict (§9.3).
+-- Each document goes to its relative path. Each embed becomes a relative image link to _resources/<svgName>.
+-- The text outside embeds and changed links does not change. Image text: the embed text, else the view label.
+-- The SVG is the view editor export at exportZoom, without selection, halos, handles or edit controls. One SVG per view serves all embeds.
+-- The export changes no source document, model file or view.
+-- Not in this version: export sets or pages, Related sections, canvas references as navigation, embeds of other elements.
 exportZoom :: Double
 exportZoom = 1
+svgName :: Iri -> FilePath                           -- the last name of the IRI and a hash of the whole IRI: a label does not change it
+svgName iri = slug (lastName iri) ++ "-" ++ take 12 (sha256Hex iri) ++ ".svg"
+slug, lastName, sha256Hex :: String -> String
+law_svgNamesDistinct :: Iri -> Iri -> Bool            -- up to SHA-256 collisions
+law_svgNamesDistinct a b = a /= b ==> svgName a /= svgName b
+renderedOnce :: [Iri] -> [Iri]                        -- the embeds of all documents, in order: the views to render
+renderedOnce = nub
+
+-- | Local links. A Markdown document of the source folder: the link does not change. A file in the source folder: a copy at its path.
+-- A file outside the source folder: a copy in _resources/ (its name and a hash of its path), and the link changes to the copy.
+-- Reported, with the link unchanged: a missing target, a folder, an absolute path, a document outside the folder or in a hidden folder.
+data LinkTarget = DocumentIn | FileIn FilePath | FileOutside FilePath | Missing | Unsupported String
+linkChanges :: LinkTarget -> Bool
+linkChanges (FileOutside _) = True
+linkChanges _ = False
+
+-- 9.3 Destination files -------------------------------------------------------
+
+-- | _resources/.catenary-export.json records each file that an export wrote, with the SHA-256 of its content.
+-- An export writes a file that does not exist, a file with the output content, or a recorded file without later changes.
+-- Any other file at an output path is a conflict, and the export writes nothing. Two outputs at one path are a conflict.
+-- A record file that Catenary did not write (no generator "Catenary") is a conflict. A link, a folder or a folder link out of the
+-- destination at an output path is also a conflict. Reason: never overwrite a file that the export does not own.
+-- A recorded file that the export no longer writes is removed when it did not change. Else it is kept, reported and no longer recorded.
+-- The export does not write or remove other files. Each write goes to a temporary file and then a rename.
+-- A failed write stops the export. The result names the failed file and the files written before it. The record keeps them.
+type Hash = String
+mayWrite :: Maybe Hash -> Hash -> Maybe Hash -> Bool   -- recorded hash, output hash, current hash (Nothing: no file)
+mayWrite _ _ Nothing = True
+mayWrite recorded out (Just now) = now == out || recorded == Just now
+mayRemove :: Hash -> Hash -> Bool                      -- recorded hash, current hash
+mayRemove recorded now = recorded == now
+law_unownedNeverOverwritten :: Hash -> Hash -> Bool
+law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now == out)
 
 -- 10. Settings ---------------------------------------------------------------
 
--- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files,
--- export order.
+-- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files.
 -- Person settings stay outside the workspace: fonts, theme, visible right-area sections.
 -- Workspace settings open as a main-area document, independent of the element selection (open.md D6).
 -- Each kind of new subject (Shapes, SKOS / Collections, Everything else) is Auto or a file. Auto stores "near".
@@ -1395,7 +1454,7 @@ exportZoom = 1
 -- Import Files asks for one or more RDF files, then shows the paths of the copies and the prefixes that the import added.
 -- A rejected change shows its message below its row, not as a notification.
 data SettingOwner = ProjectSetting | PersonSetting deriving Eq
-data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | ExportOrder | Fonts | Theme | VisibleSections
+data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | Fonts | Theme | VisibleSections
   deriving (Eq, Enum, Bounded)
 ownerOfSetting :: Setting -> SettingOwner
 ownerOfSetting s = if s `elem` [Fonts, Theme, VisibleSections] then PersonSetting else ProjectSetting
@@ -1461,3 +1520,10 @@ geometryOf = manifestOnly
 applies = manifestOnly
 uncovered = manifestOnly
 covers = manifestOnly
+uriScheme = manifestOnly
+altText = manifestOnly
+markdownDestination = manifestOnly
+embedDestination = manifestOnly
+slug = manifestOnly
+lastName = manifestOnly
+sha256Hex = manifestOnly

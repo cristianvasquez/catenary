@@ -20,7 +20,7 @@ A user opens a folder of RDF files and edits the model in diagrams, forms and te
 
 | Term | Meaning |
 |---|---|
-| Workspace | A folder of RDF files, with an optional `workspace.trig` that holds settings (prefixes, file placement, exclusions, export order). |
+| Workspace | A folder of RDF files, with an optional `workspace.trig` that holds settings (prefixes, file placement, exclusions, protection). |
 | Element | An IRI resource or a triple (a relation). Its statements define its content. |
 | Layer | Classification of a statement: **Domain** (instances, relations, SKOS), **Shapes** (node shapes, property shapes, logical constraints), **Project** (views, placements, notes, frames, settings). |
 | View | An element that a canvas shows. One view per `*.view.trig` file. |

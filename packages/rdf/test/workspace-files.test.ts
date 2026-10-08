@@ -218,30 +218,18 @@ describe('workspace files', () => {
     });
 
 
-    it('export views: stored in order in the workspace file, read back; unknown ids rejected; a deleted view leaves the list', async () => {
+    it('a removed setting: an old ws:exportViews list opens clean and the next manifest write drops it', async () => {
         const f = files();
-        let store = await opened(f.ws);
-        expect(store.snapshot().exportViews).toBeUndefined();
-        const first = Object.keys(docOf(store).views)[0];
-        const second = store.execute({ kind: 'createView', label: 'Second' });
-        ok(second);
-        const b = (second as { id: string }).id;
-        ok(await store.save());
-        expect((await store.setExportViews(['n-urn_3aname_3anothing'])).ok).toBe(false);
+        // As the removed writer wrote it: list cells named after the manifest.
+        writeFileSync(f.ws, f.read('workspace.trig').replace('ws:defaultFile "data.ttl".', 'ws:defaultFile "data.ttl";\n'
+            + '    ws:exportViews <urn:name:workspace-exportViews-1>.\n'
+            + '  <urn:name:workspace-exportViews-1> rdf:first <urn:name:Product%20context>; rdf:rest rdf:nil.'));
+        const store = await opened(f.ws);
         expect(store.dirty).toBe(false);
-        ok(await store.setExportViews([b, first]));
-        expect(store.dirty).toBe(true);
+        ok(await store.setPrefixes({ ...DEFAULT_PREFIXES, n: 'urn:name:' }));
         ok(await store.save());
-        store = await opened(f.ws);
-        expect(store.snapshot().exportViews).toEqual([b, first]);
-        expect(store.dirty).toBe(false);
-        // An RDF list in the manifest graph.
-        const list = (await parseTrig(f.read('workspace.trig'))).quads.filter(q => q.graph.value === 'urn:name:workspace' && q.predicate.value.endsWith('#first'));
-        expect(list.map(q => q.object.value).sort()).toEqual([docOf(store).views[b].uri, docOf(store).views[first].uri].sort());
-        ok(store.execute({ kind: 'delete', ids: [b] }));
-        ok(await store.save());
-        store = await opened(f.ws);
-        expect(store.snapshot().exportViews).toEqual([first]);
+        const quads = (await parseTrig(f.read('workspace.trig'))).quads;
+        expect(quads.filter(q => q.predicate.value.endsWith('exportViews') || q.predicate.value.endsWith('#first'))).toEqual([]);
     });
 
     it('workspace file + data file + shapes give the same model as the one-file fixture, and open clean', async () => {
