@@ -25,7 +25,7 @@ import { CardScaleStartup } from './card-scale';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
-    AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView,
+    AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView,
     NoteNode, NoteView, PropertyEdge, PropertyEdgeView, RelationEdge, RelationEdgeView, ResizeHandleView, ShapeCardView, ShapeNode, ShapeRow, ShapeRowView, ValueSetNode, ValueSetView,
     CatenaryGraphView, ViewReferenceNode, ViewReferenceView
 } from './views';
@@ -76,6 +76,7 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     configureModelElement(context, CATENARY.LEAF, LeafNode, LeafView);
     configureModelElement(context, CATENARY.ALTERNATIVE, AlternativeEdge, AlternativeEdgeView);
     configureModelElement(context, CATENARY.LATENT, LatentEdge, LatentEdgeView);
+    configureModelElement(context, CATENARY.TARGETING, TargetingEdge, TargetingEdgeView);
     configureModelElement(context, CATENARY.LOGIC, LogicNode, LogicView);
     configureModelElement(context, CATENARY.VALUESET, ValueSetNode, ValueSetView);
     configureView(context, GResizeHandle.TYPE, ResizeHandleView, true);

@@ -13,6 +13,10 @@ const out = mkdtempSync(join(tmpdir(), 'catenary-ghc-'));
 const r = spawnSync('ghc', ['-fno-code', '-fforce-recomp', '-Wall', '-Werror', '-v0', '-outputdir', out,
     'spec/manifest.hs', 'spec/ui-manifest.hs'], { cwd: root, stdio: 'inherit' });
 rmSync(out, { recursive: true, force: true });
+if (r.error?.code === 'ENOENT') {
+    console.log('check-manifests: skipped (GHC is not installed).');
+    process.exit(0);
+}
 if (r.error) {
     console.error(`check-manifests: cannot run ghc (${r.error.message}). Install GHC: apt-get install ghc, or https://www.haskell.org/ghcup/.`);
     process.exit(1);

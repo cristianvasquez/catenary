@@ -695,15 +695,16 @@ shownBounds elapsed kept server = case kept of
 -- 5.3 Halo --------------------------------------------------------------------------
 
 -- | Halo. One selected item shows its halo. Several show a shared frame with Collect, Remove and More actions.
--- Card controls: Reveal, Remove, More actions, incoming and outgoing expansion, incoming and outgoing creation (+).
+-- Card controls: Reveal, Remove, More actions, incoming and outgoing expansion, applicable-shape expansion, incoming and outgoing creation (+).
 -- The direction of a creation control decides which end is the selected card.
+-- Applicable-shape expansion lists unshown node shapes whose sh:targetSubjectsOf predicate has a value on the selected instance.
 -- Incoming expansion of a node-shape card adds the chosen source shape cards. Their properties to the card become edges (§6).
 -- Note halo: Remove, More actions, arrow drag. Frame and reference halo: Remove, More actions. Entity-group halo: also Expand.
 -- Halo controls draw above diagram content with opaque backgrounds. Positions and labels: diagram/card-chrome.ts.
 data HaloItem = HaloCard | HaloNote | HaloFrame | HaloReference | HaloEntityGroup | HaloSeveral
 haloControls :: HaloItem -> [String]
 haloControls h = case h of
-  HaloCard -> ["Reveal", "Remove", "More actions", "Expand incoming", "Expand outgoing", "Create incoming", "Create outgoing"]
+  HaloCard -> ["Reveal", "Remove", "More actions", "Expand incoming", "Expand outgoing", "Expand applicable shapes", "Create incoming", "Create outgoing"]
   HaloNote -> ["Remove", "More actions", "Arrow"]
   HaloFrame -> ["Remove", "More actions"]
   HaloReference -> ["Remove", "More actions"]
@@ -826,10 +827,19 @@ noteEditorTextSize = 16
 -- A target that Show as Edge or a property edit places does not arrive: only that property becomes an edge.
 -- A new property whose owner and target show is an edge. An edge whose owner or target leaves becomes a row.
 -- A selected element shows its rows to and from elements of the view as dashed edges. ⇥ on a dashed edge shows it as an edge.
+-- A shown property shape has a dashed targeting edge to a shown node shape when its simple path equals that shape's sh:targetSubjectsOf predicate.
+-- The targeting edge is derived, has an arrowhead, and has no edit control or persisted placement.
 -- A logical constraint (sh:xone, sh:or, sh:and over property shapes) is a hub. Placed, it shows a hub with its member edges.
 -- Unplaced, it is a row group of its card: "xone", then one sub-row per member. Hub and members are placed and removed as one unit.
 -- Del on the hub, on a member line or on its private pill removes the unit. ⇥ on the row group places the hub and the boxes it needs.
 -- An alternative range (sh:or of ranges) is a "one of" box placed by its list. Unplaced, its row shows the box inline.
+targetingConnector :: Iri -> [Iri] -> Bool
+-- | A property path forms a targeting connector when it matches any subject-target predicate.
+targetingConnector path targetPredicates = path `elem` targetPredicates
+-- | Shape cards show all subject-target predicates. The Properties field accepts one predicate per line.
+subjectTargetText :: [Iri] -> String
+subjectTargetText = unlines
+
 data PropertyDisplay = AsPropertyRow | AsEdge | AsDashedEdge deriving Eq
 propertyDisplay :: Bool -> Bool -> Bool -> PropertyDisplay   -- edge placed, owner and target shown, an end selected
 propertyDisplay True True _ = AsEdge
@@ -1144,6 +1154,7 @@ widthAfterResize wanted current = max wanted current
 
 -- | Right area: sections derive their content from the same selection. Mixed selections show mixed values.
 -- Element: outgoing statements, fields of all applicable shapes grouped by shape, uncovered statements, errors beside fields.
+-- The Shape links include sh:targetClass and sh:targetSubjectsOf matches.
 -- Visuals: figure, style and geometry, and whether each style value comes from the placement or the element.
 -- Links: incoming statements by layer, placements across views, applicable shapes and source files.
 -- A canvas placement gives Element and Links its element, and Visuals the placement. A placement row gives all sections the placement.

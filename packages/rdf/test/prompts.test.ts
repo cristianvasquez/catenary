@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { boxes, hiddenNeighbors, isHidden, relationsInView, unnamedLabel } from '@catenary/model';
 import { hiddenNeighborCounts } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
+import { elementId } from '../src/ids';
+import { rdf } from '../src/terms';
+import { S } from '../src/shapes-read';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 
 // The queries that replace the read model of the frontend (ADR 0007): the selection, the boxes of a view, the content of the
@@ -111,6 +114,39 @@ describe('dialogs and pickers of the user actions', () => {
         }
         // The fixture has hidden neighbors: the comparison is not empty.
         expect(seen).toBeGreaterThan(0);
+    });
+
+    it('shapeTargetChoices: lists unshown shapes whose target-subject predicate the card has', () => {
+        const { view, card, instance } = cardView();
+        const g = (store as unknown as { graph: import('../src/graph').ModelGraph }).graph;
+        const shape = rdf.namedNode('urn:test:StatusSubjectShape');
+        const predicate = rdf.namedNode('urn:test:status');
+        const uri = rdf.namedNode(docOf(store).instances[instance].uri);
+        g.add(shape, S.targetSubjectsOf, rdf.namedNode('urn:test:first'), g.shapesGraphs()[0]);
+        g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
+        g.add(uri, predicate, rdf.literal('active'), g.model);
+
+        expect(store.hiddenNeighborCounts(view).get(instance)?.targets).toBe(1);
+        expect(store.shapeTargetChoices(view.id, card.id)).toMatchObject({
+            items: [{ ids: [elementId(shape)], description: 'subjects of first or status' }]
+        });
+    });
+
+    it('matches subject targets in the home graph of a shapes-file concept', () => {
+        const { view } = cardView();
+        const g = (store as unknown as { graph: import('../src/graph').ModelGraph }).graph;
+        const graph = g.shapesGraphs()[0];
+        const concept = rdf.namedNode('urn:test:Concept');
+        const shape = rdf.namedNode('urn:test:BroaderSubjects');
+        const broader = rdf.namedNode('http://www.w3.org/2004/02/skos/core#broader');
+        g.add(concept, S.type, rdf.namedNode('http://www.w3.org/2004/02/skos/core#Concept'), graph);
+        g.add(concept, broader, rdf.namedNode('urn:test:Parent'), graph);
+        g.add(shape, S.targetSubjectsOf, broader, graph);
+        expect(store.execute({ kind: 'addToView', view: view.id, ids: [elementId(concept)], at: { x: 0, y: 0 } })).toMatchObject({ ok: true });
+        const current = store.view(view.id)!;
+        const card = boxes(current, 'card').find(c => c.element === elementId(concept))!;
+        expect(store.hiddenNeighborCounts(current).get(elementId(concept))?.targets).toBe(1);
+        expect(store.shapeTargetChoices(view.id, card.id)?.items.map(i => i.ids)).toContainEqual([elementId(shape)]);
     });
 
     it('linkChoices: a section for each relation type; undefined for an unknown instance', () => {

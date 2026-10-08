@@ -148,6 +148,10 @@
 .catenary-edge.latent-edge > .line { stroke-dasharray: 6 4; opacity: 0.7; }
 .catenary-edge.latent-edge > .hit { pointer-events: none; }
 .catenary-edge.latent-edge > .edge-label { opacity: 0.7; }
+/* A derived source-property → sh:targetSubjectsOf-shape relation. */
+.catenary-edge.targeting-edge > .line { stroke-dasharray: 3 4; opacity: 0.8; }
+.catenary-edge.targeting-edge > .hit { pointer-events: none; }
+.catenary-edge.targeting-edge > .edge-label { opacity: 0.8; }
 .catenary-edge > .edge-label { text-anchor: middle; dominant-baseline: middle; fill: var(--catenary-fg); stroke: var(--catenary-bg); stroke-linejoin: round; paint-order: stroke; pointer-events: none; }
 
 /* Resize handles (card-chrome.ts resizeHandle): circles at the corners, bars at the side middles, as in Reactodia. */

@@ -37,6 +37,7 @@ export class ViewDiagramConfiguration implements DiagramConfiguration {
             [TYPES.PROPERTY, GEdge],
             [TYPES.ALTERNATIVE, GEdge],
             [TYPES.LATENT, GEdge],
+            [TYPES.TARGETING, GEdge],
             [TYPES.ROW, GLabel]
         ]);
     }

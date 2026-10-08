@@ -1028,6 +1028,12 @@ law_ownerFixed :: Backend -> Id -> PropertyShapePatch -> Bool
 law_ownerFixed b p patch =
   let (r, b') = step b (Execute (SetPropertyShape p patch Nothing)) in not (failed r) ==> ownerOf b' p == ownerOf b p
 
+-- | Subject targets form a union. Keep every predicate because any one can select a focus node.
+subjectTargetMatches :: [Iri] -> [Iri] -> Bool  -- target predicates, predicates on a subject
+subjectTargetMatches targets predicates = any (`elem` predicates) targets
+law_subjectTargetUnion :: [Iri] -> [Iri] -> [Iri] -> Bool
+law_subjectTargetUnion a b predicates = subjectTargetMatches (a ++ b) predicates == (subjectTargetMatches a predicates || subjectTargetMatches b predicates)
+
 -- 8.2 Shape proposal --------------------------------------------------------------------
 
 -- | proposeShapes (shape-proposal.ts, SHACLxtract) makes node shapes from the model graph and writes them to the shapes file.

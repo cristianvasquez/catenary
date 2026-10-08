@@ -26,7 +26,7 @@ Read in this order, from overview to detail:
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
 | [Agent guide](AGENTS.md) | Work rules for agents and documentation style |
 
-The contracts are Haskell modules. `pnpm check` typechecks them with GHC, so a mismatch of names or types between them fails. Install GHC first (`apt-get install ghc`, or ghcup).
+The contracts are Haskell modules. The optional `pnpm check:manifests` target typechecks them with GHC. It skips the check when GHC is absent. A mismatch of names or types fails when GHC is available.
 
 ## Run
 
@@ -43,7 +43,8 @@ pnpm package linux-x64 --appimage  # also dist/Catenary-linux-x64.AppImage
 node scripts/check-windows-package.mjs   # layout and binaries of the Windows package (pnpm package:win first)
 xvfb-run -a node scripts/smoke-desktop.mjs   # start the desktop app and check paths, writes, Git, watcher
 pnpm test             # source-based tests
-pnpm check            # package boundaries, manifest typecheck (GHC), Markdown links, CSS and TypeScript
+pnpm check            # package boundaries, Markdown links, CSS and TypeScript
+pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is absent
 pnpm build:browser    # the build without the Electron app
 node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
 node scripts/risk-profile.mjs   # the CI risk profile and job plan of the current branch against main

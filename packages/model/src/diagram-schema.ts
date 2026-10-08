@@ -33,7 +33,9 @@ export const TYPES = {
     /** A row of the attribute list of a shape card: a property shape (child of the card). */
     ROW: 'label:row',
     /** A property shown as a row whose target is in the view: dashed, drawn while one of its ends is selected. */
-    LATENT: 'edge:latent'
+    LATENT: 'edge:latent',
+    /** A derived edge from a property shape to a shape that targets its subjects. */
+    TARGETING: 'edge:targeting'
 } as const;
 
 export const LABEL_SUFFIX = '_label';
@@ -74,7 +76,7 @@ export interface GraphOptions {
      * What the view does not show, for the halo buttons of a card: the related instances of an instance (`hiddenNeighbors`), the node
      * shapes with a property to a node shape (`hiddenShapeSources`). From the whole model, not from the part of the view.
      */
-    hidden?: { neighbors: (instance: string) => { in: number; out: number } | undefined; shapeSources: (shape: string) => number };
+    hidden?: { neighbors: (instance: string) => { in: number; out: number; targets?: number } | undefined; shapeSources: (shape: string) => number };
     /** The figures of the view (ADR 0014): the SHACL and value-set elements come from their join. Absent: none are drawn. */
     notation?: ViewFigures;
 }
@@ -131,7 +133,8 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
             className: className(inst.types),
             classColor: cls?.color ?? '', color: n.color ?? '', display: n.display ?? 'detailed',
             lines, violations: count.get(inst.id) ?? 0, known: !!cls,
-            hiddenIn: opts.hidden?.neighbors(inst.id)?.in ?? 0, hiddenOut: opts.hidden?.neighbors(inst.id)?.out ?? 0
+            hiddenIn: opts.hidden?.neighbors(inst.id)?.in ?? 0, hiddenOut: opts.hidden?.neighbors(inst.id)?.out ?? 0,
+            hiddenTargets: opts.hidden?.neighbors(inst.id)?.targets ?? 0
         };
     });
 

@@ -75,7 +75,8 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
         VALUES ?c { ${end.types.map(iri).join(' ')} }
         GRAPH ?g { ?n sh:targetClass ?c } FILTER (?g != ${NOT_REPORT})
     }`) : [];
-    const shapeTerms = [...new Set(shapeFacts.map(q => q.subject.value))].filter(s => shapeIds.has(s));
+    const subjectTargets = Object.values(idx.model.nodeShapes).filter(shape => own.some(q => shape.targetSubjectsOf?.includes(q.predicate.value))).map(shape => shape.uri);
+    const shapeTerms = [...new Set([...shapeFacts.map(q => q.subject.value), ...subjectTargets])].filter(s => shapeIds.has(s));
     const shapeNames = labels(g, shapeTerms);
     const shapes = shapeTerms.map(s => ({ id: shapeIds.get(s)!, uri: s, label: shapeNames.get(s)! })).sort((a, b) => a.label.localeCompare(b.label));
     const candidates = rdf.dataset(formCandidates(g, t)).toString().split('\n').filter(Boolean).sort().join('\n');

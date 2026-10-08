@@ -1,7 +1,7 @@
 // Shapes graphs -> ShapesModel (@catenary/model): node shapes, property shapes, logical constraints, with the terms that hold them.
 // The read does not change the quads. Statements that the editor does not map are listed as `raw` and stay in the store and the files.
 // Mapping:
-//   node shape: an IRI with rdf:type sh:NodeShape, sh:targetClass, sh:property or a logical constraint, and without sh:path.
+//   node shape: an IRI with rdf:type sh:NodeShape, sh:targetClass, sh:targetSubjectsOf, sh:property or a logical constraint, and without sh:path.
 //   property shape: an object of sh:property, or a member with sh:path of an sh:or / sh:xone / sh:and list, or the object of sh:not.
 //   range, first match: sh:node to a scheme shape (one property: skos:inScheme with sh:hasValue or sh:in; scheme), sh:node to a member
 //   shape (dct:source a skos:Collection, sh:in its members; collection), sh:node to a node shape, sh:class, sh:in, sh:datatype, sh:nodeKind.
@@ -24,7 +24,7 @@ import { rdf, termKey } from './terms';
 const SH = NS.sh;
 const n = (iri: string) => rdf.namedNode(iri);
 export const S = {
-    NodeShape: n(SH + 'NodeShape'), PropertyShape: n(SH + 'PropertyShape'), targetClass: n(SH + 'targetClass'), property: n(SH + 'property'),
+    NodeShape: n(SH + 'NodeShape'), PropertyShape: n(SH + 'PropertyShape'), targetClass: n(SH + 'targetClass'), targetSubjectsOf: n(SH + 'targetSubjectsOf'), property: n(SH + 'property'),
     path: n(SH + 'path'), name: n(SH + 'name'), description: n(SH + 'description'), minCount: n(SH + 'minCount'), maxCount: n(SH + 'maxCount'),
     datatype: n(SH + 'datatype'), nodeKind: n(SH + 'nodeKind'), class: n(SH + 'class'), node: n(SH + 'node'), in: n(SH + 'in'),
     hasValue: n(SH + 'hasValue'), pattern: n(SH + 'pattern'), minLength: n(SH + 'minLength'), maxLength: n(SH + 'maxLength'),
@@ -122,7 +122,7 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
 
     // Node shapes.
     const candidates = rdf.termSet<NamedNode>();
-    for (const p of [S.targetClass, S.property, S.or, S.xone, S.and, S.not]) {
+    for (const p of [S.targetClass, S.targetSubjectsOf, S.property, S.or, S.xone, S.and, S.not]) {
         for (const q of ds.match(null, p)) candidates.add(q.subject as NamedNode);
     }
     for (const q of ds.match(null, S.type, S.NodeShape)) candidates.add(q.subject as NamedNode);
@@ -261,16 +261,18 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
         const c = collectionOf(t);
         if (c) index.memberShapes.set(c, [...(index.memberShapes.get(c) ?? []), t]);
     }
-    const NODE_KNOWN = [S.type, S.targetClass, S.name, S.label, S.description, S.comment, S.property, S.closed, S.or, S.xone, S.and, S.not];
+    const NODE_KNOWN = [S.type, S.targetClass, S.targetSubjectsOf, S.name, S.label, S.description, S.comment, S.property, S.closed, S.or, S.xone, S.and, S.not];
     const usedIds = new Set<string>();
     for (const s of modelShapes) {
         const id = shapeIds.get(s.value)!;
         const graph = graphOf(s);
         const targets = objects(s, S.targetClass);
+        const subjectTargets = objects(s, S.targetSubjectsOf);
         const shape: NodeShape = {
             id, uri: s.value,
             label: str(s, S.name) ?? str(s, S.label) ?? labelFromIri(s.value),
             targetClass: targets[0]?.value,
+            targetSubjectsOf: subjectTargets.length ? [...new Set(subjectTargets.map(t => t.value))].sort() : undefined,
             closed: str(s, S.closed) === 'true' || undefined,
             description: str(s, S.description) ?? str(s, S.comment),
             file: fileOfGraph(graph.value), properties: [], constraints: [],

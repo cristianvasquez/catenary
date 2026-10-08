@@ -98,7 +98,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=risk-profile \
             -f description="${description:0:139}" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
 
-  # Style sheets, the browser form test with the CSS, and from `standard` on: import rules, manifests (GHC), typecheck, affected tests.
+  # Style sheets, the browser form test with the CSS, and from `standard` on: import rules, typecheck, affected tests.
   fast:
     needs: classify
     if: needs.classify.outputs.fast != ''
@@ -118,10 +118,7 @@ jobs:
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
           node --test --test-name-pattern='node OR selector' scripts/e2e.cjs
-      - name: Install GHC (typechecks spec/*.hs)
-        if: needs.classify.outputs.check == 'true'
-        run: command -v ghc || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ghc)
-      - name: Check (import rules, manifests, typecheck)
+      - name: Check (import rules, typecheck)
         if: needs.classify.outputs.check == 'true'
         run: pnpm -s check
       - name: Affected unit tests

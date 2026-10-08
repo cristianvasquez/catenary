@@ -33,13 +33,13 @@ export const shapesIndex = shapesIndexOf;
 const integer = (v: number) => rdf.literal(String(Math.round(v)), rdf.namedNode(NS.xsd + 'integer'));
 const TRUE = rdf.literal('true', rdf.namedNode(NS.xsd + 'boolean'));
 
-/** A node shape of the shapes graphs: an IRI with sh:NodeShape, sh:targetClass, sh:property or a logical constraint, and no sh:path. */
+/** A node shape of the shapes graphs: an IRI with sh:NodeShape, a mapped target, sh:property or a logical constraint, and no sh:path. */
 export function nodeShapeTerm(g: ModelGraph, id: string): NamedNode | undefined {
     const t = elementTerm(id);
     if (t?.termType !== 'NamedNode') return undefined;
     const quads = g.match(t).filter(q => g.isShapesGraph(q.graph));
     if (quads.some(q => q.predicate.equals(S.path))) return undefined;
-    return quads.some(q => (q.predicate.equals(S.type) && q.object.equals(S.NodeShape)) || [S.targetClass, S.property, S.or, S.xone, S.and, S.not].some(p => p.equals(q.predicate)))
+    return quads.some(q => (q.predicate.equals(S.type) && q.object.equals(S.NodeShape)) || [S.targetClass, S.targetSubjectsOf, S.property, S.or, S.xone, S.and, S.not].some(p => p.equals(q.predicate)))
         ? t : undefined;
 }
 
@@ -315,6 +315,13 @@ export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): 
             renameIri(g, rdf.namedNode(old), rdf.namedNode(next));
         }
         if (old && next && old !== next) propose(g, { kind: 'renameClass', from: old, to: next }, `Target class of "${g.object(s, S.name, graph)?.value ?? shortIri(s.value)}": ${shortIri(old)} → ${shortIri(next)}`);
+    }
+    if (patch.targetSubjectsOf !== undefined) {
+        const next = new Set(patch.targetSubjectsOf.map(iri => iri.trim()).filter(Boolean));
+        const existing = g.match(s, S.targetSubjectsOf).filter(q => g.isShapesGraph(q.graph));
+        for (const q of existing) if (!next.has(q.object.value)) g.remove(q);
+        const retained = new Set(existing.map(q => q.object.value));
+        for (const iri of next) if (!retained.has(iri)) g.add(s, S.targetSubjectsOf, rdf.namedNode(iri), graph);
     }
     if (patch.closed !== undefined) {
         g.set(s, S.closed, patch.closed ? TRUE : undefined, graph);

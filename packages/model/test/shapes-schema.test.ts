@@ -23,14 +23,17 @@ function property(doc: Doc, id: string, owner: string, range: Range, out = true)
 it('lists hidden node shapes with a property to a node shape: sh:node, sh:class of its target class, "or" alternative', () => {
     const doc = document();
     doc.shapes.nodeShapes.a.targetClass = 'urn:A';
+    doc.shapes.nodeShapes.a.targetSubjectsOf = ['urn:first', 'urn:targeted'];
     for (const id of ['x', 'y', 'z']) doc.shapes.nodeShapes[id] = { id, uri: `urn:${id}`, label: id, file: '', properties: [], constraints: [], raw: [] };
     property(doc, 'y1', 'y', { kind: 'node', shape: 'a' }, false);
     property(doc, 'y2', 'y', { kind: 'class', class: 'urn:A' }, false);
+    property(doc, 'y3', 'y', { kind: 'any' }, false);
+    doc.shapes.properties.y3.path = { kind: 'iri', iri: 'urn:targeted' };
     property(doc, 'x1', 'x', { kind: 'or', alternatives: [{ kind: 'datatype', datatype: 'urn:d' }, { kind: 'node', shape: 'a' }] }, false);
     property(doc, 'z1', 'z', { kind: 'class', class: 'urn:Other' }, false);
     property(doc, 'b1', 'b', { kind: 'node', shape: 'a' }, false); // b is in the view.
     property(doc, 'a1', 'a', { kind: 'node', shape: 'a' }, false); // Self-reference.
     const found = hiddenShapeSources(doc.shapes, doc.views.v, 'a');
-    expect(found.map(n => [n.shape.id, n.properties.map(p => p.id)])).toEqual([['x', ['x1']], ['y', ['y1', 'y2']]]);
+    expect(found.map(n => [n.shape.id, n.properties.map(p => p.id)])).toEqual([['x', ['x1']], ['y', ['y1', 'y2', 'y3']]]);
     expect(hiddenShapeSources(doc.shapes, doc.views.v, 'missing')).toEqual([]);
 });

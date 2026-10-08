@@ -35,6 +35,8 @@ export interface EdgeProps {
     arrow?: boolean;
     /** The dashed edge of a property shown as a row: no end handles, a button that shows the property as an edge. */
     latent?: boolean;
+    /** A derived edge that shows a sh:targetSubjectsOf relation. */
+    targeting?: boolean;
     /** Source and target are the same box: a loop above it. */
     self?: boolean;
     /**
@@ -185,7 +187,7 @@ export function renderEdge(p: EdgeProps): VNode {
     const k = 1 / (p.zoom > 0 ? p.zoom : 1);
     const { path, p1, p2, n1, n2, mid, label: at, tail, elbow = false } = edgeGeometry(p);
     const fontSize = Math.max(LABEL, LABEL_MIN * k);
-    const ends = p.arrow || p.latent || (!p.selected && !p.hover) ? [] : ([['source', p1, n1, END_R + 3], ['target', p2, n2, ARROW + END_R + 2]] as const).map(([end, at, n, gap]) =>
+    const ends = p.arrow || p.latent || p.targeting || (!p.selected && !p.hover) ? [] : ([['source', p1, n1, END_R + 3], ['target', p2, n2, ARROW + END_R + 2]] as const).map(([end, at, n, gap]) =>
         s('circle', {
             class: { 'edge-end': true }, attrs: { 'data-end': end, cx: at.x + n.x * gap * k, cy: at.y + n.y * gap * k, r: END_R * k, 'stroke-width': 2 * k }
         }));
@@ -224,7 +226,7 @@ export function renderEdge(p: EdgeProps): VNode {
         s('path', { attrs: { d: 'M-4,0 L4,0 M0,-4 L0,4', transform: `scale(${k})`, 'stroke-width': 1.5 } })
     ])] : [];
     return s('g', {
-        class: { 'catenary-edge': true, 'arrow-edge': !!p.arrow, 'latent-edge': !!p.latent, colored: !!p.color, selected: p.selected, mouseover: p.hover, 'hidden-edge': p.hidden, invalid: !!p.invalid, property: !!p.parts },
+        class: { 'catenary-edge': true, 'arrow-edge': !!p.arrow, 'latent-edge': !!p.latent, 'targeting-edge': !!p.targeting, colored: !!p.color, selected: p.selected, mouseover: p.hover, 'hidden-edge': p.hidden, invalid: !!p.invalid, property: !!p.parts },
         style: vars(colorVars(p.color))
     }, [
         s('path', { class: { hit: true }, attrs: { d: path } }),

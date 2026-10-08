@@ -132,16 +132,18 @@ export function targetSize(shapes: ShapesModel, p: PropertyShape, rows: number, 
 }
 
 /**
- * Node shapes that `view` does not show, with a property shape whose range points to the node shape `id`: sh:node `id`, or sh:class of
- * the target class of `id`, also as an "or" alternative. The incoming halo button of a node shape card.
+ * Node shapes that `view` does not show, with a property shape whose range points to node shape `id`: sh:node `id`, or sh:class of
+ * its target class, also as an "or" alternative. A simple property path also points to `id` when it equals the shape's sh:targetSubjectsOf predicate.
+ * The incoming halo button of a node shape card.
  */
 export function hiddenShapeSources(shapes: ShapesModel, view: View | undefined, id: string): { shape: NodeShape; properties: PropertyShape[] }[] {
     const target = shapes.nodeShapes[id];
     if (!target) return [];
     const points = (r: SimpleRange) => r.kind === 'node' ? r.shape === id : r.kind === 'class' && r.class === target.targetClass;
+    const targetPredicate = (p: PropertyShape) => p.path.kind === 'iri' && target.targetSubjectsOf?.includes(p.path.iri);
     const found = new Map<string, PropertyShape[]>();
     for (const p of Object.values(shapes.properties)) {
-        if (p.owner === id || !shapes.nodeShapes[p.owner] || inView(view, p.owner) || !alternativesOf(p.range).some(points)) continue;
+        if (p.owner === id || !shapes.nodeShapes[p.owner] || inView(view, p.owner) || !(targetPredicate(p) || alternativesOf(p.range).some(points))) continue;
         found.set(p.owner, [...(found.get(p.owner) ?? []), p]);
     }
     return [...found].map(([owner, properties]) => ({ shape: shapes.nodeShapes[owner], properties })).sort((a, b) => byLabel(a.shape, b.shape));

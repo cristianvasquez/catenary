@@ -213,9 +213,9 @@ export async function layoutView(part: Doc, viewId: string, showHidden: boolean,
     const items = all.filter(i => !undrawn.has(i));
     const ids = new Set(items.map(i => i.id));
     // Links between boxes: the drawn property lines, relations and alternatives. An edge to a private pill links no box.
-    const relations = children.filter(c => (c.type === TYPES.PROPERTY || c.type === TYPES.RELATION || c.type === TYPES.ALTERNATIVE || c.type === TYPES.BUNDLE)
+    const relations = children.filter(c => (c.type === TYPES.PROPERTY || c.type === TYPES.RELATION || c.type === TYPES.ALTERNATIVE || c.type === TYPES.BUNDLE || c.type === TYPES.TARGETING)
         && ids.has(c.sourceId as string) && ids.has(c.targetId as string) && c.sourceId !== c.targetId)
-        .map(c => ({ id: c.type === TYPES.RELATION ? String(c.element ?? c.id) : c.id, subject: c.sourceId as string, object: c.targetId as string }));
+        .map(c => ({ id: c.type === TYPES.RELATION ? String(c.element ?? c.id) : c.id, subject: c.sourceId as string, object: c.targetId as string, derived: c.type === TYPES.TARGETING }));
     if (items.length === 0) return { bounds: [], edges: [] };
     // Parent: the smallest group that contains the box (groupOf).
     const parent = new Map<string, string | undefined>(items.map(x => [x.id, groupOf(view, x.box, x.id)?.id]));
@@ -304,7 +304,7 @@ export async function layoutView(part: Doc, viewId: string, showHidden: boolean,
     // The content keeps its top-left corner (of the drawn boxes).
     await layout(undefined, Math.min(...items.map(i => i.ext.x)), Math.min(...items.map(i => i.ext.y)));
     // The drawn extent of a laid-out item at its new place (cards with rows are drawn taller than their stored box).
-    return { bounds: [...out.values()], edges: relations.map(r => r.id) };
+    return { bounds: [...out.values()], edges: relations.filter(r => !r.derived).map(r => r.id) };
 }
 
 /** Client action: lay out the view once. One setLayout command (one undo step), then a fit of the view to the new content. */

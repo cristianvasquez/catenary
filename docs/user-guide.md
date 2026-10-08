@@ -72,6 +72,8 @@ Notes save automatically after a short pause in typing. Close the editor when yo
 - Value sets: `+ concept` and `+ member` add concepts to a SKOS scheme or collection. Drag a concept onto another to add a broader parent.
 - Propose Node Shapes from Data (on a class or instance) and Model → Propose Missing Shapes create shapes from the existing data. The result opens in a new view "proposed shapes". Review it: it describes the data, it is not a rule.
 - A change of a path or a target class can propose a data migration. Apply it with "Apply to data", or dismiss it.
+- In Properties, enter one predicate per line in Target subjects of. The shape checks subjects of any listed predicate.
+- Shape cards show their subject targets. Dashed arrows connect property shapes to shapes that target subjects of those properties.
 
 ## Keys
 

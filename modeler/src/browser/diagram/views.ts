@@ -39,6 +39,8 @@ export class CardNode extends GNode {
     /** Related instances that the view does not show (halo buttons). */
     hiddenIn = 0;
     hiddenOut = 0;
+    /** Node shapes with sh:targetSubjectsOf that apply to this instance, outside the view. */
+    hiddenTargets = 0;
 }
 
 export class NoteNode extends GNode {
@@ -192,6 +194,14 @@ export class LatentEdge extends GEdge {
     lanes = 1;
 }
 
+/** Derived source-property → sh:targetSubjectsOf-shape edge. It has no edit controls. */
+export class TargetingEdge extends GEdge {
+    static override readonly DEFAULT_FEATURES = [fadeFeature];
+    name = '';
+    lane = 0;
+    lanes = 1;
+}
+
 /** From a "one of" card to the card of an alternative. Not selectable: edit the alternatives on the card. */
 export class AlternativeEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [fadeFeature];
@@ -300,6 +310,20 @@ export class LatentEdgeView implements IView {
     }
 }
 
+/** Derived target-subject edge: always visible when both shape cards show. */
+@injectable()
+export class TargetingEdgeView implements IView {
+    render(edge: Readonly<TargetingEdge>, _context: RenderingContext): VNode {
+        const source = edge.source as GNode | undefined;
+        const target = edge.target as GNode | undefined;
+        if (!source || !target) return svg('g', null);
+        return renderEdge({
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, self: source === target, elbow: true,
+            route: routeOf(edge), style: edgeStyle(), zoom: zoomOf(edge), name: edge.name, color: '', selected: false, hover: false, hidden: false, targeting: true
+        });
+    }
+}
+
 @injectable()
 export class LeafView extends ShapeView {
     render(node: Readonly<LeafNode>, context: RenderingContext): VNode | undefined {
@@ -383,7 +407,7 @@ export class CatenaryGraphView extends GLSPProjectionView {
         if (boxes.length === 1) {
             const node = boxes[0];
             const { x, y } = node.position, { width, height } = node.size;
-            const actions = node instanceof CardNode ? cardHalo(node.hiddenIn, node.hiddenOut) : node instanceof CollectionNode ? COLLECTION_HALO
+            const actions = node instanceof CardNode ? cardHalo(node.hiddenIn, node.hiddenOut, node.hiddenTargets) : node instanceof CollectionNode ? COLLECTION_HALO
                 : node instanceof ShapeNode ? shapeHalo(node.hiddenSources) : node instanceof NoteNode ? NOTE_HALO : BOX_HALO;
             layer.children = [...(layer.children ?? []), svg('g', { 'class-catenary-halo': true, 'data-element': node.id, transform: `translate(${x},${y})` },
                 ...renderHalo(width, height, k, actions))];

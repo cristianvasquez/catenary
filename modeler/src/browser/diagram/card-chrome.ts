@@ -74,13 +74,14 @@ const CREATE_ICON = 'add';
  * instances that the view does not show (`hiddenNeighbors`), with their number; no button when there are none. Both arrows point
  * right: into the card on the left (incoming), out of it on the right (outgoing).
  */
-export function cardHalo(incoming: number, outgoing: number): HaloAction[] {
+export function cardHalo(incoming: number, outgoing: number, targets = 0): HaloAction[] {
     return [
         HALO_REMOVE, HALO_MENU,
         { action: 'reveal', dock: 'nw', icon: 'list-tree', title: 'Reveal in Model Explorer' },
         ...(incoming ? [{ action: 'expandIn', dock: 'w' as const, icon: 'arrow-right', title: `Incoming: show related instances (${incoming} not in the view)`, count: incoming }] : []),
         ...(outgoing ? [{ action: 'expandOut', dock: 'e' as const, icon: 'arrow-right', title: `Outgoing: show related instances (${outgoing} not in the view)`, count: outgoing }] : []),
-        { action: 'link', dock: 'se', icon: CREATE_ICON, title: 'New outgoing relation: drag to a card or to empty canvas, or click' },
+        ...(targets ? [{ action: 'expandTargets', dock: 'n' as const, icon: 'schema', title: `Show applicable node shapes (${targets} not in the view)`, count: targets }] : []),
+        { action: 'link', dock: 'se', icon: CREATE_ICON, title: 'New outgoing relation: drag to a card or to empty canvas, or click' }, 
         { action: 'linkIn', dock: 'sw', icon: CREATE_ICON, title: 'New incoming relation: drag to a card or to empty canvas, or click' }
     ];
 }
@@ -272,7 +273,7 @@ export function renderShapeCard(p: ShapeCardProps, rows: VNode[], handles: VNode
         h('div', { class: { 'shape-type': true } }, p.className),
         h('div', { class: { 'shape-name': true } }, p.name),
         ...(simple ? [] : [
-            h('div', { class: { 'shape-class': true }, attrs: { title: 'Target class. Double-click: edit' } }, p.subtitle + (p.closed ? ' · closed' : '')),
+            h('div', { class: { 'shape-class': true }, attrs: { title: `${p.subtitle}. Double-click edits the target class. Edit subject targets in Properties.` } }, p.subtitle + (p.closed ? ' · closed' : '')),
             h('div', { class: { 'shape-rows': true } }, rows),
             h('div', { class: { 'shape-add-row': true }, attrs: { title: 'New attribute: type its path (prefix:local); Tab picks the value' } }, '+ attribute')
         ])

@@ -151,6 +151,8 @@ export type NewShapeTarget = { kind: 'nodeShape' | 'scheme' | 'collection'; labe
 export interface NodeShapePatch {
     /** '' removes the target class. */
     targetClass?: string;
+    /** Replace all sh:targetSubjectsOf values. An empty array removes them. */
+    targetSubjectsOf?: string[];
     closed?: boolean;
     /** '' removes it. */
     description?: string;
