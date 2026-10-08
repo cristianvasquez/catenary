@@ -23,6 +23,8 @@ export interface ViewFileInfo {
     path: string;
     /** Not saved, or not on disk yet. */
     dirty: boolean;
+    /** A ws:protect glob matches the file: Catenary refuses each change of it. */
+    protected?: boolean;
 }
 
 /** What a file holds that Catenary edits, from its content, not its name. A file can hold a workspace, views, both or none. */
@@ -70,6 +72,8 @@ export interface ModelFileInfo {
     dirty: boolean;
     /** Why the file could not be read. */
     error?: string;
+    /** A ws:protect glob matches the file: Catenary refuses each change of its statements. */
+    protected?: boolean;
     kinds: FileKind[];
 }
 
@@ -87,6 +91,8 @@ export interface WorkspaceFiles {
     placement?: PlacementInfo;
     /** Globs of the manifest: files that are not model files. */
     exclude?: string[];
+    /** Globs of the manifest: protected files. */
+    protect?: string[];
     files: ModelFileInfo[];
     views: ViewFileInfo[];
 }

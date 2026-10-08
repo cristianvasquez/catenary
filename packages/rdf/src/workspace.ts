@@ -12,7 +12,10 @@ import {
     OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
     writeAll
 } from 'rdf-files';
-import { MANIFEST_GRAPH, Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, isViewFile, defaultViewsFolder, listModelFiles, manifestQuads, parseRdf, readManifest, serializeRdf, writeProblem } from './files';
+import {
+    MANIFEST_GRAPH, Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, globRegExp, isViewFile, defaultViewsFolder, listModelFiles, manifestQuads,
+    parseRdf, readManifest, serializeRdf, writeProblem
+} from './files';
 import { Change, ModelGraph, P, SKOS_TYPES, V, cmp, fileGraphIri, fileOfGraph, mint } from './graph';
 import { elementTerm } from './ids';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
@@ -53,6 +56,8 @@ export class Workspace {
     protected defaultFileSetting?: string;
     protected placement: Placement;
     protected exclude: string[];
+    /** Globs of the protected files (manifest ws:protect): Catenary reads them and refuses each change of their statements. */
+    protected protect: string[];
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
     prefixes?: Record<string, string>;
     /** View IRIs of the last HTML export, in order (manifest ws:exportViews). */
@@ -79,6 +84,7 @@ export class Workspace {
         this.defaultFileSetting = manifest.defaultFile;
         this.placement = manifest.placement;
         this.exclude = manifest.exclude;
+        this.protect = manifest.protect;
         this.prefixes = manifest.prefixes;
         this.exportViews = manifest.exportViews;
     }
@@ -150,9 +156,16 @@ export class Workspace {
             defaultFile: { path: this.defaultFile, set: this.defaultFileSetting !== undefined },
             placement: { ...this.placement },
             exclude: [...this.exclude],
+            protect: [...this.protect],
             files: [...this.modelFiles.values()].sort((a, b) => cmp(a.path, b.path))
-                .map(f => ({ path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), kinds: [...kinds.get(f.path) ?? []].sort() })),
-            views: views.map(v => ({ view: v, path: this.viewFiles.get(elementTerm(v)!.value)!.path, dirty: saved.views.has(elementTerm(v)!.value) }))
+                .map(f => ({
+                    path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), ...(this.isProtected(f.path) ? { protected: true } : {}),
+                    kinds: [...kinds.get(f.path) ?? []].sort()
+                })),
+            views: views.map(v => {
+                const file = this.viewFiles.get(elementTerm(v)!.value)!.path;
+                return { view: v, path: file, dirty: saved.views.has(elementTerm(v)!.value), ...(this.isProtected(file) ? { protected: true } : {}) };
+            })
         };
     }
 
@@ -194,6 +207,7 @@ export class Workspace {
     protected manifest(): Manifest {
         return {
             ...(this.defaultFileSetting ? { defaultFile: this.defaultFileSetting } : {}), placement: { ...this.placement }, exclude: [...this.exclude],
+            protect: [...this.protect],
             ...(this.prefixes ? { prefixes: this.prefixes } : {}),
             // Only views that exist: a deleted view leaves the file (its undo brings it back).
             ...(this.exportViews ? { exportViews: this.exportViews.filter(v => this.graph.isView(rdf.namedNode(v))) } : {})
@@ -331,9 +345,45 @@ export class Workspace {
         };
     }
 
-    /** Undefined, or why Catenary does not write this file: its format (`writeProblem`), or its content (`noWrite`). */
+    /** Undefined, or why Catenary does not write this file: its format (`writeProblem`), its content (`noWrite`), or protection. */
     protected writeProblemOf(file: string): string | undefined {
-        return writeProblem(file) ?? (this.noWrite.has(file) ? `${path.basename(file)}: ${this.noWrite.get(file)}` : undefined);
+        return writeProblem(file) ?? (this.noWrite.has(file) ? `${path.basename(file)}: ${this.noWrite.get(file)}` : undefined)
+            ?? (this.isProtected(file) ? `${path.basename(file)} is protected.` : undefined);
+    }
+
+    /** A ws:protect glob matches the path of the file relative to the workspace folder. */
+    isProtected(file: string, globs = this.protect): boolean {
+        if (!globs.length || !isInside(this.folder, file)) return false;
+        const rel = portableRelative(this.folder, file);
+        return globs.some(g => globRegExp(g).test(rel));
+    }
+
+    /** The protect globs (manifest ws:protect). */
+    get protectGlobs(): string[] {
+        return [...this.protect];
+    }
+
+    /**
+     * The protected files that a patch changes (sorted): a statement of the model graph that leaves a protected file, any change of a
+     * shapes graph or a view graph of a protected file. A statement that the patch removes and adds again (or the reverse) is no
+     * change. Call it before `track`: `origin` has the files of the statements before the patch. A new statement of the model graph
+     * never goes to a protected file (`track`).
+     */
+    protectedChanges(changes: readonly Change[]): string[] {
+        if (!this.protect.length) return [];
+        const first = new Map<string, Change>(), last = new Map<string, Change>();
+        for (const c of changes) {
+            const k = `${tripleKey(c.quad)} ${termKey(c.quad.graph)}`;
+            if (!first.has(k)) first.set(k, c);
+            last.set(k, c);
+        }
+        const files = new Set<string>();
+        for (const [k, c] of last) {
+            if (first.get(k)!.op !== c.op) continue;
+            if (c.quad.graph.equals(this.graph.model) && c.op === 'add') continue;
+            for (const f of this.filesOfQuad(c.quad)) if (this.isProtected(f)) files.add(f);
+        }
+        return [...files].sort(cmp);
     }
 
     /** A file differs from the saved one. */
@@ -361,21 +411,24 @@ export class Workspace {
             if (this.graph.isView(rdf.namedNode(r.view))) { notes.push(`${name}: not read: the view ${r.view} is in another file too.`); return false; }
             const read = r.triples.map(q => rdf.quad(q.subject, q.predicate, q.object, rdf.namedNode(r.view)));
             const { quads, count } = skolemize(read);
-            if (count) notes.push(skolemNote(r.path, count));
-            for (const q of quads) this.graph.store.add(q);
             // A file with blank nodes differs from its saved form: the next save writes the IRIs (not a file that Catenary does not write).
-            this.viewFiles.set(r.view, { path: r.path, saved: canonical((count && !r.noWrite ? read : quads).map(toTriple)), text: r.text, triples: quads.map(toTriple) });
+            const keep = !this.writeProblemOf(r.path);
+            if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
+            for (const q of quads) this.graph.store.add(q);
+            this.viewFiles.set(r.view, { path: r.path, saved: canonical((count && keep ? read : quads).map(toTriple)), text: r.text, triples: quads.map(toTriple), blanks: count });
             return true;
         }
         const { quads, count } = skolemize(r.triples);
-        if (count) notes.push(skolemNote(r.path, count));
+        // A file that Catenary does not write keeps its blank nodes on disk: its saved form is the read with IRIs.
+        const keep = !this.writeProblemOf(r.path);
+        if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
         const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path));
         for (const q of quads) {
             if (shapes.has(termKey(q.subject))) { this.graph.store.add(rdf.quad(q.subject, q.predicate, q.object, graph)); continue; }
             this.graph.store.add(rdf.quad(q.subject, q.predicate, q.object, this.graph.model));
             this.addOrigin(tripleKey(q), r.path, q);
         }
-        this.modelFiles.set(r.path, { path: r.path, saved: canonical(count && !r.noWrite ? r.triples : quads), text: r.text, triples: quads });
+        this.modelFiles.set(r.path, { path: r.path, saved: canonical(count && keep ? r.triples : quads), text: r.text, triples: quads, blanks: count });
         return true;
     }
 
@@ -496,9 +549,25 @@ export class Workspace {
 
     /**
      * Check and apply settings of the manifest: the default file and the file of each kind (a model file, or a new RDF file in the
-     * workspace folder; a kind: also "near"), the exclude globs. `reread`: the exclude globs changed, so the files must be read again.
+     * workspace folder; a kind: also "near"), the exclude globs, the protect globs (§2.6). `reread`: the exclude globs changed, so the
+     * files must be read again.
      */
-    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[] }): { error: string } | { reread: boolean } {
+    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): { error: string } | { reread: boolean } {
+        // Protection first: the files of new subjects are checked against the new globs. An error keeps the old globs.
+        const was = this.protect;
+        if (settings.protect) {
+            const globs = [...new Set(settings.protect.map(g => g.trim()).filter(Boolean))];
+            const problem = this.protectProblem(globs);
+            if (problem) return { error: problem };
+            this.protect = globs;
+        }
+        const r = this.applyPlaces(settings);
+        if ('error' in r) this.protect = was;
+        return r;
+    }
+
+    /** `applySettings` without the protect globs. */
+    protected applyPlaces(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[] }): { error: string } | { reread: boolean } {
         /** A path relative to the workspace folder: the file, or why it cannot be a file for new subjects. */
         const fileOf = (rel: string): { file: string } | { error: string } => {
             const file = path.resolve(this.folder, rel);
@@ -524,9 +593,29 @@ export class Workspace {
             this.defaultFileSetting = r.file;
         }
         this.placement = next;
+        // A file of new subjects that the new globs protect: Auto again (its subjects go near their kind, else to the default file).
+        for (const k of PLACE_KINDS) if (this.placement[k] !== NEAR && this.isProtected(this.placement[k])) this.placement[k] = NEAR;
+        if (this.defaultFileSetting && this.isProtected(this.defaultFileSetting)) this.defaultFileSetting = undefined;
         if (!settings.exclude) return { reread: false };
         this.exclude = settings.exclude.map(g => g.trim()).filter(Boolean);
         return { reread: true };
+    }
+
+    /**
+     * Undefined, or why these protect globs cannot apply: a file that they protect newly has changes that are not written, or blank
+     * nodes on disk (the IRIs of a read would change at each read, and statements in other files would lose their subject).
+     * The caller writes the pending changes first: a write gives the blank nodes of a file that Catenary writes their IRIs.
+     */
+    protected protectProblem(globs: string[]): string | undefined {
+        const saved = this.savedState();
+        const dirty = new Set([...saved.files, ...[...saved.views].map(v => this.viewFiles.get(v)?.path)]);
+        for (const f of [...this.modelFiles.values(), ...this.viewFiles.values()]) {
+            if (!this.isProtected(f.path, globs) || this.isProtected(f.path)) continue;
+            const name = portableRelative(this.folder, f.path);
+            if (dirty.has(f.path)) return `${name} has changes that are not written. Protect it after the write.`;
+            if (f.blanks) return `${name} has blank nodes that Catenary cannot write as IRIs. Import the file instead: the import writes a copy with IRIs.`;
+        }
+        return undefined;
     }
 
     /** Write the changed files (all or none, see `writeAll`). The caller commits `written`. */
@@ -545,7 +634,7 @@ export class Workspace {
             if (!changed) return;
             const all = triples();
             const text = await this.fileText(f, all, content, graph);
-            writes.push({ file: f.path, text, done: () => Object.assign(f, { saved: content, text, triples: all }) });
+            writes.push({ file: f.path, text, done: () => Object.assign(f, { saved: content, text, triples: all, blanks: 0 }) });
         };
         try {
             for (const f of this.modelFiles.values()) if (!f.error) await onDisk(f, saved.files.has(f.path), () => this.fileTriples(f.path), now.files.get(f.path)!);
@@ -666,7 +755,7 @@ export async function createWorkspace(workspacePath: string, placement: Partial<
         }
         const view = rdf.namedNode(mint('Main'));
         const viewQuads = [rdf.quad(view, P.type, V.View, view), rdf.quad(view, P.label, rdf.literal('Main'), view)];
-        const manifest: Manifest = { placement: chosen, exclude: [], prefixes: { ...DEFAULT_PREFIXES } };
+        const manifest: Manifest = { placement: chosen, exclude: [], protect: [], prefixes: { ...DEFAULT_PREFIXES } };
         const viewFile = path.join(defaultViewsFolder(workspacePath), `main${VIEW_EXT}`);
         try {
             await fs.writeFile(workspacePath, await writeTrig(manifestQuads(manifest, workspacePath)), { flag: 'wx' });
@@ -701,6 +790,8 @@ interface WorkspaceFile {
 interface ViewFile extends OnDisk {
     path: string;
     saved?: string;
+    /** Blank nodes in the text on disk (0 after a write). */
+    blanks?: number;
 }
 
 interface Canonical { workspace: string; files: Map<string, string>; views: Map<string, string> }
@@ -716,7 +807,12 @@ interface ModelFile extends OnDisk {
     path: string;
     saved?: string;
     error?: string;
+    /** Blank nodes in the text on disk (0 after a write). */
+    blanks?: number;
 }
+
+const unwrittenBlankNote = (file: string) =>
+    `${path.basename(file)}: Catenary does not write this file, so its blank nodes get new IRIs at each read. Statements in other files about them are lost at the next read.`;
 
 const skolemNote = (file: string, count: number) =>
     `${path.basename(file)}: ${count} blank node${count === 1 ? '' : 's'} replaced by IRIs (Catenary has no blank nodes); the file is changed until the next save writes them`;

@@ -1,9 +1,9 @@
 // Properties reads shared thing, statement, label and connection queries. The shapes index supplies UI identities.
 
-import type { NamedNode } from '@rdfjs/types';
+import type { NamedNode, Quad } from '@rdfjs/types';
 import {
     Classes, ElementProperties, InstanceProperties, NS, PropertyShapeProperties, RelationEnd, ResultRow, TermJSON,
-    searchKind, termKey as jsonKey, termToJSON
+    lockedKey, searchKind, termKey as jsonKey, termToJSON
 } from '@catenary/model';
 import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -19,6 +19,8 @@ export interface PropertiesContext {
     idx: ShapesIndex;
     /** The file with most statements of this subject. */
     fileOf: (t: NamedNode) => string | undefined;
+    /** The protected files of a statement of the model graph (manifest ws:protect). */
+    protectedFiles: (q: Quad) => string[];
 }
 
 /** Properties of an element. Without an ID, return workspace counts. */
@@ -78,8 +80,17 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
     const shapes = shapeTerms.map(s => ({ id: shapeIds.get(s)!, uri: s, label: shapeNames.get(s)! })).sort((a, b) => a.label.localeCompare(b.label));
     const candidates = rdf.dataset(formCandidates(g, t)).toString().split('\n').filter(Boolean).sort().join('\n');
     const file = ctx.fileOf(t);
+    const locked: string[] = [], protectedFiles = new Set<string>();
+    for (const q of own) {
+        const files = ctx.protectedFiles(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        if (!files.length) continue;
+        files.forEach(f => protectedFiles.add(f));
+        const v = termToJSON(q.object);
+        if (v) locked.push(lockedKey(q.predicate.value, v));
+    }
     return {
         kind: 'instance', ...end, fields, ...(file ? { file } : {}), targets, shapes,
+        ...(locked.length ? { locked: locked.sort(cmp), protectedFiles: [...protectedFiles].sort(cmp) } : {}),
         results: results(ctx, `VALUES ?f { ${iri(t.value)} } ?r sh:focusNode ?f .`), candidates
     };
 }

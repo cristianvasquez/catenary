@@ -5,7 +5,7 @@
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ElementProperties, NS, SnapshotChange, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
+    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
@@ -21,7 +21,7 @@ import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explore
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
-import { Placement, WORKSPACE_FILE, enclosingWorkspace, workspaceFileOf, sourceLine } from './files';
+import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
 import { History } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -34,6 +34,7 @@ import { movedIds } from './moved-ids';
 import { Metamodel, emptyMetamodel, formShapes, metamodelFromQuads } from './shapes';
 import { withCount } from './shape-ops';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
+import { skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { reportProblems } from './validate';
 import { ValidationRunner } from './validation-runner';
@@ -65,6 +66,16 @@ export interface ChangeScope {
 const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
 
 export type Listener = (change: ModelChange) => void;
+
+/** A command refused because it changes protected files (absolute paths). */
+function protectedFailure(folder: string, files: string[]): CommandResult {
+    const names = files.map(f => portableRelative(folder, f));
+    const one = names.length === 1;
+    return {
+        ok: false, protected: files,
+        error: `${names.join(', ')} ${one ? 'is' : 'are'} protected: the change is not made. To change ${one ? 'it' : 'them'}, unprotect ${one ? 'it' : 'them'} in the file navigator.`
+    };
+}
 
 export class ModelStore implements ModelQueries {
     protected graph = new ModelGraph(new OxigraphStore());
@@ -207,7 +218,11 @@ export class ModelStore implements ModelQueries {
         const view = id === undefined ? undefined : viewProperties(this.viewDoc(id), id);
         if (view) return view;
         const idx = this.shapesIndex();
-        return properties({ g: this.graph, meta: this.metamodel, idx, fileOf: t => this.ws!.filesOfSubject(t)[0] }, id);
+        const ws = this.ws!;
+        return properties({
+            g: this.graph, meta: this.metamodel, idx, fileOf: t => ws.filesOfSubject(t)[0],
+            protectedFiles: q => ws.filesOfQuad(q).filter(f => ws.isProtected(f))
+        }, id);
     }
 
     /** The Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
@@ -505,14 +520,23 @@ export class ModelStore implements ModelQueries {
             if (folder !== this.folder && !isInside(this.folder, folder)) return { ok: false, error: `The folder ${command.folder} is not in the workspace folder.` };
             ws.newViewFolder = folder;
         }
+        if (command.kind === 'createView' && command.folder && ws.isProtected(path.join(ws.newViewFolder!, 'view.view.trig'))) {
+            ws.newViewFolder = undefined;
+            return { ok: false, error: `The folder ${command.folder} is protected.` };
+        }
         if (command.kind === 'createView' && command.file) {
             const file = path.resolve(this.folder, command.file);
-            const problem = ws.newViewFileProblem(file);
-            if (problem) return { ok: false, error: problem };
+            const problem = ws.newViewFileProblem(file) ?? (ws.isProtected(file) ? `${command.file} is protected.` : undefined);
+            if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
             ws.newViewFile = file;
         }
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
-        const { result: r, patch } = this.graph.transact(g => executeCommand(g, this.metamodel, command));
+        // Protected files (manifest ws:protect): a command that changes their statements fails as a whole (no partial change).
+        const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
+            const r = executeCommand(g, this.metamodel, command);
+            const files = r.ok ? ws.protectedChanges(g.changes()) : [];
+            return files.length ? protectedFailure(this.folder, files) : r;
+        });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
             this.commitNotes.push(command.kind);
@@ -525,24 +549,31 @@ export class ModelStore implements ModelQueries {
             this.changed('edit', patch);
         }
         ws.newViewFolder = ws.newViewFile = undefined;
-        const v = r.value;
+        const v = 'value' in r ? r.value : undefined;
         if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
         return { ok: true, id: typeof v === 'string' ? v : undefined };
     }
 
-    undo(): void { this.replay('undo'); }
-    redo(): void { this.replay('redo'); }
+    undo(): CommandResult { return this.replay('undo'); }
+    redo(): CommandResult { return this.replay('redo'); }
 
-    /** Apply the last patch of the undo (backwards) or redo stack. The patch queue goes back to its state of that step. */
-    protected replay(reason: 'undo' | 'redo'): void {
-        const step = this.history.take(reason);
-        if (!step) return;
+    /**
+     * Apply the last patch of the undo (backwards) or redo stack. The patch queue goes back to its state of that step. A step that
+     * changes a file that is protected now is refused, as an edit is (the step stays on its stack).
+     */
+    protected replay(reason: 'undo' | 'redo'): CommandResult {
+        const next = this.history.peek(reason);
+        if (!next || !this.ws) return { ok: true };
+        const applied: Patch = reason === 'undo' ? [...next.patch].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })) : next.patch;
+        const files = this.ws.protectedChanges(applied);
+        if (files.length) return protectedFailure(this.folder, files);
+        const step = this.history.take(reason)!;
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         this.graph[reason](step.patch);
-        const applied: Patch = reason === 'undo' ? [...step.patch].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })) : step.patch;
         this.track(applied);
         this.contentChanged(applied, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
         this.changed(reason, step.patch);
+        return { ok: true };
     }
 
     /** Remove an entry of the patch queue without applying it. Not an undo step. */
@@ -808,21 +839,110 @@ export class ModelStore implements ModelQueries {
      * Change the settings of the manifest (ADR 0004): the default file and the file of each kind (a model file, or a new RDF file in
      * the workspace folder; a kind: also "near"), the exclude globs. Written at once. A new exclude glob reads the files again. No undo step.
      */
-    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[] }): Promise<CommandResult> {
+    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): Promise<CommandResult> {
+        return this.serial(() => this.applySettings(settings));
+    }
+
+    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; protect?: string[] }): Promise<CommandResult> {
+        const ws = this.ws;
+        if (!ws) return { ok: false, error: 'No workspace is open.' };
+        // A file to protect must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
+        if (settings.protect?.some(g => !ws.protectGlobs.includes(g)) && ws.dirty) {
+            this.commitNotes.push('before protect');
+            await this.write();
+        }
+        const r = ws.applySettings(settings);
+        if ('error' in r) return { ok: false, error: r.error };
+        if (r.reread) {
+            this.content++;
+            await this.write();
+            return this.doOpen(ws.path);
+        }
+        ws.syncShapesTarget();
+        this.content++;
+        this.changed('files');
+        return { ok: true };
+    }
+
+    /**
+     * Protect or unprotect one file (a path relative to the workspace folder, or absolute): add its path to the protect globs, or
+     * remove the globs that are its path. A file that another glob still protects stays protected (error that names the glob).
+     */
+    setProtected(file: string, on: boolean): Promise<CommandResult> {
         return this.serial(async () => {
             const ws = this.ws;
             if (!ws) return { ok: false, error: 'No workspace is open.' };
-            const r = ws.applySettings(settings);
-            if ('error' in r) return { ok: false, error: r.error };
-            if (r.reread) {
-                this.content++;
-                await this.write();
-                return this.doOpen(ws.path);
+            const abs = path.resolve(this.folder, file);
+            if (!isInside(this.folder, abs)) return { ok: false, error: `${file}: the file must be in the folder of the workspace file.` };
+            const rel = portableRelative(this.folder, abs);
+            const globs = ws.protectGlobs;
+            if (on) return ws.isProtected(abs) ? { ok: true } : this.applySettings({ protect: [...globs, rel] });
+            const r = await this.applySettings({ protect: globs.filter(g => g !== rel) });
+            if (!r.ok) return r;
+            const glob = ws.protectGlobs.find(g => ws.isProtected(abs, [g]));
+            return glob ? { ok: false, error: `${rel} stays protected by the glob "${glob}". Remove the glob in the Workspace settings.` } : r;
+        });
+    }
+
+    /**
+     * Import an RDF file from outside the workspace (§2.6): write a Turtle copy with IRIs for its blank nodes to imported/<name>.ttl
+     * (-2, … when taken), protect the copy, and add the prefixes of the file that the workspace table does not have. A prefix whose
+     * name or namespace the table has with another value is not added (a note). Then the workspace is read again: no undo across it.
+     */
+    importFile(source: string): Promise<ImportResult> {
+        return this.serial(async (): Promise<ImportResult> => {
+            const ws = this.ws;
+            if (!ws) return { ok: false, error: 'No workspace is open.' };
+            const name = path.basename(source);
+            let text: string, quads: Quad[];
+            try {
+                text = await fs.readFile(source, 'utf8');
+                quads = await parseRdf(text, source);
+            } catch (e) {
+                return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
             }
-            ws.syncShapesTarget();
+            if (!quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
+            const table = { ...PREFIXES }, added: string[] = [], skipped: string[] = [];
+            for (const [prefix, ns] of Object.entries(declaredPrefixes(text, source))) {
+                if (table[prefix] === ns) continue;
+                if (!prefix || table[prefix] !== undefined || Object.values(table).includes(ns)) { skipped.push(prefix); continue; }
+                table[prefix] = ns;
+                added.push(prefix);
+            }
+            if (added.length && prefixesProblem(table)) return { ok: false, error: `${name}: not imported: ${prefixesProblem(table)}` };
+            const base = name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
+            const folder = path.join(this.folder, IMPORT_FOLDER);
+            let target = path.join(folder, `${base}.ttl`);
+            for (let i = 2; existsSync(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
+            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, protect: ws.protectGlobs };
+            const undo = async (error: string): Promise<ImportResult> => {
+                ws.prefixes = before.prefixes;
+                setPrefixes(before.table);
+                ws.applySettings({ protect: before.protect });
+                return { ok: false, error: `${name}: not imported: ${error}` };
+            };
+            if (added.length) { ws.prefixes = table; setPrefixes(table); }
+            // The default graph: a model file has no graph names (open.md STORE1).
+            const triples = skolemize(quads.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
+            try {
+                await fs.mkdir(folder, { recursive: true });
+                await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
+            } catch (e) {
+                return undo((e as Error).message);
+            }
+            ws.applySettings({ protect: [...before.protect, portableRelative(this.folder, target)] });
+            ws.written.push(target);
+            this.commitNotes.push(`import ${name}`);
             this.content++;
-            this.changed('files');
-            return { ok: true };
+            const w = await this.write();
+            if (!w.ok) {
+                await fs.rm(target, { force: true });
+                return undo(w.error);
+            }
+            const opened = await this.doOpen(ws.path);
+            if (!opened.ok) return opened;
+            if (skipped.length) this.note(`${name}: prefixes not added (the workspace has the name or the namespace with another value): ${skipped.map(p => `${p}:`).join(' ')}`);
+            return { ok: true, file: target, prefixes: added };
         });
     }
 

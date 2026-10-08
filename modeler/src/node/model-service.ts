@@ -2,7 +2,7 @@
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { CommandResult, EditCommand, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
+import { CommandResult, EditCommand, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote } from '@catenary/model';
 import { ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
 import { ModelStore } from '@catenary/rdf';
 
@@ -35,11 +35,13 @@ export class ModelServiceImpl implements ModelService, Disposable {
     create(workspacePath: string, placement?: WorkspaceSettings['placement']): Promise<CommandResult> { return this.store.create(workspacePath, placement); }
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult> { return this.store.setPrefixes(prefixes); }
     setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return this.store.setSettings(settings); }
+    setProtected(file: string, on: boolean): Promise<CommandResult> { return this.store.setProtected(file, on); }
+    importFile(source: string): Promise<ImportResult> { return this.store.importFile(source); }
     setExportViews(ids: string[]): Promise<CommandResult> { return this.store.setExportViews(ids); }
     async dismissMigration(id: string): Promise<void> { this.store.dismissMigration(id); }
     save(): Promise<CommandResult> { return this.store.save(); }
-    async undo(): Promise<void> { this.store.undo(); }
-    async redo(): Promise<void> { this.store.redo(); }
+    async undo(): Promise<CommandResult> { return this.store.undo(); }
+    async redo(): Promise<CommandResult> { return this.store.redo(); }
     async execute(command: EditCommand): Promise<CommandResult> { return this.store.execute(command); }
 
     // The read queries: methods of the prototype, so that the RPC proxy and the CLI call them by name.

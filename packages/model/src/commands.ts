@@ -184,7 +184,11 @@ export const VIEW_CLIP_FORMAT = 'application/x-catenary-view-clip';
 export type ClipMode = 'copy' | 'cut';
 
 /** Result of a command. `id` is the id of a created element, if any; `ids` the ids of all of them (paste). */
-export type CommandResult = { ok: true; id?: string; ids?: string[] } | { ok: false; error: string };
+/** `protected`: the command changes these protected files (absolute paths), so it is refused (manifest ws:protect). */
+export type CommandResult = { ok: true; id?: string; ids?: string[] } | { ok: false; error: string; protected?: string[] };
+
+/** The answer of an import: the path of the copy and the prefixes that it added to the workspace. */
+export type ImportResult = { ok: true; file: string; prefixes: string[] } | { ok: false; error: string };
 
 /** Sides of the edge in the view. */
 export type EdgeSides = Pick<EdgeLayout, 'fromSide' | 'toSide'>;
