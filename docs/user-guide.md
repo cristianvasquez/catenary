@@ -11,7 +11,7 @@ The first `pnpm start` or `pnpm desktop` copies `examples/bookshop` to `~/.local
 1. Select File → Open Workspace.
 2. Select a folder or a `workspace.trig` file.
 
-A file in the navigator opens what it holds, not what its name says, when you select it. A workspace file opens the workspace. A view file shows the view, and first opens its workspace if another one is open. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other files open as text. Use Open With to open any file as text.
+A file in the navigator opens what it holds, not what its name says, when you select it. A view file of the open workspace shows the view. The workspace file shows the Workspace settings. Selecting a file of another workspace shows its text: double-click it or press Enter to open that workspace and its view. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other files open as text. Use Open With to open any file as text.
 
 If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace creates `workspace.trig`, the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
 

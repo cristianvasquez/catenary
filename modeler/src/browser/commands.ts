@@ -4,7 +4,7 @@ import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-int
 import { Command, CommandRegistry, MAIN_MENU_BAR, MenuModelRegistry, MessageService, QuickInputService, SelectionService, URI } from '@theia/core';
 import {
     AbstractViewContribution, ApplicationShell, FrontendApplication, FrontendApplicationContribution, KeybindingContext, KeybindingRegistry,
-    OpenHandler, StorageService, Widget
+    OpenHandler, OpenerOptions, StorageService, Widget
 } from '@theia/core/lib/browser';
 import { PERSPECTIVE_LAYOUTS_STORAGE_KEY } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
@@ -17,7 +17,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { FileContent, mixedFileProblem, openModes } from '@catenary/model';
+import { FileContent, OpenMode, mixedFileProblem, openModes, previewModes } from '@catenary/model';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -444,8 +444,9 @@ export class ExplorerFocusContext implements KeybindingContext {
 
 /**
  * A file opens as what it holds that Catenary edits, from its content, not its name: a workspace in the workspace editor (the open
- * workspace: its settings), a view in its view editor. The navigator opens a file when it is selected (single click), so browsing the
- * files shows the views. A file with several ways to open asks which. A file that mixes workspace settings and a view opens as text,
+ * workspace: its settings), a view in its view editor. The navigator opens a file when it is selected (single click, a preview), so
+ * browsing the files shows the views. A preview stays in the open workspace: another workspace, or a view of another workspace, needs
+ * an explicit open (double-click or Enter); the preview shows its text. A file with several ways to open asks which. A file that mixes workspace settings and a view opens as text,
  * with a message. Other files: the next handler, the text editor. "Open With" keeps the text editor for every file.
  */
 @injectable()
@@ -465,21 +466,26 @@ export class CatenaryFileOpenHandler implements OpenHandler {
         return this.model.service.fileContent(uri.path.fsPath()).catch(() => undefined);
     }
 
-    async canHandle(uri: URI): Promise<number> {
-        const c = await this.content(uri);
-        return c && (openModes(c).length || mixedFileProblem(c)) ? 200 : 0;
+    /** The ways to open the file. A preview (a single click in the navigator) does not switch to another workspace. */
+    protected modes(c: FileContent, uri: URI, options?: OpenerOptions): OpenMode[] {
+        return (options as { preview?: boolean } | undefined)?.preview ? previewModes(c, uri.path.fsPath(), this.model.snapshot.file) : openModes(c);
     }
 
-    async open(uri: URI): Promise<object | undefined> {
+    async canHandle(uri: URI, options?: OpenerOptions): Promise<number> {
+        const c = await this.content(uri);
+        return c && (this.modes(c, uri, options).length || mixedFileProblem(c)) ? 200 : 0;
+    }
+
+    async open(uri: URI, options?: OpenerOptions): Promise<object | undefined> {
         const c = await this.content(uri);
         if (!c) return undefined;
         const name = uri.path.base;
         const problem = mixedFileProblem(c);
         if (problem) {
             this.messages.warn(`${name}: ${problem}`);
-            return this.editorManager.open(uri);
+            return this.editorManager.open(uri, options);
         }
-        const items = openModes(c).map(m => m.kind === 'workspace'
+        const items = this.modes(c, uri, options).map(m => m.kind === 'workspace'
             ? { label: 'Workspace', description: name, run: () => this.openWorkspace(uri) }
             : { label: `View: ${m.label}`, description: name, run: () => this.actions.openView(m.id, c.workspaceFile) });
         const pick = items.length > 1 ? await this.quick.showQuickPick(items, { placeholder: `${name} holds ${items.length} things that Catenary edits. Open it as:` }) : items[0];

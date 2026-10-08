@@ -52,6 +52,14 @@ export function openModes(c: FileContent): OpenMode[] {
     return [...(c.workspace ? [{ kind: 'workspace' } as const] : []), ...c.views.map(v => ({ kind: 'view' as const, ...v }))];
 }
 
+/**
+ * The open modes of a preview (a file selected while browsing the navigator): the ones that stay in the open workspace `openFile`.
+ * Switching to another workspace needs an explicit open (double-click or Enter). `file`: the path of the file.
+ */
+export function previewModes(c: FileContent, file: string, openFile?: string): OpenMode[] {
+    return openModes(c).filter(m => (m.kind === 'workspace' ? file : c.workspaceFile) === openFile && openFile !== undefined);
+}
+
 /** What a model file contains (ADR 0004: from its triples, not from a role). */
 export type FileKind = 'shapes' | 'concepts' | 'instances';
 

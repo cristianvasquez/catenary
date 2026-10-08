@@ -363,7 +363,9 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 
 -- | A file opens as what its content holds that Catenary edits, not by its name: a workspace (the manifest graph) opens the
 -- workspace (the open one: its Workspace settings), a view (a view:View) opens its view editor. The navigator opens a file when it
--- is selected, so browsing the files shows the views. A file with several ways to open asks which.
+-- is selected (a preview), so browsing the files shows the views. A preview stays in the open workspace: another workspace, or a
+-- view of another workspace, opens only by an explicit open (double-click or Enter); the preview shows its text.
+-- Reason: browsing must not replace the open workspace. A file with several ways to open asks which.
 -- A file with the workspace settings and a view opens as text, with the message "This file mixes workspace settings and a view.
 -- Move the view into its own file." Reason: a save of one part must not change the other (open.md D7).
 -- A file with neither opens as text. "Open With" opens any file as text.
@@ -386,6 +388,13 @@ openChoices p h
       ds -> ds
 law_plainFileOpensAsText :: FilePath -> Bool
 law_plainFileOpensAsText p = openChoices p (FileHolds False []) == [AsText p]
+-- | A preview keeps the documents that stay in the open workspace. `inOpen`: the document belongs to the open workspace.
+previewChoices :: (Document -> Bool) -> FilePath -> FileHolds -> [Document]
+previewChoices inOpen p h = case filter (\d -> d == AsText p || inOpen d) (openChoices p h) of
+  [] -> [AsText p]
+  ds -> ds
+law_previewStaysInWorkspace :: (Document -> Bool) -> FilePath -> FileHolds -> Bool
+law_previewStaysInWorkspace inOpen p h = all (\d -> d == AsText p || inOpen d) (previewChoices inOpen p h)
 law_mixedFileOpensAsText :: FilePath -> Id -> Bool
 law_mixedFileOpensAsText p v = openChoices p (FileHolds True [v]) == [AsText p]
 openDocument :: Document -> UiState -> UiState
