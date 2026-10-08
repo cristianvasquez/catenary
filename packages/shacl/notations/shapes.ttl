@@ -22,7 +22,9 @@ shn:Card a nt:Figure ;
     nt:kind nt:Box ;
     nt:style shn:shape ;
     sh:targetClass sh:NodeShape ;
-    nt:when [ sh:not [ sh:or ( shn:SchemeHelper shn:CollectionHelper ) ] ] ;
+    sh:targetSubjectsOf sh:targetClass, sh:targetSubjectsOf, sh:targetObjectsOf, sh:targetNode, sh:node, sh:property ;
+    sh:targetObjectsOf sh:node ;
+    nt:when [ sh:not [ sh:or ( shn:SchemeHelper shn:CollectionHelper ) ] ; sh:property [ sh:path sh:path ; sh:maxCount 0 ] ] ;
     sh:property
         [ sh:path [ sh:alternativePath ( rdfs:label sh:name ) ] ; nt:role nt:title ] ,
         [ sh:path sh:targetClass ; nt:role nt:text ] ,

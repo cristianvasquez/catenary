@@ -24,7 +24,7 @@ import { rdf, termKey } from './terms';
 const SH = NS.sh;
 const n = (iri: string) => rdf.namedNode(iri);
 export const S = {
-    NodeShape: n(SH + 'NodeShape'), PropertyShape: n(SH + 'PropertyShape'), targetClass: n(SH + 'targetClass'), targetSubjectsOf: n(SH + 'targetSubjectsOf'), property: n(SH + 'property'),
+    NodeShape: n(SH + 'NodeShape'), PropertyShape: n(SH + 'PropertyShape'), targetClass: n(SH + 'targetClass'), targetSubjectsOf: n(SH + 'targetSubjectsOf'), targetObjectsOf: n(SH + 'targetObjectsOf'), targetNode: n(SH + 'targetNode'), property: n(SH + 'property'),
     path: n(SH + 'path'), name: n(SH + 'name'), description: n(SH + 'description'), minCount: n(SH + 'minCount'), maxCount: n(SH + 'maxCount'),
     datatype: n(SH + 'datatype'), nodeKind: n(SH + 'nodeKind'), class: n(SH + 'class'), node: n(SH + 'node'), in: n(SH + 'in'),
     hasValue: n(SH + 'hasValue'), pattern: n(SH + 'pattern'), minLength: n(SH + 'minLength'), maxLength: n(SH + 'maxLength'),
@@ -122,10 +122,11 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
 
     // Node shapes.
     const candidates = rdf.termSet<NamedNode>();
-    for (const p of [S.targetClass, S.targetSubjectsOf, S.property, S.or, S.xone, S.and, S.not]) {
+    for (const p of [S.targetClass, S.targetSubjectsOf, S.targetObjectsOf, S.targetNode, S.node, S.property, S.or, S.xone, S.and, S.not]) {
         for (const q of ds.match(null, p)) candidates.add(q.subject as NamedNode);
     }
     for (const q of ds.match(null, S.type, S.NodeShape)) candidates.add(q.subject as NamedNode);
+    for (const q of ds.match(null, S.node)) if (q.object.termType === 'NamedNode' && ds.match(q.object).size) candidates.add(q.object);
     // Members of a property-level sh:or are part of the range of the property shape, not node shapes of the model.
     const orMembers = new Set([...ds.match(null, S.or)].filter(q => one(q.subject, S.path)).flatMap(q => list(q.object)).map(t => t.value));
     const shapeTerms = [...candidates].filter(t => !one(t, S.path) && !orMembers.has(t.value)).sort((a, b) => cmp(a.value, b.value));
@@ -261,22 +262,28 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
         const c = collectionOf(t);
         if (c) index.memberShapes.set(c, [...(index.memberShapes.get(c) ?? []), t]);
     }
-    const NODE_KNOWN = [S.type, S.targetClass, S.targetSubjectsOf, S.name, S.label, S.description, S.comment, S.property, S.closed, S.or, S.xone, S.and, S.not];
+    const NODE_KNOWN = [S.type, S.targetClass, S.targetSubjectsOf, S.targetObjectsOf, S.targetNode, S.node, S.name, S.label, S.description, S.comment, S.property, S.closed, S.or, S.xone, S.and, S.not];
     const usedIds = new Set<string>();
     for (const s of modelShapes) {
         const id = shapeIds.get(s.value)!;
         const graph = graphOf(s);
         const targets = objects(s, S.targetClass);
         const subjectTargets = objects(s, S.targetSubjectsOf);
+        const objectTargets = objects(s, S.targetObjectsOf);
+        const nodeTargets = objects(s, S.targetNode).map(termToJSON).filter((t): t is TermJSON => !!t);
         const shape: NodeShape = {
             id, uri: s.value,
             label: str(s, S.name) ?? str(s, S.label) ?? labelFromIri(s.value),
+            nodes: objects(s, S.node).map(t => t.value),
             targetClass: targets[0]?.value,
+            targetClasses: targets.length ? [...new Set(targets.map(t => t.value))].sort() : undefined,
+            targetObjectsOf: objectTargets.length ? [...new Set(objectTargets.map(t => t.value))].sort() : undefined,
+            targetNodes: nodeTargets.length ? nodeTargets : undefined,
             targetSubjectsOf: subjectTargets.length ? [...new Set(subjectTargets.map(t => t.value))].sort() : undefined,
             closed: str(s, S.closed) === 'true' || undefined,
             description: str(s, S.description) ?? str(s, S.comment),
             file: fileOfGraph(graph.value), properties: [], constraints: [],
-            raw: [...rawOf(s, NODE_KNOWN).filter(r => r !== 'rdf:type sh:NodeShape'), ...targets.slice(1).map(t => `sh:targetClass ${text(t)}`)]
+            raw: rawOf(s, NODE_KNOWN).filter(r => r !== 'rdf:type sh:NodeShape')
         };
         index.model.nodeShapes[id] = shape;
         index.nodeShape.set(id, { term: s, graph });

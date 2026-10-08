@@ -697,7 +697,8 @@ shownBounds elapsed kept server = case kept of
 -- | Halo. One selected item shows its halo. Several show a shared frame with Collect, Remove and More actions.
 -- Card controls: Reveal, Remove, More actions, incoming and outgoing expansion, applicable-shape expansion, incoming and outgoing creation (+).
 -- The direction of a creation control decides which end is the selected card.
--- Applicable-shape expansion lists unshown node shapes whose sh:targetSubjectsOf predicate has a value on the selected instance.
+-- Applicable-shape expansion uses the shared checked-node relation, including direct targets and positive node constraints.
+-- A node-shape card has a checked-instance expansion control. Both controls exclude cards already shown.
 -- Incoming expansion of a node-shape card adds the chosen source shape cards. Their properties to the card become edges (§6).
 -- Note halo: Remove, More actions, arrow drag. Frame and reference halo: Remove, More actions. Entity-group halo: also Expand.
 -- Halo controls draw above diagram content with opaque backgrounds. Positions and labels: diagram/card-chrome.ts.
@@ -828,7 +829,11 @@ noteEditorTextSize = 16
 -- A new property whose owner and target show is an edge. An edge whose owner or target leaves becomes a row.
 -- A selected element shows its rows to and from elements of the view as dashed edges. ⇥ on a dashed edge shows it as an edge.
 -- A shown property shape has a dashed targeting edge to a shown node shape when its simple path equals that shape's sh:targetSubjectsOf predicate.
--- The targeting edge is derived, has an arrowhead, and has no edit control or persisted placement.
+-- Object-target connectors start at a represented object-end shape when available.
+-- Without an object-end shape, the connector starts at the property owner and says "objects of".
+-- A node-level constraint connects its source shape to its referenced shape and says "sh:node".
+-- A shown instance and its checked shape have a connector labeled with the applicability reasons.
+-- Targeting edges are derived. They have arrowheads and no edit controls or persisted placements.
 -- A logical constraint (sh:xone, sh:or, sh:and over property shapes) is a hub. Placed, it shows a hub with its member edges.
 -- Unplaced, it is a row group of its card: "xone", then one sub-row per member. Hub and members are placed and removed as one unit.
 -- Del on the hub, on a member line or on its private pill removes the unit. ⇥ on the row group places the hub and the boxes it needs.
@@ -1154,7 +1159,7 @@ widthAfterResize wanted current = max wanted current
 
 -- | Right area: sections derive their content from the same selection. Mixed selections show mixed values.
 -- Element: outgoing statements, fields of all applicable shapes grouped by shape, uncovered statements, errors beside fields.
--- The Shape links include sh:targetClass and sh:targetSubjectsOf matches.
+-- Shape links, forms and canvas expansion use the same checked-node relation.
 -- Visuals: figure, style and geometry, and whether each style value comes from the placement or the element.
 -- Links: incoming statements by layer, placements across views, applicable shapes and source files.
 -- A canvas placement gives Element and Links its element, and Visuals the placement. A placement row gives all sections the placement.

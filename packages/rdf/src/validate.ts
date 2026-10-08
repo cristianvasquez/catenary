@@ -30,7 +30,7 @@ export const PREDICATE_PATH = (v: string) => `FILTER (isIRI(${v}) && NOT EXISTS 
 /** `validate`, and the SHACL report as quads of `VALIDATION_GRAPH`. The blank nodes of the report get skolem IRIs (skolem.ts). */
 export async function validateWithReport(triples: Quad[], meta: Metamodel, instanceId: (iri: string) => string | undefined,
     shapeId: (shape: Term) => string | undefined = () => undefined): Promise<{ violations: Violation[]; report: Quad[] }> {
-    if (meta.classes.length === 0) return { violations: [], report: [] };
+    if (meta.dataset.size === 0) return { violations: [], report: [] };
     const { results, report } = await shaclReport(meta.dataset, [...triples, ...inSchemeTriples(meta)]);
     return { violations: violationsOf(results, meta, instanceId, shapeId), report: reportQuads(report) };
 }

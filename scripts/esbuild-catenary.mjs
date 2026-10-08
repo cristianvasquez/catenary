@@ -18,6 +18,7 @@ export function copyBackendWasm(appDir, outdir) {
     const notations = path.join(path.dirname(fromModeler.resolve('@catenary/rdf/package.json')), 'notations');
     mkdirSync(path.join(outdir, 'notations'), { recursive: true });
     for (const f of readdirSync(notations)) copyFileSync(path.join(notations, f), path.join(outdir, 'notations', f));
+    copyFileSync(fromModeler.resolve('@catenary/shacl/notations/shapes.ttl'), path.join(outdir, 'notations', 'shapes.ttl'));
 }
 
 /** The worker thread of the SHACL validation: `validation-worker.js` next to the backend bundle (packages/rdf/src/validation-runner.ts). */

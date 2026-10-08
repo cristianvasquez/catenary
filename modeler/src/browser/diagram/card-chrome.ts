@@ -239,9 +239,10 @@ export function renderCollection(p: CollectionProps, handles: VNode[]): VNode {
  * Node shape. `expandIn`: node shapes that the view does not show, with a property to this shape (`hiddenShapeSources`), with their
  * number; no button when there are none. The arrow points right, into the card, as on an instance card.
  */
-export function shapeHalo(incoming: number): HaloAction[] {
+export function shapeHalo(incoming: number, instances = 0): HaloAction[] {
     return [
         HALO_REMOVE, HALO_MENU,
+        ...(instances ? [{ action: 'expandTargets', dock: 'n' as const, icon: 'list-tree', title: `Show checked instances (${instances} not in the view)`, count: instances }] : []),
         ...(incoming ? [{ action: 'expandIn', dock: 'w' as const, icon: 'arrow-right', title: `Incoming: show node shapes with a property to this shape (${incoming} not in the view)`, count: incoming }] : []),
         { action: 'link', dock: 'se', icon: CREATE_ICON, title: 'New property: drag to a node shape, a concept scheme or collection, or to empty canvas, or click' },
         { action: 'linkIn', dock: 'sw', icon: CREATE_ICON, title: 'New incoming property: drag to a node shape or to empty canvas, or click' }
@@ -273,7 +274,7 @@ export function renderShapeCard(p: ShapeCardProps, rows: VNode[], handles: VNode
         h('div', { class: { 'shape-type': true } }, p.className),
         h('div', { class: { 'shape-name': true } }, p.name),
         ...(simple ? [] : [
-            h('div', { class: { 'shape-class': true }, attrs: { title: `${p.subtitle}. Double-click edits the target class. Edit subject targets in Properties.` } }, p.subtitle + (p.closed ? ' · closed' : '')),
+            h('div', { class: { 'shape-class': true }, attrs: { title: `${p.subtitle}. Double-click edits the target class. Edit targets and node constraints in Properties.` } }, p.subtitle + (p.closed ? ' · closed' : '')),
             h('div', { class: { 'shape-rows': true } }, rows),
             h('div', { class: { 'shape-add-row': true }, attrs: { title: 'New attribute: type its path (prefix:local); Tab picks the value' } }, '+ attribute')
         ])

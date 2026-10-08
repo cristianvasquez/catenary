@@ -1,3 +1,6 @@
+import { labels } from './sparql';
+import { reasonText, TargetMatch } from '@catenary/shacl/common';
+import { shapeTargetMatches } from './shacl-targets';
 // The model store: one RDF dataset (ModelGraph), shared by all diagram sessions and by the frontend. It coordinates the parts:
 // the files on disk and the dataset read from them (workspace.ts), undo and the patch queue (history.ts), validation
 // (validation-runner.ts), and the read models of the panels and editors, built for each request (ADR 0012: no shared Doc).
@@ -146,6 +149,16 @@ export class ModelStore implements ModelQueries {
     /** For each instance card of the view: the number of related instances in and out that the view does not show (card halo). */
     hiddenNeighborCounts(view: View): Map<string, { in: number; out: number; targets?: number }> {
         return hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
+    }
+
+    /** Derived checked-node connections whose instance and shape cards are both in this view. */
+    viewApplicability(view: View): TargetMatch[] {
+        const shown = new Set(boxes(view, 'card').map(b => b.element));
+        const nodes = [...shown].flatMap(id => {
+            const t = elementTerm(id);
+            return t?.termType === 'NamedNode' && this.graph.isInstance(t) ? [{ termType: 'NamedNode' as const, value: t.value }] : [];
+        });
+        return shapeTargetMatches(this.graph, { nodes }).filter(m => shown.has(elementId(rdf.namedNode(m.shape))));
     }
 
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
@@ -312,16 +325,34 @@ export class ModelStore implements ModelQueries {
 
     shapeTargetChoices(viewId: string, from: string): Choices | undefined {
         const doc = this.viewDoc(viewId), view = doc.views[viewId];
-        const instance = view && doc.instances[elementOfId(view, from)];
-        if (!view || !instance) return undefined;
+        if (!view) return undefined;
+        const element = elementOfId(view, from);
         const shown = new Set(boxes(view, 'card').map(card => card.element));
-        const shapes = Object.values(doc.shapes.nodeShapes).filter(shape => !shown.has(shape.id)
-            && shape.targetSubjectsOf?.some(predicate => this.graph.match(rdf.namedNode(instance.uri), rdf.namedNode(predicate), null, this.graph.homeOf(rdf.namedNode(instance.uri))).length > 0));
+        const shape = doc.shapes.nodeShapes[element];
+        if (shape) {
+            const matches = shapeTargetMatches(this.graph, { shapes: [shape.uri] }).filter(m => m.node.termType === 'NamedNode'
+                && this.graph.isInstance(rdf.namedNode(m.node.value)) && !shown.has(elementId(rdf.namedNode(m.node.value))));
+            if (!matches.length) return undefined;
+            const names = labels(this.graph, matches.map(m => m.node.value));
+            return {
+                title: `${shape.label}: instances (${matches.length} not in the view)`,
+                items: matches.map(m => ({ label: names.get(m.node.value) ?? shortIri(m.node.value),
+                    description: reasonText(m.reasons, shortIri), ids: [elementId(rdf.namedNode(m.node.value))] }))
+                    .sort((a, b) => a.label.localeCompare(b.label) || a.ids[0].localeCompare(b.ids[0]))
+            };
+        }
+        const instance = doc.instances[element];
+        if (!instance) return undefined;
+        const matches = shapeTargetMatches(this.graph, { nodes: [{ termType: 'NamedNode', value: instance.uri }] });
+        const shapes = matches.flatMap(match => {
+            const shape = Object.values(doc.shapes.nodeShapes).find(s => s.uri === match.shape);
+            return shape && !shown.has(shape.id) ? [{ ...shape, reasons: match.reasons }] : [];
+        });
         if (!shapes.length) return undefined;
         return {
             title: `${instance.label}: applicable node shapes (${shapes.length} not in the view)`,
             items: shapes.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
-                .map(shape => ({ label: shape.label, description: `subjects of ${shape.targetSubjectsOf!.map(shortIri).join(' or ')}`, ids: [shape.id] }))
+                .map(shape => ({ label: shape.label, description: reasonText(shape.reasons, shortIri), ids: [shape.id] }))
         };
     }
 

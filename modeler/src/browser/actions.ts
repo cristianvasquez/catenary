@@ -792,13 +792,25 @@ export class ModelActions {
     }
 
     async setTargetSubjectsOfText(shape: string, text: string): Promise<void> {
+        return this.setPredicateTargetsText(shape, 'targetSubjectsOf', text);
+    }
+
+    async setTargetObjectsOfText(shape: string, text: string): Promise<void> {
+        return this.setPredicateTargetsText(shape, 'targetObjectsOf', text);
+    }
+
+    async setNodeConstraintsText(shape: string, text: string): Promise<void> {
+        return this.setPredicateTargetsText(shape, 'nodes', text);
+    }
+
+    protected async setPredicateTargetsText(shape: string, field: 'targetSubjectsOf' | 'targetObjectsOf' | 'nodes', text: string): Promise<void> {
         const targets: string[] = [];
         for (const line of text.split('\n').map(v => v.trim()).filter(Boolean)) {
             const target = parseIri(line);
             if ('error' in target) { this.messages.warn(target.error); return; }
             if (target.iri) targets.push(target.iri);
         }
-        await this.setNodeShape(shape, { targetSubjectsOf: [...new Set(targets)] });
+        await this.setNodeShape(shape, { [field]: [...new Set(targets)] });
     }
 
     /** A typed class: an IRI, the known class with that name, else a urn:name IRI; a name of two classes: a warning, undefined. */

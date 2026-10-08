@@ -1,3 +1,5 @@
+import { shapePredicates } from '@catenary/shacl/backend';
+import { shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 // Properties reads shared thing, statement, label and connection queries. The shapes index supplies UI identities.
 
 import type { NamedNode, Quad } from '@rdfjs/types';
@@ -71,14 +73,10 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
     for (const p of Object.keys(fields)) fields[p].sort((a, b) => cmp(jsonKey(a), jsonKey(b)));
     for (const p of Object.keys(targets)) targets[p].sort(cmp);
     const shapeIds = new Map([...idx.nodeShape].map(([id, n]) => [n.term.value, id]));
-    const shapeFacts = end.types.length ? construct(g, `CONSTRUCT { ?n sh:targetClass ?c } WHERE {
-        VALUES ?c { ${end.types.map(iri).join(' ')} }
-        GRAPH ?g { ?n sh:targetClass ?c } FILTER (?g != ${NOT_REPORT})
-    }`) : [];
-    const subjectTargets = Object.values(idx.model.nodeShapes).filter(shape => own.some(q => shape.targetSubjectsOf?.includes(q.predicate.value))).map(shape => shape.uri);
-    const shapeTerms = [...new Set([...shapeFacts.map(q => q.subject.value), ...subjectTargets])].filter(s => shapeIds.has(s));
+    const matches = shapeTargetMatches(g, { nodes: [{ termType: 'NamedNode', value: t.value }] });
+    const shapeTerms = matches.map(m => m.shape).filter(s => shapeIds.has(s));
     const shapeNames = labels(g, shapeTerms);
-    const shapes = shapeTerms.map(s => ({ id: shapeIds.get(s)!, uri: s, label: shapeNames.get(s)! })).sort((a, b) => a.label.localeCompare(b.label));
+    const shapes = shapeTerms.map(s => ({ id: shapeIds.get(s)!, uri: s, label: shapeNames.get(s)!, reasons: matches.find(m => m.shape === s)!.reasons, predicates: shapePredicates(g.store, shapeQueryScope(g).shapes, s) })).sort((a, b) => a.label.localeCompare(b.label));
     const candidates = rdf.dataset(formCandidates(g, t)).toString().split('\n').filter(Boolean).sort().join('\n');
     const file = ctx.fileOf(t);
     const locked: string[] = [], importedFiles = new Set<string>();

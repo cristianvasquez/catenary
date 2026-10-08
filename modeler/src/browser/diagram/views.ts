@@ -130,6 +130,8 @@ export class ShapeNode extends GNode {
     display = 'detailed';
     /** Node shapes with a property to this one that the view does not show (halo button). */
     hiddenSources = 0;
+    /** Checked instances outside this view. */
+    hiddenTargets = 0;
 }
 
 /** A row of the attribute list of a shape card: a property shape. Selectable; its id is the property shape id. */
@@ -408,7 +410,7 @@ export class CatenaryGraphView extends GLSPProjectionView {
             const node = boxes[0];
             const { x, y } = node.position, { width, height } = node.size;
             const actions = node instanceof CardNode ? cardHalo(node.hiddenIn, node.hiddenOut, node.hiddenTargets) : node instanceof CollectionNode ? COLLECTION_HALO
-                : node instanceof ShapeNode ? shapeHalo(node.hiddenSources) : node instanceof NoteNode ? NOTE_HALO : BOX_HALO;
+                : node instanceof ShapeNode ? shapeHalo(node.hiddenSources, node.hiddenTargets) : node instanceof NoteNode ? NOTE_HALO : BOX_HALO;
             layer.children = [...(layer.children ?? []), svg('g', { 'class-catenary-halo': true, 'data-element': node.id, transform: `translate(${x},${y})` },
                 ...renderHalo(width, height, k, actions))];
         } else if (boxes.length > 1) {

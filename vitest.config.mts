@@ -8,6 +8,8 @@ export default defineConfig({
     resolve: {
         // Test current source, never a stale package build. No tsc or webpack in the edit/test loop.
         alias: {
+            '@catenary/shacl/common': fileURLToPath(new URL('./packages/shacl/src/common/index.ts', import.meta.url)),
+            '@catenary/shacl/backend': fileURLToPath(new URL('./packages/shacl/src/backend/index.ts', import.meta.url)),
             '@catenary/model': fileURLToPath(new URL('./packages/model/src/index.ts', import.meta.url)),
             '@catenary/rdf': fileURLToPath(new URL('./packages/rdf/src/index.ts', import.meta.url)),
             'rdf-files': fileURLToPath(new URL('./packages/rdf-files/src/index.ts', import.meta.url))

@@ -122,13 +122,14 @@ describe('dialogs and pickers of the user actions', () => {
         const shape = rdf.namedNode('urn:test:StatusSubjectShape');
         const predicate = rdf.namedNode('urn:test:status');
         const uri = rdf.namedNode(docOf(store).instances[instance].uri);
+        const previous = store.hiddenNeighborCounts(view).get(instance)?.targets ?? 0;
         g.add(shape, S.targetSubjectsOf, rdf.namedNode('urn:test:first'), g.shapesGraphs()[0]);
         g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
         g.add(uri, predicate, rdf.literal('active'), g.model);
 
-        expect(store.hiddenNeighborCounts(view).get(instance)?.targets).toBe(1);
+        expect(store.hiddenNeighborCounts(view).get(instance)?.targets).toBe(previous + 1);
         expect(store.shapeTargetChoices(view.id, card.id)).toMatchObject({
-            items: [{ ids: [elementId(shape)], description: 'subjects of first or status' }]
+            items: expect.arrayContaining([{ ids: [elementId(shape)], label: expect.any(String), description: 'subjects of status' }])
         });
     });
 

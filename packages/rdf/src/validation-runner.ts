@@ -112,7 +112,7 @@ export class ValidationRunner {
             const shapeId = (t: Term) => shapesIndexOf(g).byTerm.get(termKey(t));
             let violations: Violation[] = [], report: Quad[] = [];
             if (!workerFile) ({ violations, report } = await validateWithReport(data, metamodel, instanceId, shapeId));
-            else if (metamodel.classes.length) {
+            else if (metamodel.dataset.size) {
                 const r = await shaclWorker.run(metamodel.dataset, [...data, ...inSchemeTriples(metamodel)]);
                 if (run !== this.run) return;
                 violations = violationsOf(r.results, metamodel, instanceId, shapeId);

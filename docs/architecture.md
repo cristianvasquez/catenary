@@ -40,14 +40,15 @@ The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in works
 
 ## Packages
 
-Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/rdf` imports `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
+Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/shacl/common`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
-| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md` only. No RDF library, UI framework or Node built-in. |
+| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules and notation assets. | No runtime dependencies. Hosts supply query ports and graph identities. |
+| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
 | `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
-| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Node only. | `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
+| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Node only. | `@catenary/shacl`, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
 | `modeler` | Theia extension: RPC service, GLSP adapters, panels, canvas. | `@catenary/model`. Only `src/node` imports `@catenary/rdf`. |
 | `app`, `electron-app` | Browser host and desktop host. | Theia packages and `modeler`. |
 
@@ -67,6 +68,8 @@ Paths are relative to the directory in the first column.
 
 | Directory | Files | Purpose |
 |---|---|---|
+| `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
+| `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts` | Read-model records, JSON terms, element IDs, snapshot schema |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, prefixes, form conversion |
@@ -86,9 +89,9 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or one request |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
-| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts` | Metamodel, shapes index, shapes proposed from data |
+| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
-| | `notations.ts`, `../notations/*.ttl` | Built-in notation files (copied next to the backend bundle) and the input of the notation engine |
+| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
 | | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |

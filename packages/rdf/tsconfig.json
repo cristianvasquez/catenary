@@ -24,6 +24,9 @@
   ],
   "references": [
     {
+      "path": "../shacl"
+    },
+    {
       "path": "../model"
     },
     {

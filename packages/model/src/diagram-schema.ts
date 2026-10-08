@@ -1,3 +1,4 @@
+import type { TargetMatch } from '@catenary/shacl/common';
 // Doc + one view -> graph model schema (GLSP / Sprotty). Used by the GLSP server.
 // Element ids (spec/ui-manifest.hs §2, a placement is not its element): card = placement id (`element`: instance id), edge =
 // placement id (a relation that the view does not place: relation id), group = placement id, group name label = `<id>_label`,
@@ -79,6 +80,8 @@ export interface GraphOptions {
     hidden?: { neighbors: (instance: string) => { in: number; out: number; targets?: number } | undefined; shapeSources: (shape: string) => number };
     /** The figures of the view (ADR 0014): the SHACL and value-set elements come from their join. Absent: none are drawn. */
     notation?: ViewFigures;
+    /** Checked instance-shape pairs for this view, supplied by the shared SHACL query. */
+    applicability?: readonly TargetMatch[];
 }
 
 /** Count parallel edges in either direction. Call the returned allocator once per edge, in drawing order. */

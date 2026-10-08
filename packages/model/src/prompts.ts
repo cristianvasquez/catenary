@@ -100,7 +100,7 @@ export function shapeSourceChoices(doc: Doc, viewId: string, from: string): Choi
     const names = (ps: PropertyShape[]) => [...new Set(ps.map(p => p.name ?? formatPath(p.path)))].sort().map(n => `← ${n}`).join(', ');
     return {
         title: `${self.label}: incoming (${hidden.length} not in the view)`,
-        items: hidden.map(n => ({ label: n.shape.label, description: names(n.properties), ids: [n.shape.id] }))
+        items: hidden.map(n => ({ label: n.shape.label, description: names(n.properties) || 'sh:node', ids: [n.shape.id] }))
     };
 }
 

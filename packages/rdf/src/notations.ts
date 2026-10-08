@@ -41,6 +41,7 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     const quads: Quad[] = [];
     for (const f of readdirSync(dir).filter(f => f.endsWith('.ttl')).sort())
         quads.push(...parseRdfSync(readFileSync(path.join(dir, f), 'utf8'), 'text/turtle'));
+    if (dir === NOTATIONS_DIR && !existsSync(path.join(dir, 'shapes.ttl'))) quads.push(...parseRdfSync(readFileSync(require.resolve('@catenary/shacl/notations/shapes.ttl'), 'utf8'), 'text/turtle'));
     const n = notations(nquads(skolemize(quads.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads));
     if (dir === NOTATIONS_DIR) builtIn = n;
     return n;

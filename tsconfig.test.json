@@ -7,10 +7,23 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@catenary/model": ["packages/model/src/index.ts"],
-      "@catenary/rdf": ["packages/rdf/src/index.ts"],
-      "rdf-files": ["packages/rdf-files/src/index.ts"]
+      "@catenary/model": [
+        "packages/model/src/index.ts"
+      ],
+      "@catenary/rdf": [
+        "packages/rdf/src/index.ts"
+      ],
+      "rdf-files": [
+        "packages/rdf-files/src/index.ts"
+      ],
+      "@catenary/shacl/*": [
+        "packages/shacl/src/*/index.ts"
+      ]
     }
   },
-  "include": ["packages/*/test/**/*.ts", "packages/rdf/src/shims.d.ts", "modeler/test/**/*.ts"]
+  "include": [
+    "packages/*/test/**/*.ts",
+    "packages/rdf/src/shims.d.ts",
+    "modeler/test/**/*.ts"
+  ]
 }
