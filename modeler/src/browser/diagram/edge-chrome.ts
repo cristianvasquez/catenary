@@ -52,11 +52,13 @@ const NORMAL: Record<Side, Pt> = {
 };
 const ARROW = 12;       // screen px
 const END_R = 6;        // screen px, end handle radius
-const LANE = 30;        // model units between parallel edges
+const LANE = 48;        // minimum screen-space lane pitch, including the cardinality badge
 const LABEL = 18;       // model units; at least LABEL_MIN screen px
 const LABEL_MIN = 11;
 
 function anchor(b: Box, side: Side, offset: number): Pt {
+    const span = side === 'top' || side === 'bottom' ? b.width : b.height;
+    offset = Math.max(-Math.max(0, span / 2 - 16), Math.min(Math.max(0, span / 2 - 16), offset));
     switch (side) {
         case 'top': return { x: b.x + b.width / 2 + offset, y: b.y };
         case 'bottom': return { x: b.x + b.width / 2 + offset, y: b.y + b.height };
@@ -102,13 +104,18 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
         return { x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x, y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y };
     };
     if (p.self) {
-        const b = p.source, out = 70 + p.lane * LANE;
-        const p1 = { x: b.x + b.width - 30 - p.lane * 20, y: b.y }, p2 = { x: b.x + b.width - 90 - p.lane * 20, y: b.y };
-        const n = NORMAL.top;
-        const e2 = { x: p2.x, y: p2.y - arrow * 0.8 };
-        const c1 = { x: p1.x + 20, y: p1.y - out }, c2 = { x: e2.x - 20, y: e2.y - out };
-        const top = bez(p1, c1, c2, e2, 0.5);
-        return { path: `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${e2.x},${e2.y}`, p1, p2, n1: n, n2: n, mid: top, label: top, tail: bez(p1, c1, c2, e2, 0.97) };
+        const b = p.source, font = Math.max(LABEL, LABEL_MIN * k);
+        const width = Math.max(120, p.name.length * font * 0.65 + 32 * k);
+        const out = Math.max(80, 64 * k) + p.lane * Math.max(LANE * k, font * 2.5);
+        const cx = b.x + b.width / 2;
+        const p1 = anchor(b, 'top', Math.min(b.width / 3, 60) + p.lane * 12);
+        const p2 = anchor(b, 'top', -Math.min(b.width / 3, 60) - p.lane * 12);
+        const n = NORMAL.top, y = b.y - out, r = 16 * k;
+        const left = Math.min(cx - width / 2 - r, p2.x - r);
+        const right = Math.max(cx + width / 2 + r, p1.x + r);
+        const top = { x: (left + right) / 2, y };
+        const path = `M${p1.x},${p1.y} C${p1.x},${y + r} ${right},${y + r} ${right},${y + r} Q${right},${y} ${right - r},${y} L${left + r},${y} Q${left},${y} ${left},${y + r} C${left},${y + 2 * r} ${p2.x},${y + 2 * r} ${p2.x},${p2.y - arrow * 0.8}`;
+        return { path, p1, p2, n1: n, n2: n, mid: top, label: top, tail: { x: left, y: y + 44 * k } };
     }
     if (p.route && p.route.points.length >= 2) {
         const points = p.route.points.map(q => ({ ...q }));
@@ -137,7 +144,7 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
             mid: label, label, tail: along(last, lastLength > 0 ? Math.max(0.3, 1 - 30 / lastLength) : 0)
         };
     }
-    if (p.elbow && p.target.x > p.source.x + p.source.width + 60) {
+    if (p.elbow && p.lanes === 1 && p.target.x > p.source.x + p.source.width + 60) {
         const offset = (p.lane - (p.lanes - 1) / 2) * 14;
         const p1 = { x: p.source.x + p.source.width, y: p.source.y + p.source.height / 2 };
         const p2 = { x: p.target.x, y: p.target.y + p.target.height / 2 + offset };
@@ -151,14 +158,22 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
     }
     const fromSide = p.fromSide || facingSide(p.source, p.target);
     const toSide = p.toSide || facingSide(p.target, p.source);
-    const offset = (p.lane - (p.lanes - 1) / 2) * LANE;
+    const vertical = (fromSide === 'top' || fromSide === 'bottom') && (toSide === 'top' || toSide === 'bottom');
+    const font = Math.max(LABEL, LABEL_MIN * k);
+    const pitch = vertical ? Math.max(LANE * k, p.name.length * font * 0.65 + 24 * k) : Math.max(LANE * k, font * 2.5);
+    const offset = (p.lane - (p.lanes - 1) / 2) * pitch;
     const p1 = anchor(p.source, fromSide, offset), p2 = anchor(p.target, toSide, offset);
     const n1 = NORMAL[fromSide], n2 = NORMAL[toSide];
     // The line stops at the arrow base, so that the round line cap does not show past the tip.
     const e2 = { x: p2.x + n2.x * arrow * 0.8, y: p2.y + n2.y * arrow * 0.8 };
     const d = Math.max(40, Math.min(Math.hypot(e2.x - p1.x, e2.y - p1.y) * 0.4, 500));
-    const c1 = { x: p1.x + n1.x * d, y: p1.y + n1.y * d };
-    const c2 = { x: e2.x + n2.x * d, y: e2.y + n2.y * d };
+    // Preserve lane separation when small cards clamp their attachment points.
+    const spread = (b: Box, side: Side, at: Pt) => side === 'top' || side === 'bottom'
+        ? { x: (b.x + b.width / 2 + offset - at.x) * 4 / 3, y: 0 }
+        : { x: 0, y: (b.y + b.height / 2 + offset - at.y) * 4 / 3 };
+    const s1 = spread(p.source, fromSide, p1), s2 = spread(p.target, toSide, p2);
+    const c1 = { x: p1.x + n1.x * d + s1.x, y: p1.y + n1.y * d + s1.y };
+    const c2 = { x: e2.x + n2.x * d + s2.x, y: e2.y + n2.y * d + s2.y };
     return {
         path: `M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${e2.x},${e2.y}`, p1, p2, n1, n2,
         mid: bez(p1, c1, c2, e2, 0.5), label: bez(p1, c1, c2, e2, 0.5), tail: bez(p1, c1, c2, e2, 0.9)

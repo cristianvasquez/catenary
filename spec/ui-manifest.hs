@@ -1071,6 +1071,15 @@ labelSegment segs = case sortOn (negate . len) [s | s@((_, y1), (_, y2)) <- segs
 edgeLabelFraction :: Double
 edgeLabelFraction = 0.5
 
+-- | Direct parallel edges reserve screen-space lanes so zoom does not collapse labels and badges.
+-- Vertical lanes also reserve estimated label width. Clamp attachment points inside each card side.
+directLanePitch :: Double -> Double -> Double
+directLanePitch zoom font = max (48 / max 0.001 zoom) (2.5 * font)
+
+-- | Self-links have a horizontal label run and separate loop heights so their labels remain readable.
+selfLoopClearance :: Double -> Double
+selfLoopClearance zoom = max 80 (64 / max 0.001 zoom)
+
 -- 7.5 Layout ------------------------------------------------------------------------
 
 -- | Apply Layout runs only on request. Layered uses ELK left-to-right. Force uses cola.js and overlap removal.

@@ -39,6 +39,34 @@ describe('centered edge labels (UI §7.4 edgeLabelFraction)', () => {
     });
 });
 
+describe('direct lanes (UI §7.4 directLanePitch)', () => {
+    const source = { x: 0, y: 0, width: 200, height: 180 };
+    const target = { x: 650, y: 0, width: 200, height: 180 };
+    const base = { source, target, fromSide: '' as const, toSide: '' as const, lane: 0, lanes: 2, name: 'dprod:outputDataset', elbow: true };
+    it.each([0.25, 0.5, 1, 2])('separates opposing labels at zoom %s', zoom => {
+        const a = edgeGeometry({ ...base, zoom });
+        const b = edgeGeometry({ ...base, source: target, target: source, lane: 1, zoom });
+        expect(Math.abs(a.label.y - b.label.y) * zoom).toBeGreaterThanOrEqual(48);
+        expect(a.p1.y).toBeGreaterThanOrEqual(source.y);
+        expect(a.p1.y).toBeLessThanOrEqual(source.y + source.height);
+    });
+    it.each([0.25, 1, 2])('separates vertical labels by their estimated widths at zoom %s', zoom => {
+        const target = { ...source, y: 650 };
+        const a = edgeGeometry({ ...base, target, zoom });
+        const b = edgeGeometry({ ...base, target, lane: 1, zoom });
+        const width = base.name.length * Math.max(18, 11 / zoom) * 0.65;
+        expect(Math.abs(a.label.x - b.label.x)).toBeGreaterThanOrEqual(width + 24 / zoom - 0.001);
+    });
+    it.each([0.25, 1, 2])('gives self-links a wide top run and separate levels at zoom %s', zoom => {
+        const a = edgeGeometry({ ...base, target: source, self: true, zoom });
+        const b = edgeGeometry({ ...base, target: source, self: true, lane: 1, zoom });
+        expect(a.path).toContain(' L');
+        expect(source.y - a.label.y).toBeGreaterThanOrEqual(64 / zoom);
+        expect((a.label.y - b.label.y) * zoom).toBeGreaterThanOrEqual(48);
+        expect(a.tail.y - a.label.y).toBeGreaterThanOrEqual(40 / zoom);
+    });
+});
+
 describe('return-to-row control', () => {
     it.each([true, false])('renders only when the property can return to a row (%s)', canPutBack => {
         const edge = renderEdge({
