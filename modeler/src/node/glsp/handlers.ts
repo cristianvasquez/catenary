@@ -227,8 +227,8 @@ export class StoreUndoRedoHandler implements ActionHandler {
     readonly actionKinds = [UndoAction.KIND, RedoAction.KIND];
 
     execute(action: Action): Action[] {
-        if (UndoAction.is(action)) this.session.store.undo();
-        else if (RedoAction.is(action)) this.session.store.redo();
+        const r = UndoAction.is(action) ? this.session.store.undo() : RedoAction.is(action) ? this.session.store.redo() : undefined;
+        if (r && !r.ok) void this.session.message(r.error);
         return [];
     }
 }

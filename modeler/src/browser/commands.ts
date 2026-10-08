@@ -49,6 +49,11 @@ export namespace OpenModelCommands {
     export const EXPORT_VIEWS_HTML = cmd('catenary.exportViewsHtml', 'Export Views as HTML…');
     export const SHOW_TRIG = cmd('catenary.showTrig', 'Open Workspace File as Text');
     export const WORKSPACE_SETTINGS = cmd('catenary.openWorkspaceSettings', 'Workspace Settings');
+    /** An RDF file from outside the workspace: a protected Turtle copy in imported/ (spec/manifest.hs §2.6). Argument: the path. */
+    export const IMPORT_FILE = cmd('catenary.importFile', 'Import RDF File…');
+    /** File navigator: protect or unprotect the selected model file or view file (manifest ws:protect). */
+    export const PROTECT_FILE = cmd('catenary.protectFile', 'Protect');
+    export const UNPROTECT_FILE = cmd('catenary.unprotectFile', 'Unprotect');
     /** The canvas/text toggle (ADR 0004): the Turtle or TriG text of a view editor or of the settings view, and back. */
     export const SHOW_TEXT = cmd('catenary.showText', 'Show Text', 'codicon codicon-file-code');
     export const SHOW_CANVAS = cmd('catenary.showCanvas', 'Show Canvas', 'codicon codicon-type-hierarchy');
@@ -243,6 +248,25 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
             isEnabled: () => open() && this.model.snapshot.files.views.length > 0
         });
         registry.registerCommand(OpenModelCommands.WORKSPACE_SETTINGS, { execute: () => this.settings.openView({ activate: true, reveal: true }), isEnabled: open });
+        registry.registerCommand(OpenModelCommands.IMPORT_FILE, {
+            execute: (file?: unknown) => a.importFile(typeof file === 'string' ? URI.fromFilePath(file) : undefined), isEnabled: open
+        });
+        // The file of the navigator selection, when it is a model file or a view file of the workspace.
+        const selectedFile = () => {
+            const sel = this.selection.selection;
+            const node = Array.isArray(sel) ? sel.find(FileStatNode.is) : undefined;
+            const file = node && !node.fileStat.isDirectory ? node.uri.path.fsPath() : undefined;
+            const { files, views } = this.model.snapshot.files;
+            return file ? [...files, ...views].find(f => f.path === file) : undefined;
+        };
+        registry.registerCommand(OpenModelCommands.PROTECT_FILE, {
+            execute: () => { const f = selectedFile(); if (f) void this.model.report(this.model.service.setProtected(f.path, true)); },
+            isVisible: () => { const f = open() ? selectedFile() : undefined; return !!f && !f.protected; }
+        });
+        registry.registerCommand(OpenModelCommands.UNPROTECT_FILE, {
+            execute: () => { const f = selectedFile(); if (f) void this.model.report(this.model.service.setProtected(f.path, false)); },
+            isVisible: () => open() && !!selectedFile()?.protected
+        });
         // The file behind a widget: a view editor → its view file; the settings view → the workspace file.
         const fileOf = (w?: Widget): string | undefined => {
             if (w instanceof GLSPDiagramWidget && w.uri.scheme === VIEW_SCHEME) return this.model.snapshot.files.views.find(v => v.view === viewIdOf(w))?.path;
@@ -272,8 +296,8 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         registry.registerCommand(OpenModelCommands.SHOW_TRIG, {
             execute: () => this.editorManager.open(URI.fromFilePath(this.model.snapshot.file!), { mode: 'activate' }), isEnabled: open
         });
-        registry.registerCommand(OpenModelCommands.UNDO, { execute: () => this.model.service.undo(), isEnabled: () => this.model.snapshot.canUndo });
-        registry.registerCommand(OpenModelCommands.REDO, { execute: () => this.model.service.redo(), isEnabled: () => this.model.snapshot.canRedo });
+        registry.registerCommand(OpenModelCommands.UNDO, { execute: () => this.model.undo(), isEnabled: () => this.model.snapshot.canUndo });
+        registry.registerCommand(OpenModelCommands.REDO, { execute: () => this.model.redo(), isEnabled: () => this.model.snapshot.canRedo });
         // File explorer (navigator) context menu.
         const trig = (uri: URI) => uri.path.ext === '.trig';
         const navigator = (command: Command, execute: (uri: URI) => unknown, applies: (uri: URI) => boolean, needsOpen = true) =>
@@ -398,6 +422,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_FILE_AS_MODEL.id);
         // After New File and New Folder (Theia: no order, sorted by label).
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, { commandId: c.NEW_VIEW_IN_FOLDER.id, label: 'New View', when: 'explorerResourceIsFolder', order: 'z' });
+        addMenuItems(menus, NavigatorContextMenu.MODIFICATION, o.PROTECT_FILE.id, o.UNPROTECT_FILE.id);
     }
 
     override registerKeybindings(keybindings: KeybindingRegistry): void {

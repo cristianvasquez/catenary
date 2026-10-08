@@ -38,6 +38,12 @@ export class History {
         this.redoStack = [];
     }
 
+    /** The step that `take` would give, without a move. */
+    peek(reason: 'undo' | 'redo'): Step | undefined {
+        const from = reason === 'undo' ? this.undoStack : this.redoStack;
+        return from[from.length - 1];
+    }
+
     /** The step to undo or redo, moved to the other stack; undefined: none. The patch queue goes back to its state of that step. */
     take(reason: 'undo' | 'redo'): Step | undefined {
         const [from, to] = reason === 'undo' ? [this.undoStack, this.redoStack] : [this.redoStack, this.undoStack];

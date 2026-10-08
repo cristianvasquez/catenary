@@ -1,5 +1,5 @@
 // ADR 0004: the file navigator is the main view. Each file of the open workspace gets a tail text of what it is, from the triples
-// (snapshot.files): workspace (the manifest), view, default (the file for new subjects), shapes, concepts, instances.
+// (snapshot.files): workspace (the manifest), view, default (the file for new subjects), shapes, concepts, instances, protected.
 // The tail shows one letter per kind (LETTERS); the tooltip shows the words.
 
 import { Emitter, Event } from '@theia/core';
@@ -9,7 +9,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { ModelFrontend } from './model-client';
 
 export const LETTERS: Record<string, string> = {
-    workspace: 'W', view: 'V', default: 'D', shapes: 'S', concepts: 'C', instances: 'I', 'not read': '!'
+    workspace: 'W', view: 'V', default: 'D', shapes: 'S', concepts: 'C', instances: 'I', protected: 'P', 'not read': '!'
 };
 
 @injectable()
@@ -40,10 +40,14 @@ export class FileKindsDecorator implements TreeDecorator {
         const out: Record<string, string[]> = {};
         const add = (path: string, kind: string) => (out[path] ??= []).push(kind);
         if (files.workspace) add(files.workspace.path, 'workspace');
-        for (const v of files.views) add(v.path, 'view');
+        for (const v of files.views) {
+            add(v.path, 'view');
+            if (v.protected) add(v.path, 'protected');
+        }
         for (const f of files.files) {
             if (f.path === files.defaultFile?.path) add(f.path, 'default');
             f.kinds.forEach(k => add(f.path, k));
+            if (f.protected) add(f.path, 'protected');
             if (f.error) add(f.path, 'not read');
         }
         return out;

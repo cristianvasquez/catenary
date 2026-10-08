@@ -16,7 +16,7 @@ import {
     ACTIONS, ClassDef, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
     ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formPredicates, formatPath, inside,
     parseCardinality, parsePath, permittedRelations, predicateName, primaryClass, rangeText, verbalizeConstraint, verbalizeProperty, verbalizeShape, alternativesOf,
-    rangeKey, valueSetOf, Range, SimpleRange
+    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey
 } from '@catenary/model';
 import { ViewEditors } from '../diagram/view-editors';
 import { ViewNotesEditors, ViewNotesField } from '../notes/view-notes';
@@ -312,6 +312,9 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         const known = new Set(cls ? formPredicates(cls) : []);
         const extra = Object.entries(inst.fields).filter(([p]) => !known.has(p));
         const problemText = (p: typeof problems[number]) => `${p.pathName && !p.message.includes(p.pathName) ? `${p.pathName}: ` : ''}${p.message}`;
+        // Statements in protected files: no edit control. An edit in the form is refused and asks to unprotect (ModelFrontend.execute).
+        const locked = new Set(inst.locked ?? []);
+        const labelLocked = locked.has(lockedKey(NS.rdfs + 'label', { termType: 'Literal', value: inst.label }));
         return <>
             {this.head(cls?.name ?? 'Instance (class not in shapes)', inst.label)}
             {/* All violations: the form marks invalid values, but not empty required fields. */}
@@ -322,17 +325,24 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                         : <span className='catenary-none'>none</span>}</div>
                 </Row>
                 {this.shapeRow(inst)}
-                {this.iriRow(inst.id, inst.uri)}
+                {inst.protectedFiles ? <Row label='Protected' inline tip={`Values from protected files do not change. New values go to ${this.model.snapshot.files.defaultFile
+                    ? baseName(this.model.snapshot.files.defaultFile.path) : 'the default file'} (Workspace settings, Everything else).`}>
+                    <div className='catenary-pills'>{inst.protectedFiles.map(f => <span key={f} className='catenary-pill' title={f}>
+                        <span className='codicon codicon-lock' /> {baseName(f)}</span>)}</div>
+                </Row> : undefined}
+                {locked.size ? <Row label='IRI' tip={IRI_HELP}><span className='catenary-value' title={inst.uri}>{inst.uri}</span></Row> : this.iriRow(inst.id, inst.uri)}
                 {cls?.labelInShape ? undefined
                     : <Row label='Label' term='rdfs:label' tip='The shapes of this class have no rdfs:label property, so the form below does not show it.'>
-                        <TextInput field='label' value={inst.label} onCommit={v => this.exec({ kind: 'rename', id: inst.id, label: v.trim() })} />
+                        {labelLocked ? <span className='catenary-value'>{inst.label}</span>
+                            : <TextInput field='label' value={inst.label} onCommit={v => this.exec({ kind: 'rename', id: inst.id, label: v.trim() })} />}
                     </Row>}
             </Section>
             {cls ? <Section title='Description'>{this.descriptionForm(inst, cls)}</Section> : undefined}
             {extra.length ? <Section title='Not in shapes' scope={`${extra.reduce((n, [, vs]) => n + vs.length, 0)} statements`} {...this.fold('extra')}>{extra.map(([p, vs]) =>
                 <Row key={p} label={predicateName(meta, p)} tip={p}>{vs.map((v, i) => <div key={i} className='catenary-value'>
                     <span>{v.value}</span>
-                    <IconButton icon='close' title='Remove the value' onClick={() => this.exec({ kind: 'setStatements', id: inst.id, values: { [p]: vs.filter((_, j) => j !== i) } })} />
+                    {locked.has(lockedKey(p, v)) ? <span className='codicon codicon-lock' title='From a protected file' />
+                        : <IconButton icon='close' title='Remove the value' onClick={() => this.exec({ kind: 'setStatements', id: inst.id, values: { [p]: vs.filter((_, j) => j !== i) } })} />}
                 </div>)}</Row>)}</Section> : undefined}
             {cls?.unsupported.length ? <Section title='Not supported'>{cls.unsupported.map(u => <div key={u} className='catenary-help'>{u}</div>)}</Section> : undefined}
         </>;

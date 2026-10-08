@@ -1,7 +1,7 @@
 // Workspace settings view (ADR 0004): the manifest of the workspace file, in the main area. It opens on the workspace file (double-click
 // in the file navigator, File → Workspace Settings). Sections: the file of new subjects by kind (Auto or a file,
-// PlaceBox; Everything else also sets the default file), the prefixes (ModelStore.setPrefixes), the exclude globs (ModelStore.setSettings), the views of the HTML export in order
-// (ModelStore.setExportViews). Each change writes the manifest at once (ADR 0003). No change is an undo step.
+// PlaceBox; Everything else also sets the default file), the prefixes (ModelStore.setPrefixes), the exclude globs (ModelStore.setSettings), the
+// protect globs and Import (ModelStore.setSettings, importFile), the views of the HTML export in order (ModelStore.setExportViews). Each change writes the manifest at once (ADR 0003). No change is an undo step.
 
 import { CommandService, URI } from '@theia/core';
 import { AbstractViewContribution, ReactWidget } from '@theia/core/lib/browser';
@@ -22,8 +22,9 @@ import { PLACE_ROWS, PlaceBox, PlaceKind } from './workspace-placement';
 
 export const WORKSPACE_SETTINGS_ID = 'catenary-workspace-settings';
 
-/** Command of commands.ts (not imported: commands.ts imports this module). */
+/** Commands of commands.ts (not imported: commands.ts imports this module). */
 const SHOW_TEXT = 'catenary.showText';
+const IMPORT_FILE = 'catenary.importFile';
 
 /** Extensions of the Browse… dialog of a file of new subjects: the formats that Catenary writes (rdf-files RDF_FORMATS). */
 const RDF_FILTER = { 'RDF files': ['ttl', 'turtle', 'trig', 'nt', 'nq', 'jsonld', 'json'] };
@@ -41,7 +42,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
     @inject(ViewsExport) protected readonly viewsExport: ViewsExport;
     @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
 
-    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'export'. Cleared by the next change of the row. */
+    /** Message of a rejected change, by row: a kind, 'prefix', 'exclude', 'protect', 'export'. Cleared by the next change of the row. */
     protected problems: Record<string, string | undefined> = {};
     /** The prefix row in edit mode. */
     protected editing?: string;
@@ -128,6 +129,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.placesSection()}
                 {this.prefixSection()}
                 {this.excludeSection()}
+                {this.protectSection()}
                 {this.exportSection()}
             </div>
         </div>;
@@ -248,6 +250,31 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                     if (exclude.includes(g)) return this.report('exclude', Promise.resolve({ ok: false, error: `The glob "${g}" exists.` }));
                     return this.setSettings('exclude', { exclude: [...exclude, g] });
                 }} />
+            </div>
+        </Section>;
+    }
+
+    /** The protect globs: files that Catenary reads and does not change. Import adds the path of each copy. */
+    protected protectSection(): React.ReactNode {
+        const protect = this.model.snapshot.files.protect ?? [];
+        const count = this.model.snapshot.files.files.filter(f => f.protected).length;
+        return <Section title={`Protected ${protect.length}`} scope={`${count} model ${count === 1 ? 'file' : 'files'}`}
+            help='Files that Catenary reads and does not change: an edit of their statements is refused. New statements about their subjects go to the file of Everything else. Globs relative to the workspace folder: *, **, ?'>
+            <div className='catenary-settings-list'>
+                {protect.map(g => <div key={g} className='catenary-settings-row glob'>
+                    <code>{g}</code>
+                    <span className='acts'><span className='codicon codicon-close action-label catenary-icon-button' role='button' title={`Remove ${g}`}
+                        onClick={() => this.setSettings('protect', { protect: protect.filter(x => x !== g) })} /></span>
+                </div>)}
+                <AddRow fields={['glob, for example official/**']} problem={this.problems.protect} onAdd={async ([g]) => {
+                    if (!g) return this.report('protect', Promise.resolve({ ok: false, error: 'Enter a glob.' }));
+                    if (protect.includes(g)) return this.report('protect', Promise.resolve({ ok: false, error: `The glob "${g}" exists.` }));
+                    return this.setSettings('protect', { protect: [...protect, g] });
+                }} />
+            </div>
+            <div className='catenary-buttons'>
+                <Button label='Import File…' onClick={() => this.commands.executeCommand(IMPORT_FILE)} />
+                <span className='catenary-help'>Copies an RDF file to imported/ as Turtle, with IRIs for its blank nodes, and protects the copy.</span>
             </div>
         </Section>;
     }

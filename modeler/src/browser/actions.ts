@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -19,6 +19,8 @@ import { ModelFrontend } from './model-client';
 import { SelectionModel } from './selection-model';
 
 const WORKSPACE_FILTER = { 'Workspace (TriG)': ['trig'] };
+/** The formats that Catenary reads (rdf-files RDF_FORMATS). */
+const IMPORT_FILTER = { 'RDF files': ['ttl', 'turtle', 'trig', 'nt', 'nq', 'jsonld', 'json', 'n3', 'rdf', 'owl', 'xml'] };
 
 type PickItem = QuickPickItem & { run?: () => unknown };
 type Creator = { label: string; run: (text: string) => Promise<unknown> };
@@ -54,6 +56,21 @@ export class ModelActions {
 
     protected async saveFile(title: string, filters: Record<string, string[]>): Promise<string | undefined> {
         return (await this.fileDialog.showSaveDialog({ title, filters }, await this.workspaceRoot()))?.path.fsPath();
+    }
+
+    /**
+     * Import an RDF file (spec/manifest.hs §2.6): a protected Turtle copy in imported/, with IRIs for its blank nodes. A message names
+     * the copy and the prefixes that the workspace got. `uri`: the file, without a dialog.
+     */
+    async importFile(uri?: URI): Promise<void> {
+        const source = await this.pickFile('Import RDF File', IMPORT_FILTER, uri);
+        if (!source) return;
+        const r = await this.model.service.importFile(source);
+        if (!r.ok) return void this.messages.error(r.error);
+        const ws = this.model.snapshot.file;
+        const copy = (ws && relativePath(dirName(ws), r.file)) ?? r.file;
+        const prefixes = r.prefixes.length ? ` Prefixes added: ${r.prefixes.map(p => `${p}:`).join(' ')}.` : '';
+        this.messages.info(`${baseName(source)} is imported as ${copy}, protected.${prefixes}`);
     }
 
     async openModel(uri?: URI): Promise<void> {
