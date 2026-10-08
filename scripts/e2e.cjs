@@ -811,6 +811,9 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
     const svg = fs.readFileSync(path.join(out, link), 'utf8');
     assert.match(svg, /^<svg[^>]*\swidth="\d+"[^>]*>/);
     assert.ok(svg.includes('<g'), 'the SVG has the diagram');
+    assert.ok(!svg.includes('<foreignObject'), 'the exported SVG uses native SVG text, not browser-only HTML');
+    assert.ok(!svg.includes('color(srgb'), 'the exported SVG uses portable colors');
+    assert.match(svg, /<rect[^>]*\sfill="rgb\(30, 30, 30\)"/, 'the exported SVG has an explicit background');
     for (const control of ['catenary-halo', 'sprotty-resize-handle', 'catenary-resize-handle', 'shape-add-row', 'selected']) {
       assert.ok(!new RegExp(`class="[^"]*\\b${control}\\b`).test(svg), `no ${control} in the SVG`);
     }

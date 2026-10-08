@@ -141,12 +141,93 @@ export function forDocument(svg: string): string {
     const box = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
     if (!(root instanceof SVGSVGElement) || box?.length !== 4) return svg;
     root.querySelectorAll(EDIT_CONTROLS).forEach(e => e.remove());
+    addBackground(root, box);
+    replaceForeignObjects(root);
     for (const e of [root, ...root.querySelectorAll<SVGElement | HTMLElement>('[style]')]) {
+        normalizeStyle(e);
         const style = e.style;
         for (const p of [...style]) if (p.startsWith('--') || (e === root && CANVAS_PROPERTY.test(p))) style.removeProperty(p);
         if (!style.length) e.removeAttribute('style');
     }
+    root.querySelectorAll<SVGElement>('*').forEach(e => {
+        for (const attr of ['fill', 'stroke', 'color']) {
+            const value = e.getAttribute(attr);
+            if (value) e.setAttribute(attr, normalizeColor(value));
+        }
+    });
     root.setAttribute('width', String(Math.ceil(box[2])));
     root.setAttribute('height', String(Math.ceil(box[3])));
     return new XMLSerializer().serializeToString(root);
+}
+
+function addBackground(root: SVGSVGElement, box: number[]): void {
+    const background = root.style.backgroundColor;
+    if (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)') return;
+    const rect = root.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', String(box[0]));
+    rect.setAttribute('y', String(box[1]));
+    rect.setAttribute('width', String(box[2]));
+    rect.setAttribute('height', String(box[3]));
+    rect.setAttribute('fill', normalizeColor(background));
+    root.insertBefore(rect, root.firstChild);
+}
+
+function replaceForeignObjects(root: SVGSVGElement): void {
+    for (const fo of [...root.querySelectorAll<SVGForeignObjectElement>('foreignObject')]) {
+        const text = foreignObjectText(fo);
+        if (text) fo.replaceWith(text);
+    }
+}
+
+function foreignObjectText(fo: SVGForeignObjectElement): SVGGElement | undefined {
+    const doc = fo.ownerDocument;
+    const g = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const x = numberAttr(fo, 'x') + 14;
+    let y = numberAttr(fo, 'y') + 24;
+    const body = fo.firstElementChild as HTMLElement | undefined;
+    const parts = body ? [...body.children] as HTMLElement[] : [];
+    const items = parts.length ? parts : [body].filter((e): e is HTMLElement => !!e);
+    for (const item of items) {
+        const value = (item.textContent ?? '').trim();
+        if (!value) continue;
+        const size = parseFloat(item.style.fontSize || '') || (item.classList.contains('card-name') ? 22 : 14);
+        const lineHeight = parseFloat(item.style.lineHeight || '') || size * 1.2;
+        const t = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', String(x));
+        t.setAttribute('y', String(y));
+        t.setAttribute('fill', normalizeColor(item.style.color || body?.style.color || 'rgb(204, 204, 204)'));
+        t.setAttribute('font-size', String(size));
+        t.setAttribute('font-family', 'Helvetica Neue, Helvetica, Arial, sans-serif');
+        if (item.style.fontWeight) t.setAttribute('font-weight', item.style.fontWeight);
+        if (item.style.textTransform === 'uppercase') t.textContent = value.toUpperCase();
+        else t.textContent = value;
+        g.appendChild(t);
+        y += lineHeight + (item.classList.contains('card-name') ? 10 : 4);
+    }
+    return g.childNodes.length ? g : undefined;
+}
+
+function numberAttr(e: Element, name: string): number {
+    const n = Number(e.getAttribute(name) ?? 0);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeStyle(e: SVGElement | HTMLElement): void {
+    const style = e.getAttribute('style');
+    if (style) e.setAttribute('style', normalizeColor(style));
+}
+
+function normalizeColor(value: string): string {
+    return value.replace(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/g,
+        (_m, r, g, b, a) => a === undefined
+            ? `rgb(${toByte(r)}, ${toByte(g)}, ${toByte(b)})`
+            : `rgba(${toByte(r)}, ${toByte(g)}, ${toByte(b)}, ${roundAlpha(a)})`);
+}
+
+function toByte(n: string): number {
+    return Math.max(0, Math.min(255, Math.round(Number(n) * 255)));
+}
+
+function roundAlpha(n: string): string {
+    return String(Math.max(0, Math.min(1, Number(n))).toFixed(3)).replace(/0+$/, '').replace(/[.]$/, '');
 }
