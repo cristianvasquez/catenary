@@ -93,7 +93,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Latest verification (RDF clipboard and paste layout):** `pnpm verify --e2e` passed check (14.6 s), test (713/713, 93.4 s), build (27.0 s) and e2e (12/12, 143.6 s). Logs: `/tmp/catenary-verify-FaBaIP`. The clipboard browser test covers raw RDF, current clipboard text, Turtle export, instance duplication, named-graph consent and undo. Lower-layer tests cover file routing, save/reload, duplicate rejection and layout of new placements. Haskell manifest checks were not run, as requested. The Markdown destination folder dialog still has no browser test.
+- **Latest verification (RDF clipboard and paste layout):** `pnpm verify --e2e` passed check (13.7 s), test (717/717, 95.5 s), build (26.8 s) and e2e (12/12, 144.8 s). Logs: `/tmp/catenary-verify-VjdVrF`. The clipboard browser test covers raw RDF, a JSON-LD clipboard token collision, current clipboard text, Turtle export, instance duplication, named-graph consent and undo. Lower-layer tests cover file routing, save/reload, duplicate rejection, equal-sized frame contents and fitting only new placements. Haskell manifest checks were not run, as requested. The Markdown destination folder dialog still has no browser test.
 
 - **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.

@@ -24,6 +24,20 @@ describe('layout of arriving placements', () => {
         expect(result.map((b, i) => [b.x - added[i].x, b.y - added[i].y])).toEqual([[560, 0], [560, 0], [560, 0]]);
     });
 
+    it.each([['a-frame', 'z-card'], ['z-frame', 'a-card']])('keeps equal-sized content inside %s regardless of ID order', (frameId, cardId) => {
+        const frame = { id: frameId, group: true, x: 0, y: 0, width: 200, height: 200 };
+        const card = { id: cardId, x: 0, y: 0, width: 200, height: 200 };
+        const result = layoutPastedBoxes([frame, card], [{ x: 0, y: 0, width: 200, height: 200 }], { x: 0, y: 0 });
+        expect(result.map(b => [b.x, b.y])).toEqual([[260, 0], [260, 0]]);
+    });
+
+    it('packs equal-sized nested frames without a parent cycle', () => {
+        const bounds = { x: 0, y: 0, width: 200, height: 200 };
+        const result = layoutPastedBoxes([{ id: 'a-frame', group: true, ...bounds }, { id: 'z-frame', group: true, ...bounds },
+            { id: 'card', ...bounds }], [bounds], { x: 0, y: 0 });
+        expect(result.map(b => [b.x, b.y])).toEqual([[260, 0], [260, 0], [260, 0]]);
+    });
+
     it('keeps a card in its frame when its drawn content extends past the frame border', () => {
         const frame = { id: 'frame', group: true, x: 0, y: 0, width: 200, height: 200 };
         const card = { id: 'card', x: 20, y: 20, width: 400, height: 400, membership: { x: 20, y: 20, width: 100, height: 100 } };

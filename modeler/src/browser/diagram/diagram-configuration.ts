@@ -132,7 +132,9 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         if (!event.clipboardData || !this.shouldPaste(event)) return;
         const data = event.clipboardData;
         try {
-            if (typeof JSON.parse(data.getData('text/plain')).clipboardId === 'string') {
+            const token = JSON.parse(data.getData('text/plain'));
+            if (token && typeof token === 'object' && Object.keys(token).length === 1
+                && typeof token.clipboardId === 'string' && this.clipboardService.get(token.clipboardId)) {
                 super.handlePaste(event);
                 return;
             }

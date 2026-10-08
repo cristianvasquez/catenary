@@ -213,9 +213,12 @@ export class PasteHandler extends OperationHandler {
             await this.session.message('The clipboard does not hold view elements.');
             return undefined;
         }
-        await this.session.edit({ kind: 'pasteIntoView', view: this.session.viewId, clip, at: op.editorContext.lastMousePosition, cardScale: this.session.state.cardScale }, r => [SelectAction.create({
-            selectedElementsIDs: r.ids ?? [], deselectedElementsIDs: true
-        }), ...(r.ids?.length ? [FitToScreenAction.create(r.ids, { padding: 40, maxZoom: 1, animate: false })] : [])]);
+        const before = new Set([...this.session.store.viewFigures(this.session.viewId)!.placed.values()].map(p => model.iriId(p.iri)));
+        await this.session.edit({ kind: 'pasteIntoView', view: this.session.viewId, clip, at: op.editorContext.lastMousePosition, cardScale: this.session.state.cardScale }, r => {
+            const added = (r.ids ?? []).filter(id => !before.has(id));
+            return [SelectAction.create({ selectedElementsIDs: r.ids ?? [], deselectedElementsIDs: true }),
+                ...(added.length ? [FitToScreenAction.create(added, { padding: 40, maxZoom: 1, animate: false })] : [])];
+        });
         return undefined;
     }
 }

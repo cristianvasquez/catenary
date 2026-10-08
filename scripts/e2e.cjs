@@ -179,6 +179,13 @@ test('browser: raw RDF paste, graph consent, Copy as RDF, and ordinary instance 
     await card('Alice 2').waitFor();
     const afterCopy = cli('rpc', 'view', JSON.stringify(view)).result;
     assert.deepEqual(afterCopy.boxes.find(b => b.id === before.id), before, 'ordinary copy leaves the old placement fixed');
+    // A JSON-LD property can match the ID of the live internal clip and still be raw RDF.
+    const token = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+    const jsonld = JSON.stringify({ '@context': { name: 'http://www.w3.org/2000/01/rdf-schema#label', clipboardId: 'urn:clipboard:identifier' },
+      '@id': 'urn:clipboard:jsonld', '@type': 'urn:Person', name: 'JSON-LD', clipboardId: token.clipboardId });
+    await paste(jsonld);
+    await card('JSON-LD').waitFor();
+    assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 3, 'JSON-LD is parsed even with a live clipboardId property');
     // External clipboard content must replace the internal canvas clip, including Paste from the Edit command.
     const bob = '<urn:clipboard:bob> a <urn:Person>; <http://www.w3.org/2000/01/rdf-schema#label> "Bob" .';
     await page.evaluate(text => navigator.clipboard.writeText(text), bob);

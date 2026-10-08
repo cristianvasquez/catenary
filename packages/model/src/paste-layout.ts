@@ -12,7 +12,7 @@ export function layoutPastedBoxes(added: PasteBox[], fixed: Rect[], at: Point, g
     const bounds = (b: PasteBox) => b.membership ?? b;
     const area = (b: PasteBox) => bounds(b).width * bounds(b).height;
     const parent = (b: PasteBox) => groups.filter(g => g.id !== b.id && contains(bounds(g), bounds(b))
-        && (area(g) > area(b) || g.id < b.id)).sort((a, c) => area(a) - area(c))[0];
+        && (area(g) > area(b) || !b.group || g.id < b.id)).sort((a, c) => area(a) - area(c))[0];
     const rootOf = (b: PasteBox): PasteBox => { const p = parent(b); return p ? rootOf(p) : b; };
     const roots = added.filter(b => !parent(b));
     if (!roots.length) return [];
