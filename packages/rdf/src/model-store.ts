@@ -886,10 +886,10 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Import RDF files from outside the workspace (§2.6): for each, write a Turtle copy with IRIs for its blank nodes to
-     * imported/<name>.ttl (-2, … when taken), mark the copy as imported, and add the prefixes of the file that the workspace table does
-     * not have. A prefix whose name or namespace the table has with another value is not added (a note). All files or none: a file that
-     * cannot be read imports nothing. Then the workspace is read again, once: no undo across it.
+     * Import RDF files (§2.6). A model file or view file of the workspace is marked as imported where it is (no copy). Another file gets
+     * a Turtle copy with IRIs for its blank nodes in imported/<name>.ttl (-2, … when taken), marked as imported. The prefixes of the
+     * files that the workspace table does not have are added; a prefix whose name or namespace the table has with another value is not
+     * (a note). All files or none. With copies, the workspace is read again once: no undo across it.
      */
     importFiles(sources: string[]): Promise<ImportResult> {
         return this.serial(async (): Promise<ImportResult> => {
@@ -897,14 +897,15 @@ export class ModelStore implements ModelQueries {
             if (!ws) return { ok: false, error: 'No workspace is open.' };
             if (!sources.length) return { ok: false, error: 'No file to import.' };
             // Read all files first: a file that cannot be read imports nothing.
-            const reads: { name: string; text: string; quads: Quad[]; source: string }[] = [];
+            const reads: { name: string; text: string; quads?: Quad[]; source: string; inPlace?: string }[] = [];
             for (const source of sources) {
                 const name = path.basename(source);
+                const inPlace = ws.knownFile(path.resolve(source));
                 try {
                     const text = await fs.readFile(source, 'utf8');
-                    const quads = await parseRdf(text, source);
-                    if (!quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
-                    reads.push({ name, text, quads, source });
+                    const quads = inPlace ? undefined : await parseRdf(text, source);
+                    if (quads && !quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
+                    reads.push({ name, text, quads, source, inPlace });
                 } catch (e) {
                     return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
                 }
@@ -920,43 +921,67 @@ export class ModelStore implements ModelQueries {
             }
             const names = reads.map(r => r.name).join(', ');
             if (added.length && prefixesProblem(table)) return { ok: false, error: `${names}: not imported: ${prefixesProblem(table)}` };
+            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, imported: ws.importedGlobs };
+            // Files of the workspace: marked where they are. The write gives their blank nodes IRIs first (as Mark as Imported).
+            const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
+            if (own.length) {
+                if (ws.dirty) {
+                    this.commitNotes.push('before import mark');
+                    await this.write();
+                }
+                const marked = ws.applySettings({ imported: [...before.imported, ...own] });
+                if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
+            }
+            const note = () => {
+                if (skipped.size) this.note(`${names}: prefixes not added (the workspace has the name or the namespace with another value): ${[...skipped].map(p => `${p}:`).join(' ')}`);
+            };
+            if (added.length) { ws.prefixes = table; setPrefixes(table); }
+            const copies = reads.filter(r => !r.inPlace);
+            if (!copies.length) {
+                // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
+                if (added.length) { this.graph.shapesChanged(); this.rebuildMetamodel(); }
+                ws.syncShapesTarget();
+                this.commitNotes.push(`import ${names}`);
+                this.content++;
+                this.changed('files');
+                note();
+                return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
+            }
             const folder = path.join(this.folder, IMPORT_FOLDER);
-            const targets: string[] = [];
-            for (const r of reads) {
+            const targets = new Map<typeof reads[number], string>();
+            for (const r of copies) {
                 const base = r.name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
                 let target = path.join(folder, `${base}.ttl`);
-                for (let i = 2; existsSync(target) || targets.includes(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
-                targets.push(target);
+                for (let i = 2; existsSync(target) || [...targets.values()].includes(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
+                targets.set(r, target);
             }
-            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, imported: ws.importedGlobs };
             const undo = async (error: string): Promise<ImportResult> => {
-                for (const t of targets) await fs.rm(t, { force: true });
+                for (const t of targets.values()) await fs.rm(t, { force: true });
                 ws.prefixes = before.prefixes;
                 setPrefixes(before.table);
                 ws.applySettings({ imported: before.imported });
                 return { ok: false, error: `${names}: not imported: ${error}` };
             };
-            if (added.length) { ws.prefixes = table; setPrefixes(table); }
             try {
                 await fs.mkdir(folder, { recursive: true });
-                for (const [i, r] of reads.entries()) {
+                for (const [r, target] of targets) {
                     // The default graph: a model file has no graph names (open.md STORE1).
-                    const triples = skolemize(r.quads.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
-                    await fs.writeFile(targets[i], await serializeRdf(triples, targets[i]), { flag: 'wx' });
+                    const triples = skolemize(r.quads!.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
+                    await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
                 }
             } catch (e) {
                 return undo((e as Error).message);
             }
-            ws.applySettings({ imported: [...before.imported, ...targets.map(t => portableRelative(this.folder, t))] });
-            ws.written.push(...targets);
+            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] });
+            ws.written.push(...targets.values());
             this.commitNotes.push(`import ${names}`);
             this.content++;
             const w = await this.write();
             if (!w.ok) return undo(w.error);
             const opened = await this.doOpen(ws.path);
             if (!opened.ok) return opened;
-            if (skipped.size) this.note(`${names}: prefixes not added (the workspace has the name or the namespace with another value): ${[...skipped].map(p => `${p}:`).join(' ')}`);
-            return { ok: true, files: targets, prefixes: added };
+            note();
+            return { ok: true, files: reads.map(r => r.inPlace ?? targets.get(r)!), prefixes: added };
         });
     }
 

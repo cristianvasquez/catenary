@@ -167,7 +167,7 @@ describe('imported files', () => {
         expect(quads.length).toBe(3);
         expect(quads.every(q => q.subject.termType === 'NamedNode' && q.object.termType !== 'BlankNode')).toBe(true);
         const r = await store.setImported('blank.rdf', true);
-        expect(r).toEqual({ ok: false, error: 'blank.rdf has blank nodes that Catenary cannot write as IRIs. Import the file instead: Import File writes a copy with IRIs.' });
+        expect(r).toEqual({ ok: false, error: 'blank.rdf has blank nodes, and Catenary does not write this file, so they cannot get IRIs. Import the file from outside the workspace folder: the import writes a Turtle copy with IRIs.' });
     });
 
     it('import: a Turtle copy in imported/ with IRIs for blank nodes, marked as imported; new prefixes go to the workspace, conflicting ones do not', async () => {
@@ -256,5 +256,27 @@ ex:i3 ex:note "ours" .\n`);
         expect(validation.violations).toEqual([]);
         // The imported statements are still in the store: i1 is still an instance.
         expect(Object.values(docOf(store).instances).map(i => i.uri)).toContain('urn:ex:i1');
+    });
+
+    it('import of a file of the workspace marks it as imported where it is (no copy); a selection can mix it with outside files', async () => {
+        const f = workspace();
+        writeFileSync(f.official, `@prefix off: <https://example.org/official#> . @prefix rdfs: <${NS.rdfs}> .
+off:sales a off:Dataset ; rdfs:label "Sales" ; off:part [ rdfs:label "Part" ] .\n`);
+        const source = mkdtempSync(join(tmpdir(), 'catenary-source-'));
+        dirs.push(source);
+        const outside = join(source, 'outside.ttl');
+        writeFileSync(outside, `<urn:x:o> <${LABEL}> "Outside" .\n`);
+        const store = await opened(f.ws);
+        expect(await store.importFiles([f.official])).toEqual({ ok: true, files: [f.official], prefixes: ['off'] });
+        await store.idle();
+        expect(existsSync(join(f.dir, 'imported'))).toBe(false);
+        expect(store.files.imported).toEqual(['official.ttl']);
+        expect(PREFIXES.off).toBe('https://example.org/official#');
+        // The file got IRIs for its blank node before the mark (it is not written after it).
+        const quads = await parseRdf(f.read('official.ttl'), f.official);
+        expect(quads.some(q => q.subject.termType === 'BlankNode' || q.object.termType === 'BlankNode')).toBe(false);
+        // Again: nothing changes. With an outside file: the outside one is copied, the workspace one stays.
+        expect(await store.importFiles([f.official, outside])).toEqual({ ok: true, files: [f.official, join(f.dir, 'imported', 'outside.ttl')], prefixes: [] });
+        expect(store.files.imported).toEqual(['imported/outside.ttl', 'official.ttl']);
     });
 });

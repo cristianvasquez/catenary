@@ -369,8 +369,14 @@ law_importedUnchanged b op =
 setImported :: FilePath -> Bool -> IO CommandResult   -- True: Mark as Imported; False: Mark as Own
 setImported p on = runOp (SetImported p on)
 
--- | Import copies RDF files from outside the workspace to imported/<name>.ttl (-2, -3, … when taken) and marks the copies as imported.
--- One import takes one or more files, all or none: a file that cannot be read imports nothing. The workspace is read again once.
+-- | Import marks a model file or view file of the workspace as imported where it is (no copy): the intent is to import that file.
+-- It copies another RDF file to imported/<name>.ttl (-2, -3, … when taken) and marks the copy as imported.
+-- One import takes one or more files, all or none: a file that cannot be read imports nothing. With copies, the workspace is read again once.
+data ImportAction = MarkInPlace FilePath | CopyTo FilePath deriving Eq
+importAction :: [FilePath] -> [FilePath] -> String -> FilePath -> ImportAction   -- workspace files, taken paths, name, source
+importAction workspaceFiles taken name source
+  | source `elem` workspaceFiles = MarkInPlace source
+  | otherwise = CopyTo (importPath name taken)
 -- The copy is Turtle in the default graph, with an IRI for each blank node (§1, skolemize). A file without statements is refused.
 -- A prefix of the source joins the workspace table when the table has neither its name nor its namespace with another value.
 -- The other prefixes stay out, with a warning. Then the workspace is read again, so the history is empty (§10.4).

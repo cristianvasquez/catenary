@@ -129,6 +129,12 @@ export class Workspace {
         return path.dirname(this.workspace.path);
     }
 
+    /** The model file or view file at this path (the spelling of the store), or undefined. */
+    knownFile(file: string): string | undefined {
+        const all = [...this.modelFiles.keys(), ...[...this.viewFiles.values()].map(f => f.path)];
+        return all.find(f => pathKey(f) === pathKey(file));
+    }
+
     /** The view file of a view graph IRI. */
     viewFile(view: string): { path: string } | undefined {
         return this.viewFiles.get(view);
@@ -634,7 +640,7 @@ export class Workspace {
             if (!this.isImported(f.path, globs) || this.isImported(f.path)) continue;
             const name = portableRelative(this.folder, f.path);
             if (dirty.has(f.path)) return `${name} has changes that are not written. Mark it as imported after the write.`;
-            if (f.blanks) return `${name} has blank nodes that Catenary cannot write as IRIs. Import the file instead: Import File writes a copy with IRIs.`;
+            if (f.blanks) return `${name} has blank nodes, and Catenary does not write this file, so they cannot get IRIs. Import the file from outside the workspace folder: the import writes a Turtle copy with IRIs.`;
         }
         return undefined;
     }

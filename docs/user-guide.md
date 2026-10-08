@@ -104,12 +104,12 @@ An imported file is an official file that Catenary must not change. It is read o
 - Mark as Imported writes pending changes first. A file with blank nodes in a format that Catenary does not write (N3, RDF/XML) cannot be marked. Import it instead.
 - Validation does not check imported files as a whole, so large files do not slow down each edit. It checks your own statements, all statements about their subjects, and the types of the resources that they refer to.
 
-To import official files from outside the workspace:
+To import official files:
 
 1. Select File → Import RDF Files… or Import Files… in Workspace settings.
 2. Select one or more RDF files.
 
-For each file, Catenary writes a Turtle copy to `imported/<name>.ttl` and marks the copy as imported. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
+A file that is already in the workspace is marked as imported where it is. For a file from outside the workspace, Catenary writes a Turtle copy to `imported/<name>.ttl` and marks the copy as imported. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
 
 ## Export
 
