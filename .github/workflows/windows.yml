@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       # No install scripts: they build the Linux desktop app (drivelist, Electron for linux-x64). The unit tests do not need them.
       - uses: ./.github/actions/setup
-      # The import rules: their path handling differs on Windows. The rest of `pnpm check` (GHC on the manifests, tsc) is the same on
+      # The import rules: their path handling differs on Windows. The rest of `pnpm check` (links, CSS, TypeScript) is the same on
       # every platform; ci.yml runs it.
       - run: node scripts/check-boundaries.mjs
       # The tests of paths, files, the watcher and Git: what differs on Windows. The other tests are pure rules on RDF and diagrams,

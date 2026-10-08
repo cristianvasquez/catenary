@@ -318,8 +318,10 @@ export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): 
     }
     if (patch.targetSubjectsOf !== undefined) {
         const next = new Set(patch.targetSubjectsOf.map(iri => iri.trim()).filter(Boolean));
-        for (const q of g.match(s, S.targetSubjectsOf, null, graph)) if (!next.has(q.object.value)) g.remove(q);
-        for (const iri of next) g.add(s, S.targetSubjectsOf, rdf.namedNode(iri), graph);
+        const existing = g.match(s, S.targetSubjectsOf).filter(q => g.isShapesGraph(q.graph));
+        for (const q of existing) if (!next.has(q.object.value)) g.remove(q);
+        const retained = new Set(existing.map(q => q.object.value));
+        for (const iri of next) if (!retained.has(iri)) g.add(s, S.targetSubjectsOf, rdf.namedNode(iri), graph);
     }
     if (patch.closed !== undefined) {
         g.set(s, S.closed, patch.closed ? TRUE : undefined, graph);

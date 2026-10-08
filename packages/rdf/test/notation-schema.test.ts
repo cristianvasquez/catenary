@@ -26,6 +26,16 @@ const of = (g: ModelGraph, view: string, type: string) => schema(g, view).filter
 const element = (g: ModelGraph, view: string, id: unknown) => elementOfId(project(g).doc.views[view], id as string);
 
 describe('SHACL elements from the notation engine', () => {
+    it('draws a self-targeting connector', async () => {
+        const { g, view } = await setup(`
+            <urn:self> a sh:NodeShape ; sh:targetSubjectsOf <urn:status> ; sh:property <urn:property> .
+            <urn:property> sh:path <urn:status> .`, '', ['urn:self']);
+        const edges = of(g, view, TYPES.TARGETING);
+        expect(edges).toHaveLength(1);
+        expect(edges[0].sourceId).toBe(edges[0].targetId);
+        expect(element(g, view, edges[0].sourceId)).toBe(iriId('urn:self'));
+    });
+
     it('draws a derived edge from a property to a shape that targets its subjects', async () => {
         const { g, view } = await setup(`
             <urn:source> a sh:NodeShape ; sh:property <urn:property> .

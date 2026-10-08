@@ -231,7 +231,7 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
     const shownShapes = new Set(boxes(view, 'card').map(c => c.element));
     for (const [uri, id] of cards) {
         const targets = Object.values(shapes.nodeShapes).filter(shape => !shownShapes.has(shape.id)
-            && shape.targetSubjectsOf?.some(predicate => g.match(rdf.namedNode(uri), rdf.namedNode(predicate), null, g.model).length > 0)).length;
+            && shape.targetSubjectsOf?.some(predicate => g.match(rdf.namedNode(uri), rdf.namedNode(predicate), null, rdf.namedNode(homeOf(uri))).length > 0)).length;
         const row = out.get(id);
         if (targets && row) row.targets = targets;
         else if (targets) out.set(id, { in: 0, out: 0, targets });

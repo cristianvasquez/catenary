@@ -316,7 +316,7 @@ export class ModelStore implements ModelQueries {
         if (!view || !instance) return undefined;
         const shown = new Set(boxes(view, 'card').map(card => card.element));
         const shapes = Object.values(doc.shapes.nodeShapes).filter(shape => !shown.has(shape.id)
-            && shape.targetSubjectsOf?.some(predicate => this.graph.match(rdf.namedNode(instance.uri), rdf.namedNode(predicate), null, this.graph.model).length > 0));
+            && shape.targetSubjectsOf?.some(predicate => this.graph.match(rdf.namedNode(instance.uri), rdf.namedNode(predicate), null, this.graph.homeOf(rdf.namedNode(instance.uri))).length > 0));
         if (!shapes.length) return undefined;
         return {
             title: `${instance.label}: applicable node shapes (${shapes.length} not in the view)`,

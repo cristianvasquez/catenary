@@ -190,7 +190,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     const targeting = Object.values(shapes.properties).flatMap(p => {
         const predicate = p.path.kind === 'iri' ? p.path.iri : undefined;
         if (!predicate || !shapeCards.has(p.owner)) return [];
-        return Object.values(shapes.nodeShapes).filter(shape => shape.id !== p.owner && shape.targetSubjectsOf?.includes(predicate) && shapeCards.has(shape.id))
+        return Object.values(shapes.nodeShapes).filter(shape => shape.targetSubjectsOf?.includes(predicate) && shapeCards.has(shape.id))
             .map(shape => ({ p, target: shape.id }));
     });
     const targetingLane = edgeLanes(targeting.map(({ p, target }) => [shapeCards.get(p.owner)!, shapeCards.get(target)!]));

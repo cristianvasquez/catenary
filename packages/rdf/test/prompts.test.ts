@@ -132,6 +132,23 @@ describe('dialogs and pickers of the user actions', () => {
         });
     });
 
+    it('matches subject targets in the home graph of a shapes-file concept', () => {
+        const { view } = cardView();
+        const g = (store as unknown as { graph: import('../src/graph').ModelGraph }).graph;
+        const graph = g.shapesGraphs()[0];
+        const concept = rdf.namedNode('urn:test:Concept');
+        const shape = rdf.namedNode('urn:test:BroaderSubjects');
+        const broader = rdf.namedNode('http://www.w3.org/2004/02/skos/core#broader');
+        g.add(concept, S.type, rdf.namedNode('http://www.w3.org/2004/02/skos/core#Concept'), graph);
+        g.add(concept, broader, rdf.namedNode('urn:test:Parent'), graph);
+        g.add(shape, S.targetSubjectsOf, broader, graph);
+        expect(store.execute({ kind: 'addToView', view: view.id, ids: [elementId(concept)], at: { x: 0, y: 0 } })).toMatchObject({ ok: true });
+        const current = store.view(view.id)!;
+        const card = boxes(current, 'card').find(c => c.element === elementId(concept))!;
+        expect(store.hiddenNeighborCounts(current).get(elementId(concept))?.targets).toBe(1);
+        expect(store.shapeTargetChoices(view.id, card.id)?.items.map(i => i.ids)).toContainEqual([elementId(shape)]);
+    });
+
     it('linkChoices: a section for each relation type; undefined for an unknown instance', () => {
         const { view, instance } = cardView();
         const out = store.linkChoices('out', instance, view.id);

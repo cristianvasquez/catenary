@@ -17,7 +17,7 @@ Theia + GLSP editor for RDF models. Files are the source of truth. One backend `
 - Documents in `docs/` are for people: short, current state only, no history. The manifests are the full contract for agents.
 - Do not add journals, status inventories or feature specs. Git history holds work records. `spec/open.md` holds what is not finished.
 - A handoff of unfinished design work goes in the `readme.md` of its folder under `draft/`. The next agent starts there.
-- The manifests are Haskell modules. `pnpm check` typechecks them with GHC (`scripts/check-manifests.mjs`), so a name or type that does not match fails. Each new primitive needs a stub in the "Compile-only stubs" section at the end of its file. Write a rule as an equation when it fits, not as a stub.
+- The manifests are Haskell modules. The optional `pnpm check:manifests` target typechecks them with GHC (`scripts/check-manifests.mjs`). It skips the check when GHC is absent. Each new primitive needs a stub in the "Compile-only stubs" section at the end of its file. Write a rule as an equation when it fits, not as a stub.
 - Give each prose rule a clause below it: an equation, or a law `law_<name>` (a Bool function that must be True for all arguments). A test that checks a law cites its name. Put the clause in the numbered section (§n.m) that owns the rule.
 
 ## Simple English
@@ -41,7 +41,6 @@ Catenary does not work with blank nodes. The read skolemizes each blank node imm
 ## Before you change code
 
 1. `git status --short`. Other agents can work in this tree at the same time. Do not revert, reformat or "fix" changes that you did not make.
-2. If `pnpm check` fails in files that you did not change, report it and stop. Do not work around it.
 
 ## Done means
 

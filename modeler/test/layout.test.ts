@@ -7,7 +7,10 @@ import { LAYOUT_ALGORITHMS } from '../src/common/protocol';
 import { Box, Doc, TYPES, groupOf, inside, emptyShapes, iriId, boxes, toSchema } from '@catenary/model';
 import { ModelStore } from '@catenary/rdf';
 import { layoutView } from '../src/node/glsp/layout';
-import { docOf } from '../../packages/rdf/test/helpers';
+import { docOf, load, run } from '../../packages/rdf/test/helpers';
+import { project } from '../../packages/rdf/test/project-full';
+import { readNotations, storeIndex } from '../../packages/rdf/src/notations';
+import { viewFigures, idIri } from '@catenary/model';
 
 it.each(LAYOUT_ALGORITHMS.map(a => a.id))('%s: lays out a view without overlap, preserving group membership, box sizes and the source document', async algorithm => {
     const nodes = [
@@ -198,4 +201,30 @@ it('layered: if ELK layered fails, ELK box places the cards (no overlap)', async
     const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     expect(bounds).toHaveLength(4);
     for (const [i, a] of bounds.entries()) for (const b of bounds.slice(i + 1)) expect(overlap(a, b)).toBe(false);
+});
+
+
+it('uses targeting connectors for layout without persisting their sides', async () => {
+    const g = await load(`@prefix sh: <http://www.w3.org/ns/shacl#> .
+        <urn:file:/tmp/targeting.ttl> {
+            <urn:source> a sh:NodeShape ; sh:property <urn:property> .
+            <urn:property> sh:path <urn:status> .
+            <urn:target> a sh:NodeShape ; sh:targetSubjectsOf <urn:status> .
+        }`);
+    const view = run(g, { classes: [] }, { kind: 'createView', label: 'Targets' }) as string;
+    for (const iri of ['urn:source', 'urn:target']) run(g, { classes: [] }, {
+        kind: 'addToView', view, ids: [iriId(iri)], at: { x: 0, y: 0 }
+    });
+    const doc = project(g).doc;
+    const notation = viewFigures(storeIndex(g), readNotations(), idIri(view)!);
+    const proto = ELK.prototype as unknown as { layout: (graph: ElkNode) => Promise<ElkNode> };
+    const spy = vi.spyOn(proto, 'layout');
+    try {
+        const result = await layoutView(doc, view, false, 'layered', 120, 1, notation);
+        expect(result.bounds).toHaveLength(2);
+        expect(spy.mock.calls.some(([graph]) => graph.children?.length === 2 && graph.edges?.length === 1)).toBe(true);
+        expect(result.edges).toEqual([]);
+    } finally {
+        spy.mockRestore();
+    }
 });

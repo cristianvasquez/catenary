@@ -44,6 +44,28 @@ const blanks = (g: ModelGraph) => new Set(g.match(null, null, null, GRAPH).flatM
 const shapesCanonical = (g: ModelGraph) => canonical(g.match(null, null, null, GRAPH).map(q => rdf.quad(q.subject, q.predicate, q.object)));
 
 describe('shapes graphs to the shapes read model', () => {
+    it('replaces subject targets across source graphs without copying retained values', async () => {
+        const g = await load();
+        const second = rdf.namedNode(fileGraphIri('/tmp/extra-shapes.ttl'));
+        g.setShapesGraphs([...g.shapesGraphs(), second]);
+        const shape = rdf.namedNode(EX + 'Dataset');
+        const first = rdf.namedNode(EX + 'first'), kept = rdf.namedNode(EX + 'kept');
+        g.add(shape, S.targetSubjectsOf, first, GRAPH);
+        g.add(shape, S.targetSubjectsOf, kept, second);
+        const id = elementId(shape);
+        const { patch } = g.transact(x => executeCommand(x, emptyMetamodel(), {
+            kind: 'setNodeShape', id, patch: { targetSubjectsOf: [kept.value, EX + 'new'] }
+        }));
+        expect(g.match(shape, S.targetSubjectsOf, first)).toHaveLength(0);
+        expect(g.match(shape, S.targetSubjectsOf, kept).map(q => q.graph.value)).toEqual([second.value]);
+        expect(g.match(shape, S.targetSubjectsOf, rdf.namedNode(EX + 'new'), GRAPH)).toHaveLength(1);
+        g.undo(patch);
+        expect(g.match(shape, S.targetSubjectsOf, first, GRAPH)).toHaveLength(1);
+        expect(g.match(shape, S.targetSubjectsOf, kept, second)).toHaveLength(1);
+        exec(g, { kind: 'setNodeShape', id, patch: { targetSubjectsOf: [] } });
+        expect(g.match(shape, S.targetSubjectsOf)).toHaveLength(0);
+    });
+
     it('reads node shapes, ranges, complex paths and the sh:or constraint', async () => {
         const g = await load();
         const s = shapesOf(g);
