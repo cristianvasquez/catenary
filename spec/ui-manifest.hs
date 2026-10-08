@@ -362,8 +362,11 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- 3.2 Documents ---------------------------------------------------------------------
 
 -- | A file opens as what its content holds that Catenary edits, not by its name: a workspace (the manifest graph) opens the
--- workspace (the open one: its Workspace settings), a view (a view:View) opens its view editor. A file with both, which is not
--- normal, asks which. A file with neither opens as text. "Open With" opens any file as text.
+-- workspace (the open one: its Workspace settings), a view (a view:View) opens its view editor. The navigator opens a file when it
+-- is selected, so browsing the files shows the views. A file with several ways to open asks which.
+-- A file with the workspace settings and a view opens as text, with the message "This file mixes workspace settings and a view.
+-- Move the view into its own file." Reason: a save of one part must not change the other (open.md D7).
+-- A file with neither opens as text. "Open With" opens any file as text.
 -- A view outside the open workspace first opens the workspace that reads its file: the nearest folder above it with one
 -- workspace file. A view in no workspace gives a message. A view and the settings can switch to source text.
 -- Opening a document makes it active. It does not change the selection. Selection and active document are independent.
@@ -374,13 +377,17 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 data Document = OpenView Element | OpenWorkspace | AsText FilePath deriving Eq
 documentsIn :: FilePath -> [Document]
 data FileHolds = FileHolds { holdsWorkspace :: Bool, holdsViews :: [Id] }
--- | The documents of a double-click on a file. More than one: the user picks one.
+-- | The documents of opening a file. More than one: the user picks one.
 openChoices :: FilePath -> FileHolds -> [Document]
-openChoices p h = case [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h] of
-  [] -> [AsText p]
-  ds -> ds
+openChoices p h
+  | holdsWorkspace h && not (null (holdsViews h)) = [AsText p]
+  | otherwise = case [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h] of
+      [] -> [AsText p]
+      ds -> ds
 law_plainFileOpensAsText :: FilePath -> Bool
 law_plainFileOpensAsText p = openChoices p (FileHolds False []) == [AsText p]
+law_mixedFileOpensAsText :: FilePath -> Id -> Bool
+law_mixedFileOpensAsText p v = openChoices p (FileHolds True [v]) == [AsText p]
 openDocument :: Document -> UiState -> UiState
 openDocument d s = s { documents = nub (documents s ++ [d]), active = Just d }
 law_openKeepsSelection :: Document -> UiState -> Bool

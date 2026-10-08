@@ -37,9 +37,18 @@ export interface FileContent {
     error?: string;
 }
 
-/** How a file can open: as its workspace, or as one of its views. None: it is a plain file (the text editor). */
+/**
+ * Why a file opens as text although it holds something that Catenary edits, or undefined. A file with the workspace settings and a
+ * view: neither opens (a save of one part must not change the other; open.md D7).
+ */
+export function mixedFileProblem(c: FileContent): string | undefined {
+    return c.workspace && c.views.length ? 'This file mixes workspace settings and a view. Move the view into its own file.' : undefined;
+}
+
+/** How a file can open: as its workspace, or as one of its views. None: it opens as text (a plain file, or `mixedFileProblem`). */
 export type OpenMode = { kind: 'workspace' } | { kind: 'view'; id: string; label: string };
 export function openModes(c: FileContent): OpenMode[] {
+    if (mixedFileProblem(c)) return [];
     return [...(c.workspace ? [{ kind: 'workspace' } as const] : []), ...c.views.map(v => ({ kind: 'view' as const, ...v }))];
 }
 

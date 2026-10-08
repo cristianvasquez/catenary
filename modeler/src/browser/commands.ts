@@ -17,7 +17,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { FileContent, openModes } from '@catenary/model';
+import { FileContent, mixedFileProblem, openModes } from '@catenary/model';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -444,8 +444,9 @@ export class ExplorerFocusContext implements KeybindingContext {
 
 /**
  * A file opens as what it holds that Catenary edits, from its content, not its name: a workspace in the workspace editor (the open
- * workspace: its settings), a view in its view editor. A file with several of these (normally not: a workspace and a view) asks which.
- * Other files: the next handler, the text editor. "Open With" keeps the text editor for every file.
+ * workspace: its settings), a view in its view editor. The navigator opens a file when it is selected (single click), so browsing the
+ * files shows the views. A file with several ways to open asks which. A file that mixes workspace settings and a view opens as text,
+ * with a message. Other files: the next handler, the text editor. "Open With" keeps the text editor for every file.
  */
 @injectable()
 export class CatenaryFileOpenHandler implements OpenHandler {
@@ -455,6 +456,8 @@ export class CatenaryFileOpenHandler implements OpenHandler {
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(WorkspaceSettingsContribution) protected readonly settings: WorkspaceSettingsContribution;
+    @inject(EditorManager) protected readonly editorManager: EditorManager;
+    @inject(MessageService) protected readonly messages: MessageService;
 
     /** Views and workspaces are TriG files. Undefined: another file, or the backend cannot read it. */
     protected async content(uri: URI): Promise<FileContent | undefined> {
@@ -464,13 +467,18 @@ export class CatenaryFileOpenHandler implements OpenHandler {
 
     async canHandle(uri: URI): Promise<number> {
         const c = await this.content(uri);
-        return c && openModes(c).length ? 200 : 0;
+        return c && (openModes(c).length || mixedFileProblem(c)) ? 200 : 0;
     }
 
     async open(uri: URI): Promise<object | undefined> {
         const c = await this.content(uri);
         if (!c) return undefined;
         const name = uri.path.base;
+        const problem = mixedFileProblem(c);
+        if (problem) {
+            this.messages.warn(`${name}: ${problem}`);
+            return this.editorManager.open(uri);
+        }
         const items = openModes(c).map(m => m.kind === 'workspace'
             ? { label: 'Workspace', description: name, run: () => this.openWorkspace(uri) }
             : { label: `View: ${m.label}`, description: name, run: () => this.actions.openView(m.id, c.workspaceFile) });

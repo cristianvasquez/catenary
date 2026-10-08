@@ -11,7 +11,7 @@ The first `pnpm start` or `pnpm desktop` copies `examples/bookshop` to `~/.local
 1. Select File → Open Workspace.
 2. Select a folder or a `workspace.trig` file.
 
-A double-click on a file opens what it holds, not what its name says. A workspace file opens the workspace. A view file opens the view, and first its workspace if another one is open. A file that holds both asks which to open. Other files open as text. Use Open With to open any file as text.
+A file in the navigator opens what it holds, not what its name says, when you select it. A workspace file opens the workspace. A view file shows the view, and first opens its workspace if another one is open. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other files open as text. Use Open With to open any file as text.
 
 If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace creates `workspace.trig`, the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
 
@@ -36,7 +36,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 In the browser, append `?view=<view-id>` to the backend URL to open a specific view. Use `pnpm -s catenary --port PORT model views --keys` to get view IDs. For example: `http://localhost:3931/?view=n-urn_3aname_3aPackage_2520provenance`. The link selects a view in the current workspace after startup, even when other tabs were restored. An unknown view shows an error and leaves normal startup behavior unchanged. The link does not select a workspace or start a backend.
 
 - Create a view: Model → New View, the `+` after the editor tabs, or New View on a folder of the navigator. Type the name of the view file. The view gets the label "unnamed view N". Rename it at any time: the file name stays.
-- Open a view: double-click its file, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
+- Open a view: select its file in the navigator, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
