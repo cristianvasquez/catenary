@@ -12,6 +12,7 @@ import type { ShapesModel } from './shapes-doc';
 import type { ElementProperties } from './properties';
 import type { SearchFacets, SearchResult } from './search';
 import type { Problem } from './validation';
+import type { FileContent } from './snapshot';
 
 export interface ModelQueries {
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
@@ -81,6 +82,8 @@ export interface ModelQueries {
     elementRows(ids: string[], viewId?: string): ElementRow[];
     /** Of `ids`: the instances without a card and the relations without an edge in every view. */
     unplaced(ids: string[]): string[];
+    /** What the file `path` holds that Catenary edits (workspace, views), from its content: how to open it. */
+    fileContent(path: string): Promise<FileContent>;
 }
 
 /** The parameter names of each query (the RPC service and the CLI list them). The type requires one entry for each query. */
@@ -116,7 +119,8 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     memberOptions: ['viewId', 'collection'],
     instancesNamed: ['text'],
     elementRows: ['ids', 'viewId'],
-    unplaced: ['ids']
+    unplaced: ['ids'],
+    fileContent: ['path']
 };
 
 /** The interface of `T` over RPC: each method returns a promise. */

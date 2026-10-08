@@ -1,10 +1,10 @@
 // Commands, menus, keybindings, toolbar items and the explorer views (Workspace tab: Views and Files; Model tab).
 
 import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
-import { Command, CommandRegistry, MAIN_MENU_BAR, MenuModelRegistry, MessageService, SelectionService, URI } from '@theia/core';
+import { Command, CommandRegistry, MAIN_MENU_BAR, MenuModelRegistry, MessageService, QuickInputService, SelectionService, URI } from '@theia/core';
 import {
     AbstractViewContribution, ApplicationShell, FrontendApplication, FrontendApplicationContribution, KeybindingContext, KeybindingRegistry,
-    OpenHandler, StorageService, Widget
+    OpenHandler, OpenerOptions, StorageService, Widget
 } from '@theia/core/lib/browser';
 import { PERSPECTIVE_LAYOUTS_STORAGE_KEY } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
@@ -17,7 +17,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { isViewFile } from '@catenary/model';
+import { FileContent, OpenMode, mixedFileProblem, openModes, previewModes } from '@catenary/model';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -467,52 +467,60 @@ export class ExplorerFocusContext implements KeybindingContext {
     }
 }
 
-/** A view file of the open workspace (`*.view.trig` in its views folder) opens in its view editor. Other files: the next handler. */
+/**
+ * A file opens as what it holds that Catenary edits, from its content, not its name: a workspace in the workspace editor (the open
+ * workspace: its settings), a view in its view editor. The navigator opens a file when it is selected (single click, a preview), so
+ * browsing the files shows the views. A preview stays in the open workspace: another workspace, or a view of another workspace, needs
+ * an explicit open (double-click or Enter); the preview shows its text. A file with several ways to open asks which. A file that mixes workspace settings and a view opens as text,
+ * with a message. Other files: the next handler, the text editor. "Open With" keeps the text editor for every file.
+ */
 @injectable()
-export class ViewFileOpenHandler implements OpenHandler {
-    readonly id = 'catenary-view-file';
-    readonly label = 'Catenary View';
-    @inject(ModelFrontend) protected readonly model: ModelFrontend;
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
-
-    protected viewOf(uri: URI): string | undefined {
-        return uri.scheme === 'file' ? this.model.snapshot.files.views.find(f => f.path === uri.path.fsPath())?.view : undefined;
-    }
-
-    canHandle(uri: URI): number {
-        return this.viewOf(uri) ? 200 : 0;
-    }
-
-    async open(uri: URI): Promise<object | undefined> {
-        const view = this.viewOf(uri);
-        return view ? this.editors.open(view) : undefined;
-    }
-}
-
-/** Double-click on a .trig file opens it as the model. The text editor stays available with "Open With". */
-@injectable()
-export class TrigOpenHandler implements OpenHandler {
-    readonly id = 'catenary-trig-model';
-    readonly label = 'Catenary Workspace';
+export class CatenaryFileOpenHandler implements OpenHandler {
+    readonly id = 'catenary-file';
+    readonly label = 'Catenary';
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
-
+    @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(WorkspaceSettingsContribution) protected readonly settings: WorkspaceSettingsContribution;
+    @inject(EditorManager) protected readonly editorManager: EditorManager;
+    @inject(MessageService) protected readonly messages: MessageService;
 
-    /**
-     * The open workspace file: its settings view. Another .trig that is not a model file of the open workspace: open it as a workspace.
-     * Not a view file: ViewFileOpenHandler opens it. An equal priority lets the registration order decide.
-     */
-    canHandle(uri: URI): number {
-        if (uri.scheme !== 'file' || uri.path.ext !== '.trig' || isViewFile(uri.path.fsPath())) return 0;
-        return this.model.snapshot.files.files.some(f => f.path === uri.path.fsPath()) ? 0 : 200;
+    /** Views and workspaces are TriG files. Undefined: another file, or the backend cannot read it. */
+    protected async content(uri: URI): Promise<FileContent | undefined> {
+        if (uri.scheme !== 'file' || uri.path.ext.toLowerCase() !== '.trig') return undefined;
+        return this.model.service.fileContent(uri.path.fsPath()).catch(() => undefined);
     }
 
-    async open(uri: URI): Promise<object | undefined> {
-        if (this.model.snapshot.file === uri.path.fsPath()) return this.settings.openView({ activate: true, reveal: true });
-        await this.actions.openModel(uri);
+    /** The ways to open the file. A preview (a single click in the navigator) does not switch to another workspace. */
+    protected modes(c: FileContent, uri: URI, options?: OpenerOptions): OpenMode[] {
+        return (options as { preview?: boolean } | undefined)?.preview ? previewModes(c, uri.path.fsPath(), this.model.snapshot.file) : openModes(c);
+    }
+
+    async canHandle(uri: URI, options?: OpenerOptions): Promise<number> {
+        const c = await this.content(uri);
+        return c && (this.modes(c, uri, options).length || mixedFileProblem(c)) ? 200 : 0;
+    }
+
+    async open(uri: URI, options?: OpenerOptions): Promise<object | undefined> {
+        const c = await this.content(uri);
+        if (!c) return undefined;
+        const name = uri.path.base;
+        const problem = mixedFileProblem(c);
+        if (problem) {
+            this.messages.warn(`${name}: ${problem}`);
+            return this.editorManager.open(uri, options);
+        }
+        const items = this.modes(c, uri, options).map(m => m.kind === 'workspace'
+            ? { label: 'Workspace', description: name, run: () => this.openWorkspace(uri) }
+            : { label: `View: ${m.label}`, description: name, run: () => this.actions.openView(m.id, c.workspaceFile) });
+        const pick = items.length > 1 ? await this.quick.showQuickPick(items, { placeholder: `${name} holds ${items.length} things that Catenary edits. Open it as:` }) : items[0];
+        await pick?.run();
         return undefined;
+    }
+
+    protected async openWorkspace(uri: URI): Promise<void> {
+        if (this.model.snapshot.file === uri.path.fsPath()) await this.settings.openView({ activate: true, reveal: true });
+        else await this.actions.openModel(uri);
     }
 }
 

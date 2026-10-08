@@ -8,12 +8,15 @@ export interface MetamodelInfo extends Classes {
     source?: string;
 }
 
-/** The extension of a view file: TriG with one graph, named by the view IRI (ADR 0011). */
+/**
+ * The extension of the view files that Catenary names (a view file: TriG with one graph, named by the view IRI, ADR 0011). A view file
+ * can have any `.trig` name: the read finds a view by the content of the file.
+ */
 export const VIEW_EXT = '.view.trig';
-/** A view file is never a workspace file or another model file. */
+/** A `*.view.trig` file is a view file, never a workspace file or another model file. A file with another name can be a view file too. */
 export const isViewFile = (file: string) => file.toLowerCase().endsWith(VIEW_EXT);
 
-/** A view file (`*.view.trig` in the views folder): one view. */
+/** A view file (a TriG file that declares one view, any name): one view. */
 export interface ViewFileInfo {
     /** View id. */
     view: string;
@@ -22,6 +25,41 @@ export interface ViewFileInfo {
     dirty: boolean;
     /** A ws:protect glob matches the file: Catenary refuses each change of it. */
     protected?: boolean;
+}
+
+/** What a file holds that Catenary edits, from its content, not its name. A file can hold a workspace, views, both or none. */
+export interface FileContent {
+    /** It has the manifest graph: a workspace file. */
+    workspace: boolean;
+    /** The views that it declares. */
+    views: { id: string; label: string }[];
+    /** With views: the workspace that reads the file (the open one, else the nearest folder above with one workspace file). */
+    workspaceFile?: string;
+    /** Why the file is not RDF that Catenary reads. */
+    error?: string;
+}
+
+/**
+ * Why a file opens as text although it holds something that Catenary edits, or undefined. A file with the workspace settings and a
+ * view: neither opens (a save of one part must not change the other; open.md D7).
+ */
+export function mixedFileProblem(c: FileContent): string | undefined {
+    return c.workspace && c.views.length ? 'This file mixes workspace settings and a view. Move the view into its own file.' : undefined;
+}
+
+/** How a file can open: as its workspace, or as one of its views. None: it opens as text (a plain file, or `mixedFileProblem`). */
+export type OpenMode = { kind: 'workspace' } | { kind: 'view'; id: string; label: string };
+export function openModes(c: FileContent): OpenMode[] {
+    if (mixedFileProblem(c)) return [];
+    return [...(c.workspace ? [{ kind: 'workspace' } as const] : []), ...c.views.map(v => ({ kind: 'view' as const, ...v }))];
+}
+
+/**
+ * The open modes of a preview (a file selected while browsing the navigator): the ones that stay in the open workspace `openFile`.
+ * Switching to another workspace needs an explicit open (double-click or Enter). `file`: the path of the file.
+ */
+export function previewModes(c: FileContent, file: string, openFile?: string): OpenMode[] {
+    return openModes(c).filter(m => (m.kind === 'workspace' ? file : c.workspaceFile) === openFile && openFile !== undefined);
 }
 
 /** What a model file contains (ADR 0004: from its triples, not from a role). */

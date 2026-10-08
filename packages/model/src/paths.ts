@@ -20,3 +20,17 @@ export function relativePath(folder: string, file: string): string | undefined {
     const same = isDrivePath(f) ? (a: string, b: string) => a.toLowerCase() === b.toLowerCase() : (a: string, b: string) => a === b;
     return p.length > f.length + 1 && p[f.length] === '/' && same(p.slice(0, f.length), f) ? p.slice(f.length + 1) : undefined;
 }
+
+/** The view file that the user types for a new view: `/` as separator, `.trig` added when missing (a view file is TriG, any name). */
+export const viewFileInput = (text: string): string => {
+    const t = text.trim().replace(/\\/g, '/');
+    return /\.trig$/i.test(t) ? t : `${t}.trig`;
+};
+
+/** A proposed file for a new view in `dir` (relative, '' for the workspace folder) that is not `taken`: `unnamed-view.view.trig`, `-2`, … */
+export function freeViewFile(dir: string, taken: ReadonlySet<string | undefined>): string {
+    const at = (i: number) => `${dir ? dir.replace(/\/$/, '') + '/' : ''}unnamed-view${i === 1 ? '' : '-' + i}.view.trig`;
+    let i = 1;
+    while (taken.has(at(i))) i++;
+    return at(i);
+}

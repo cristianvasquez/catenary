@@ -19,7 +19,7 @@ import Data.List (isInfixOf, nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
-  , (==>), elementId, firstFree, manifestOnly, relationId, sameSet, unique )
+  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet, unique )
 
 --------------------------------------------------------------------------------
 -- Part I. The model as the user sees it
@@ -361,7 +361,16 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 
 -- 3.2 Documents ---------------------------------------------------------------------
 
--- | A file opens its view, the Workspace settings or a text editor. A view and the settings can switch to source text.
+-- | A file opens as what its content holds that Catenary edits, not by its name: a workspace (the manifest graph) opens the
+-- workspace (the open one: its Workspace settings), a view (a view:View) opens its view editor. The navigator opens a file when it
+-- is selected (a preview), so browsing the files shows the views. A preview stays in the open workspace: another workspace, or a
+-- view of another workspace, opens only by an explicit open (double-click or Enter); the preview shows its text.
+-- Reason: browsing must not replace the open workspace. A file with several ways to open asks which.
+-- A file with the workspace settings and a view opens as text, with the message "This file mixes workspace settings and a view.
+-- Move the view into its own file." Reason: a save of one part must not change the other (open.md D7).
+-- A file with neither opens as text. "Open With" opens any file as text.
+-- A view outside the open workspace first opens the workspace that reads its file: the nearest folder above it with one
+-- workspace file. A view in no workspace gives a message. A view and the settings can switch to source text.
 -- Opening a document makes it active. It does not change the selection. Selection and active document are independent.
 -- A browser URL with ?view=<view-id> opens that view after layout restoration, overriding the restored active tab.
 -- The view must belong to the current workspace. An unknown ID shows an error and keeps normal startup behavior.
@@ -369,6 +378,25 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- A file with several views is open (open.md D4).
 data Document = OpenView Element | OpenWorkspace | AsText FilePath deriving Eq
 documentsIn :: FilePath -> [Document]
+data FileHolds = FileHolds { holdsWorkspace :: Bool, holdsViews :: [Id] }
+-- | The documents of opening a file. More than one: the user picks one.
+openChoices :: FilePath -> FileHolds -> [Document]
+openChoices p h
+  | holdsWorkspace h && not (null (holdsViews h)) = [AsText p]
+  | otherwise = case [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h] of
+      [] -> [AsText p]
+      ds -> ds
+law_plainFileOpensAsText :: FilePath -> Bool
+law_plainFileOpensAsText p = openChoices p (FileHolds False []) == [AsText p]
+-- | A preview keeps the documents that stay in the open workspace. `inOpen`: the document belongs to the open workspace.
+previewChoices :: (Document -> Bool) -> FilePath -> FileHolds -> [Document]
+previewChoices inOpen p h = case filter (\d -> d == AsText p || inOpen d) (openChoices p h) of
+  [] -> [AsText p]
+  ds -> ds
+law_previewStaysInWorkspace :: (Document -> Bool) -> FilePath -> FileHolds -> Bool
+law_previewStaysInWorkspace inOpen p h = all (\d -> d == AsText p || inOpen d) (previewChoices inOpen p h)
+law_mixedFileOpensAsText :: FilePath -> Id -> Bool
+law_mixedFileOpensAsText p v = openChoices p (FileHolds True [v]) == [AsText p]
 openDocument :: Document -> UiState -> UiState
 openDocument d s = s { documents = nub (documents s ++ [d]), active = Just d }
 law_openKeepsSelection :: Document -> UiState -> Bool
@@ -539,6 +567,13 @@ law_enterInNoteIsNewline = inputEnd NoteInput EnterKey == Nothing
 -- A new node shape: the accepted name also sets its target class, in the same undo step. The class is the known class with
 -- that name, else the name IRI. Reason: a shape usually targets the class of its name.
 -- Rename, placement and connection to existing elements start no follow-up.
+-- New View first asks for the name of the view file (DialogInput). It proposes a free views/unnamed-view.view.trig (or the selected
+-- folder); a name without .trig gets it. Cancel creates nothing. The view gets the default label "unnamed view N", and the follow-up
+-- starts. A later rename does not change the file name. Reason: the read finds a view by the content of its file, not by its name.
+newViewFileInput :: String -> FilePath
+newViewFileInput t = if isTrig t then t else t ++ ".trig"
+law_newViewFileIsTrig :: String -> Bool
+law_newViewFileIsTrig t = isTrig (newViewFileInput t)
 data Field = LabelField | PathField | NoteTextField deriving Eq
 data FieldPlace = InlineField | ElementSectionField | LabelDialog deriving Eq
 followUp :: Element -> Field

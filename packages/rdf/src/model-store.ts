@@ -9,19 +9,19 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, idIri, viewFigures
+    TripleIndex, ViewFigures, idIri, viewFigures, FileContent
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
+import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
 import { executeCommand } from './commands';
 import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements } from './explorer';
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
-import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
+import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
 import { History } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -38,7 +38,7 @@ import { skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { reportProblems } from './validate';
 import { ValidationRunner } from './validation-runner';
-import { Workspace, createWorkspace } from './workspace';
+import { Workspace, createWorkspace, fileContent } from './workspace';
 import { search } from './search';
 import { selected } from './selection';
 
@@ -365,6 +365,19 @@ export class ModelStore implements ModelQueries {
             : !!doc.relations[id] && !views.some(v => v.edges.some(e => e.id && e.relation === id)));
     }
 
+    /**
+     * What a file holds that Catenary edits, from its content. With views: the workspace that reads it, the open one when it has the
+     * file as a view file, else the nearest folder above with one workspace file.
+     */
+    async fileContent(file: string): Promise<FileContent> {
+        const p = absolutePath(file);
+        const c = await fileContent(p);
+        const views = c.views.map(v => ({ id: elementId(rdf.namedNode(v.iri)), label: v.label }));
+        const own = c.views.some(v => { const f = this.ws?.viewFile(v.iri); return !!f && pathKey(f.path) === pathKey(p); });
+        const workspaceFile = views.length ? (own && this.ws ? this.ws.path : await enclosingWorkspace(p)) : undefined;
+        return { workspace: c.workspace, views, ...(workspaceFile ? { workspaceFile } : {}), ...(c.error ? { error: c.error } : {}) };
+    }
+
     /** The subject term of an element id (a property shape: its term; a logical constraint: its node shape), or the triple of a relation. */
     protected statementsOf(id: string): Quad[] {
         const triple = relationTriple(id);
@@ -511,6 +524,12 @@ export class ModelStore implements ModelQueries {
             ws.newViewFolder = undefined;
             return { ok: false, error: `The folder ${command.folder} is protected.` };
         }
+        if (command.kind === 'createView' && command.file) {
+            const file = path.resolve(this.folder, command.file);
+            const problem = ws.newViewFileProblem(file) ?? (ws.isProtected(file) ? `${command.file} is protected.` : undefined);
+            if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
+            ws.newViewFile = file;
+        }
         const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
         // Protected files (manifest ws:protect): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
@@ -518,7 +537,7 @@ export class ModelStore implements ModelQueries {
             const files = r.ok ? ws.protectedChanges(g.changes()) : [];
             return files.length ? protectedFailure(this.folder, files) : r;
         });
-        if (!r.ok) { ws.newViewFolder = undefined; return r; }
+        if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
             this.commitNotes.push(command.kind);
             this.track(patch);
@@ -529,7 +548,7 @@ export class ModelStore implements ModelQueries {
             this.contentChanged(patch, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
             this.changed('edit', patch);
         }
-        ws.newViewFolder = undefined;
+        ws.newViewFolder = ws.newViewFile = undefined;
         const v = 'value' in r ? r.value : undefined;
         if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
         return { ok: true, id: typeof v === 'string' ? v : undefined };
@@ -751,6 +770,9 @@ export class ModelStore implements ModelQueries {
             if (path.basename(given) === WORKSPACE_FILE && !existsSync(given) && existsSync(path.dirname(given))) given = path.dirname(given);
             const target = await workspaceFileOf(given);
             if ('error' in target) return { ok: false, error: target.error };
+            // The content decides, not the name: a view file is part of a workspace, not one.
+            const content = existsSync(target.file) ? await fileContent(target.file) : undefined;
+            if (content?.viewFile && !content.workspace) return { ok: false, error: `${path.basename(target.file)} is a view file. Open its workspace, then open the view.` };
             return this.doOpen(target.file, target.file !== given);
         });
     }

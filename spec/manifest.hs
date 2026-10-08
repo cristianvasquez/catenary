@@ -234,31 +234,48 @@ lower = map toLower
 modelFiles :: FilePath -> IO [FilePath]
 -- modelFiles folder = the paths of the entries e below folder with isMember (exclude settings) e, except view files.
 
--- | A view file is a *.view.trig file in any folder (ADR 0011). It has one named graph G and no statements outside G.
--- G is the view IRI and the only view:View of the file. Reject other view files, a view:View in another file and duplicate view IRIs.
+-- | A view file is a TriG file in any folder, with any name, that declares a view:View; a *.view.trig file is one too (ADR 0011).
+-- The read finds the views of a file with a SPARQL query on its quads: the file name does not decide, the content does.
+-- It has one named graph G and no statements outside G. G is the view IRI and the only view:View of the file.
+-- Reject other view files, a view:View in a file that is not TriG, and duplicate view IRIs.
 -- There is no read of the old *.view.ttl format.
--- A new view uses a free views/<label>.view.trig path (-2, -3, … when taken), or the createView folder inside the workspace.
+-- A new view uses its createView file: a new TriG path inside the workspace that the user types (any name).
+-- Without a file: a free views/<label>.view.trig path (-2, -3, … when taken), or the createView folder inside the workspace.
 -- A rename or IRI change keeps the file path. Deleting a view removes its file at the next write.
 fileNameOf :: String -> String                  -- a file name from a label
-isViewFile :: FilePath -> Bool
+isViewFile :: FilePath -> Bool                  -- the default name of a view file
 isViewFile p = ".view.trig" `isSuffixOf` lower p
+isTrig :: FilePath -> Bool
+isTrig p = ".trig" `isSuffixOf` lower p
 data ViewFileContent = ViewFileContent
   { viewGraphs :: [Iri]                          -- named graphs that hold statements
   , hasDefaultGraphStatements :: Bool
-  , viewsDeclared :: [Iri]                       -- subjects with rdf:type view:View
+  , viewsDeclared :: [Iri]                       -- subjects with rdf:type view:View (SPARQL, any graph)
   }
+-- | The read takes a file as a view file by its content, or by the default name.
+readAsView :: FilePath -> ViewFileContent -> Bool
+readAsView p c = isViewFile p || not (null (viewsDeclared c))
 viewFileValid :: ViewFileContent -> Bool
 viewFileValid c = case viewGraphs c of
   [g] -> not (hasDefaultGraphStatements c) && viewsDeclared c == [g]
   _ -> False
+-- | A view file that the read accepts is TriG and valid; its name does not matter.
+viewFileAccepted :: FilePath -> ViewFileContent -> Bool
+viewFileAccepted p c = readAsView p c && isTrig p && viewFileValid c
 -- | Across the workspace: a view:View only in its own view file, and each view IRI in one view file only.
 law_viewIrisUnique :: [ViewFileContent] -> Bool
 law_viewIrisUnique cs = all viewFileValid cs ==> unique (concatMap viewGraphs cs)
-newViewPath :: String -> Maybe FilePath -> [FilePath] -> FilePath   -- label, createView folder, taken paths
-newViewPath label folder taken = firstFree candidate taken
+-- | A file of a new view: TriG, inside the workspace folder, not a file that exists or that the workspace knows.
+newViewFileOk :: FilePath -> [FilePath] -> Bool  -- the file (relative to the workspace folder), taken paths
+newViewFileOk f taken = isTrig f && not ("/" `isPrefixOf` f) && ".." `notElem` segments f && f `notElem` taken
+newViewPath :: String -> Maybe FilePath -> Maybe FilePath -> [FilePath] -> FilePath   -- label, createView folder, createView file, taken
+newViewPath label folder file taken = fromMaybe (firstFree candidate taken) file
   where
     dir = fromMaybe "views" folder
     candidate i = dir ++ "/" ++ fileNameOf label ++ (if i == 1 then "" else "-" ++ show i) ++ ".view.trig"
+-- | The given file wins over the folder and the label.
+law_newViewFileWins :: String -> Maybe FilePath -> FilePath -> [FilePath] -> Bool
+law_newViewFileWins label folder f taken = newViewFileOk f taken ==> newViewPath label folder (Just f) taken == f
 
 -- 2.4 Placement of new subjects -------------------------------------------------
 
@@ -711,7 +728,7 @@ data EditCommand
   | CreateRelation NewEnd Iri NewEnd (Maybe Id)              -- subject, predicate, object, view
   | ReconnectRelation Id RelationEnd Id (Maybe Side)
   -- views (§6.3)
-  | CreateView String (Maybe FilePath)
+  | CreateView String (Maybe FilePath) (Maybe FilePath)   -- label, folder, file
   | DuplicateView Id
   | AddToView Id [Id] Point
   | ShowRelations Id [Id] Point
@@ -868,7 +885,7 @@ law_setUriFollowsReferences b old new =
 -- addViewReference refuses a second reference to the same view. Paste skips it.
 isViewEdit :: EditCommand -> Bool
 isViewEdit c = isJust (viewNamed c) || case c of
-  CreateView _ _ -> True
+  CreateView _ _ _ -> True
   DuplicateView _ -> True
   _ -> False
 isViewGraph :: Backend -> Iri -> Bool

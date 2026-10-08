@@ -12,6 +12,7 @@ Evidence labels distinguish source checks from historical reports. A historical 
 | D2 | Selection or highlight in other panes | UI §3.3 specifies highlights on the active canvas. Confirm the later request to select placements on other canvases before changing it. |
 | D3 | Several items in Go to Source | Keep the current one-item contract unless the user approves multiple-item behavior. |
 | D4 | Files with several views | The current loader rejects them. Decide whether the editor needs a view picker before changing the one-view-per-file rule. |
+| D7 | A file with a workspace and a view | It opens as text with the message "This file mixes workspace settings and a view. Move the view into its own file." (UI §3.2). The workspace read rejects graphs other than the manifest, and the workspace never reads its workspace file as a model file. Decide whether one file can hold both before the loaders accept it. |
 | D5 | Relation as both a box part and an edge | Decide how both presentations should select and highlight the same relation. |
 | D6 | Shape-driven workspace settings | Keep the main-area document. Decide whether its fields should use a workspace shape, an Element panel or text-section controls. |
 | D8 | Installed or external shapes library | First decide whether this feature is still needed after folder-based membership. Then define library location, CLI replace/extend behavior and missing-shape validation. Preserve source graph identities if this extends file loading. |

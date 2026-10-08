@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, dirName, relativePath } from '../src';
+import { baseName, dirName, freeViewFile, relativePath, viewFileInput } from '../src';
 
 describe('backend paths in the user interface', () => {
     it('baseName and dirName with / and \\', () => {
@@ -22,5 +22,18 @@ describe('backend paths in the user interface', () => {
         expect(relativePath('/ws', '/ws')).toBeUndefined();
         expect(relativePath('/Ws', '/ws/a.ttl')).toBeUndefined();
         expect(relativePath('C:\\ws', 'D:\\ws\\a.ttl')).toBeUndefined();
+    });
+
+    // law_newViewFileIsTrig
+    it('viewFileInput: any name, .trig added when missing, / as separator', () => {
+        expect(viewFileInput(' views/road ')).toBe('views/road.trig');
+        expect(viewFileInput('plans\\road.view')).toBe('plans/road.view.trig');
+        expect(viewFileInput('road.TriG')).toBe('road.TriG');
+    });
+
+    it('freeViewFile: unnamed-view.view.trig in the folder, -2, … when taken', () => {
+        expect(freeViewFile('views', new Set())).toBe('views/unnamed-view.view.trig');
+        expect(freeViewFile('', new Set(['unnamed-view.view.trig']))).toBe('unnamed-view-2.view.trig');
+        expect(freeViewFile('a/', new Set(['a/unnamed-view.view.trig', 'a/unnamed-view-2.view.trig']))).toBe('a/unnamed-view-3.view.trig');
     });
 });
