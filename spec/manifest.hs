@@ -415,7 +415,13 @@ importFiles ps = runOp (ImportFiles ps)
 -- The store is local and synchronous: an edit reads its own writes before its transaction ends.
 -- Graphs, from Workspace.mount (workspace.ts). The workspace file stays in workspace metadata, outside the read models.
 -- Preserve legacy Trellis IRIs because saved view placements use urn:trellis:list:*, and existing files use osg://vocab/trellis-* terms.
--- Source named-graph names of model files are not kept: a write loses them (open.md STORE1). Do not claim TriG round trips.
+-- Model-file reads preserve SPO statements and source-file provenance, not source graph names (SPOG).
+-- Source graphs merge because Catenary assigns graphs by file and statement kind. View files retain their required view graph IRI.
+-- A write need not restore source graph names. Do not claim graph-preserving TriG or N-Quads round trips.
+sourceTriples :: [(s, p, o, g)] -> [(s, p, o)]
+sourceTriples = map (\(s, p, o, _) -> (s, p, o))
+law_sourceTriplesPreserved :: (Eq s, Eq p, Eq o) => [(s, p, o, g)] -> Bool
+law_sourceTriplesPreserved qs = all (\(s, p, o, _) -> (s, p, o) `elem` sourceTriples qs) qs
 data GraphName
   = ViewGraph Iri          -- the statements of one view file
   | FileGraph FilePath     -- shape subjects and their nested nodes, per source file
@@ -1269,7 +1275,11 @@ law_failedWriteStaysDirty b f = let b' = snd (step b Save) in (dirty b f && writ
 -- No text patch for TriG (view files are written whole) and for a text with blank nodes.
 -- Limit: the fallback can change comments, prefixes and statement order.
 -- Refuse an overwrite when the disk text differs from the last read or write. A watcher reload can drop pending edits, with a warning.
--- Prepare temporary files, then rename. No cross-file rollback (open.md STORE2).
+-- Prepare temporary files, then rename. A failed rename can leave earlier files written.
+-- Cross-file rollback is not required. Report the failure and retain pending writes for retry (§10.1).
+-- Reason: Git and undo provide recovery, without a cross-file transaction protocol.
+crossFileRollbackRequired :: Bool
+crossFileRollbackRequired = False
 data WriteForm = TextPatch | WholeInStyle | Canonical deriving Eq
 parsesTo :: Format -> String -> [Quad] -> Bool       -- the text parses to exactly these quads
 hasBlankNodes :: String -> Bool

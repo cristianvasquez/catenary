@@ -36,6 +36,8 @@ This document describes the structure of the code and the flow of data. The exac
 | `urn:name:model` | All other statements. The origin map records the files of each statement. |
 | `urn:trellis:validation` | The SHACL report. Not saved, not in undo, not in the dirty check. |
 
+Model-file reads preserve SPO statements and source-file provenance, not source graph names. Catenary assigns the store graphs above instead. View files retain their required view graph IRI. Writes do not restore source graph names.
+
 The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in workspace metadata, outside the store graphs above. The `urn:trellis:list:*` identifiers remain because saved view files use them.
 
 ## Packages
@@ -133,7 +135,7 @@ Paths are relative to the directory in the first column.
 - Each edit, undo and redo queues a write. The queue runs file operations one at a time.
 - A Turtle file gets a text patch: only the blocks of the changed subjects change. Catenary parses the result again and compares it with the expected RDF before it accepts it.
 - Other formats, TriG view files and failed patches get a whole-file write: first in the style of the file, then with the canonical writer as fallback.
-- Writes go to temporary files, then rename. Cross-file rollback does not exist (open work STORE2).
+- Writes go to temporary files, then rename. Cross-file rollback is not required. A partial-save failure must report its cause and keep unwritten changes pending for retry (open check STORE2).
 - Catenary refuses to overwrite a file whose disk text differs from its last read or write.
 - The watcher reads changed files 150 ms after the last event. It does not read when each event is a file that Catenary wrote and that is unchanged since. A read from disk clears the undo history.
 

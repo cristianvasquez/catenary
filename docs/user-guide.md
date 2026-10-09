@@ -2,7 +2,7 @@
 
 This guide describes what a user can do with Catenary. The exact rules for each gesture are in the [interaction contract](../spec/ui-manifest.hs).
 
-**Caution:** each edit writes the files and can make a Git commit. Use a copy of valuable data for experiments. Named graphs in model files do not survive a write (open work STORE1).
+**Caution:** each edit writes the files and can make a Git commit. Use a copy of valuable data for experiments. Model-file reads preserve subject–predicate–object statements, but merge source named graphs. Writes do not restore those graph names. View files retain their view graph IRI.
 
 ## Open or create a workspace
 
