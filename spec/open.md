@@ -96,7 +96,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Latest verification (test cleanup):** `pnpm verify --no-build --e2e` passed check (13.8 s), test (698/698, 44.5 s) and browser tests (14/14, 146.0 s, 3 at a time), after `pnpm build:browser`. `CI=1` (2 workers): test 40.8 s. The Electron build did not run: the container has no `ffmpeg.node` for Electron. GHC was absent, so manifest typechecking was skipped. No browser test clicks the "Show more" row: backend paging has a unit test. The new `ci.yml` has not run on GitHub yet.
+- **Latest verification (test cleanup):** `pnpm verify --no-build --e2e` passed check (13.8 s), test (724/724, 43.5 s) and browser tests (14/14, 129.1 s, 3 at a time), merged with main, after `pnpm build:browser`. `CI=1` (2 workers): test 40.8 s. The Electron build did not run: the container has no `ffmpeg.node` for Electron. GHC was absent, so manifest typechecking was skipped. No browser test clicks the "Show more" row: backend paging has a unit test. The new `ci.yml` has not run on GitHub yet.
 
 - **Trace panel (UI §8.13):** unit tests cover the tracer, the traced store, an edit trace and the validation trace (`packages/rdf/test/trace.test.ts`). A manual headless-Chromium check (not in `pnpm e2e`) opened the panel, saw spans while it was visible, and saw the backend trace stop when Problems took its place in the bottom area. No browser test in `pnpm e2e` covers it. A CLI connection that calls `rpc setTracing true` keeps the trace on until it calls `rpc setTracing false`.
 
