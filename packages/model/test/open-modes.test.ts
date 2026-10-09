@@ -1,29 +1,27 @@
 import { expect, it } from 'vitest';
-import { mixedFileProblem, openModes, previewModes } from '../src';
-
-// law_plainFileOpensAsText
-it('openModes: a file opens as its workspace and as each of its views; a plain file has none', () => {
-    expect(openModes({ workspace: false, views: [] })).toEqual([]);
-    expect(openModes({ workspace: true, views: [] })).toEqual([{ kind: 'workspace' }]);
-    expect(openModes({ workspace: false, views: [{ id: 'v', label: 'V' }] })).toEqual([{ kind: 'view', id: 'v', label: 'V' }]);
-});
+import { mixedFileProblem, previewInWorkspace } from '../src';
 
 // law_mixedFileOpensAsText
 it('a file with workspace settings and a view opens as text, with a message', () => {
     const mixed = { workspace: true, views: [{ id: 'v', label: 'V' }] };
-    expect(openModes(mixed)).toEqual([]);
     expect(mixedFileProblem(mixed)).toBe('This file mixes workspace settings and a view. Move the view into its own file.');
+    expect(previewInWorkspace(mixed, '/ws/workspace.trig', '/ws/workspace.trig')).toBe(false);
     expect(mixedFileProblem({ workspace: true, views: [] })).toBeUndefined();
 });
 
 // law_previewStaysInWorkspace
-it('previewModes: a selected file shows only what stays in the open workspace; switching needs an explicit open', () => {
+it('a selected file previews only within the current workspace; switching needs an explicit open', () => {
     const view = { workspace: false, views: [{ id: 'v', label: 'V' }], workspaceFile: '/ws/workspace.trig' };
-    expect(previewModes(view, '/ws/views/v.trig', '/ws/workspace.trig')).toEqual([{ kind: 'view', id: 'v', label: 'V' }]);
-    expect(previewModes(view, '/ws/views/v.trig', '/other/workspace.trig')).toEqual([]);
-    expect(previewModes({ ...view, workspaceFile: undefined }, '/lone/v.trig', '/ws/workspace.trig')).toEqual([]);
+    expect(previewInWorkspace(view, '/ws/views/v.trig', '/ws/workspace.trig')).toBe(true);
+    expect(previewInWorkspace(view, '/ws/views/v.trig', '/other/workspace.trig')).toBe(false);
+    expect(previewInWorkspace({ ...view, workspaceFile: undefined }, '/lone/v.trig', '/ws/workspace.trig')).toBe(false);
     const ws = { workspace: true, views: [] };
-    expect(previewModes(ws, '/ws/workspace.trig', '/ws/workspace.trig')).toEqual([{ kind: 'workspace' }]);
-    expect(previewModes(ws, '/other/workspace.trig', '/ws/workspace.trig')).toEqual([]);
-    expect(previewModes(ws, '/ws/workspace.trig', undefined)).toEqual([]);
+    expect(previewInWorkspace(ws, '/ws/workspace.trig', '/ws/workspace.trig')).toBe(true);
+    expect(previewInWorkspace(ws, '/other/workspace.trig', '/ws/workspace.trig')).toBe(false);
+    expect(previewInWorkspace(ws, '/ws/workspace.trig', undefined)).toBe(false);
+});
+
+it('plain and unreadable files do not preview as a canvas or Settings', () => {
+    expect(previewInWorkspace({ workspace: false, views: [] }, '/ws/data.ttl', '/ws/workspace.trig')).toBe(false);
+    expect(previewInWorkspace({ workspace: true, views: [], error: 'unreadable' }, '/ws/workspace.trig', '/ws/workspace.trig')).toBe(false);
 });

@@ -319,21 +319,27 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     // the tree row shows it in Properties.
     const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: label }).first();
     const propsTitle = text => page.locator('.catenary-props .catenary-head .title:visible', { hasText: new RegExp(`^${text}$`) });
-    const treeRow = name => page.locator('#catenary-model-explorer .theia-TreeNode')
+    const fileModel = 'catenary-file-explorer:' + path.join(workspace, 'shapes.ttl');
+    const modelTab = page.locator(`[id=${JSON.stringify('shell-tab-' + fileModel)}]`);
+    const canvasTab = main.locator('.lm-TabBar-tab').filter({ hasText: /^Catalog shapes$/ });
+    const treeRow = name => page.locator(`[id=${JSON.stringify(fileModel)}] .theia-TreeNode`)
       .filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp(`^${name}$`) }) });
     await row('Catalogue', 'dataset').locator('.row-path').click();
     await row('Catalogue', 'dataset').locator('.row-path').click({ button: 'right' });
     await menuItem('Reveal in Explorer').click();
     // The node shape is under sh:NodeShape only (spec/ui-manifest.hs: target shapes are not under their target class): one path, no picker.
     await treeRow('dcat:dataset').and(page.locator('.theia-mod-selected')).waitFor();
+    await canvasTab.click();
     await card('Software agent').locator('.shape-name').click();
     await propsTitle('Software agent').waitFor();
+    await modelTab.click();
     await treeRow('dcat:dataset').locator('.catenary-tree-name').click();
     await propsTitle('dcat:dataset').waitFor();
     assert.equal(await page.locator('.theia-property-view-widget', { hasText: 'No properties available' }).count(), 0);
 
     // A row is a property shape: a click selects it (Properties), also with the focus in the Model explorer (the step above): the click
     // gives the focus to the canvas. Double-click on its path: typed in place.
+    await canvasTab.click();
     await row('Data asset', 'issued').locator('.row-path').click();
     await page.locator('.catenary-props .catenary-head .title', { hasText: 'dct:issued' }).waitFor();
     await row('Data asset', 'issued').locator('.row-path').dblclick();
@@ -578,9 +584,8 @@ test('browser: Turtle and TriG source language detection and token colors', { ti
     assert.ok(status.windows.every(w => w.reloadNeeded === false));
     await navigator(page);
     for (const [file, language] of [['data.ttl', 'turtle'], ['workspace.trig', 'trig']]) {
-      // A Turtle file opens as text on a double-click; the workspace file as text through "Open Workspace File as Text".
-      if (file === 'data.ttl') await navNode(page, file).first().dblclick();
-      else assert.equal(cli('run', 'catenary.showTrig').status, 'done');
+      // Both files expose Source through the same presentation command.
+      assert.equal(cli('run', 'catenary.openAs', JSON.stringify(path.join(workspace, file)), JSON.stringify('Source')).status, 'done');
       await page.locator('.monaco-editor:visible .view-line').first().waitFor();
       assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.getControl().getModel().getLanguageId()'), language);
       // Rendered token colors, not just a registered language name. Do not inspect RDF serialization here.
@@ -645,6 +650,96 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
+test('browser: file presentations use document panes, focus existing panes and restore splits', { timeout: 90000 }, t => withFixtureApp(t, 'presentations', async ({ page, cli, workspace }) => {
+  const data = path.join(workspace, 'data.ttl'), settings = path.join(workspace, 'workspace.trig');
+  const main = '#theia-main-content-panel';
+  const modelId = file => 'catenary-file-explorer:' + file;
+  const pane = id => page.locator(`[id=${JSON.stringify(id)}]`);
+  const current = () => cli('eval', 'ctx.shell.currentWidget.id');
+  const open = (file, presentation, beside = false) => {
+    assert.equal(cli('run', beside ? 'catenary.openBeside' : 'catenary.openAs', JSON.stringify(file), JSON.stringify(presentation)).status, 'done');
+    return current();
+  };
+  const widgets = () => cli('eval', "ctx.shell.getWidgets('main').map(w => w.id)");
+  assert.equal(await page.locator('#catenary-model-explorer').count(), 0);
+  assert.equal(cli('commands', 'catenary.toggleModel', '--all').length, 0);
+  assert.equal(cli('commands', 'catenary.workspaceSettings', '--all').length, 0);
+  await navigator(page);
+  // law_modelFileDefaultsToModel
+  await navNode(page, 'data.ttl').first().dblclick();
+  await pane(modelId(data)).waitFor();
+  assert.ok(await page.locator(main).locator(`[id=${JSON.stringify(modelId(data))}]`).count(), 'Model is a main-area document');
+  const tree = pane(modelId(data));
+  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('agent');
+  const sourceId = open(data, 'Source', true);
+  await pane(sourceId).locator('.monaco-editor').waitFor();
+  const before = await tree.boundingBox(), after = await pane(sourceId).boundingBox();
+  assert.ok(before && after && after.x >= before.x + before.width - 2, 'Source opens beside Model');
+  assert.equal(open(data, 'Model', true), modelId(data));
+  assert.equal(await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'agent');
+  // law_reopenKeepsDocuments
+  const count = widgets().length;
+  assert.equal(open(data, 'Source', true), sourceId);
+  assert.equal(widgets().length, count, 'reopening Source does not clone it');
+  // Source's toolbar resolves the same file and offers only its applicable presentations.
+  await page.locator(`[id=${JSON.stringify('catenary.openAs')}]`).filter({ visible: true }).last().click();
+  const choices = page.locator('.quick-input-list .monaco-list-row');
+  await choices.first().waitFor();
+  assert.deepEqual(await choices.allTextContents(), ['Source', 'Model']);
+  await page.keyboard.press('Escape');
+  // law_workspaceHasSourceAndModel: workspace defaults to Settings; Source and Model remain available without changing metadata storage.
+  await navigator(page);
+  await navNode(page, 'workspace.trig').first().dblclick();
+  await page.locator('.catenary-workspace-settings').waitFor();
+  const settingsId = 'catenary-workspace-settings';
+  assert.ok(widgets().includes(settingsId));
+  open(settings, 'Settings');
+  const wsSource = open(settings, 'Source', true);
+  assert.equal(open(settings, 'Settings', true), settingsId);
+  assert.equal(open(settings, 'Model', true), modelId(settings));
+  assert.equal(open(settings, 'Source', true), wsSource);
+  // A view file defaults to Canvas. File navigation does not alter the resource selection.
+  const viewFile = cli('eval', 'ctx.model.snapshot.files.views[0].path');
+  const view = cli('eval', 'ctx.model.snapshot.files.views[0].view');
+  const canvasId = open(viewFile, 'Canvas');
+  const selection = cli('ui').selection;
+  const viewModel = open(viewFile, 'Model', true);
+  assert.equal(viewModel, modelId(viewFile));
+  assert.equal(open(viewFile, 'Canvas', true), canvasId);
+  assert.deepEqual(cli('ui').selection, selection);
+  // The source-file reveal replaces the removed global explorer navigation.
+  assert.equal(cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Reveal class', targetClass: 'urn:test:Reveal' })).result.ok, true);
+  const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Reveal', label: 'Reveal me' })).result;
+  assert.equal(instance.ok, true);
+  open(data, 'Model');
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(instance.id)}] }); return true`);
+  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('');
+  assert.equal(cli('run', 'catenary.selectInExplorer').status, 'done');
+  assert.equal(current(), modelId(data));
+  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
+  assert.equal(await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).count(), 1);
+  // Tree Enter still navigates a resource to a containing canvas, independently of file presentation.
+  assert.equal(cli('exec', JSON.stringify({ kind: 'addToView', view, ids: [instance.id], at: { x: 0, y: 0 } })).result.ok, true);
+  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).click();
+  await page.keyboard.press('Enter');
+  await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).waitFor();
+  // The ordinary shell layout can move the Model document into a vertical split.
+  open(data, 'Source');
+  cli('eval', `const all = ctx.shell.getWidgets('main'); const w = all.find(w => w.id === ${JSON.stringify(modelId(data))}); const ref = all.find(w => w.id === ${JSON.stringify(sourceId)}); ctx.shell.addWidget(w, { area: 'main', mode: 'split-bottom', ref }); await ctx.shell.activateWidget(w.id); return true`);
+  await tree.waitFor();
+  const moved = await tree.boundingBox(), above = await pane(sourceId).boundingBox();
+  assert.ok(moved && above && moved.y >= above.y + above.height - 2, 'Model can move into a split below Source');
+  assert.equal(open(data, 'Model', true), modelId(data));
+  assert.deepEqual(await tree.boundingBox(), moved, 'reopening keeps the arranged pane in place');
+  const ids = widgets().sort();
+  const splits = cli('eval', 'Array.from(ctx.shell.mainPanel.tabBars()).length');
+  await page.waitForTimeout(600); // Theia persists the modified layout on a debounce.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await pane(modelId(data)).waitFor({ state: 'attached' });
+  assert.deepEqual(widgets().sort(), ids, 'all presentations restore through their existing widget factories');
+  assert.equal(cli('eval', 'Array.from(ctx.shell.mainPanel.tabBars()).length'), splits);
+}));
+
 test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
   const source = path.join(workspace, 'data.ttl'), destination = path.join(workspace, 'shapes.ttl');
   const exec = command => { const r = cli('exec', JSON.stringify(command)).result; assert.equal(r.ok, true, JSON.stringify(r)); return r; };
@@ -657,7 +752,8 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
   const openTree = async name => {
     await navigator(page);
     await navNode(page, name).first().click({ button: 'right' });
-    await page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: /^Open in Model Explorer$/ }).click();
+    await page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: /^Open beside…$/ }).click();
+    await page.locator('.quick-input-list .monaco-list-row').filter({ hasText: /^Model$/ }).click();
     const panel = page.locator(`[id=${JSON.stringify('catenary-file-explorer:' + path.join(workspace, name))}]`);
     await panel.getByRole('textbox', { name: 'Filter model elements', exact: true }).waitFor();
     return panel;
@@ -706,16 +802,7 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(destination)).result.sort(), [first, second].sort());
   assert.equal(cli('rpc', 'undo').result.ok, true);
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
-  // The main explorer has the same type-to-filter behavior.
-  cli('run', 'catenary.toggleModel');
-  const main = page.locator('#catenary-model-explorer');
-  await main.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + folderName + '$') }).click();
-  await page.keyboard.type('albe');
-  await main.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
-  assert.equal(await main.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
-  await main.locator('.catenary-tree-name').filter({ hasText: /^Agent$/ }).waitFor({ state: 'hidden' });
-  assert.equal(await main.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).count(), 0);
-  assert.equal(await main.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).count(), 1);
+
 }));
 
 test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async ({ page, cli }) => {

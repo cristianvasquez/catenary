@@ -43,8 +43,8 @@ import { ViewDiagramManager, ViewEditors, ViewLabels } from './diagram/view-edit
 import { MarkdownExport } from './diagram/markdown-export';
 import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
-import { ExplorerFocusContext, ModelExplorerContribution, CatenaryFileOpenHandler } from './commands';
-import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, FILE_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
+import { ExplorerFocusContext, ModelContribution, CatenaryFileOpenHandler } from './commands';
+import { EXPLORER_CONTEXT_MENU, FILE_EXPLORER_ID, ModelExplorerWidget, ModelTree } from './explorer/model-explorer';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
 import { FileKindsDecorator } from './file-kinds-decorator';
 import { NavigatorTreeDecorator } from '@theia/navigator/lib/browser/navigator-decorator-service';
@@ -61,7 +61,7 @@ import { MarkerOptions } from '@theia/markers/lib/browser/marker-tree';
 import { APPEARANCE_ID, AppearanceContribution, AppearanceWidget } from './properties/appearance-widget';
 import { LINKS_CONTEXT_MENU, LINKS_ID, LinksContribution, LinksFocusContext, LinksWidget } from './properties/links-widget';
 import { SEARCH_ID, SearchContribution, SearchWidget } from './search/search-widget';
-import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsContribution, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
+import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { WorkspaceFileQuestion } from './prefixes/workspace-placement';
 import { ModelPropertiesProvider, ModelPropertiesWidget } from './properties/properties-widget';
 import { SidePanelSizes } from './side-panel-sizes';
@@ -161,7 +161,7 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         single(LayoutPreferences, FrontendApplicationContribution);
         bind(PreferenceContribution).toConstantValue(layoutPreferences);
 
-        // Model tab (model tree). The files: the Theia file navigator (ADR 0004).
+        // One Model document per file. The files use the Theia navigator.
         // The explorer owns one backend filter. Theia's type-ahead search only highlights loaded rows.
         const explorerProps = { contextMenuPath: EXPLORER_CONTEXT_MENU, multiSelect: true, search: false, globalSelection: true, expandOnlyOnExpansionToggleClick: false };
         single(RecentWorkspaces);
@@ -169,15 +169,12 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         bind(ModelExplorerWidget).toDynamicValue(ctx => createTreeContainer(ctx.container, {
             props: explorerProps, widget: ModelExplorerWidget, tree: ModelTree
         }).get(ModelExplorerWidget));
-        widgetFactory(MODEL_EXPLORER_ID, ModelExplorerWidget);
         bind(WidgetFactory).toDynamicValue(ctx => ({ id: FILE_EXPLORER_ID, createWidget: (options: { file: string }) => {
             const widget = ctx.container.get(ModelExplorerWidget);
             widget.configure(options.file);
             return widget;
         } })).inSingletonScope();
-        bindViewContribution(bind, ModelExplorerContribution);
-        bind(FrontendApplicationContribution).toService(ModelExplorerContribution);
-        bind(TabBarToolbarContribution).toService(ModelExplorerContribution);
+        single(ModelContribution, FrontendApplicationContribution, CommandContribution, MenuContribution, KeybindingContribution, TabBarToolbarContribution);
         single(ModelerMenus, MenuContribution);
         single(ExplorerFocusContext, KeybindingContext);
         single(CatenaryFileOpenHandler, OpenHandler);
@@ -193,7 +190,6 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         // Prefixes of the workspace
         transient(WorkspaceSettingsWidget);
         widgetFactory(WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget);
-        bindViewContribution(bind, WorkspaceSettingsContribution);
         single(WorkspaceFileQuestion, FrontendApplicationContribution);
 
         // Properties, Appearance and Links of the selected element

@@ -4,7 +4,7 @@
 // imported globs and Import (ModelStore.setSettings, importFiles). Each change writes the manifest at once (ADR 0003). No change is an undo step.
 
 import { CommandService, URI } from '@theia/core';
-import { AbstractViewContribution, ReactWidget } from '@theia/core/lib/browser';
+import { ReactWidget } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
@@ -20,7 +20,6 @@ import { PLACE_ROWS, PlaceBox, PlaceKind } from './workspace-placement';
 export const WORKSPACE_SETTINGS_ID = 'catenary-workspace-settings';
 
 /** Commands of commands.ts (not imported: commands.ts imports this module). */
-const SHOW_TEXT = 'catenary.showText';
 const IMPORT_FILE = 'catenary.importFile';
 
 /** Extensions of the Browse… dialog of a file of new subjects: the formats that Catenary writes (rdf-files RDF_FORMATS). */
@@ -47,6 +46,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
 
     @postConstruct()
     protected init(): void {
+        this.node.tabIndex = 0;
         this.id = WORKSPACE_SETTINGS_ID;
         this.title.label = 'Workspace';
         this.title.caption = 'Settings of the workspace file (manifest): files of new subjects, prefixes, exclude, protection';
@@ -62,6 +62,8 @@ export class WorkspaceSettingsWidget extends ReactWidget {
         this.toDispose.push({ dispose: () => document.removeEventListener('mousedown', close) });
         this.update();
     }
+
+    protected override onActivateRequest(): void { this.node.focus(); }
 
     /** Runs a change of row `key`; a rejection shows its message below the row. */
     protected async report(key: string, result: Promise<{ ok: boolean; error?: string }>): Promise<boolean> {
@@ -122,9 +124,6 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 <div className='catenary-help'>{folder} · {s.files.files.length} model files · each change writes the file at once, no undo</div>
             </div>
             <div className='catenary-toolbar'>
-                <button className='catenary-tool' title='Show Text' aria-label='Show Text' onClick={() => this.commands.executeCommand(SHOW_TEXT, this)}>
-                    <span className='codicon codicon-file-code' />
-                </button>
                 <button className='catenary-tool' title='Select in Explorer' aria-label='Select in Explorer' onClick={async () => {
                     await this.navigator.openView({ activate: true, reveal: true });
                     await this.navigator.selectFileNode(URI.fromFilePath(ws.path));
@@ -289,16 +288,4 @@ function AddRow(p: { fields: string[]; problem?: string; onAdd: (values: string[
         <button className='theia-button secondary catenary-add' title='Add (Enter)' onClick={() => void add()}><span className='codicon codicon-add' /> Add</button>
         {p.problem ? <div className='catenary-problem'><span className='codicon codicon-warning' /> {p.problem}</div> : undefined}
     </div>;
-}
-
-/** File → Workspace Settings, and the open handler of the workspace file (commands.ts). */
-@injectable()
-export class WorkspaceSettingsContribution extends AbstractViewContribution<WorkspaceSettingsWidget> {
-    constructor() {
-        super({
-            widgetId: WORKSPACE_SETTINGS_ID, widgetName: 'Workspace',
-            defaultWidgetOptions: { area: 'main' },
-            toggleCommandId: 'catenary.workspaceSettings'
-        });
-    }
 }

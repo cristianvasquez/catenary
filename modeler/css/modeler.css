@@ -260,11 +260,6 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-explorer .theia-TreeNode:hover .catenary-row-actions, .catenary-explorer .theia-TreeNode.theia-mod-selected .catenary-row-actions { display: flex; }
 .catenary-row-actions .action-label { cursor: pointer; padding: 1px; border-radius: 3px; }
 .catenary-row-actions .action-label:hover { background: var(--theia-toolbar-hoverBackground); }
-.catenary-start { display: flex; flex-direction: column; gap: 6px; }
-.catenary-start .theia-button { margin-left: 0; }
-.catenary-start-heading { margin-top: 8px; font-weight: 600; }
-.catenary-recent { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; padding: 2px 0; }
-.catenary-recent:hover .catenary-tree-name { text-decoration: underline; }
 
 /* ---------------------------------------------------------------- links */
 

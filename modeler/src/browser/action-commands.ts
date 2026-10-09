@@ -7,12 +7,11 @@ import { CommandContribution, CommandRegistry, DisposableCollection, MenuContrib
 import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
-import { EditorManager } from '@theia/editor/lib/browser';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, itemsOfKind } from '@catenary/model';
 import { ActionService, viewAsItem } from './action-service';
 import { ModelActions } from './actions';
-import { ModelCommands, ModelExplorerContribution } from './commands';
+import { ModelCommands, CatenaryFileOpenHandler } from './commands';
 import { editCanvasName } from './diagram/name-edit';
 import { ViewEditors } from './diagram/view-editors';
 import { EXPLORER_CONTEXT_MENU } from './explorer/model-explorer';
@@ -57,11 +56,10 @@ export class ActionContribution implements CommandContribution, MenuContribution
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(NoteEditor) protected readonly notes: NoteEditor;
-    @inject(EditorManager) protected readonly editorManager: EditorManager;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
-    @inject(ModelExplorerContribution) protected readonly explorer: ModelExplorerContribution;
+    @inject(CatenaryFileOpenHandler) protected readonly files: CatenaryFileOpenHandler;
     @inject(CommandRegistry) protected readonly commandRegistry: CommandRegistry;
     @inject(MenuModelRegistry) protected readonly menuRegistry: MenuModelRegistry;
     /** Commands and menu entries of the views in the canvas "Go to" submenu. */
@@ -186,20 +184,25 @@ export class ActionContribution implements CommandContribution, MenuContribution
             await this.navigator.selectFileNode(URI.fromFilePath(file));
             return;
         }
-        const w = await this.explorer.openView({ activate: true, reveal: true });
-        await w.reveal(id);
+        const source = await this.pickSource(id);
+        if (source) await (await this.files.openModel(source.path)).reveal(id);
     }
 
-    /** Go to Source (spec 0.4): the file with the statements of the element, at its line. Several files: a pick. */
-    protected async goToSource(id: string): Promise<void> {
+    /** Source resolution is shared by Go to Source and Reveal in Explorer. */
+    protected async pickSource(id: string) {
         const sources = await this.model.service.sources(id);
-        if (!sources.length) return void this.messages.info('No file has statements of the element.');
-        const pick = sources.length === 1 ? sources[0] : (await this.quick.showQuickPick(
+        if (!sources.length) { this.messages.info('No file has statements of the element.'); return undefined; }
+        return sources.length === 1 ? sources[0] : (await this.quick.showQuickPick(
             sources.map(s => ({ label: baseName(s.path), description: s.line ? `line ${s.line}` : 'not in the file on disk', detail: s.path, source: s })),
             { placeholder: 'Files with statements of the element' }))?.source;
+    }
+
+    /** Go to Source: the file with the statements of the element, at its line. */
+    protected async goToSource(id: string): Promise<void> {
+        const pick = await this.pickSource(id);
         if (!pick) return;
         const at = pick.line ? { line: pick.line - 1, character: 0 } : undefined;
-        await this.editorManager.open(URI.fromFilePath(pick.path), { mode: 'activate', selection: at ? { start: at, end: at } : undefined });
+        await this.files.openSource(URI.fromFilePath(pick.path), { mode: 'activate', selection: at ? { start: at, end: at } : undefined });
         if (!pick.line) this.messages.info(`${baseName(pick.path)}: the element is not in the file on disk (not saved yet, or written in a form that the search does not find).`);
     }
 

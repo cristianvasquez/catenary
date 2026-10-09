@@ -1,23 +1,22 @@
-// Commands, menus, keybindings, toolbar items and the explorer views (Workspace tab: Views and Files; Model tab).
+// Workspace commands, menus, keybindings and file presentations.
 
 import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
-import { Command, CommandRegistry, MAIN_MENU_BAR, MenuModelRegistry, MessageService, QuickInputService, SelectionService, URI } from '@theia/core';
+import { Command, CommandContribution, CommandRegistry, MAIN_MENU_BAR, MenuContribution, MenuModelRegistry, MessageService, QuickInputService, SelectionService, URI } from '@theia/core';
 import {
-    AbstractViewContribution, ApplicationShell, FrontendApplication, FrontendApplicationContribution, KeybindingContext, KeybindingRegistry,
-    OpenHandler, OpenerOptions, StorageService, Widget
+    ApplicationShell, FrontendApplication, FrontendApplicationContribution, KeybindingContribution, KeybindingContext, KeybindingRegistry,
+    OpenHandler, WidgetOpenerOptions, StorageService, Widget, WidgetManager
 } from '@theia/core/lib/browser';
 import { PERSPECTIVE_LAYOUTS_STORAGE_KEY } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
-import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { EditorContextMenu, EditorManager, EditorWidget } from '@theia/editor/lib/browser';
+import { EditorContextMenu, EditorManager, EditorWidget, EditorOpenerOptions, Range } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
 import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { FileContent, OpenMode, mixedFileProblem, openModes, previewModes } from '@catenary/model';
+import { FileContent, mixedFileProblem, previewInWorkspace } from '@catenary/model';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -25,15 +24,14 @@ import { MarkdownExport } from './diagram/markdown-export';
 import { InsertView } from './insert-view';
 import { ViewHistory } from './diagram/view-history';
 import { COLOR_NAMES, COLOR_ORDER, PRESETS } from './diagram/views';
-import { EXPLORER_CONTEXT_MENU, MODEL_EXPLORER_ID, FILE_EXPLORER_ID, ModelExplorerWidget, CatenaryNode, CatenaryTreeWidget } from './explorer/model-explorer';
+import { EXPLORER_CONTEXT_MENU, FILE_EXPLORER_ID, ModelExplorerWidget, CatenaryNode } from './explorer/model-explorer';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
-import { WorkspaceSettingsContribution, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
+import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { RecentWorkspaces } from './explorer/recent-workspaces';
 import { SidePanelSizes } from './side-panel-sizes';
 import { ModelFrontend } from './model-client';
 import { SelectionModel } from './selection-model';
 import { AppearanceContribution } from './properties/appearance-widget';
-import { NoteEditor } from './notes/note-editor';
 import { LinksContribution } from './properties/links-widget';
 import { SearchContribution, SearchWidget } from './search/search-widget';
 import { addMenuItems } from './menus';
@@ -45,21 +43,17 @@ export namespace OpenModelCommands {
     export const OPEN = cmd('catenary.open', 'Open Workspace…');
     export const NEW = cmd('catenary.new', 'New Workspace…');
     export const OPEN_RECENT = cmd('catenary.openRecent', 'Open Recent Workspace…');
-    export const OPEN_FILE_AS_MODEL = cmd('catenary.openFileAsModel', 'Open as Workspace');
-    export const OPEN_FILE_EXPLORER = cmd('catenary.openFileExplorer', 'Open in Model Explorer');
+    export const OPEN_AS = cmd('catenary.openAs', 'Open as…', 'codicon codicon-go-to-file');
+    export const OPEN_BESIDE = cmd('catenary.openBeside', 'Open beside…', 'codicon codicon-split-horizontal');
     export const SAVE = cmd('catenary.save', 'Save Workspace');
     export const EXPORT_MARKDOWN = cmd('catenary.exportMarkdown', 'Export Markdown…');
     export const INSERT_VIEW = cmd('catenary.insertView', 'Insert View…');
-    export const SHOW_TRIG = cmd('catenary.showTrig', 'Open Workspace File as Text');
     export const WORKSPACE_SETTINGS = cmd('catenary.openWorkspaceSettings', 'Workspace Settings');
     /** RDF files from outside the workspace: read-only Turtle copies in imported/ (spec/manifest.hs §2.6). Arguments: the paths. */
     export const IMPORT_FILE = cmd('catenary.importFile', 'Import RDF Files…');
     /** File navigator: mark the selected model file or view file as imported (read only) or as own (manifest ws:imported). */
     export const MARK_IMPORTED = cmd('catenary.markImported', 'Mark as Imported');
     export const MARK_OWN = cmd('catenary.markOwn', 'Mark as Own');
-    /** The canvas/text toggle (ADR 0004): the Turtle or TriG text of a view editor or of the settings view, and back. */
-    export const SHOW_TEXT = cmd('catenary.showText', 'Show Text', 'codicon codicon-file-code');
-    export const SHOW_CANVAS = cmd('catenary.showCanvas', 'Show Canvas', 'codicon codicon-type-hierarchy');
     export const UNDO = cmd('catenary.undo', 'Undo Model Change', 'codicon codicon-discard');
     export const REDO = cmd('catenary.redo', 'Redo Model Change', 'codicon codicon-redo');
 }
@@ -107,27 +101,135 @@ const MODEL_MENU_CREATE = [...MODEL_MENU, '3_create'];
 const EXPLORER_SURFACE = [...EXPLORER_CONTEXT_MENU, '4_surface'];
 const DIAGRAM_SURFACE = [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_4_surface'];
 
-/**
- * Stored layouts of an older version are discarded once. Version 4 discards explorers that no longer exist (the Workspace tab: Views,
- * Files). Version 5 discards side panel widths that a window resize after the layout restore made too narrow (SidePanelSizes).
- */
-const LAYOUT_VERSION = 5;
+/** Discard layouts with the removed global Model sidebar once. */
+const LAYOUT_VERSION = 6;
 const LAYOUT_VERSION_KEY = 'catenary.layoutVersion';
 
-/**
- * The Model tab: one tree of classes, shapes, instances, relations and concepts; the commands of the explorers. The Theia file navigator
- * (the files of the workspace, ADR 0004) is the first tab on the left.
- */
-@injectable()
-export class ModelExplorerContribution extends AbstractViewContribution<ModelExplorerWidget>
-    implements FrontendApplicationContribution, TabBarToolbarContribution {
+export type Presentation = 'Source' | 'Model' | 'Canvas' | 'Settings';
 
+/** One file opener for the default presentation and explicit presentation navigation. */
+@injectable()
+export class CatenaryFileOpenHandler implements OpenHandler {
+    readonly id = 'catenary-file';
+    readonly label = 'Catenary';
+    @inject(ModelActions) protected readonly actions: ModelActions;
+    @inject(ModelFrontend) protected readonly model: ModelFrontend;
+    @inject(QuickInputService) protected readonly quick: QuickInputService;
+    @inject(EditorManager) protected readonly editorManager: EditorManager;
+    @inject(ApplicationShell) protected readonly shell: ApplicationShell;
+    @inject(WidgetManager) protected readonly widgets: WidgetManager;
+    @inject(SelectionService) protected readonly selection: SelectionService;
+    @inject(MessageService) protected readonly messages: MessageService;
+
+    /** The file behind a document, a navigator selection, or an explicit URI/path. */
+    fileOf(target?: unknown): string | undefined {
+        if (typeof target === 'string') return target;
+        if (target instanceof URI) return target.scheme === 'file' ? target.path.fsPath() : undefined;
+        const w = target instanceof Widget ? target : this.shell.currentWidget;
+        if (w instanceof EditorWidget) return w.editor.uri.scheme === 'file' ? w.editor.uri.path.fsPath() : undefined;
+        if (w instanceof GLSPDiagramWidget && w.uri.scheme === VIEW_SCHEME) return this.model.snapshot.files.views.find(v => v.view === viewIdOf(w))?.path;
+        if (w instanceof WorkspaceSettingsWidget) return this.model.snapshot.file;
+        if (w instanceof ModelExplorerWidget) return w.file;
+        if (!(w instanceof FileNavigatorWidget)) return undefined;
+        const nodes = this.selection.selection;
+        const node = Array.isArray(nodes) ? nodes.find(FileStatNode.is) : undefined;
+        return node && !node.fileStat.isDirectory ? node.uri.path.fsPath() : undefined;
+    }
+
+    hasPresentations(target?: unknown): boolean {
+        const file = this.fileOf(target), s = this.model.snapshot;
+        return !!file && (file === s.file || [...s.files.files, ...s.files.views].some(f => f.path === file));
+    }
+
+    /** Use the loaded file index; inspect content only for TriG files outside it. */
+    protected async content(uri: URI): Promise<FileContent | undefined> {
+        if (uri.scheme !== 'file') return undefined;
+        const path = uri.path.fsPath(), s = this.model.snapshot;
+        if (path === s.file) return { workspace: true, views: [] };
+        const view = s.files.views.find(v => v.path === path);
+        if (view) return { workspace: false, views: [{ id: view.view, label: uri.path.base }], workspaceFile: s.file };
+        const file = s.files.files.find(f => f.path === path);
+        if (file) return { workspace: false, views: [], error: file.error };
+        if (uri.path.ext.toLowerCase() !== '.trig') return undefined;
+        const c = await this.model.service.fileContent(path).catch(() => undefined);
+        return c && (c.workspace || c.views.length) ? c : undefined;
+    }
+
+    async canHandle(uri: URI): Promise<number> {
+        const c = await this.content(uri);
+        return c && !c.error ? 200 : 0;
+    }
+
+    async open(uri: URI, options?: WidgetOpenerOptions & { preview?: boolean }): Promise<Widget | undefined> {
+        const c = await this.content(uri);
+        if (!c) return undefined;
+        const problem = mixedFileProblem(c);
+        if (problem) this.messages.warn(`${uri.path.base}: ${problem}`);
+        if (problem || c.error || (options?.preview && (c.workspace || c.views.length) && !previewInWorkspace(c, uri.path.fsPath(), this.model.snapshot.file))) {
+            return this.openSource(uri, options);
+        }
+        return this.present(uri, c, c.workspace ? 'Settings' : c.views.length ? 'Canvas' : 'Model', options);
+    }
+
+    /** Open as keeps the current pane; Open beside uses Theia's split placement for a new pane. */
+    async choose(target?: unknown, beside = false, presentation?: Presentation): Promise<Widget | undefined> {
+        const file = this.fileOf(target);
+        if (!file) return undefined;
+        const candidate = target instanceof Widget ? target : this.shell.currentWidget;
+        const ref = candidate && this.shell.getAreaFor(candidate) === 'main' ? candidate : undefined;
+        const uri = URI.fromFilePath(file), c = await this.content(uri);
+        if (!c || c.error || mixedFileProblem(c)) return this.openSource(uri);
+        const choices: Presentation[] = ['Source', 'Model', ...(c.views.length ? ['Canvas' as const] : []), ...(c.workspace ? ['Settings' as const] : [])];
+        const pick = presentation ?? (await this.quick.showQuickPick(choices.map(label => ({ label })), { placeholder: `${uri.path.base}: ${beside ? 'Open beside' : 'Open as'}` }))?.label;
+        if (!pick || !choices.includes(pick as Presentation)) return undefined;
+        return this.present(uri, c, pick as Presentation, { widgetOptions: { area: 'main', ref, ...(beside ? { mode: 'split-right' } : {}) } });
+    }
+
+    async openModel(file: string): Promise<ModelExplorerWidget> {
+        return await this.present(URI.fromFilePath(file), { workspace: false, views: [] }, 'Model') as ModelExplorerWidget;
+    }
+
+    async openSource(uri: URI, options?: EditorOpenerOptions & { selection?: Range }): Promise<EditorWidget> {
+        const existing = this.editorManager.all.find(e => e.editor.uri.toString() === uri.toString());
+        if (!existing) return this.editorManager.open(uri, options);
+        if (options?.mode === 'reveal') await this.shell.revealWidget(existing.id);
+        else if (options?.mode !== 'open') await this.shell.activateWidget(existing.id);
+        if (options?.selection) {
+            existing.editor.selection = { ...options.selection, direction: 'ltr' };
+            existing.editor.revealRange(options.selection);
+        }
+        return existing;
+    }
+
+    protected async present(uri: URI, c: FileContent, presentation: Presentation, options?: WidgetOpenerOptions): Promise<Widget | undefined> {
+        let w: Widget | undefined;
+        if (presentation === 'Source') return this.openSource(uri, options);
+        if (presentation === 'Model') w = await this.widgets.getOrCreateWidget<ModelExplorerWidget>(FILE_EXPLORER_ID, { file: uri.path.fsPath() });
+        else if (presentation === 'Settings') {
+            if (this.model.snapshot.file !== uri.path.fsPath()) await this.actions.openModel(uri);
+            if (this.model.snapshot.file !== uri.path.fsPath()) return undefined;
+            w = await this.widgets.getOrCreateWidget<WorkspaceSettingsWidget>(WORKSPACE_SETTINGS_ID);
+        } else {
+            const view = c.views.length === 1 ? c.views[0] : await this.quick.showQuickPick(c.views, { placeholder: 'Open canvas' });
+            if (!view) return undefined;
+            return this.actions.openView(view.id, c.workspaceFile, options);
+        }
+        if (!w.isAttached) this.shell.addWidget(w, { area: 'main', ...options?.widgetOptions });
+        if (options?.mode === 'reveal') await this.shell.revealWidget(w.id);
+        else if (options?.mode !== 'open') await this.shell.activateWidget(w.id);
+        return w;
+    }
+}
+
+@injectable()
+export class ModelContribution implements FrontendApplicationContribution, CommandContribution, MenuContribution, KeybindingContribution, TabBarToolbarContribution {
+    @inject(ApplicationShell) protected readonly shell: ApplicationShell;
+    @inject(CatenaryFileOpenHandler) protected readonly files: CatenaryFileOpenHandler;
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(SelectionService) protected readonly selection: SelectionService;
     @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
-    @inject(EditorManager) protected readonly editorManager: EditorManager;
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(PropertyViewContribution) protected readonly propertyView: PropertyViewContribution;
     @inject(AppearanceContribution) protected readonly appearance: AppearanceContribution;
@@ -135,23 +237,14 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     @inject(OutlineViewContribution) protected readonly outline: OutlineViewContribution;
     @inject(SearchContribution) protected readonly search: SearchContribution;
     @inject(SelectionModel) protected readonly elements: SelectionModel;
-    @inject(NoteEditor) protected readonly noteEditor: NoteEditor;
     @inject(ViewHistory) protected readonly history: ViewHistory;
     @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
-    @inject(WorkspaceSettingsContribution) protected readonly settings: WorkspaceSettingsContribution;
     @inject(RecentWorkspaces) protected readonly recent: RecentWorkspaces;
     @inject(StorageService) protected readonly storage: StorageService;
     @inject(MarkdownExport) protected readonly markdownExport: MarkdownExport;
     @inject(InsertView) protected readonly insertView: InsertView;
     @inject(SidePanelSizes) protected readonly panelSizes: SidePanelSizes;
     protected readonly showHidden = new Set<string>();
-
-    constructor() {
-        super({
-            widgetId: MODEL_EXPLORER_ID, widgetName: 'Model',
-            defaultWidgetOptions: { area: 'left', rank: 150 }, toggleCommandId: 'catenary.toggleModel', toggleKeybinding: 'ctrlcmd+shift+m'
-        });
-    }
 
     async onStart(_app: FrontendApplication): Promise<void> {
         const swatches = document.createElement('style');
@@ -168,9 +261,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     }
 
     async initializeLayout(): Promise<void> {
-        // The file navigator first and active (ADR 0004: the files are the model), then the Model tab (the start panel when no workspace is open).
-        await this.navigator.openView({ activate: this.model.isOpen, reveal: this.model.isOpen });
-        await this.openView({ activate: !this.model.isOpen, reveal: !this.model.isOpen });
+        await this.navigator.openView({ activate: true, reveal: true });
         await this.search.openView({ activate: false, reveal: false });
         // Right side panel, in this order: Properties, Appearance, Links, Outline.
         await this.propertyView.openView({ activate: false, reveal: true, area: 'right', rank: 100 });
@@ -184,7 +275,6 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     async onDidInitializeLayout(): Promise<void> {
         // Side panels wide enough for tree labels and forms, also after the window manager resizes the window.
         this.panelSizes.start(this.freshLayout);
-        (await this.widget).onOpen(node => this.openNode(node));
         // Model already open in the backend (page reload) and no view editor restored: open the first view.
         await this.model.start();
         const views = await this.model.viewsSorted();
@@ -225,10 +315,6 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         if (pick) await this.model.report(this.model.service.open(pick.resource.path.fsPath()));
     }
 
-    protected async openNode(node: CatenaryNode): Promise<void> {
-        if (CatenaryNode.isElement(node)) await this.editors.show(CatenaryNode.elementId(node));
-    }
-
     // ------------------------------------------------------------ selections
 
     /** Folders selected in the Model Explorer: the class of New Instance and Delete Elements Not Placed in a View. Not model elements. */
@@ -239,8 +325,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
 
     // ------------------------------------------------------------ commands
 
-    override registerCommands(registry: CommandRegistry): void {
-        super.registerCommands(registry);
+    registerCommands(registry: CommandRegistry): void {
         const a = this.actions;
         const open = () => this.model.isOpen;
         registry.registerCommand(OpenModelCommands.OPEN, { execute: () => a.openModel() });
@@ -266,7 +351,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
             execute: (iri?: unknown) => this.insertView.insert(typeof iri === 'string' ? iri : undefined),
             isEnabled: () => open() && !!this.insertView.editor(), isVisible: () => !!this.insertView.editor()
         });
-        registry.registerCommand(OpenModelCommands.WORKSPACE_SETTINGS, { execute: () => this.settings.openView({ activate: true, reveal: true }), isEnabled: open });
+        registry.registerCommand(OpenModelCommands.WORKSPACE_SETTINGS, { execute: () => this.files.choose(this.model.snapshot.file, false, 'Settings'), isEnabled: open });
         registry.registerCommand(OpenModelCommands.IMPORT_FILE, {
             execute: (...files: unknown[]) => {
                 const paths = files.flat().filter((f): f is string => typeof f === 'string');
@@ -290,50 +375,15 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
             execute: () => { const f = selectedFile(); if (f) void this.model.report(this.model.service.setImported(f.path, false)); },
             isVisible: () => open() && !!selectedFile()?.imported
         });
-        // The file behind a widget: a view editor → its view file; the settings view → the workspace file.
-        const fileOf = (w?: Widget): string | undefined => {
-            if (w instanceof GLSPDiagramWidget && w.uri.scheme === VIEW_SCHEME) return this.model.snapshot.files.views.find(v => v.view === viewIdOf(w))?.path;
-            if (w instanceof WorkspaceSettingsWidget) return this.model.snapshot.file;
-            return undefined;
-        };
-        const current = (w?: unknown) => (w instanceof Widget ? w : this.shell.currentWidget);
-        registry.registerCommand(OpenModelCommands.SHOW_TEXT, {
-            execute: (w?: unknown) => { const f = fileOf(current(w)); if (f) return this.editorManager.open(URI.fromFilePath(f), { mode: 'activate' }); },
-            isVisible: (w?: unknown) => !!fileOf(current(w)), isEnabled: (w?: unknown) => !!fileOf(current(w))
-        });
-        // A text editor of a view file → its canvas; of the workspace file → its settings view.
-        const canvasOf = (w?: Widget): string | undefined => {
-            const path = w instanceof EditorWidget ? w.editor.uri.path.fsPath() : undefined;
-            if (!path) return undefined;
-            if (path === this.model.snapshot.file) return 'settings';
-            return this.model.snapshot.files.views.find(v => v.path === path)?.view;
-        };
-        registry.registerCommand(OpenModelCommands.SHOW_CANVAS, {
-            execute: (w?: unknown) => {
-                const target = canvasOf(current(w));
-                if (target === 'settings') return this.settings.openView({ activate: true, reveal: true });
-                if (target) return this.editors.open(target);
-            },
-            isVisible: (w?: unknown) => !!canvasOf(current(w)), isEnabled: (w?: unknown) => !!canvasOf(current(w))
-        });
-        registry.registerCommand(OpenModelCommands.SHOW_TRIG, {
-            execute: () => this.editorManager.open(URI.fromFilePath(this.model.snapshot.file!), { mode: 'activate' }), isEnabled: open
-        });
+        for (const [command, beside] of [[OpenModelCommands.OPEN_AS, false], [OpenModelCommands.OPEN_BESIDE, true]] as const) {
+            registry.registerCommand(command, {
+                execute: (target?: unknown, presentation?: Presentation) => this.files.choose(target, beside, presentation),
+                isVisible: (target?: unknown) => this.files.hasPresentations(target),
+                isEnabled: (target?: unknown) => this.files.hasPresentations(target)
+            });
+        }
         registry.registerCommand(OpenModelCommands.UNDO, { execute: () => this.model.undo(), isEnabled: () => this.model.snapshot.canUndo });
         registry.registerCommand(OpenModelCommands.REDO, { execute: () => this.model.redo(), isEnabled: () => this.model.snapshot.canRedo });
-        // File explorer (navigator) context menu.
-        const trig = (uri: URI) => uri.path.ext === '.trig';
-        const navigator = (command: Command, execute: (uri: URI) => unknown, applies: (uri: URI) => boolean, needsOpen = true) =>
-            registry.registerCommand(command, UriAwareCommandHandler.MonoSelect(this.selection, {
-                execute, isVisible: applies, isEnabled: uri => applies(uri) && (!needsOpen || this.model.isOpen)
-            }));
-        navigator(OpenModelCommands.OPEN_FILE_AS_MODEL, uri => a.openModel(uri), trig, false);
-        navigator(OpenModelCommands.OPEN_FILE_EXPLORER, async uri => {
-            const widget = await this.widgetManager.getOrCreateWidget<ModelExplorerWidget>(FILE_EXPLORER_ID, { file: uri.path.fsPath() });
-            if (!widget.isAttached) this.shell.addWidget(widget, { area: 'left' });
-            await this.shell.activateWidget(widget.id);
-        }, uri => [...this.model.snapshot.files.files, ...this.model.snapshot.files.views].some(f => f.path === uri.path.fsPath()));
-
         registry.registerCommand(ModelCommands.BACK, { execute: () => this.history.back(), isEnabled: () => this.history.canGoBack() });
         registry.registerCommand(ModelCommands.FORWARD, { execute: () => this.history.forward(), isEnabled: () => this.history.canGoForward() });
         registry.registerCommand(ModelCommands.FIND_ELEMENT, {
@@ -374,8 +424,8 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         // Placement: a card of an instance or a placed edge of a relation, in any view. Any folder: the elements under it (backend).
         registry.registerCommand(ModelCommands.DELETE_UNPLACED, {
             execute: async () => {
-                const w = this.tryGetWidget();
-                if (!w) return;
+                const w = this.shell.currentWidget;
+                if (!(w instanceof ModelExplorerWidget)) return;
                 const ids = (await Promise.all(this.explorerFolders().map(f => w.elementsIn(f)))).flat();
                 const unplaced = await this.model.service.unplaced(ids);
                 if (unplaced.length) return a.delete(unplaced);
@@ -386,11 +436,12 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         registry.registerCommand(ModelCommands.PROPOSE_ALL_SHAPES, { execute: () => a.proposeShapes(), isEnabled: open });
         registry.registerCommand(ModelCommands.COLLAPSE, {
             execute: async (widget?: Widget) => {
-                const w = widget instanceof CatenaryTreeWidget ? widget : await this.widget;
+                const w = widget ?? this.shell.currentWidget;
+                if (!(w instanceof ModelExplorerWidget)) return;
                 const root = w.model.root;
                 if (root && 'children' in root) for (const c of (root as { children: readonly unknown[] }).children) w.model.collapseNode(c as never);
             },
-            isVisible: (w?: Widget) => w instanceof CatenaryTreeWidget
+            isVisible: (w?: Widget) => w instanceof ModelExplorerWidget
         });
         registry.registerCommand(ModelCommands.TOGGLE_HIDDEN, {
             execute: (w?: Widget) => {
@@ -438,17 +489,19 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         });
     }
 
-    override registerMenus(menus: MenuModelRegistry): void {
-        super.registerMenus(menus);
+    registerMenus(menus: MenuModelRegistry): void {
         menus.registerSubmenu(MODEL_MENU, 'Model');
         // File and Edit entries of the model: menus.ts.
         const c = ModelCommands;
-        addMenuItems(menus, MODEL_MENU_CREATE, c.NEW_VIEW.id, c.NEW_INSTANCE.id, c.PROPOSE_ALL_SHAPES.id, ['catenary.toggleModel', 'Model Explorer']);
+        addMenuItems(menus, MODEL_MENU_CREATE, c.NEW_VIEW.id, c.NEW_INSTANCE.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, EXPLORER_SURFACE, c.DELETE_UNPLACED.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, DIAGRAM_SURFACE, c.NEW_GROUP.id, c.NEW_INSTANCE_HERE.id, c.NEW_NODE_SHAPE_HERE.id, c.TOGGLE_HIDDEN.id, c.LAYOUT_VIEW.id);
         addMenuItems(menus, [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_3_clipboard'], c.COPY_AS_RDF.id);
         const o = OpenModelCommands;
-        addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_FILE_AS_MODEL.id, o.OPEN_FILE_EXPLORER.id);
+        addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_AS.id, o.OPEN_BESIDE.id);
+        for (const path of [EditorContextMenu.NAVIGATION, [...EXPLORER_CONTEXT_MENU, '0_file'], [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_0_file']]) {
+            addMenuItems(menus, path, o.OPEN_AS.id, o.OPEN_BESIDE.id);
+        }
         // After New File and New Folder (Theia: no order, sorted by label).
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, { commandId: c.NEW_VIEW_IN_FOLDER.id, label: 'New View', when: 'explorerResourceIsFolder', order: 'z' });
         addMenuItems(menus, NavigatorContextMenu.MODIFICATION, o.MARK_IMPORTED.id, o.MARK_OWN.id);
@@ -456,8 +509,7 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
         menus.registerMenuAction(EditorContextMenu.MODIFICATION, { commandId: o.INSERT_VIEW.id, order: 'a' });
     }
 
-    override registerKeybindings(keybindings: KeybindingRegistry): void {
-        super.registerKeybindings(keybindings);
+    registerKeybindings(keybindings: KeybindingRegistry): void {
         keybindings.registerKeybinding({ command: OpenModelCommands.UNDO.id, keybinding: 'ctrlcmd+z', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: OpenModelCommands.REDO.id, keybinding: 'ctrlcmd+shift+z', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: OpenModelCommands.REDO.id, keybinding: 'ctrlcmd+y', context: ExplorerFocusContext.ID });
@@ -473,16 +525,15 @@ export class ModelExplorerContribution extends AbstractViewContribution<ModelExp
     registerToolbarItems(toolbar: TabBarToolbarRegistry): void {
         const c = ModelCommands;
         const o = OpenModelCommands;
-        // View editors have no toolbar items: Back/Forward are in the tool palette, Layout and Show Hidden Edges in Appearance, the
-        // text of a view in Go to Source. Open/New/Recent workspace: File menu and the start panel.
-        toolbar.registerItem({ id: c.COLLAPSE.id, command: c.COLLAPSE.id, tooltip: 'Collapse folders', isVisible: (w?: Widget) => w instanceof CatenaryTreeWidget } as never);
+        // File presentations share navigation controls. Canvas actions remain in the palette and Appearance.
+        toolbar.registerItem({ id: c.COLLAPSE.id, command: c.COLLAPSE.id, tooltip: 'Collapse folders', isVisible: (w?: Widget) => w instanceof ModelExplorerWidget } as never);
         toolbar.registerItem({
             id: c.NEW_VIEW_IN_FOLDER.id, command: c.NEW_VIEW_IN_FOLDER.id, tooltip: 'New view in the selected folder', priority: 1,
             isVisible: (w?: Widget) => w instanceof FileNavigatorWidget && this.model.isOpen
         } as never);
-        // The text/form toggle: Show Text on the settings view, Show Canvas on text editors of view files and of the workspace file.
-        toolbar.registerItem({ id: o.SHOW_TEXT.id, command: o.SHOW_TEXT.id, tooltip: 'Show the TriG text of the workspace file', priority: 10, isVisible: (w?: Widget) => w instanceof WorkspaceSettingsWidget } as never);
-        toolbar.registerItem({ id: o.SHOW_CANVAS.id, command: o.SHOW_CANVAS.id, tooltip: 'Show the canvas (a view) or the settings (the workspace file)', priority: 10 } as never);
+        for (const command of [o.OPEN_AS, o.OPEN_BESIDE]) {
+            toolbar.registerItem({ id: command.id, command: command.id, tooltip: command.label, priority: 10 });
+        }
     }
 
 }
@@ -494,64 +545,7 @@ export class ExplorerFocusContext implements KeybindingContext {
     readonly id = ExplorerFocusContext.ID;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
     isEnabled(): boolean {
-        return this.shell.activeWidget instanceof CatenaryTreeWidget || this.shell.activeWidget instanceof SearchWidget;
-    }
-}
-
-/**
- * A file opens as what it holds that Catenary edits, from its content, not its name: a workspace in the workspace editor (the open
- * workspace: its settings), a view in its view editor. The navigator opens a file when it is selected (single click, a preview), so
- * browsing the files shows the views. A preview stays in the open workspace: another workspace, or a view of another workspace, needs
- * an explicit open (double-click or Enter); the preview shows its text. A file with several ways to open asks which. A file that mixes workspace settings and a view opens as text,
- * with a message. Other files: the next handler, the text editor. "Open With" keeps the text editor for every file.
- */
-@injectable()
-export class CatenaryFileOpenHandler implements OpenHandler {
-    readonly id = 'catenary-file';
-    readonly label = 'Catenary';
-    @inject(ModelActions) protected readonly actions: ModelActions;
-    @inject(ModelFrontend) protected readonly model: ModelFrontend;
-    @inject(QuickInputService) protected readonly quick: QuickInputService;
-    @inject(WorkspaceSettingsContribution) protected readonly settings: WorkspaceSettingsContribution;
-    @inject(EditorManager) protected readonly editorManager: EditorManager;
-    @inject(MessageService) protected readonly messages: MessageService;
-
-    /** Views and workspaces are TriG files. Undefined: another file, or the backend cannot read it. */
-    protected async content(uri: URI): Promise<FileContent | undefined> {
-        if (uri.scheme !== 'file' || uri.path.ext.toLowerCase() !== '.trig') return undefined;
-        return this.model.service.fileContent(uri.path.fsPath()).catch(() => undefined);
-    }
-
-    /** The ways to open the file. A preview (a single click in the navigator) does not switch to another workspace. */
-    protected modes(c: FileContent, uri: URI, options?: OpenerOptions): OpenMode[] {
-        return (options as { preview?: boolean } | undefined)?.preview ? previewModes(c, uri.path.fsPath(), this.model.snapshot.file) : openModes(c);
-    }
-
-    async canHandle(uri: URI, options?: OpenerOptions): Promise<number> {
-        const c = await this.content(uri);
-        return c && (this.modes(c, uri, options).length || mixedFileProblem(c)) ? 200 : 0;
-    }
-
-    async open(uri: URI, options?: OpenerOptions): Promise<object | undefined> {
-        const c = await this.content(uri);
-        if (!c) return undefined;
-        const name = uri.path.base;
-        const problem = mixedFileProblem(c);
-        if (problem) {
-            this.messages.warn(`${name}: ${problem}`);
-            return this.editorManager.open(uri, options);
-        }
-        const items = this.modes(c, uri, options).map(m => m.kind === 'workspace'
-            ? { label: 'Workspace', description: name, run: () => this.openWorkspace(uri) }
-            : { label: `View: ${m.label}`, description: name, run: () => this.actions.openView(m.id, c.workspaceFile) });
-        const pick = items.length > 1 ? await this.quick.showQuickPick(items, { placeholder: `${name} holds ${items.length} things that Catenary edits. Open it as:` }) : items[0];
-        await pick?.run();
-        return undefined;
-    }
-
-    protected async openWorkspace(uri: URI): Promise<void> {
-        if (this.model.snapshot.file === uri.path.fsPath()) await this.settings.openView({ activate: true, reveal: true });
-        else await this.actions.openModel(uri);
+        return this.shell.activeWidget instanceof ModelExplorerWidget || this.shell.activeWidget instanceof SearchWidget;
     }
 }
 

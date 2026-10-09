@@ -11,7 +11,7 @@ The first `pnpm start` or `pnpm desktop` copies `examples/bookshop` to `~/.local
 1. Select File → Open Workspace.
 2. Select a folder or a `workspace.trig` file.
 
-A file in the navigator opens what it holds, not what its name says, when you select it. A view file of the open workspace shows the view. The workspace file shows the Workspace settings. Selecting a file of another workspace shows its text: double-click it or press Enter to open that workspace and its view. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other files open as text. Use Open With to open any file as text.
+A file in the navigator opens what it holds, not what its name says, when you select it. A view file of the open workspace shows the view. The workspace file shows the Workspace settings. Selecting a file of another workspace shows its text: double-click it or press Enter to open that workspace and its view. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other model RDF files open in their Model explorer. Other files open as text. Use Open With to open any file as text.
 
 If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace proposes `workspace.catenary.trig` as the filename. You can change it. Catenary creates the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
 
@@ -24,12 +24,13 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 | Area | Content |
 |---|---|
 | Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
-| Model (left) | The Model explorer: elements by type, relations by predicate, concepts by scheme. Folders load when you open them. |
 | Search (left) | Faceted search on text, type and "Linked to". At most 200 results. |
-| Main area | View canvases, text editors, Workspace settings. |
+| Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
 | Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
+
+Catenary resets saved layouts once when you first open this version. Later sessions restore your pane arrangement.
 
 ## Views and canvases
 
@@ -40,7 +41,9 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Open a view: select its file in the navigator, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
-- Open a file tree: right-click a model file and select **Open in Model Explorer**. Reopening the file focuses its existing panel.
+- Open a file tree: open a model RDF file, or select **Open as… → Model** from another presentation.
+- Use **Open beside…** to open another presentation beside the current pane. Reopening a presentation focuses its existing pane.
+- Move or split Model panes with the same tab controls as source editors and canvases.
 - Filter a tree: type while a row has focus, or use the fuzzy filter input. Matches can have gaps. The tree hides nonmatching branches and highlights matching characters. It keeps ancestors of matches visible. Press Escape in the input to clear the filter.
 - Drag a folder to place all its descendants, including elements hidden by the filter. A folder drag does not create instances.
 - Move elements: drag from one file tree to another. Confirm the element count and destination. Only statements supplied by the source file move. Other files and resource IRIs stay unchanged. Undo restores the transfer.
@@ -57,7 +60,9 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - New statements use the configured file destinations. Named graphs require confirmation before paste discards their graph names.
 - Copy as RDF in Edit or the canvas context menu copies readable Turtle. It includes selected statements and owned values, without placement metadata.
 - Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
-- Show Text / Show Canvas switches between the canvas and the TriG text of the same file.
+- Use **Open as…** or **Open beside…** in a pane toolbar or context menu.
+- Every model RDF file offers Source and Model. A view also offers Canvas. The workspace file also offers Settings.
+- The workspace Model pane uses the current explorer query. Workspace metadata stays outside the model index.
 
 ### View notes
 
@@ -105,7 +110,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
 - **Imported**: globs of imported (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
 
-The toolbar has Show Text, Select in Explorer and More actions (Reset Prefixes to Defaults).
+The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 
 Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace. The default edge style is Direct. Parallel direct edges use separate lanes that retain spacing when you zoom out. Vertical lanes reserve estimated label width. Self-links use wide loops with horizontal label runs and separate heights. These changes do not move cards. Direct edges can still cross other cards and unrelated labels.
 
