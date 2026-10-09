@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelStore } from '../src/model-store';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 
@@ -142,5 +142,22 @@ describe('changes on disk', () => {
         writeFileSync(file('data.ttl'), read('data.ttl').replace('"Product usage data"', '"Seen by the watcher"'));
         for (let i = 0; i < 100 && !labels(store).includes('Seen by the watcher'); i++) await new Promise(r => setTimeout(r, 50));
         expect(labels(store)).toContain('Seen by the watcher');
+    });
+
+    it('the watch events of own writes do not read the files again; a change by another program in the same burst does', async () => {
+        const { store, file, read } = await workspace(true);
+        const sync = vi.spyOn(store, 'syncFromDisk');
+        const id = Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!.id;
+        ok(store.execute({ kind: 'rename', id, label: 'Mine' }));
+        await store.idle();
+        // The watch debounce is 150 ms: wait past it, then for the queued work.
+        await new Promise(r => setTimeout(r, 500));
+        await store.idle();
+        expect(sync).not.toHaveBeenCalled();
+        expect(read('data.ttl')).toContain('"Mine"');
+        ok(store.execute({ kind: 'rename', id, label: 'Mine again' }));
+        writeFileSync(file('shapes.ttl'), read('shapes.ttl') + '\n');
+        for (let i = 0; i < 100 && !sync.mock.calls.length; i++) await new Promise(r => setTimeout(r, 50));
+        expect(sync).toHaveBeenCalled();
     });
 });

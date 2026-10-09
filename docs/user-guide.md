@@ -28,6 +28,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 | Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
+| Trace (View → Trace) | Bottom area, next to the terminal. It shows what the backend runs: requests, edits, change events, view refreshes, validation, SPARQL queries and file writes. Summary sorts totals by time or calls per minute. Timeline shows each operation with its effects below. The trace records only while the panel is visible. |
 
 Catenary resets saved layouts once when you first open this version. Later sessions restore your pane arrangement.
 

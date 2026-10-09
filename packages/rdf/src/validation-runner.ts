@@ -12,6 +12,7 @@ import { PlainTerm, plainToQuads, quadsToPlain } from './plain-quads';
 import { Metamodel } from './shapes';
 import { shapesIndexOf } from './shapes-read';
 import { rdf, termKey } from './terms';
+import { tracer } from './trace';
 import { ShaclResult, inSchemeTriples, reportQuads, validateWithReport, violationsOf } from './validate';
 
 let workerFile: string | undefined;
@@ -55,6 +56,12 @@ class ShaclWorker {
 
 const shaclWorker = new ShaclWorker();
 
+/** A newer change made the run stale: its result is not used. */
+function discarded(run: number): void {
+    tracer.note(`run ${run}: discarded, a newer change came`);
+    tracer.event('validation', 'discarded', `run ${run}`);
+}
+
 export interface Timers {
     set(fn: () => void, ms: number): unknown;
     clear(handle: unknown): void;
@@ -82,6 +89,7 @@ export class ValidationRunner {
     invalidate(delay = 250): void {
         const run = ++this.run;
         this.timers.clear(this.timer);
+        tracer.event('validation', 'scheduled', `run ${run} in ${delay} ms`);
         this.timer = this.timers.set(() => void this.validate(run), delay);
     }
 
@@ -96,7 +104,11 @@ export class ValidationRunner {
         this.violations = [];
     }
 
-    protected async validate(run: number): Promise<void> {
+    protected validate(run: number): Promise<void> {
+        return tracer.span('validation', 'run', () => this.validateNow(run));
+    }
+
+    protected async validateNow(run: number): Promise<void> {
         const { graph: g, metamodel, data: own } = this.source();
         try {
             // The SKOS statements of the shapes files are data too: a value "in scheme X" is checked against them.
@@ -104,6 +116,7 @@ export class ValidationRunner {
                 || (q.predicate.value === NS.rdf + 'type' && q.object.value.startsWith(NS.skos)));
             // Imported files: only the statements that own data needs (Workspace.validationTriples).
             const data = [...own?.() ?? g.modelTriples(), ...vocabulary];
+            tracer.note(`run ${run}: ${data.length} data triples, ${metamodel.dataset.size} shapes triples${workerFile ? ', in the worker' : ''}`, data.length);
             // The ids after the run: a change during the run made it stale (checked below), so the graph is the validated one.
             const instanceId = (iri: string) => {
                 const t = rdf.namedNode(iri);
@@ -114,15 +127,16 @@ export class ValidationRunner {
             if (!workerFile) ({ violations, report } = await validateWithReport(data, metamodel, instanceId, shapeId));
             else if (metamodel.dataset.size) {
                 const r = await shaclWorker.run(metamodel.dataset, [...data, ...inSchemeTriples(metamodel)]);
-                if (run !== this.run) return;
+                if (run !== this.run) return discarded(run);
                 violations = violationsOf(r.results, metamodel, instanceId, shapeId);
                 report = reportQuads(r.report);
             }
-            if (run !== this.run) return;
+            if (run !== this.run) return discarded(run);
             const graph = rdf.namedNode(VALIDATION_GRAPH);
             for (const q of g.store.match(null, null, null, graph)) g.store.delete(q);
             for (const q of report) g.store.add(q);
-            if (JSON.stringify(violations) === JSON.stringify(this.violations)) return;
+            if (JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
+            tracer.note(`run ${run}: ${violations.length} violations, changed`);
             this.violations = violations;
             this.changed();
         } catch (e) {
