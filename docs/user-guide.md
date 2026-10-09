@@ -25,7 +25,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 |---|---|
 | Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
 | Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
-| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
+| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
 

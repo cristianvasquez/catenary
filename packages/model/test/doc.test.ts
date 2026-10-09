@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, kindName, kindOf, relationLabel, viewsShowing } from '../src';
+import { Doc, NS, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, isTypedInstanceRow, kindName, kindOf, relationLabel, viewsShowing } from '../src';
 import { unplacedInstances } from './doc-reference';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
@@ -89,5 +89,13 @@ describe('queries on the read model', () => {
         expect(elementLabel(d, meta, 'ab')).toBe('A — p → B');
         expect(elementLabel(d, meta, 'n', d.views.V1)).toBe('first');
         expect(elementLabel(d, meta, 'V3')).toBe('V3');
+    });
+});
+
+describe('Links rows', () => {
+    it('law_typeRowsShown: only an incoming rdf:type row goes in the "Instances (rdf:type)" folder', () => {
+        expect(isTypedInstanceRow({ dir: 'in', predicate: NS.rdf + 'type' })).toBe(true);
+        expect(isTypedInstanceRow({ dir: 'out', predicate: NS.rdf + 'type' })).toBe(false);
+        expect(isTypedInstanceRow({ dir: 'in', predicate: 'urn:p' })).toBe(false);
     });
 });

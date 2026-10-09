@@ -1412,17 +1412,29 @@ showTarget _ vs = case sortOn fst vs of
 
 -- 8.8 Links -------------------------------------------------------------------------
 
--- | Links: views, and outgoing and incoming statements of model and shapes. Omit rdf:type and literals.
+-- | Links: views, and outgoing and incoming statements of model and shapes, rdf:type included. Omit literals.
+-- Reason: the data shows as written. An instance shows its class, and a class shows its instances.
+-- Incoming rdf:type rows go in a closed "Instances (rdf:type)" folder under Incoming, with a count.
+-- Reason: a class can have thousands of instances. The folder keeps its other links readable.
 -- An RDF list is one predicate step. A self-link shows as outgoing only. Mixed selections show ownership counts.
 -- A row without a navigable element is inactive. A statement-row action targets its relation, else the other end.
 -- A view row targets the matching placements. Limit: no arrows and no entity-group membership from view graphs (open.md G4).
 data LinkRow = OutgoingRow Statement | IncomingRow Statement deriving Eq
 linkRows :: Iri -> [Statement] -> [LinkRow]          -- element, statements of model and shapes with IRI objects
 linkRows e sts =
-  [OutgoingRow st | st@(Node s, p, _) <- sts, s == e, p /= "rdf:type"]
-    ++ [IncomingRow st | st@(Node s, p, Node o) <- sts, o == e, s /= e, p /= "rdf:type"]
+  [OutgoingRow st | st@(Node s, _, _) <- sts, s == e]
+    ++ [IncomingRow st | st@(Node s, _, Node o) <- sts, o == e, s /= e]
 law_selfLinkOutgoingOnly :: Iri -> Iri -> Bool
-law_selfLinkOutgoingOnly e p = p /= "rdf:type" ==> linkRows e [(Node e, p, Node e)] == [OutgoingRow (Node e, p, Node e)]
+law_selfLinkOutgoingOnly e p = linkRows e [(Node e, p, Node e)] == [OutgoingRow (Node e, p, Node e)]
+isTypedInstanceRow :: LinkRow -> Bool                -- an incoming rdf:type row: it goes in the "Instances (rdf:type)" folder
+isTypedInstanceRow (IncomingRow (_, p, _)) = p == "rdf:type"
+isTypedInstanceRow _ = False
+law_typeRowsShown :: Iri -> Iri -> Iri -> Bool
+law_typeRowsShown e c x = c /= e && x /= e ==>
+  (linkRows e [(Node e, "rdf:type", Node c)] == [OutgoingRow (Node e, "rdf:type", Node c)]
+   && linkRows e [(Node x, "rdf:type", Node e)] == [IncomingRow (Node x, "rdf:type", Node e)]
+   && all isTypedInstanceRow (linkRows e [(Node x, "rdf:type", Node e)])
+   && not (any isTypedInstanceRow (linkRows e [(Node e, "rdf:type", Node c)])))
 
 -- | Selected node shapes show an Instances folder, including targets outside the current view.
 -- Use SHACL class, node, subject and object targets. Include declared subclasses and implicit class targets.
