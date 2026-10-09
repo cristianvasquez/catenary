@@ -88,7 +88,9 @@ export class ModelActions {
      */
     async openWorkspace(file: string): Promise<boolean> {
         if (this.model.snapshot.file === file) return true;
-        return await this.canReplaceModel() && await this.model.report(this.model.service.open(file));
+        if (!await this.canReplaceModel() || !await this.model.report(this.model.service.open(file))) return false;
+        this.reportWarnings();
+        return true;
     }
 
     /**
@@ -156,6 +158,10 @@ export class ModelActions {
     protected async afterOpen(): Promise<void> {
         const first = (await this.model.viewsSorted())[0];
         if (first) this.editors.open(first.id);
+        this.reportWarnings();
+    }
+
+    protected reportWarnings(): void {
         if (this.model.snapshot.warnings.length) this.messages.warn(`${this.model.snapshot.warnings.length} warnings: ${this.model.snapshot.warnings.join(' ')}`);
     }
 
