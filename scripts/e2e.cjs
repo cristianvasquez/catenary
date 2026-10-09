@@ -1,7 +1,14 @@
 // Browser wiring smoke test only. Model rules and view reactions belong in `pnpm test`.
 // Requires `pnpm build` and Chromium (CHROMIUM overrides /usr/bin/chromium).
 // Always use an isolated workspace/config; never edit a running user's model.
-const { test } = require('node:test');
+// Each test has its own backend (port 0), configuration folder, workspace copy and browser, so the tests run at the same time:
+// E2E_CONCURRENCY of them (default 3). Most of a test is waiting for the backend and the page, not CPU.
+const { describe, test: nodeTest } = require('node:test');
+const tests = [];
+const test = (...args) => tests.push(args);
+process.nextTick(() => describe('browser', { concurrency: Number(process.env.E2E_CONCURRENCY) || 3 }, () => {
+  for (const args of tests) nodeTest(...args);
+}));
 const assert = require('node:assert/strict');
 const { fork, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -919,56 +926,31 @@ test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave an
   assert.ok(cli('eval', 'ctx.shell.currentWidget.editor.document.getText()').includes('Local edit'));
 }));
 
-test('browser: subject targets retain all predicates through Properties edits', { timeout: 45000 }, t => withFixtureApp(t, 'subject-targets', async ({ page, cli }) => {
+// sh:targetSubjectsOf and sh:targetObjectsOf: the same textarea wiring, one app for both.
+test('browser: subject and object targets retain all predicates through Properties edits', { timeout: 60000 }, t => withFixtureApp(t, 'targets', async ({ page, cli }) => {
   const view = cli('ui').currentView;
-  const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Subject targets', view, at: { x: 0, y: 0 } })).result;
-  assert.equal(shape.ok, true);
-  cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { targetSubjectsOf: ['urn:test:first', 'urn:test:second'] } }));
-  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
   const panel = page.locator('#catenary-properties');
-  if (!await panel.locator('.catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
-  const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: /^sh:targetSubjectsOf$/ }) }).locator('textarea');
-  await field.waitFor();
-  assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
-  await field.fill('<urn:test:second>\n<urn:test:third>');
-  await field.blur();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === 'Subject targets'));
-  for (let i = 0; i < 50; i++) {
-    if (JSON.stringify(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf) === JSON.stringify(['urn:test:second', 'urn:test:third'])) break;
-    await page.waitForTimeout(100);
+  const targets = id => cli('rpc', 'shapes').result.nodeShapes[id];
+  for (const [key, label, words] of [['targetSubjectsOf', 'Subject targets', 'subjects'], ['targetObjectsOf', 'Object targets', 'objects']]) {
+    const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label, view, at: { x: 0, y: 0 } })).result;
+    assert.equal(shape.ok, true);
+    cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { [key]: ['urn:test:first', 'urn:test:second'] } }));
+    cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
+    if (!await panel.locator('.catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
+    const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: new RegExp(`^sh:${key}$`) }) }).locator('textarea');
+    await field.waitFor();
+    assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
+    await field.fill('<urn:test:second>\n<urn:test:third>');
+    await field.blur();
+    await page.waitForFunction(l => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === l), label);
+    for (let i = 0; i < 50 && JSON.stringify(targets(shape.id)[key]) !== JSON.stringify(['urn:test:second', 'urn:test:third']); i++) await page.waitForTimeout(100);
+    assert.deepEqual(targets(shape.id)[key], ['urn:test:second', 'urn:test:third']);
+    await page.locator('.shape-class', { hasText: `${words} of second or third` }).first().waitFor();
+    await field.fill('');
+    await field.blur();
+    for (let i = 0; i < 50 && targets(shape.id)[key]; i++) await page.waitForTimeout(100);
+    assert.equal(targets(shape.id)[key], undefined);
   }
-  assert.deepEqual(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf, ['urn:test:second', 'urn:test:third']);
-  await page.locator('.shape-class', { hasText: 'subjects of second or third' }).first().waitFor();
-  await field.fill('');
-  await field.blur();
-  for (let i = 0; i < 50 && cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf; i++) await page.waitForTimeout(100);
-  assert.equal(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetSubjectsOf, undefined);
-}));
-
-test('browser: object targets retain all predicates through Properties edits', { timeout: 45000 }, t => withFixtureApp(t, 'object-targets', async ({ page, cli }) => {
-  const view = cli('ui').currentView;
-  const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Object targets', view, at: { x: 0, y: 0 } })).result;
-  assert.equal(shape.ok, true);
-  cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { targetObjectsOf: ['urn:test:first', 'urn:test:second'] } }));
-  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
-  const panel = page.locator('#catenary-properties');
-  if (!await panel.locator('.catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
-  const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: /^sh:targetObjectsOf$/ }) }).locator('textarea');
-  await field.waitFor();
-  assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
-  await field.fill('<urn:test:second>\n<urn:test:third>');
-  await field.blur();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === 'Object targets'));
-  for (let i = 0; i < 50; i++) {
-    if (JSON.stringify(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetObjectsOf) === JSON.stringify(['urn:test:second', 'urn:test:third'])) break;
-    await page.waitForTimeout(100);
-  }
-  assert.deepEqual(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetObjectsOf, ['urn:test:second', 'urn:test:third']);
-  await page.locator('.shape-class', { hasText: 'objects of second or third' }).first().waitFor();
-  await field.fill('');
-  await field.blur();
-  for (let i = 0; i < 50 && cli('rpc', 'shapes').result.nodeShapes[shape.id].targetObjectsOf; i++) await page.waitForTimeout(100);
-  assert.equal(cli('rpc', 'shapes').result.nodeShapes[shape.id].targetObjectsOf, undefined);
 }));
 
 test('browser: Links lists instances of a selected shape outside the current view', { timeout: 45000 }, t => withFixtureApp(t, 'shape-instances', async ({ page, cli }) => {
@@ -1104,7 +1086,7 @@ test('browser: Apply Layout fits the viewport to the new layout; no zoom-out lim
   }
 }));
 
-test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 45000 }, t => withFixtureApp(t, 'properties-stable', async ({ page, cli }) => {
+test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 90000 }, t => withFixtureApp(t, 'properties-stable', async ({ page, cli }) => {
   // An instance with a SHACL form.
   const hits = cli('rpc', 'search').result.filter(h => h.kind === 'instance');
   let target;
@@ -1190,6 +1172,8 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.deepEqual(run.prompt.items.map(i => i.label).sort(), ['Product context', 'Second view']);
   assert.equal(cliRaw('answer', '--pick', 'Product context').status, 'done');
   await page.keyboard.type('\n\n## Components\n\n');
+  // Typing is asynchronous: insert only after the last key is in the document.
+  for (let i = 0; i < 50 && !cli('eval', 'ctx.shell.currentWidget.editor.document.getText()').endsWith('## Components\n\n'); i++) await page.waitForTimeout(100);
   run = cliRaw('run', 'catenary.insertView');
   assert.equal(cliRaw('answer', '--pick', 'Second view').status, 'done');
   const text = cli('eval', 'ctx.shell.currentWidget.editor.document.getText()');

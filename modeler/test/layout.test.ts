@@ -153,11 +153,11 @@ it.each(LAYOUT_ALGORITHMS.flatMap(a => [1, 2].map(scale => [a.id, scale] as cons
     const store = new ModelStore();
     expect(await store.open(join(dir, 'workspace.trig'))).toMatchObject({ ok: true });
     const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    for (const viewId of Object.keys(docOf(store).views)) {
-        const { bounds, edges } = await layoutView(store.viewDoc(viewId), viewId, false, algorithm, 120, scale, store.viewFigures(viewId));
-        expect(store.execute({ kind: 'setLayout', view: viewId, bounds, clearSides: edges })).toMatchObject({ ok: true });
-        const nodes = drawn(store, viewId, scale);
-        for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) expect(overlap(a, b), `${docOf(store).views[viewId].label}: ${a.id} ${b.id}`).toBe(false);
+    for (const view of Object.values(docOf(store).views)) {
+        const { bounds, edges } = await layoutView(store.viewDoc(view.id), view.id, false, algorithm, 120, scale, store.viewFigures(view.id));
+        expect(store.execute({ kind: 'setLayout', view: view.id, bounds, clearSides: edges })).toMatchObject({ ok: true });
+        const nodes = drawn(store, view.id, scale);
+        for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) expect(overlap(a, b), `${view.label}: ${a.id} ${b.id}`).toBe(false);
     }
     await store.idle();
     rmSync(dir, { recursive: true, force: true });

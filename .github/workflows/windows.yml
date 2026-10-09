@@ -1,6 +1,6 @@
 name: Windows
 
-# The packages on real runners. ci.yml calls this workflow by risk profile and every night; release.yml calls it for the Windows
+# The packages on real runners. ci.yml calls this workflow every night and for a PR with the label ci:full; release.yml calls it for the Windows
 # smoke test of the release package. Manual run: Actions → Windows → Run workflow.
 #  - package:  build the Linux and Windows packages on Linux, check the Windows layout, start the Linux package (xvfb), upload the zip.
 #  - unit:     the tests of paths, files, the watcher and Git on Windows (real win32 paths, no path.win32 simulation).

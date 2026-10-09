@@ -117,7 +117,7 @@ Paths are relative to the directory in the first column.
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |
-| | `risk-profile.mjs`, `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs`, `ci-metrics.mjs` | CI: risk profile and job plan, CLI and RPC contract smoke test, Markdown links, style sheets, pipeline numbers |
+| | `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs` | CI: CLI and RPC contract smoke test, Markdown links, style sheets |
 | | `rdf-query.cjs` | SPARQL on RDF files (Oxigraph) for tests and agents |
 
 ## Hosts
@@ -152,24 +152,21 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 
 Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.
 
-Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them.
+Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
+
+The test files of a Vitest thread share one module graph (`vitest.config.mts`). `vitest.setup.ts` resets the process-wide state (the prefix table, fake timers) before each file. A file that calls `vi.mock` or `vi.spyOn` runs in a process of its own: the config finds these files. Change the store through `ModelGraph.add` and `remove`, not through `g.store`: the shapes index cache sees only these changes.
 
 ### CI
 
-`.github/workflows/ci.yml` gives each PR a risk profile with `scripts/risk-profile.mjs`. The profile selects the jobs. The only required check is `gate`.
+`.github/workflows/ci.yml` runs the same jobs for each pull request and each push to `main`. The only required check is `gate`.
 
-| Profile | Paths (examples) | Blocking jobs |
+| Job | Steps | When |
 |---|---|---|
-| `docs` | `*.md`, `LICENSE` | Markdown links |
-| `cosmetic` | `modeler/css/**` | Style sheets, browser form test |
-| `standard` | `modeler/src/browser`, `packages/model`, manifests, `examples/`, unknown paths | Check, affected unit tests, browser build |
-| `critical` | `packages/rdf*`, `modeler/src/node`, protocol, CLI, edit commands, IDs, paths | Check, full unit tests (3 shards), browser build, CLI smoke |
-| `platform` | Workflows, dependencies, patches, Electron, packaging, the classifier | `critical` plus the Electron build and, for packaging files, the Linux and Windows packages |
+| `test` | `pnpm check`, `pnpm test` | Always |
+| `app` | `pnpm build:browser`, `scripts/smoke-cli.mjs`, `pnpm e2e` | Always |
+| `windows` | `windows.yml`: Windows tests, Electron build, Linux and Windows packages | Nightly, manual run, PR with the label `ci:full` |
 
-- The highest profile of all changed files wins. Added lines that write files, start processes or change IRIs raise the profile to `critical`. A `.only` in a test fails.
-- The labels `risk:critical` and `risk:platform` raise the profile. The label `risk:hold` makes the gate wait for the optional jobs (e2e, Windows tests). Re-run the workflow after a label change.
-- After the merge, `main` runs the full set, and every job blocks. The nightly run adds the Windows tests and the packages.
-- A tag `v*` runs only `release.yml`. It requires a passed CI run on `main` for the commit, then builds the packages once and starts each one.
-- To change a rule, edit `scripts/risk-profile.mjs` and the cases in `scripts/test/risk-profile.test.mjs`.
+- Add the label `ci:full` to a change of dependencies, Electron or packaging.
+- A tag `v*` runs only `release.yml`. It requires a passed CI run on `main` for the commit, then builds the packages once and starts each one. After a change of `release.yml` or `scripts/package.sh`, run the Release workflow manually: it builds and starts the packages without a release.
 
 Assert fields and geometry invariants, not whole-render snapshots or exact ELK coordinates. Query RDF results with SPARQL (`scripts/rdf-query.cjs`), including named graphs. Never run tests against `workspace/`.

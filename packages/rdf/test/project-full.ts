@@ -16,11 +16,27 @@ export interface Projection { doc: Doc; warnings: string[] }
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}>`;
 const TYPE = P.type.value, LABEL = P.label.value, CONFORMS_TO = P.conformsTo.value;
 
+/**
+ * The shapes read model of the shapes and vocabulary quads, read again only when these quads change. The key is the content, not
+ * ModelGraph.shapesRevision: the oracle stays independent of the cache of the store (shapesIndexOf).
+ */
+const shapesRead = new WeakMap<ModelGraph, { key: string; shapes: Doc['shapes'] }>();
+function shapesOf(g: ModelGraph): Doc['shapes'] {
+    const quads = g.shapesAndVocabulary();
+    const key = quads.map(q => `${key4(q.subject)} ${q.predicate.value} ${key4(q.object)} ${q.graph.value}`).join('\n');
+    const cached = shapesRead.get(g);
+    if (cached?.key === key) return cached.shapes;
+    const shapes = readShapes(quads).model;
+    shapesRead.set(g, { key, shapes });
+    return shapes;
+}
+const key4 = (t: Term): string => t.termType === 'Literal' ? JSON.stringify([t.value, t.language, t.datatype.value]) : `${t.termType}:${t.value}`;
+
 export function project(g: ModelGraph): Projection {
     const warnings: string[] = [];
     const doc = emptyDoc();
     const M = `<${g.model.value}>`;
-    doc.shapes = readShapes(g.shapesAndVocabulary()).model;
+    doc.shapes = shapesOf(g);
 
     // Model graph: all statements, grouped by subject.
     const statements = new Map<string, { s: Plain; rows: Row[] }>();

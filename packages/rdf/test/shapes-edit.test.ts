@@ -357,7 +357,7 @@ describe('shape edits', () => {
         const g = await load();
         const dataset = shapeId(g, EX + 'Dataset'), agent = shapeId(g, EX + 'SoftwareAgent');
         const title = prop(g, EX + 'Dataset', 'dct:language');
-        g.store.add(rdf.quad(rdf.namedNode(EX + 'SoftwareAgent'), rdf.namedNode('http://www.w3.org/ns/shacl#property'), rdf.namedNode(title.uri!), GRAPH));
+        g.add(rdf.namedNode(EX + 'SoftwareAgent'), S.property, rdf.namedNode(title.uri!), GRAPH);
         const view = exec(g, { kind: 'createView', label: 'V' }) as string;
         exec(g, { kind: 'addToView', view, ids: [dataset, agent], at: { x: 0, y: 0 } });
         const alias = Object.values(shapesOf(g).properties).find(p => p.uri === title.uri && p.id !== title.id)!;
@@ -373,7 +373,7 @@ describe('shape edits', () => {
         const g = await load();
         const dataset = shapeId(g, EX + 'Dataset'), agent = shapeId(g, EX + 'SoftwareAgent');
         const title = prop(g, EX + 'Dataset', 'dct:language');
-        g.store.add(rdf.quad(rdf.namedNode(EX + 'SoftwareAgent'), rdf.namedNode('http://www.w3.org/ns/shacl#property'), rdf.namedNode(title.uri!), GRAPH));
+        g.add(rdf.namedNode(EX + 'SoftwareAgent'), S.property, rdf.namedNode(title.uri!), GRAPH);
         const views = ['V1', 'V2'].map(label => exec(g, { kind: 'createView', label }) as string);
         for (const view of views) {
             exec(g, { kind: 'addToView', view, ids: [dataset, agent], at: { x: 0, y: 0 } });

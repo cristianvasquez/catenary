@@ -78,7 +78,8 @@ describe('search: the things', () => {
     });
 
     it('views: the views that place the thing, or the node shape of a property shape (viewsShowing of the read model)', () => {
-        for (const h of store.search()) expect(h.views, h.iri).toEqual(viewsShowing(docOf(store), h.owner ?? h.id).map(v => v.id));
+        const doc = docOf(store);
+        for (const h of store.search()) expect(h.views, h.iri).toEqual(viewsShowing(doc, h.owner ?? h.id).map(v => v.id));
         expect(store.search().some(h => h.views.length)).toBe(true);
     });
 });

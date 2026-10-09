@@ -3,13 +3,12 @@ name: Release
 # A tag v* publishes the packages for Linux, Windows and macOS as a GitHub release. The tests do not run again: the gate job requires
 # that the CI run on main (ci.yml, the full set after the merge) passed for the tagged commit. Each published package is started
 # once: Linux under xvfb, Windows on windows-latest, macOS after the ad hoc signature.
-# A manual run, or ci.yml for a change of this file or scripts/package.sh (release-dry), builds and starts the packages without a
-# release.
+# A manual run (Actions → Release → Run workflow) builds and starts the packages without a release: run it after a change of this
+# file or scripts/package.sh.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
