@@ -461,7 +461,7 @@ law_highlightRows s l e = (Row e `elem` highlight s (InListing l)) ==> e `elem` 
 -- place e v: place e on v, with the connector ends that v does not show. An own placement makes it a no-op.
 -- remove accepts placements only. delete on a canvas placement deletes its element.
 -- A listing row acts on its own element, also when that element is a placement.
--- Each graph operation is one EditCommand (spec/manifest.hs §6). Go to Source changes no graph.
+-- Each graph operation is one EditCommand (spec/manifest.hs §6). Open in… changes no graph.
 data Scope = InView Element | AcrossViews deriving Eq
 scopeOf :: Element -> Scope
 scopeOf e = if isPlacement e then InView (viewOf e) else AcrossViews
@@ -476,7 +476,7 @@ remove p
 delete :: Pane -> Element -> EditCommand
 delete OnCanvas x | isPlacement x = Delete [idOf (elementOf x)]
 delete _ x = Delete [idOf x]
-goToSource :: Element -> IO ()
+openInPane :: Element -> IO ()
 
 -- 4.2 Applicability -----------------------------------------------------------------
 
@@ -520,11 +520,11 @@ law_controlIgnoresSelection c s1 s2 = isJust (controlCommand c s1) == isJust (co
 -- Ctrl+Del deletes elements after confirmation.
 -- Ctrl+Z and Ctrl+Shift+Z undo and redo graph edits. A focused text input keeps its own text keys.
 -- F2 renames, or edits a note. Ctrl+T finds an element. F3 and Shift+F3 go to the next and previous occurrence.
--- F12 is Go to Source.
+-- F12 is Open in….
 data Key = Del | CtrlDel | CtrlZ | CtrlShiftZ | F2 | CtrlT | F3 | ShiftF3 | F12 | CtrlC | CtrlX | CtrlV deriving Eq
 data KeyEffect
   = RemovePlacements | DeleteAfterConfirmation | UndoGraphEdit | RedoGraphEdit | RenameOrEditNote | FindElement
-  | NextOccurrence | PreviousOccurrence | GoToSource | CopyClip | CutClip | PasteClip
+  | NextOccurrence | PreviousOccurrence | OpenInPane | CopyClip | CutClip | PasteClip
   deriving Eq
 keyEffect :: Key -> KeyEffect
 keyEffect k = case k of
@@ -536,7 +536,7 @@ keyEffect k = case k of
   CtrlT -> FindElement
   F3 -> NextOccurrence
   ShiftF3 -> PreviousOccurrence
-  F12 -> GoToSource
+  F12 -> OpenInPane
   CtrlC -> CopyClip
   CtrlX -> CutClip
   CtrlV -> PasteClip
@@ -629,26 +629,43 @@ followUpCommand _ _ _ = Nothing
 nodeShapeTargetClass :: [(String, Iri)] -> String -> (String -> Iri) -> Iri   -- known classes by name, accepted name, mint
 nodeShapeTargetClass known name mint = fromMaybe (mint name) (lookup name known)
 
--- 4.7 Go to Source ------------------------------------------------------------------
+-- 4.7 Open in --------------------------------------------------------------------
 
--- | Go to Source accepts one item of any kind. Several items give no action.
--- A canvas placement resolves to its element. A placement row resolves to the placement.
--- An empty selection on a canvas resolves to its view: Go to Source opens the view file.
--- Find the subject statements, or the connector triple. Without subject statements, find statements with the element as object.
--- One file opens directly. Several files give a picker with the first statement line of each file.
--- The file opens as text at that line. An unknown line opens the file without a position.
-sourceTarget :: Maybe Element -> Pane -> [Element] -> Maybe Element   -- the view of the canvas, pane, selected items
-sourceTarget (Just v) OnCanvas [] = Just v
-sourceTarget _ OnCanvas [x] = Just (if isPlacement x then elementOf x else x)
-sourceTarget _ (InListing _) [x] = Just x
-sourceTarget _ _ _ = Nothing
-data SourceOpen = OpenAt FilePath (Maybe Int) | PickFile [(FilePath, Maybe Int)] deriving Eq
-sourceOpen :: [(FilePath, Maybe Int)] -> Maybe SourceOpen   -- each file with its first statement line
-sourceOpen [] = Nothing
-sourceOpen [(f, l)] = Just (OpenAt f l)
-sourceOpen fs = Just (PickFile fs)
-law_severalItemsNoSource :: Maybe Element -> Pane -> [Element] -> Bool
-law_severalItemsNoSource v p xs = length xs > 1 ==> sourceTarget v p xs == Nothing
+-- | Open in… (F12) is the one operation that opens an element in another pane. It accepts one item of any kind.
+-- Reason: one operation per intent. Reveal in Explorer, Go to Source, Show in a View and Open View did the same with four names.
+-- A canvas placement resolves to its element. A placement row resolves to the placement. A view reference resolves to its view.
+-- An empty selection on a canvas resolves to its view.
+-- Targets: Source of each file with statements of the element, at its position; Model of each of those files with a row of it;
+-- Canvas of each view that places it (a view: its own canvas). The current pane is not a target.
+-- One target opens at once. Several targets give a pick: the pane name, then the file and line or the view name.
+-- Source opens at the statement: a relation at its object, a property shape at its own block, else at its entry in its node shape.
+-- A Turtle file gives the position from its syntax tree. Other formats give the line of a text search. An unknown position opens the file.
+-- Model reveals the row; several rows give a pick of paths. Canvas selects and centers the placement.
+-- Double-click or Enter on an element row of the Model explorer runs Open in….
+data OpenTarget = SourceAt FilePath (Maybe (Int, Int)) | ModelOf FilePath | CanvasOf Id deriving Eq
+data Here = HereSource FilePath | HereModel FilePath | HereCanvas Id | Elsewhere deriving Eq
+openTarget :: Maybe Element -> Pane -> [Element] -> Maybe Element   -- the view of the canvas, pane, selected items
+openTarget (Just v) OnCanvas [] = Just v
+openTarget _ OnCanvas [x] = Just (if isPlacement x then elementOf x else x)
+openTarget _ (InListing _) [x] = Just x
+openTarget _ _ _ = Nothing
+data OpenStep = OpenNow OpenTarget | PickTarget [OpenTarget] deriving Eq
+openIn :: Here -> [OpenTarget] -> Maybe OpenStep
+openIn here ts = case filter (not . isHere) ts of
+    [] -> Nothing
+    [t] -> Just (OpenNow t)
+    rest -> Just (PickTarget rest)
+  where
+    isHere (ModelOf f) = here == HereModel f
+    isHere (CanvasOf v) = here == HereCanvas v
+    isHere _ = False
+law_severalItemsNoOpen :: Maybe Element -> Pane -> [Element] -> Bool
+law_severalItemsNoOpen v p xs = length xs > 1 ==> openTarget v p xs == Nothing
+law_openInSkipsCurrent :: FilePath -> [OpenTarget] -> Bool
+law_openInSkipsCurrent f ts = case openIn (HereModel f) ts of
+    Just (OpenNow t) -> t /= ModelOf f
+    Just (PickTarget xs) -> ModelOf f `notElem` xs
+    Nothing -> True
 
 -- 4.8 Delete confirmation -----------------------------------------------------------
 
@@ -713,7 +730,7 @@ shownBounds elapsed kept server = case kept of
 -- 5.3 Halo --------------------------------------------------------------------------
 
 -- | Halo. One selected item shows its halo. Several show a shared frame with Collect, Remove and More actions.
--- Card controls: Reveal, Remove, More actions, incoming and outgoing expansion, applicable-shape expansion, incoming and outgoing creation (+).
+-- Card controls: Open in, Remove, More actions, incoming and outgoing expansion, applicable-shape expansion, incoming and outgoing creation (+).
 -- The direction of a creation control decides which end is the selected card.
 -- Applicable-shape expansion uses the shared checked-node relation, including direct targets and positive node constraints.
 -- A node-shape card has a checked-instance expansion control. Both controls exclude cards already shown.
@@ -723,7 +740,7 @@ shownBounds elapsed kept server = case kept of
 data HaloItem = HaloCard | HaloNote | HaloFrame | HaloReference | HaloEntityGroup | HaloSeveral
 haloControls :: HaloItem -> [String]
 haloControls h = case h of
-  HaloCard -> ["Reveal", "Remove", "More actions", "Expand incoming", "Expand outgoing", "Expand applicable shapes", "Create incoming", "Create outgoing"]
+  HaloCard -> ["Open in", "Remove", "More actions", "Expand incoming", "Expand outgoing", "Expand applicable shapes", "Create incoming", "Create outgoing"]
   HaloNote -> ["Remove", "More actions", "Arrow"]
   HaloFrame -> ["Remove", "More actions"]
   HaloReference -> ["Remove", "More actions"]
@@ -1238,7 +1255,7 @@ law_uncovered e = all (\st -> not (any (`covers` st) (applies e))) (uncovered e)
 -- 8.3 Properties layout -------------------------------------------------------------
 
 -- | Properties layout. The head shows kind and name, then an action toolbar.
--- Toolbar icons: navigation, then explorer, source and name actions. A "More actions" menu lists all applicable actions and keys.
+-- Toolbar icons: Open in and the next and previous view, then name actions. A "More actions" menu lists all applicable actions and keys.
 -- Delete from Model is the last menu item. Violations show in a box below the toolbar.
 -- A field label shows its RDF term at the right. Long help is a tooltip on a "?" icon.
 -- Node shape: shape fields, then properties (path, target, cardinality, required ones marked), then Reads as (closed by default).
@@ -1302,40 +1319,44 @@ editorFor f Nothing = AsText f
 
 -- 8.5 Model explorer ----------------------------------------------------------------
 
--- | Model explorer (ADR 0006): each folder is a SPARQL query, run when the user opens it.
--- A closed folder shows a count. An open folder sorts rows by label and reads pages of 100. A last "N more" row reads the next page.
--- Roots: the shared thing and shape types, then Relations and Concepts. Configured hidden types have no folder.
--- Class folders show direct subclasses and written members. An element with several types has a row under each.
--- Labeled subjects without a type go under rdfs:Resource. Target shapes go under sh:NodeShape, not under their target class.
--- Relation folders show data statements between things, without the shared excluded predicates.
--- Concepts follow schemes and broader/narrower links. Reveal opens a chosen path. Ordinary selection opens no folder.
--- Delete Elements Not Placed in a View walks the instances and relations of a folder at all depths.
--- It tests own placements, not parts. It confirms before deletion.
--- Limit: logical constraints have no rows. A repeated ancestor key stops expansion.
+-- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/explorer). The core has no section rules.
+-- Reason: a new vocabulary (SKOS) adds a plugin, not a special case in the explorer.
+-- A plugin query runs only when a folder opens. A folder shows its child count and reads pages of 100. A last "Show more" row reads the next page.
+-- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in scope is not shown.
+-- Classes: each object of rdf:type in scope, nested by written rdfs:subClassOf, then its direct instances. No inference, no hidden types.
+-- Shapes: each node shape (typed sh:NodeShape, or a subject of sh:property), then its property shapes in sh:order, then by name.
+-- A property shape row needs the node shape and the property shape in scope. Their statements can be in different files.
+-- Reason: a property shape that another file states is a reference in this file (the scope rule below).
+-- Classes include the vocabulary of view files (view:Placement). A data file has none: only its own subjects are in scope.
+-- An IRI has a row in each section that has it (a node shape is also an instance of sh:NodeShape). Reason: the data shows as written.
+-- A class row and a node shape row are also elements: their selection is the class or the shape.
+-- Rows have no view state and no violation counts. Properties shows the violations of the selected element.
+-- Open in → Model reveals a chosen path. Ordinary selection opens no folder. A repeated ancestor key stops expansion.
+-- Delete Elements Not Placed in a View walks the elements of a folder at all depths. It tests own placements and confirms first.
 pageSize :: Int
 pageSize = 100
-folderPage :: Int -> [String] -> ([String], Maybe Int)   -- pages read, row labels: shown rows and the "N more" count
+folderPage :: Int -> [String] -> ([String], Maybe Int)   -- pages read, row labels: shown rows and the "more" count
 folderPage pages rows =
   let sorted = sortOn id rows
       shown = take (pages * pageSize) sorted
       rest = length sorted - length shown
   in (shown, if rest > 0 then Just rest else Nothing)
-folderOf :: [Iri] -> Bool -> [Iri]                  -- types of a subject, it has a label: the class folders with a row for it
-folderOf [] True = ["rdfs:Resource"]
-folderOf ts _ = ts
+folderOf :: [Iri] -> [Iri]                          -- written types of a subject: the class folders with a row for it
+folderOf ts = ts
 notPlaced :: Element -> Bool                        -- Delete Elements Not Placed in a View: own placements only
 notPlaced e = null (placements e)
 
 -- | Model opens a document tree for a file. Reopening that presentation focuses the same tree.
 -- No global Model explorer appears in the default layout. Search remains workspace-wide.
--- Reveal in Explorer selects a source file, opens its Model document, then reveals the resource.
--- Show in View instead navigates the resource to a canvas that contains it.
+-- Open in… goes between the Model document, the Source and the Canvas of an element (§4.7).
 -- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
 -- Reason: presentation navigation must not change storage or explorer contents in this phase.
 -- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
--- Fuzzy filtering matches characters in order, ranks word starts and consecutive matches, and highlights matching characters.
--- Ancestors remain visible. Clearing the filter restores expansion state. The filter does not change drag membership.
--- Typing on a focused row uses the same filter input. Nonmatching branches disappear. Escape clears the input and restores the tree.
+-- The filter shows one flat list of the element rows in scope whose name matches, best first, at most one page.
+-- Each row says where it is (its classes, its node shape). Reason: a filtered tree must read every folder of the file.
+-- Fuzzy matching takes characters in order, ranks word starts and consecutive matches, and highlights matching characters.
+-- Clearing the filter restores the tree and its expansion state. The filter does not change drag membership.
+-- Typing on a focused row uses the same filter input. Escape clears the input and restores the tree.
 -- Reason: a second highlight-only search leaves nonmatching rows visible and gives conflicting results.
 data ExplorerFilterInput = RowTyping String | FilterTyping String
 explorerFilterText :: ExplorerFilterInput -> String
@@ -1362,7 +1383,7 @@ law_folderDragAll selected descendants hidden =
 -- Facets: text, type, Linked to. All set facets must match. Text matches every word in the local name or in a literal.
 -- Linked to gives the other ends of the statements of an element, optionally by predicate and direction. Statements are not results.
 -- Each facet value shows its count with the other facets applied. At most 200 results, sorted by label.
--- Double-click shows the element. A drag of a property result places its owner shape. Find Element (Ctrl+T) uses the same search.
+-- Double-click runs Open in… (§4.7). A drag of a property result places its owner shape. Find Element (Ctrl+T) uses the same search.
 data Thing = Thing { thingLabel :: String, thingTexts :: [String], thingTypes :: [Iri], thingLinked :: [Iri] }
 data Facets = Facets { textFacet :: Maybe String, typeFacet :: Maybe Iri, linkedFacet :: Maybe Iri }
 matches :: Facets -> Thing -> Bool
@@ -1432,7 +1453,7 @@ groupRowSelects r = case r of
 -- 8.10 Problems ---------------------------------------------------------------------
 
 -- | Problems. A click on a row selects its focus instance and reveals Properties with its violations. Focus stays in Problems.
--- Double-click or Enter also shows the instance in a view. An instance row has the context menu of a Model explorer row
+-- Double-click or Enter runs Open in… (§4.7). An instance row has the context menu of a Model explorer row
 -- and drags its instance to a view. Problems and Properties share one report reader. Report statements are never data.
 -- Limit: markers use line 1, column 1. Validation gives no text positions.
 markerPosition :: (Int, Int)
@@ -1616,7 +1637,7 @@ documentsIn = manifestOnly
 highlight = manifestOnly
 setStyle = manifestOnly
 setGeometry = manifestOnly
-goToSource = manifestOnly
+openInPane = manifestOnly
 arity = manifestOnly
 appliesTo = manifestOnly
 commandsOf = manifestOnly

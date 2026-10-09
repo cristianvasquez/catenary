@@ -315,7 +315,7 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     await row('Catalogue', 'dataset').locator('.row-card', { hasText: '0..*' }).waitFor();
     await settle();
 
-    // A property shape is one selection in the canvas and the Model explorer: Reveal in Explorer on a row selects its tree row; a click on
+    // A property shape is one selection in the canvas and the Model explorer: Open in… → Model on a row selects its tree row; a click on
     // the tree row shows it in Properties.
     const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: label }).first();
     const propsTitle = text => page.locator('.catenary-props .catenary-head .title:visible', { hasText: new RegExp(`^${text}$`) });
@@ -326,8 +326,9 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
       .filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp(`^${name}$`) }) });
     await row('Catalogue', 'dataset').locator('.row-path').click();
     await row('Catalogue', 'dataset').locator('.row-path').click({ button: 'right' });
-    await menuItem('Reveal in Explorer').click();
-    // The node shape is under sh:NodeShape only (spec/ui-manifest.hs: target shapes are not under their target class): one path, no picker.
+    await menuItem('Open in…').click();
+    // Source and Model (the canvas is the current pane). The property shape has one row: under its node shape in Shapes. One path, no picker.
+    await page.locator('.quick-input-list .monaco-list-row').filter({ has: page.locator('.label-name', { hasText: /^Model$/ }) }).click();
     await treeRow('dcat:dataset').and(page.locator('.theia-mod-selected')).waitFor();
     await canvasTab.click();
     await card('Software agent').locator('.shape-name').click();
@@ -713,22 +714,49 @@ test('browser: file presentations use document panes, focus existing panes and r
   assert.equal(viewModel, modelId(viewFile));
   assert.equal(open(viewFile, 'Canvas', true), canvasId);
   assert.deepEqual(cli('ui').selection, selection);
-  // The source-file reveal replaces the removed global explorer navigation.
+  // law_openInSkipsCurrent: Open in… is one action for every pane. It leaves out the current pane, opens one target at once, asks between several.
   assert.equal(cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Reveal class', targetClass: 'urn:test:Reveal' })).result.ok, true);
   const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Reveal', label: 'Reveal me' })).result;
   assert.equal(instance.ok, true);
+  let source;
+  for (let i = 0; i < 20 && !source?.line; i++) {
+    source = cli('rpc', 'openTargets', JSON.stringify(instance.id)).result.find(t => t.presentation === 'Source');
+    if (!source?.line) await page.waitForTimeout(150);
+  }
+  assert.ok(source?.line, 'the saved file has the instance');
   open(data, 'Model');
-  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(instance.id)}] }); return true`);
-  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('');
-  assert.equal(cli('run', 'catenary.selectInExplorer').status, 'done');
-  assert.equal(current(), modelId(data));
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
-  assert.equal(await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).count(), 1);
-  // Tree Enter still navigates a resource to a containing canvas, independently of file presentation.
+  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('reveal me');
+  const revealRow = tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ });
+  const selectRow = async () => {
+    await revealRow.click();
+    await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
+  };
+  // From its Model pane, before any view places it: Source is the only other pane. A double-click opens it at the statement.
+  await selectRow();
+  await revealRow.dblclick();
+  for (let i = 0; i < 40 && current() !== sourceId; i++) await page.waitForTimeout(100);
+  assert.equal(current(), sourceId);
+  assert.deepEqual(cli('eval', 'const c = ctx.shell.currentWidget.editor.cursor; return [c.line, c.character]'), [source.line - 1, source.column - 1]);
+  // Placed in a view: Enter in the tree asks between Source and Canvas.
   assert.equal(cli('exec', JSON.stringify({ kind: 'addToView', view, ids: [instance.id], at: { x: 0, y: 0 } })).result.ok, true);
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).click();
+  open(data, 'Model');
+  await selectRow();
   await page.keyboard.press('Enter');
+  const picks = page.locator('.quick-input-list .monaco-list-row');
+  const pickLabels = () => picks.evaluateAll(rows => rows.map(r => r.querySelector('.label-name')?.textContent).sort());
+  await picks.first().waitFor();
+  assert.deepEqual(await pickLabels(), ['Canvas', 'Source']);
+  await picks.filter({ has: page.locator('.label-name', { hasText: /^Canvas$/ }) }).first().click();
   await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).waitFor();
+  // On the canvas, F12 on the selected card asks between Source and Model. Model reveals the row.
+  assert.equal(current(), canvasId);
+  await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).locator('.card-name').first().click();
+  await page.keyboard.press('F12');
+  await picks.first().waitFor();
+  assert.deepEqual(await pickLabels(), ['Model', 'Source']);
+  await picks.filter({ has: page.locator('.label-name', { hasText: /^Model$/ }) }).first().click();
+  await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
+  assert.equal(current(), modelId(data));
   // The ordinary shell layout can move the Model document into a vertical split.
   open(data, 'Source');
   cli('eval', `const all = ctx.shell.getWidgets('main'); const w = all.find(w => w.id === ${JSON.stringify(modelId(data))}); const ref = all.find(w => w.id === ${JSON.stringify(sourceId)}); ctx.shell.addWidget(w, { area: 'main', mode: 'split-bottom', ref }); await ctx.shell.activateWidget(w.id); return true`);
@@ -775,13 +803,16 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
     return panel;
   };
   const tree = await openTree('data.ttl');
-  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
-  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).count(), 0);
-  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).locator('mark').count(), 4);
-  const key = 'class:urn:test:Transfer';
-  const folderName = cli('rpc', 'explorerChildren', 'null', 'null', JSON.stringify(source)).result.find(r => r.key === key).name;
-  const folder = tree.locator('.theia-TreeNode').filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp('^' + folderName + '$') }) }).first();
+  const filterOf = panel => panel.getByRole('textbox', { name: 'Filter model elements', exact: true });
+  const name = text => page.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + text + '$') });
+  const row = (panel, text) => panel.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + text + '$') });
+  const nodeOf = (panel, text) => panel.locator('.theia-TreeNode').filter({ has: name(text) }).first();
+  // The sections of the plugins: the class folder is in Classes. A folder drag places all its instances.
+  await nodeOf(tree, 'Classes').locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
+  const key = 'rdfs/class:urn:test:Transfer';
+  const folderName = cli('rpc', 'explorerChildren', JSON.stringify('rdfs/classes'), JSON.stringify(source)).result.rows.find(r => r.key === key).name;
+  const folder = nodeOf(tree, folderName);
+  await folder.waitFor();
   const transfer = await page.evaluateHandle(() => new DataTransfer());
   await folder.dispatchEvent('dragstart', { dataTransfer: transfer });
   const payload = await transfer.evaluate(d => JSON.parse(d.getData('application/x-catenary-explorer')));
@@ -790,34 +821,35 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
   await page.locator('svg.sprotty-graph:visible').dispatchEvent('drop', { dataTransfer: transfer, clientX: 650, clientY: 350 });
   await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Hidden member' }).waitFor();
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
+  // The filter: one flat list of the matching elements of the file.
+  await filterOf(tree).fill('albe');
+  await row(tree, 'Alpha Beta').waitFor();
+  assert.equal(await row(tree, 'Hidden member').count(), 0);
+  assert.equal(await row(tree, 'Alpha Beta').locator('mark').count(), 4);
   // Reopening uses the existing widget and retains its filter.
   const reopened = await openTree('data.ttl');
-  assert.equal(await reopened.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
-  // Typing while a row has focus must use the same filter, not Theia's highlight-only search.
-  const filter = reopened.getByRole('textbox', { name: 'Filter model elements', exact: true });
+  const filter = filterOf(reopened);
+  assert.equal(await filter.inputValue(), 'albe');
+  // Without the filter the tree has its folders again. Typing while a row has focus uses the same filter.
   await filter.fill('');
-  await folder.locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).click();
+  await nodeOf(reopened, folderName).locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
+  await row(reopened, 'Hidden member').waitFor();
+  await row(reopened, 'Alpha Beta').click();
   await page.keyboard.type('albe');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor({ state: 'hidden', timeout: 3000 });
+  await row(reopened, 'Hidden member').waitFor({ state: 'hidden', timeout: 3000 });
   assert.equal(await filter.inputValue(), 'albe');
   await filter.fill('zzzz-no-such-element');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor({ state: 'hidden' });
-  // The filtered tree updates in steps: wait for its last row to go, then check. Rows left after the wait are an explorer defect.
-  const reopenedId = 'catenary-file-explorer:' + path.join(workspace, 'data.ttl');
-  await page.waitForFunction(id => document.getElementById(id)?.querySelectorAll('.catenary-tree-name').length === 0, reopenedId, { timeout: 5000 })
-    .catch(() => undefined);
+  await row(reopened, 'Alpha Beta').waitFor({ state: 'hidden' });
   assert.equal(await reopened.locator('.catenary-tree-name').count(), 0);
   await page.keyboard.press('Escape');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
+  await row(reopened, 'Hidden member').waitFor();
   assert.equal(await filter.inputValue(), '');
   const target = await openTree('shapes.ttl');
   await target.locator('.catenary-file-tree').dispatchEvent('drop', { dataTransfer: transfer });
   await page.getByText(`Move 2 elements from ${source} to ${destination}? Only statements from the source file move.`, { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Move', exact: true }).click();
-  await target.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
-  await target.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
+  await filterOf(target).fill('albe');
+  await row(target, 'Alpha Beta').waitFor();
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result, []);
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(destination)).result.sort(), [first, second].sort());
   assert.equal(cli('rpc', 'undo').result.ok, true);

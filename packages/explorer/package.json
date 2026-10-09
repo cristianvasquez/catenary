@@ -1,0 +1,15 @@
+{
+  "name": "@catenary/explorer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Model explorer plugin contract: rows, sections and the query port that a host gives to each plugin.",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

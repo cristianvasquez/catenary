@@ -35,7 +35,7 @@ import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 -- ADR 0004  Files have no roles: what a file contains comes from its triples. §2.
 -- ADR 0005  Electron app next to the browser app. One process, one profile, one ModelStore per workspace; a second window
 --           starts a new process (scripts/desktop.sh, electron-main-module.ts). Headless Electron gives no working window.
--- ADR 0006  Each Model explorer folder is one SPARQL query, run when it opens. spec/ui-manifest.hs §8.5.
+-- ADR 0006  The Model explorer shows the sections of explorer plugins; a plugin query runs when a folder opens. spec/ui-manifest.hs §8.5.
 -- ADR 0007  The frontend holds UI state only; panels read from backend queries. §11.
 -- ADR 0011  View files are TriG; placement IRIs derive from what they place. §2.3, §4.
 -- ADR 0012  No read model of the whole dataset; request-scoped read models from shared SPARQL rules. §3.3, §11.
@@ -1155,7 +1155,7 @@ shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes t
 -- The bundled backend runs shacl-engine in a worker thread. Without the worker file, validation runs in the backend thread.
 -- The report goes to urn:trellis:validation: derived, not saved, not in undo, not in the dirty comparison.
 -- A result keeps focus, source shape, path, severity, component and message. A complex path can have no simple path field.
--- Explorer type folders and ordinary reads exclude the report graph.
+-- Explorer plugin queries and ordinary reads exclude the report graph.
 validate :: IO ()
 validationDelayMs :: Int
 validationDelayMs = 250
@@ -1304,7 +1304,7 @@ canWrite f _ = writable f
 -- Backend queries supply panel data. The frontend owns selection, expansion, viewport and transient input (ADR 0007).
 data QueryGroup = PanelQueries | ViewQueries | FormQueries | SelectionQueries | PromptQueries deriving (Eq, Enum, Bounded)
 queries :: QueryGroup -> [String]
-queries PanelQueries = ["explorerChildren", "explorerPaths", "explorerElements", "properties", "outline", "problems", "search", "links"]
+queries PanelQueries = ["explorerChildren", "explorerSearch", "explorerPaths", "explorerElements", "properties", "outline", "problems", "search", "links"]
 queries ViewQueries = ["viewLabels", "view", "viewGesture", "appearance", "occurrence", "showing", "unplaced"]
 queries FormQueries = ["formData", "shapesText", "shapes"]
 queries SelectionQueries = ["selected", "selectionActions", "sources"]   -- selectionActions also gives the cards of Show Details

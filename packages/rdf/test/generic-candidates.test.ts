@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ClassDef, Classes, InstanceProperties, NS, RelationDef, classKey, iriId } from '@catenary/model';
+import { ClassDef, Classes, InstanceProperties, NS, RelationDef, iriId } from '@catenary/model';
 import { emptyGraph, load } from './helpers';
-import { explorerChildren } from '../src/explorer';
 import { outline } from '../src/outline';
 import { properties } from '../src/properties';
 import { project } from './project-full';
@@ -92,28 +91,6 @@ describe('generic thing reads for pickers and forms', () => {
         expect(s.candidates.map(c => c.label)).toEqual(['Gamma', 'unnamed target 1']);
         const zero: Classes = { classes: [cls('urn:Target', [{ ...relation, maxCount: 0 }])] };
         expect(sections(await pick('in', 'urn:a', undefined, zero))[0].candidates).toEqual([]);
-    });
-
-    it('explorer reads typed members and subclass folders without Doc members', async () => {
-        const g = await load(fixture);
-        const ctx = { g, meta, shapes: project(emptyGraph()).doc.shapes, byTerm: new Map<string, string>(), placements: new Map<string, Set<string>>(), content: {} };
-        const root = explorerChildren(ctx);
-        expect(root.find(r => r.key === classKey('urn:Target'))?.badge).toBe('4');
-        const children = explorerChildren(ctx, classKey('urn:Target'));
-        expect(children.filter(r => r.kind === 'instance').map(r => r.name)).toEqual(['Alpha', 'Beta', 'Gamma', 'unnamed target 1']);
-        expect(children.find(r => r.key === classKey('urn:Child'))?.badge).toBe('1');
-    });
-
-    it('SKOS folders use written types and ignore report-only membership', async () => {
-        const g = await load(`${prefixes}
-            <urn:types> { <urn:scheme> a <${NS.skos}ConceptScheme> . <urn:concept> a <${NS.skos}Concept> . }
-            <urn:content> { <urn:scheme> rdfs:label "Scheme" . <urn:concept> rdfs:label "Concept" ; <${NS.skos}inScheme> <urn:scheme> . }
-            <urn:trellis:validation> { <urn:ghost> a <${NS.skos}Concept> ; <${NS.skos}inScheme> <urn:scheme> . }
-        `);
-        const ctx = { g, meta: { classes: [] }, shapes: project(emptyGraph()).doc.shapes, byTerm: new Map<string, string>(), placements: new Map<string, Set<string>>(), content: {} };
-        expect(explorerChildren(ctx).find(r => r.key === 'concepts')?.badge).toBe('1');
-        expect(explorerChildren(ctx, 'concepts').map(r => [r.name, r.badge])).toEqual([['Scheme', '1']]);
-        expect(explorerChildren(ctx, 'scheme:urn:scheme').map(r => r.name)).toEqual(['Concept']);
     });
 
     it('Properties reads split statements and shared labels without Doc membership', async () => {

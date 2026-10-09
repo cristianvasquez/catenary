@@ -184,7 +184,7 @@ export class SearchWidget extends ReactWidget {
                     className={`row${selected.has(h.id) ? ' selected' : ''}`}
                     title={h.iri}
                     onClick={e => this.click(e, h.id, rows)}
-                    onDoubleClick={() => this.editors.show(h.id)}
+                    onDoubleClick={() => this.commands.executeCommand('catenary.openIn', { ids: [h.id] })}
                     onContextMenu={e => this.menu(e, h.id, rows)}
                     onDragStart={e => this.drag(e, h, selected.has(h.id) ? chosen : [h])}>
                     <span className='name'>{h.label}</span>

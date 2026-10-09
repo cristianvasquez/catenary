@@ -17,7 +17,7 @@ export function isActionTarget(arg: unknown): arg is ActionTarget {
 }
 
 /** Actions that act on the view itself when nothing is selected on its canvas (spec/ui-manifest.hs §4). */
-const VIEW_AS_ITEM = ['catenary.goToSource'];
+const VIEW_AS_ITEM = ['catenary.openIn'];
 
 /** An empty selection on a canvas: the view as the one item (a listing selection of the view), for the actions of VIEW_AS_ITEM. */
 export function viewAsItem(id: string, t: ActionTarget): ActionTarget {

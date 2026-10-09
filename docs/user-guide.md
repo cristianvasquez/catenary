@@ -38,7 +38,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 
 - Create a view: Model → New View, the `+` after the editor tabs, or New View on a folder of the navigator. Type the name of the view file. The view opens with the label "unnamed view N", and no other dialog appears. Rename it when you want (F2, or Properties): the file name stays.
 - Duplicate a view: Duplicate View in the view actions. Type the name of the file of the copy (proposed: `<name>-copy` next to the source). The copy opens as "<label> copy", with no other dialog.
-- Open a view: select its file in the navigator, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
+- Open a view: select its file in the navigator. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
 - Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
 - Open a file tree: open a model RDF file, or select **Open as… → Model** from another presentation.
@@ -49,7 +49,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Move elements: drag from one file tree to another. Confirm the element count and destination. Only statements supplied by the source file move. Other files and resource IRIs stay unchanged. Undo restores the transfer.
 - Move a shape with its structural nodes. If a nested shape has an unselected parent, select that parent before moving it. View files are not file-move destinations.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
-- Card controls (halo): Reveal, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
+- Card controls (halo): Open in, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
 - Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group; its relations and arrows end at the group.
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
@@ -63,6 +63,8 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Use **Open as…** or **Open beside…** in a pane toolbar or context menu.
 - Every model RDF file offers Source and Model. A view also offers Canvas. The workspace file also offers Settings.
 - The workspace Model pane uses the current explorer query. Workspace metadata stays outside the model index.
+- A Model pane has a section for each vocabulary: **Classes** (classes, subclasses and instances as written) and **Shapes** (node shapes and their property shapes). A folder shows 100 rows at a time: click **Show more** for the next rows.
+- Type in the filter to get one list of the matching elements of the file. Each row says where it is. Escape clears the filter.
 
 ### View notes
 
@@ -94,7 +96,7 @@ Notes save automatically after a short pause in typing. Close the editor when yo
 | Key | Effect |
 |---|---|
 | F2 | Rename the selected element, or edit a note |
-| F12 | Go to Source: open the file of the element at its line. With nothing selected on a canvas: the view file |
+| F12 | Open in…: open the element in another pane: Source at its statement, Model at its row, or a Canvas that shows it. With nothing selected on a canvas: the view. Double-click or Enter on a Model, Search or Problems row does the same |
 | Ctrl+T | Find an element |
 | F3 / Shift+F3 | Next / previous occurrence of the element in views |
 | Del | Remove the placement from the view. The model does not change |

@@ -219,8 +219,13 @@ importers:
         specifier: ^22
         version: 22.20.4
 
+  packages/explorer: {}
+
   packages/model:
     dependencies:
+      '@catenary/explorer':
+        specifier: workspace:*
+        version: link:../explorer
       '@catenary/shacl':
         specifier: workspace:*
         version: link:../shacl
@@ -234,12 +239,18 @@ importers:
 
   packages/rdf:
     dependencies:
-      '@catenary/shacl':
+      '@catenary/explorer':
         specifier: workspace:*
-        version: link:../shacl
+        version: link:../explorer
       '@catenary/model':
         specifier: workspace:*
         version: link:../model
+      '@catenary/rdfs':
+        specifier: workspace:*
+        version: link:../rdfs
+      '@catenary/shacl':
+        specifier: workspace:*
+        version: link:../shacl
       canonical-md:
         specifier: ^0.3.0
         version: 0.3.0
@@ -319,7 +330,17 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.6)(terser@5.51.2)(yaml@2.9.1)
 
-  packages/shacl: {}
+  packages/rdfs:
+    dependencies:
+      '@catenary/explorer':
+        specifier: workspace:*
+        version: link:../explorer
+
+  packages/shacl:
+    dependencies:
+      '@catenary/explorer':
+        specifier: workspace:*
+        version: link:../explorer
 
 packages:
 
