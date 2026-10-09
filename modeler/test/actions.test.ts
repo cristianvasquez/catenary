@@ -168,9 +168,13 @@ it('Propose Missing Shapes shows the new shapes in a new view: free label, cards
 
 it('openView: a view of the open workspace opens; else its workspace opens first; a view in no workspace gives a message', async () => {
     const labels: Record<string, string> = { here: 'Here' };
-    const open = vi.fn(async (file: string) => { labels.far = 'Far'; return { ok: true, file }; });
+    const open = vi.fn(async (file: string) => {
+        labels.far = 'Far';
+        model.snapshot = { file, dirty: false, warnings: ['far.ttl: unreadable'] };
+        return { ok: true, file };
+    });
     const model = {
-        isOpen: true, snapshot: { file: '/ws/workspace.trig', dirty: false },
+        isOpen: true, snapshot: { file: '/ws/workspace.trig', dirty: false, warnings: [] as string[] },
         service: { viewLabels: async () => ({ ...labels }), open },
         report: async (p: Promise<CommandResult>) => (await p).ok
     };
@@ -183,11 +187,12 @@ it('openView: a view of the open workspace opens; else its workspace opens first
     await actions.openView('far', '/other/workspace.trig');
     expect(open).toHaveBeenCalledWith('/other/workspace.trig');
     expect(editors.open).toHaveBeenLastCalledWith('far', 'activate', undefined);
+    expect(messages.warn).toHaveBeenLastCalledWith('1 warnings: far.ttl: unreadable');
     const options = { mode: 'reveal' as const, widgetOptions: { area: 'main' as const, mode: 'split-right' as const } };
     await actions.openView('here', '/ws/workspace.trig', options);
     expect(editors.open).toHaveBeenLastCalledWith('here', 'reveal', options);
     await actions.openView('lone');
-    expect(messages.warn).toHaveBeenCalledTimes(1);
+    expect(messages.warn).toHaveBeenCalledTimes(2);
     expect(editors.open).toHaveBeenCalledTimes(3);
 });
 

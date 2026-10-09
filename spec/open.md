@@ -95,7 +95,7 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 ## Verification gaps
 
-- **Latest verification (Open in…):** `CI=1 pnpm verify --no-build --e2e` passed check (10.6 s), test (740/740, 84.0 s) and browser tests (14/14, 175.2 s), after `pnpm build:browser`. Without `CI=1` (4 workers on 4 vCPUs), one unrelated test exceeded the 5 s limit in two runs (a different test each time). The Electron build did not run: the container has no `ffmpeg.node` for Electron. GHC was absent, so manifest typechecking was skipped. No browser test clicks the "Show more" row: backend paging has a unit test.
+- **Latest verification (Open in…, merged with main):** `CI=1 pnpm verify --no-build --e2e` passed check (12.0 s), test (740/740, 96.8 s) and browser tests (14/14, 188.1 s), after `pnpm build:browser`. Without `CI=1` (4 workers on 4 vCPUs), one unrelated test exceeded the 5 s limit in two runs (a different test each time). The Electron build did not run: the container has no `ffmpeg.node` for Electron. GHC was absent, so manifest typechecking was skipped. No browser test clicks the "Show more" row: backend paging has a unit test.
 
 - **Browser coverage:** the instance workflow was removed because it was flaky. Instance forms, notes, undo/redo and save lack that browser coverage. Preserve lower-layer tests. Add browser checks only for wiring and gestures.
 - **Untested interactions:** note editing across windows and viewport changes, concept-drag dimming, target-handle overlap, Linked to search and instance-violation display need current checks. Older manual results are not proof for the current build.
