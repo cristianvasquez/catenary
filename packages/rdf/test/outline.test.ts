@@ -53,7 +53,8 @@ function fromReadModel(doc: Doc, meta: Classes, view: View): OutlineNode[] {
 const count = (nodes: OutlineNode[], kind: OutlineNode['kind']): number => nodes.reduce((n, x) => n + (x.kind === kind ? 1 : 0) + count(x.children, kind), 0);
 const flat = (nodes: OutlineNode[]): OutlineNode[] => nodes.flatMap(n => [n, ...flat(n.children)]);
 const sameAsReadModel = () => {
-    for (const view of Object.values(docOf(store).views)) expect(store.outline(view.id)).toEqual(fromReadModel(docOf(store), store.meta, view));
+    const doc = docOf(store);
+    for (const view of Object.values(doc.views)) expect(store.outline(view.id)).toEqual(fromReadModel(doc, store.meta, view));
 };
 
 describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {

@@ -120,6 +120,7 @@ it('a text with a blank node is not patched (Catenary has no blank nodes; the ca
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 // Turtle files only: view files are TriG (*.view.trig) and a save writes them as a whole.
 const files = readdirSync(FIXTURES).filter(f => f.endsWith('.ttl')).map(f => FIXTURES + f);
+// Every triple of each fixture file: about 1000 parses for shapes.ttl. It can exceed the default timeout of 5 s on a busy machine.
 describe('text patch: every triple of the fixtures', () => {
     for (const file of files) {
         it(`remove and add back each triple of ${file.slice(FIXTURES.length)}`, async () => {
@@ -150,7 +151,7 @@ describe('text patch: every triple of the fixtures', () => {
             const sorted = stats.lines.sort((a, b) => a - b);
             console.log(`${file.slice(FIXTURES.length)}: ${stats.done}/${before.length} patched, refused ${JSON.stringify([...stats.refused])}, new lines per patch: median ${sorted[sorted.length >> 1] ?? 0}, max ${sorted[sorted.length - 1] ?? 0}`);
             expect(stats.done).toBe(before.length);
-        });
+        }, 30_000);
     }
 });
 

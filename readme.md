@@ -47,7 +47,6 @@ pnpm check            # package boundaries, Markdown links, CSS and TypeScript
 pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is absent
 pnpm build:browser    # the build without the Electron app
 node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
-node scripts/risk-profile.mjs   # the CI risk profile and job plan of the current branch against main
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
 ```

@@ -47,7 +47,8 @@ const elements = () => [
     ...Object.keys(doc.shapes.nodeShapes), ...Object.keys(doc.shapes.valueSets), ...Object.keys(doc.shapes.properties), ...Object.keys(doc.shapes.constraints)
 ];
 
-describe('request-scoped read models give the answers of the whole read model', () => {
+// Each test compares every element (and placement, view, pair) with the oracle: give each more than the default 5 s on a busy machine.
+describe('request-scoped read models give the answers of the whole read model', { timeout: 30_000 }, () => {
     it('the fixture has instances, relations, several views and shapes', () => {
         expect(Object.keys(doc.instances).length).toBeGreaterThan(5);
         expect(Object.keys(doc.relations).length).toBeGreaterThan(3);

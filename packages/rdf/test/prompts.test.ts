@@ -100,11 +100,12 @@ describe('dialogs and pickers of the user actions', () => {
 
     it('neighborChoices: the hidden neighbors of a card, the same counts as the halo', () => {
         let seen = 0;
-        for (const view of Object.values(docOf(store).views)) {
-            const counts = hiddenNeighborCounts(docOf(store), view);
-            for (const card of boxes(view, 'card').filter(c => docOf(store).instances[c.element])) {
+        const doc = docOf(store);
+        for (const view of Object.values(doc.views)) {
+            const counts = hiddenNeighborCounts(doc, view);
+            for (const card of boxes(view, 'card').filter(c => doc.instances[c.element])) {
                 for (const dir of ['in', 'out'] as const) {
-                    const hidden = hiddenNeighbors(docOf(store), view, card.element, dir);
+                    const hidden = hiddenNeighbors(doc, view, card.element, dir);
                     seen += hidden.length;
                     expect(counts.get(card.element)?.[dir] ?? 0).toBe(hidden.length);
                     const choices = store.neighborChoices(view.id, card.id, dir);

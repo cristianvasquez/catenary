@@ -1,18 +1,14 @@
 name: CI
 
-# Risk-based CI. The classify job gives the change a profile (scripts/risk-profile.mjs): docs < cosmetic < standard < critical <
-# platform. The profile selects the jobs. The only required check for a merge is `gate`.
-#  - pull_request: the jobs of the profile. `required` jobs block the merge. `optional` jobs (e2e, Windows, release dry run) run in
-#    parallel and report on the PR; the label risk:hold makes the gate wait for them. Labels risk:critical and risk:platform raise
-#    the profile. After a label change, re-run the workflow.
-#  - push to main: after the merge, the full set, every job required. The
-#    release (release.yml) publishes only a commit whose run on main passed.
-#  - schedule (nightly) and workflow_dispatch: the full set plus the Windows tests and the Linux and Windows packages.
-# Repository variables: CI_PROFILES=off runs the full set for every PR. CI_SHADOW_EVERY=N runs the full unit suite as a
-# non-blocking shadow job on every Nth PR of a reduced profile (default 1: every PR).
+# Each pull request and each push to main run the same jobs: `test` (static checks and unit tests) and `app` (browser build, CLI and
+# RPC smoke test, browser tests). The only required check for a merge is `gate`.
+# The nightly run, a manual run and a pull request with the label ci:full also run windows.yml: the Windows tests, the Electron build
+# and the Linux and Windows packages. Add the label to a change of dependencies, Electron or packaging.
+# A tag v* runs only release.yml. It requires a passed CI run on main for the commit.
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   schedule:
@@ -27,227 +23,53 @@ permissions:
   contents: read
 
 jobs:
-  classify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      statuses: write
-      pull-requests: read
-      issues: read
-    outputs:
-      profile: ${{ steps.classify.outputs.profile }}
-      reason: ${{ steps.classify.outputs.reason }}
-      base: ${{ steps.classify.outputs.base }}
-      fast: ${{ steps.classify.outputs.fast }}
-      check: ${{ steps.classify.outputs.check }}
-      affected: ${{ steps.classify.outputs.affected }}
-      unit: ${{ steps.classify.outputs.unit }}
-      build: ${{ steps.classify.outputs.build }}
-      electron: ${{ steps.classify.outputs.electron }}
-      cli: ${{ steps.classify.outputs.cli }}
-      e2e: ${{ steps.classify.outputs.e2e }}
-      windows_unit: ${{ steps.classify.outputs.windows_unit }}
-      packages: ${{ steps.classify.outputs.packages }}
-      release_dry: ${{ steps.classify.outputs.release_dry }}
-      shadow: ${{ steps.classify.outputs.shadow }}
-      hold: ${{ steps.classify.outputs.hold }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      # No install: these two scripts have no dependencies.
-      - name: Markdown links
-        run: node scripts/check-links.mjs
-      - name: Classify
-        id: classify
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          CI_PROFILES: ${{ vars.CI_PROFILES }}
-          CI_SHADOW_EVERY: ${{ vars.CI_SHADOW_EVERY }}
-        run: |
-          labels=''
-          case "$EVENT" in
-            # The checkout is the merge commit: its first parent is the base branch.
-            pull_request)
-              mode=pr base=HEAD^1
-              # The current labels, not the labels of the event: a re-run sees a label added later.
-              labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" --jq '[.[].name] | join(",")') ;;
-            push)
-              mode=main base="$BEFORE"
-              git cat-file -e "$base^{commit}" 2>/dev/null || base=HEAD^ ;;
-            *) mode=nightly base=HEAD ;;
-          esac
-          node scripts/risk-profile.mjs --mode "$mode" --base "$base" --labels "$labels"
-      - name: Record the profile on the PR commit
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-          PROFILE: ${{ steps.classify.outputs.profile }}
-          REASON: ${{ steps.classify.outputs.reason }}
-        run: |
-          description="$PROFILE: $REASON"
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=risk-profile \
-            -f description="${description:0:139}" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
-
-  # Style sheets, the browser form test with the CSS, and from `standard` on: import rules, typecheck, affected tests.
-  fast:
-    needs: classify
-    if: needs.classify.outputs.fast != ''
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: ./.github/actions/setup
-      - name: Style sheets
-        run: node scripts/check-css.mjs
-      - name: Browser form test (CSS on the SHACL form, no app build)
-        timeout-minutes: 3
-        run: |
-          pnpm -C packages/model -s build
-          CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
-          export CHROMIUM
-          node --test --test-name-pattern='node OR selector' scripts/e2e.cjs
-      - name: Check (import rules, typecheck)
-        if: needs.classify.outputs.check == 'true'
+      - name: Check (links, import rules, style sheets, typecheck)
         run: pnpm -s check
-      - name: Affected unit tests
-        if: needs.classify.outputs.affected != ''
-        run: node scripts/risk-profile.mjs --run-tests --base '${{ needs.classify.outputs.base }}'
+      - name: Unit tests
+        run: pnpm -s test
 
-  # The full unit suite in 3 shards: about 60 s each instead of 157 s in one job.
-  unit:
-    needs: classify
-    if: needs.classify.outputs.unit != ''
+  app:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
-    name: unit (${{ matrix.shard }}/3)
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-      - run: pnpm -s vitest run --shard=${{ matrix.shard }}/3
-
-  # Browser app build (plus the Electron build for platform changes and after the merge), then the CLI and RPC contract smoke test.
-  build:
-    needs: classify
-    if: needs.classify.outputs.build != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          install: ${{ needs.classify.outputs.electron == 'true' && 'full' || 'backend' }}
-      - name: Build
-        run: pnpm -s ${{ needs.classify.outputs.electron == 'true' && 'build' || 'build:browser' }}
-      - name: CLI and RPC contract smoke test
-        if: needs.classify.outputs.cli != ''
-        run: node scripts/smoke-cli.mjs
-
-  # Browser wiring of gestures and rendering. Its own build: it does not wait for the build job.
-  e2e:
-    needs: classify
-    if: needs.classify.outputs.e2e != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           install: backend
       - run: pnpm -s build:browser
-      - name: e2e
+      - name: CLI and RPC contract smoke test
+        run: node scripts/smoke-cli.mjs
+      - name: Browser tests
+        env:
+          # Two browser tests at a time on the 4 vCPUs of a runner (scripts/e2e.cjs).
+          E2E_CONCURRENCY: 2
         run: |
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
           pnpm -s e2e
 
-  windows-unit:
-    needs: classify
-    if: needs.classify.outputs.windows_unit != ''
+  windows:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci:full')
     uses: ./.github/workflows/windows.yml
     with:
       unit: true
-      package: false
-
-  # The Linux and Windows packages: build, layout check, start on Linux and on Windows.
-  packages:
-    needs: classify
-    if: needs.classify.outputs.packages != ''
-    uses: ./.github/workflows/windows.yml
-    with:
-      unit: false
       package: true
 
-  # All release targets, without a release (the release job runs only for a tag).
-  release-dry:
-    needs: classify
-    if: needs.classify.outputs.release_dry != ''
-    permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/release.yml
-
-  # Shadow run: the full unit suite for a PR whose profile runs less. Never blocks; a failure here is a classifier miss.
-  shadow:
-    needs: classify
-    if: needs.classify.outputs.shadow != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-      - run: pnpm -s vitest run
-
   gate:
-    needs: [classify, fast, unit, build, e2e, windows-unit, packages, release-dry, shadow]
+    needs: [test, app, windows]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            scripts/risk-profile.mjs
-            .node-version
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
+      # A skipped job (windows without ci:full) passes. A failed or cancelled job fails the gate.
       - env:
-          PLAN: ${{ toJSON(needs.classify.outputs) }}
           RESULTS: ${{ toJSON(needs) }}
-        run: node scripts/risk-profile.mjs --gate
-
-  # Weekly numbers of the pipeline in the job summary of the nightly run.
-  metrics:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      actions: read
-      issues: read
-      statuses: read
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci-metrics.mjs --days 14 >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$RESULTS"
+          ! jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$RESULTS" > /dev/null

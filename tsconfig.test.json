@@ -30,6 +30,7 @@
   "include": [
     "packages/*/test/**/*.ts",
     "packages/rdf/src/shims.d.ts",
-    "modeler/test/**/*.ts"
+    "modeler/test/**/*.ts",
+    "vitest.setup.ts"
   ]
 }
