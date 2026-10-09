@@ -9,7 +9,7 @@ import { Command } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { viewIdOfUri } from '../../common/protocol';
 import { CommandResult, Doc, EditCommand, emptyDoc, hiddenShapeSources, placementOfId, toSchema } from '@catenary/model';
-import { ChangeScope, ModelStore } from '@catenary/rdf';
+import { ChangeScope, ModelStore, tracer } from '@catenary/rdf';
 
 /** Session state: the view shown and the "show hidden edges" toggle. No dependencies on GLSP services (avoids DI cycles). */
 @injectable()
@@ -28,7 +28,7 @@ export class ViewState {
 
     /** Read the part of the model that this view shows. */
     load(): void {
-        this.part = this.store.viewDoc(this.viewId);
+        this.part = tracer.span('refresh', 'read view', () => this.store.viewDoc(this.viewId));
     }
 
     /** A change with this scope can change what the view shows. A shapes change: shape cards, and class names on instance cards. */
@@ -76,13 +76,15 @@ export class ViewSession {
     }
 
     /** Send the current graph and dirty state to the client. */
-    async refresh(): Promise<void> {
-        try {
-            const actions = await this.submission.submitModel('operation');
-            await this.dispatcher.dispatchAll(actions);
-        } catch (e) {
-            console.error('[catenary] refresh failed', e);
-        }
+    refresh(): Promise<void> {
+        return tracer.span('refresh', `view ${this.view?.label ?? this.viewId}`, async () => {
+            try {
+                const actions = await this.submission.submitModel('operation');
+                await this.dispatcher.dispatchAll(actions);
+            } catch (e) {
+                console.error('[catenary] refresh failed', e);
+            }
+        });
     }
 
     /**

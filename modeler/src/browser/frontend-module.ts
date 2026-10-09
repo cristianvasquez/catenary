@@ -64,6 +64,8 @@ import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget } from './prefixes/works
 import { WorkspaceFileQuestion } from './prefixes/workspace-placement';
 import { ModelPropertiesProvider, ModelPropertiesWidget } from './properties/properties-widget';
 import { SidePanelSizes } from './side-panel-sizes';
+import { FrontendTrace, tracedService } from './trace/frontend-trace';
+import { TRACE_ID, TraceContribution, TraceWidget } from './trace/trace-widget';
 import '../../css/modeler.css';
 
 export const ViewLanguage: GLSPDiagramLanguage = {
@@ -109,9 +111,11 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
 
         // Backend connection
         single(ModelWatcher);
+        single(FrontendTrace);
+        // The Trace panel measures the round trip of each request while it records (trace/frontend-trace.ts).
         bind(ModelServiceProxy).toDynamicValue(ctx => {
             const watcher = ctx.container.get(ModelWatcher);
-            return ServiceConnectionProvider.createProxy<ModelService>(ctx.container, MODEL_SERVICE_PATH, watcher);
+            return tracedService(ServiceConnectionProvider.createProxy<ModelService>(ctx.container, MODEL_SERVICE_PATH, watcher), ctx.container.get(FrontendTrace));
         }).inSingletonScope();
         single(ModelFrontend);
         single(SelectionModel);
@@ -211,6 +215,11 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
             child.bind(MarkerOptions).toConstantValue({ kind: 'problem' });
             return child.get(ModelProblemWidget);
         });
+
+        // Trace panel (bottom area): what the backend runs, while the panel is visible
+        transient(TraceWidget);
+        widgetFactory(TRACE_ID, TraceWidget);
+        bindViewContribution(bind, TraceContribution);
 
         // Command-line interface (scripts/catenary.mjs)
         bind(CliContainer).toDynamicValue(ctx => ctx.container).inSingletonScope();

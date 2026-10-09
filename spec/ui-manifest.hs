@@ -1476,6 +1476,17 @@ predicateLabel table name p = fromMaybe (fromMaybe (localName p) name) (compactI
 panelShows :: Maybe a -> Maybe a -> Maybe a          -- new answer, last answer: a change never empties a panel
 panelShows new lastAnswer = new <|> lastAnswer
 
+-- 8.13 Trace -----------------------------------------------------------------------
+
+-- | Trace panel (View → Trace, bottom area next to the terminal). It shows what the backend runs and why. A span is a request, an
+-- edit command, a change event, a snapshot, a view refresh, a validation, a SPARQL query, a file write or a round trip in the browser.
+-- A span records its cause: the span in which it started, also after an await or a timer. Pattern matches give only totals.
+-- The panel records only while it is visible and not paused. The backend records while one connection or more asks for it.
+-- Off, each hook costs one check, and the backend clears all trace data. Reason: the trace must cost nothing when no one reads it.
+-- Summary: totals by kind and name. A query for another element adds to the same row: IRIs, literals and numbers are replaced.
+traceRecords :: [Bool] -> Bool                       -- per connection: its Trace panel is visible and not paused
+traceRecords = or
+
 -- 8.12 Source editors ---------------------------------------------------------------
 
 -- | Source editors (Turtle, TriG): highlight directives, IRIs, names, literals, comments, punctuation.

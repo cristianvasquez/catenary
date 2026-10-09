@@ -41,6 +41,7 @@ import { ShapesIndex, shapesIndexOf } from './shapes-read';
 import { skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { reportProblems } from './validate';
+import { TracedStore, tracer } from './trace';
 import { ValidationRunner } from './validation-runner';
 import { Workspace, createWorkspace, fileContent } from './workspace';
 import { search } from './search';
@@ -86,7 +87,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
 }
 
 export class ModelStore implements ModelQueries {
-    protected graph = new ModelGraph(new OxigraphStore());
+    protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
@@ -639,6 +640,10 @@ export class ModelStore implements ModelQueries {
 
     /** Run a command as one transaction. On an error, the dataset does not change. */
     execute(command: EditCommand): CommandResult {
+        return tracer.span('command', command.kind, () => this.executeNow(command));
+    }
+
+    protected executeNow(command: EditCommand): CommandResult {
         const ws = this.ws;
         if (!ws) return { ok: false, error: 'No model is open.' };
         if (command.kind === 'addFileReference') {
@@ -702,8 +707,8 @@ export class ModelStore implements ModelQueries {
     prepareRdfPaste(text: string, mediaType?: string) { return prepareRdfPaste(text, mediaType); }
     copyAsRdf(viewId: string, ids: string[]) { return copyAsRdf(this.graph, viewId, ids); }
 
-    undo(): CommandResult { return this.replay('undo'); }
-    redo(): CommandResult { return this.replay('redo'); }
+    undo(): CommandResult { return tracer.span('command', 'undo', () => this.replay('undo')); }
+    redo(): CommandResult { return tracer.span('command', 'redo', () => this.replay('redo')); }
 
     /**
      * Apply the last patch of the undo (backwards) or redo stack. The patch queue goes back to its state of that step. A step that
@@ -760,7 +765,12 @@ export class ModelStore implements ModelQueries {
         if (this.ws && reason !== 'disk') this.referencedState = this.referencedFiles();
         const scope = patch && this.scopeOf(patch);
         this.lastChange = { reason, ...scope };
-        for (const l of [...this.listeners]) l({ reason, scope });
+        if (tracer.on) {
+            tracer.span('change', reason, () => {
+                tracer.note(`${this.listeners.size} listeners${scope ? `; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
+                for (const l of [...this.listeners]) l({ reason, scope });
+            });
+        } else for (const l of [...this.listeners]) l({ reason, scope });
         // Disk is the source of truth (ADR 0003): every change is written at once.
         if (reason === 'undo' || reason === 'redo' || reason === 'files') this.commitNotes.push(reason);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.queueWrite();
@@ -779,7 +789,7 @@ export class ModelStore implements ModelQueries {
         this.writeQueued = true;
         void this.serial(async () => {
             this.writeQueued = false;
-            await this.write();
+            await tracer.span('file', 'write', () => this.write());
         });
     }
 
@@ -816,7 +826,7 @@ export class ModelStore implements ModelQueries {
     watching = true;
     /** `referencedFiles()` at the last change: a difference is a file reference that changed state on disk. */
     protected referencedState = '';
-    protected readonly watcher = new FolderWatcher(() => void this.serial(() => this.syncFromDisk()));
+    protected readonly watcher = new FolderWatcher(() => void tracer.root('file', 'read changed files', () => this.serial(() => this.syncFromDisk())));
 
     /**
      * Watch the folder of the workspace file and its subfolders. An event starts `syncFromDisk` after 150 ms without events (an editor
