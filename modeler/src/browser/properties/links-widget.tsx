@@ -177,8 +177,11 @@ export class LinksWidget extends TreeWidget {
                 ...n, description: [n.predicateName, many ? (n.elements.length > 1 ? `${n.elements.length} of ${ids.length}` : `${dir === 'out' ? 'from' : 'to'} ${labels.get(n.elements[0])}`) : ''].filter(x => x).join(' · ')
             })).sort((a, b) => a.description!.localeCompare(b.description!) || (a.name ?? '').localeCompare(b.name ?? ''));
             const f = folder(dir, dir === 'out' ? 'Outgoing' : 'Incoming', ids, list.length);
-            const typed = list.filter(n => isTypedInstanceRow({ dir, predicate: n.predicate }));
-            list.filter(n => !typed.includes(n)).forEach(n => add(f, n));
+            const typed: typeof list = [];
+            for (const n of list) {
+                if (isTypedInstanceRow({ dir, predicate: n.predicate })) typed.push(n);
+                else add(f, n);
+            }
             if (typed.length) {
                 const tf = folder('in:instances', 'Instances (rdf:type)', [...new Set(typed.flatMap(n => n.elements))], typed.length, f, false);
                 tf.tooltip = 'Subjects of rdf:type statements to the selected elements.';

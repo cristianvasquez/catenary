@@ -7,6 +7,7 @@ import { elementId } from '../src/ids';
 import { OxigraphStore } from 'rdf-files';
 import { links, selectionLinks } from '../src/queries';
 import { readShapes } from '../src/shapes-read';
+import { scopedDoc } from '../src/scoped-doc';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
@@ -184,4 +185,19 @@ describe('selectionLinks: the Links panel data (ADR 0007)', () => {
         expect(Object.keys(d.relations).length).toBeGreaterThan(0);
         expect(relationRows).toBe(2 * Object.keys(d.relations).length);
     });
+
+    it('law_typeRowsShown: rdf:type rows reach instances and classes outside the scoped read model', async () => {
+        const g = new ModelGraph(new OxigraphStore());
+        for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
+            ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person .`)) {
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        }
+        const idx = readShapes(g.shapesAndVocabulary()), m = await meta();
+        const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
+        // As ModelStore.links: a read model of the selection only, without its neighbors.
+        const scoped = (ids: string[]) => selectionLinks(g, idx, scopedDoc({ g, shapes: idx.model }, { elements: ids }), m, ids);
+        expect(sorted(scoped([id('Person')]).rows.map(r => `${r.dir} ${r.id} ${r.name}`))).toEqual(sorted([`in ${id('a')} A`, `in ${id('b')} b`]));
+        expect(scoped([id('a')]).rows.map(r => `${r.dir} ${r.id} ${r.name}`)).toEqual([`out ${id('Person')} Person`]);
+    });
 });
+

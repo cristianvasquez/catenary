@@ -167,17 +167,20 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
             ...(r ? { ends: { subject: r.subject, object: r.object, subjectLabel: label(r.subject), objectLabel: label(r.object) } } : {})
         });
     }
-    const isElement = (id: string) => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id]);
+    // `doc` reads the selection only: an instance of the store outside it (an instance of a selected class) is an element too.
+    const inStore = (id: string) => g.isInstance(elementTerm(id));
+    const isElement = (id: string) => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id]) || inStore(id);
     const found = links(g, idx, elements.map(e => e.id), isElement);
     const rows = found.rows.map(r => {
-        const target = r.id && kindOf(doc, undefined, r.id) ? r.id : undefined;
+        const known = !!r.id && !!kindOf(doc, undefined, r.id);
+        const target = r.id && (known || inStore(r.id)) ? r.id : undefined;
         const [s, o] = r.dir === 'out' ? [r.element, target] : [target, r.element];
         const relation = s && o && doc.instances[s] && doc.instances[o] ? findRelation(doc, s, r.predicate, o)?.id : undefined;
         const inst = doc.instances[r.element];
         const cls = inst && primaryClass(meta, inst.types);
         const undeclared = r.dir === 'out' && !!relation && !!cls && !formPredicates(cls).includes(r.predicate);
         return {
-            ...r, id: target, name: r.label ?? (target ? label(target) : r.iri ? shortIri(r.iri) : 'blank node'), predicateName: predicateName(meta, r.predicate),
+            ...r, id: target, name: r.label ?? (known ? label(target!) : r.iri ? shortIri(r.iri) : 'blank node'), predicateName: predicateName(meta, r.predicate),
             ...(relation ? { relation } : {}), ...(undeclared ? { undeclared } : {})
         };
     });
