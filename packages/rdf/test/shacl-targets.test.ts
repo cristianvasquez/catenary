@@ -70,6 +70,25 @@ describe('sh:node applicability', () => {
     const checked = (g: OxigraphStore, selection: Parameters<typeof applicableMatches>[3]) =>
         applicableMatches(g, scope, readNodeReferences(g, scope.shapes), selection);
 
+    it.each([false, true])('follows directly targeted property shapes with an owner: %s', owned => {
+        const g = store(`<urn:shapes> {
+            <urn:P> a sh:PropertyShape ; sh:targetNode <urn:a> ; sh:path <urn:p> ; sh:node <urn:T> .
+            <urn:T> a sh:NodeShape .
+            ${owned ? '<urn:S> sh:targetNode <urn:c> ; sh:property <urn:P> .' : ''}
+        } <urn:data> { <urn:a> <urn:p> <urn:b> . <urn:c> <urn:p> <urn:d> . }`);
+        const forward = checked(g, { nodes: [node('urn:b')] });
+        expect(forward).toEqual([{
+            shape: 'urn:T', node: node('urn:b'), reasons: [{
+                kind: 'node', target: node('urn:T'), sourceShape: 'urn:P', sourceNode: node('urn:a'), property: 'urn:P'
+            }]
+        }]);
+        const reverse = checked(g, { shapes: ['urn:T'] });
+        expect(reverse).toContainEqual(forward[0]);
+        expect(reverse.map(m => m.node.value)).toEqual(owned ? ['urn:b', 'urn:d'] : ['urn:b']);
+        if (owned) expect(reverse[1].reasons[0].sourceShape).toBe('urn:S');
+        expect(checked(g, { nodes: [node('urn:a')], shapes: ['urn:T'] })).toEqual([]);
+    });
+
     it('law_nodeNavigation: applies targetless shapes to property values and the same focus node', () => {
         const g = store(`<urn:shapes> {
             <urn:S> sh:targetNode <urn:a> ; sh:node <urn:Same> ; sh:property <urn:ps> .

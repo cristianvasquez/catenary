@@ -44,7 +44,7 @@ export function readNodeReferences(port: TargetQueryPort, graphs: readonly strin
         const p = values(r.s.value, SH + 'path')[0];
         if (!p) { refs.push({ source: r.s.value, target: r.o.value }); continue; }
         const owners = rows.filter(o => o.p.value === SH + 'property' && o.o.value === r.s.value).map(o => o.s.value);
-        for (const source of new Set(owners)) refs.push({ source, target: r.o.value, property: r.s.value, path: path(p.value) });
+        for (const source of new Set([r.s.value, ...owners])) refs.push({ source, target: r.o.value, property: r.s.value, path: path(p.value) });
     }
     return refs.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
