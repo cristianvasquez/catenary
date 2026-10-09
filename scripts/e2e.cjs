@@ -454,8 +454,8 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     await main.locator('.catenary-logic:visible').nth(1).waitFor();
     await settle();
 
-    // "+ target" handle of a selected edge dragged to a card: one more target, the edge goes to a "one of" card.
-    const orCards = await main.locator('.leaf-or').count();
+    // "+ target" handle of a selected edge dragged to a card: one more target, the edge goes to a "one of" box.
+    const orCards = await main.locator('.catenary-one-of').count();
     await row('Catalogue', 'dataset').locator('.row-out').click();
     await edge('dataset').waitFor();
     await edge('dataset').locator('.edge-label').click();
@@ -466,12 +466,18 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     await page.mouse.down();
     await page.mouse.move(dropOn.x, dropOn.y, { steps: 8 });
     await page.mouse.up();
-    await page.waitForFunction(n => document.querySelectorAll('#theia-main-content-panel .leaf-or').length > n, orCards);
+    await page.waitForFunction(n => document.querySelectorAll('#theia-main-content-panel .catenary-one-of').length > n, orCards);
     await settle();
-    // Undo: one step; the "one of" card goes, the later steps keep their layout.
+    // The "one of" box is a member-list box: the alternative whose card is shown is a line from the box; selected, it has eight
+    // resize handles and the remove button of its halo.
+    await main.locator('.catenary-alternative').first().waitFor();
+    await main.locator('.catenary-one-of > .body').first().click({ position: { x: 6, y: 6 } });
+    await page.waitForFunction(() => document.querySelectorAll('#theia-main-content-panel .catenary-one-of .catenary-resize-handle').length === 8);
+    assert.equal(await main.locator('.catenary-halo .halo-action').count(), 1, 'One-of halo: Remove only');
+    // Undo: one step; the "one of" box goes, the later steps keep their layout.
     await main.locator('.sprotty-graph').click({ position: { x: 20, y: 600 } });
     await page.keyboard.press('Control+z');
-    await page.waitForFunction(n => document.querySelectorAll('#theia-main-content-panel .leaf-or').length === n, orCards);
+    await page.waitForFunction(n => document.querySelectorAll('#theia-main-content-panel .catenary-one-of').length === n, orCards);
     await edge('dataset').locator('.row-in').click();
     await row('Catalogue', 'dataset').waitFor();
     await settle();

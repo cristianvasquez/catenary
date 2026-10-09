@@ -67,7 +67,7 @@ it.each(['layered', 'force'] as const)('%s: list boxes are laid out; private pil
     expect(await store.open(join(dir, 'workspace.trig'))).toMatchObject({ ok: true });
     const viewId = iriId('urn:view:shapes');
     const children = toSchema(store.viewDoc(viewId), { classes: [] }, viewId, { showHidden: false, violations: [], notation: store.viewFigures(viewId) }).children!;
-    const lists = children.filter(c => c.type === TYPES.LEAF && !c.private).map(c => c.id);
+    const lists = children.filter(c => (c.type === TYPES.LEAF || c.type === TYPES.ONE_OF) && !c.private).map(c => c.id);
     const privates = children.filter(c => c.type === TYPES.LEAF && c.private).map(c => c.id);
     expect(lists).toHaveLength(2);
     expect(privates).toHaveLength(2);

@@ -635,20 +635,12 @@ export class ModelActions {
         await this.executeAndSelect(view, { kind: 'showAsEdge', view, id, at: at ?? { x: card.x + card.width + dx, y: card.y + card.height / 2 } }, [id]);
     }
 
-    /** Concepts of a scheme or collection card get their cards, right of it. Their chips go (a concept is drawn once in a view). */
-    async showConcepts(view: string, set: string, instances: string[]): Promise<void> {
-        const card = cardOf(await this.service.view(view), set);
-        if (!card) return;
-        await this.executeAndSelect(view, { kind: 'addToView', view, ids: instances, at: { x: card.x + card.width + 220, y: card.y + card.height / 2 } }, instances);
-    }
-
-    /** The card of an alternative of an "or" range (node shape, value set) gets into the view, right of the "one of" card. */
-    async showAlternative(view: string, property: string, card: string): Promise<void> {
-        const [shapes, v] = await Promise.all([this.service.shapes(), this.service.view(view)]);
-        const p = shapes.properties[property];
-        const oneOf = cardOf(v, property) ?? (p && cardOf(v, p.owner));
-        if (!oneOf) return;
-        await this.executeAndSelect(view, { kind: 'addToView', view, ids: [card], at: { x: oneOf.x + oneOf.width + 480, y: oneOf.y + oneOf.height / 2 } }, [card]);
+    /**
+     * Members of a member-list box (a concept of a value set, the card of an alternative of a "one of" box) get their own cards, centered at
+     * `at` (beside the box). Their rows go: the view draws the line from the box to each card (a concept is drawn once in a view).
+     */
+    async showMembers(view: string, ids: string[], at: Point): Promise<void> {
+        await this.executeAndSelect(view, { kind: 'addToView', view, ids, at }, ids);
     }
 
     /**

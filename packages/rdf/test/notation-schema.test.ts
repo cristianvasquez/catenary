@@ -129,17 +129,48 @@ describe('SHACL elements from the notation engine', () => {
             <urn:p> sh:path <urn:path> ; sh:or ( <urn:alt1> <urn:alt2> <urn:alt3> ) .
             <urn:alt1> sh:class <urn:B> . <urn:alt2> sh:class <urn:H> . <urn:alt3> sh:datatype xsd:date .`, '', ['urn:a']);
         run(g, meta, { kind: 'showAsEdge', view, id: iriId('urn:p'), at: { x: 600, y: 0 } });
-        const box = () => of(g, view, TYPES.LEAF).find(e => e.style === 'or')!;
-        expect(box()).toMatchObject({ id: iriId('urn:p') + '_leaf', size: { width: 240, height: memberListHeight(3) } });
-        expect((box().alternatives as { label: string; takeOut: string }[]).map(r => [r.label, r.takeOut])).toEqual([['B', iriId('urn:b')], ['H', iriId('urn:h')], ['xsd:date', '']]);
+        const box = () => of(g, view, TYPES.ONE_OF)[0];
+        expect(box()).toMatchObject({ id: iriId('urn:p') + '_leaf', size: { width: 320, height: memberListHeight(3) } });
+        expect((box().members as { label: string; takeOut: string }[]).map(r => [r.label, r.takeOut])).toEqual([['B', iriId('urn:b')], ['H', iriId('urn:h')], ['xsd:date', '']]);
         expect(of(g, view, TYPES.PROPERTY)).toMatchObject([{ id: iriId('urn:p'), targetId: iriId('urn:p') + '_leaf' }]);
         // The card of B arrives: the line of its alternative is placed; B is no longer a row.
         run(g, meta, { kind: 'addToView', view, ids: [iriId('urn:b')], at: { x: 1200, y: 0 } });
-        expect((box().alternatives as { label: string }[]).map(r => r.label)).toEqual(['H', 'xsd:date']);
-        expect(of(g, view, TYPES.ALTERNATIVE).map(e => [e.sourceId, element(g, view, e.targetId)])).toEqual([[iriId('urn:p') + '_leaf', iriId('urn:b')]]);
-        // A move of the box places its list term; the property line keeps no geometry.
-        run(g, meta, { kind: 'setBounds', view, bounds: [{ id: iriId('urn:p') + '_leaf', x: 700, y: 300 }] });
-        expect(box().position).toEqual({ x: 700, y: 300 });
+        expect((box().members as { label: string }[]).map(r => r.label)).toEqual(['H', 'xsd:date']);
+        expect(of(g, view, TYPES.ALTERNATIVE).map(e => [e.id, e.sourceId, element(g, view, e.targetId)])).toEqual([[`${iriId('urn:p')}_leaf_or_${iriId('urn:alt1')}`, iriId('urn:p') + '_leaf', iriId('urn:b')]]);
+        // A move or a resize of the box places its list term; the property line keeps no geometry.
+        run(g, meta, { kind: 'setBounds', view, bounds: [{ id: iriId('urn:p') + '_leaf', x: 700, y: 300, width: 400, height: 500 }] });
+        expect(box()).toMatchObject({ position: { x: 700, y: 300 }, size: { width: 400, height: 500 } });
+    });
+
+    // An alternative with sh:node (and no property shapes of its own) is a line of the "one of" box, not a card of its own (shapes.ttl,
+    // shn:Card). Two boxes with the same alternative each draw their line to its card; a removal gives the rows back (ui-manifest §2.9).
+    it('a sh:node alternative: its card arrives with a line from each "one of" box; a removal gives the rows back', async () => {
+        const { g, view } = await setup(`
+            <urn:concept> a sh:NodeShape ; sh:property <urn:refs>, <urn:parts> .
+            <urn:refs> sh:path <urn:references> ; sh:or ( [ sh:node <urn:res> ] [ sh:node <urn:ref> ] ) .
+            <urn:parts> sh:path <urn:hasPart> ; sh:or ( [ sh:node <urn:res> ] [ sh:node <urn:ref> ] ) .
+            <urn:res> a sh:NodeShape . <urn:ref> a sh:NodeShape .`, '', ['urn:concept']);
+        run(g, meta, { kind: 'showAsEdge', view, id: iriId('urn:refs'), at: { x: 600, y: 0 } });
+        run(g, meta, { kind: 'showAsEdge', view, id: iriId('urn:parts'), at: { x: 600, y: 400 } });
+        const rows = () => Object.fromEntries(of(g, view, TYPES.ONE_OF).map(b => [b.id, (b.members as { takeOut: string }[]).map(r => r.takeOut)]));
+        const lines = () => of(g, view, TYPES.ALTERNATIVE).map(e => [e.sourceId, element(g, view, e.targetId)]).sort();
+        const refs = iriId('urn:refs') + '_leaf', parts = iriId('urn:parts') + '_leaf';
+        expect(rows()).toEqual({ [refs]: [iriId('urn:res'), iriId('urn:ref')], [parts]: [iriId('urn:res'), iriId('urn:ref')] });
+        // Only the alternatives are lines: the node shapes of the alternatives get no card of their own.
+        expect(of(g, view, TYPES.SHAPE).map(c => c.element)).toEqual([iriId('urn:concept')]);
+        run(g, meta, { kind: 'addToView', view, ids: [iriId('urn:res')], at: { x: 1200, y: 0 } });
+        expect(lines()).toEqual([[parts, iriId('urn:res')], [refs, iriId('urn:res')]]);
+        expect(rows()).toEqual({ [refs]: [iriId('urn:ref')], [parts]: [iriId('urn:ref')] });
+        // The card leaves: its lines leave, the rows come back.
+        run(g, meta, { kind: 'removeFromView', view, ids: [iriId('urn:res')] });
+        expect(lines()).toEqual([]);
+        expect(rows()).toEqual({ [refs]: [iriId('urn:res'), iriId('urn:ref')], [parts]: [iriId('urn:res'), iriId('urn:ref')] });
+        // The property goes back to a row: its box leaves with its own alternative lines (they start at the box, they do not keep it).
+        run(g, meta, { kind: 'addToView', view, ids: [iriId('urn:res')], at: { x: 1200, y: 0 } });
+        run(g, meta, { kind: 'removeFromView', view, ids: [iriId('urn:refs')] });
+        expect(Object.keys(rows())).toEqual([parts]);
+        expect(lines()).toEqual([[parts, iriId('urn:res')]]);
+        expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:concept'))!.children!.map(r => r.id)).toEqual([iriId('urn:refs')]);
     });
 
     it('draws a value set with its concepts; a concept with its own card is no row', async () => {

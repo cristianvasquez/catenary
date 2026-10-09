@@ -4,11 +4,13 @@ import { shapeConnections, targetText } from '@catenary/shacl/common';
 // the diagram stay as before, so that the client gestures keep their targets:
 //   node shape card       id: its placement, element: the node shape id; rows: the property lines and hubs that it does not draw
 //   property line         id: the property shape id of its start card; from the card to the box of its end
-//   "in", "one of" box    id: `<property element id>_leaf` (the property that holds the list); placed by its list term (rule 12)
+//   "in" box, "one of" box id: `<property element id>_leaf` (the property that holds the list); placed by its list term (rule 12).
+//                         A "one of" box is a member-list box (TYPES.ONE_OF) as a value set: its alternatives without a line are rows
 //   private end           id: `<property element id>_leaf`, beside the start card, never placed
 //   class pill            id: its placement
 //   logical constraint    id: the constraint id `c-<op>-<shape>-<n>`; drawn only while its hub is placed, else a row group
 //   value set             id: its placement, element: the value set id; rows: its concepts without a card
+//   alternative line      id: `<"one of" box id>_or_<id of the alternative>`; from the "one of" box to the card of the alternative
 
 import { Doc } from './doc';
 import { ElementSchema, GraphOptions, LATENT_SUFFIX, LEAF_SUFFIX, TYPES, edgeLanes, memberListHeight } from './diagram-schema';
@@ -64,6 +66,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     const latent: { p: PropertyShape; source: string; target: string }[] = [];
     const pending: { p: PropertyShape; source: string; target: string; member: boolean }[] = [];
     const alternatives: { id: string; source: string; target: string }[] = [];
+    const lists: ElementSchema[] = [];
 
     const rowOf = (p: PropertyShape, group?: 'member', tags: string[] = []): ShapeRow & { group?: string } => {
         const relation = p.range.kind === 'node' || p.range.kind === 'class';
@@ -81,7 +84,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
         if (!isShapes(l.figure)) continue;
         if (shapeOf(l.figure) === SHN + 'Alternative') {
             const end = l.end && shown.has(l.end.id) ? boxId(l.end) : undefined;
-            if (end) alternatives.push({ id: `${listBoxId(l.start)}_or${alternatives.length}`, source: listBoxId(l.start), target: end });
+            if (end) alternatives.push({ id: `${listBoxId(l.start)}_or_${iriId(l.figure.focus.value)}`, source: listBoxId(l.start), target: end });
             continue;
         }
         const p = propertyOf(l.figure, l.start);
@@ -94,7 +97,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
                 const text = l.figure.endValue ? shortIri(l.figure.endValue.value) : l.figure.fs.openEnd ?? 'any';
                 const n = leaves.filter(x => x.privateOf === l.start.id).length;
                 leaves.push({
-                    type: TYPES.LEAF, id: target, privateOf: l.start.id, text, style: leafStyle(p.range), alternatives: [],
+                    type: TYPES.LEAF, id: target, privateOf: l.start.id, text, style: leafStyle(p.range),
                     position: { x: (start?.x ?? 0) + (start?.width ?? 300) + 160, y: (start?.y ?? 0) + n * 40 }, size: pillSize(text)
                 });
             }
@@ -160,18 +163,18 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             if (p.range.kind === 'or') {
                 const drawnTo = new Set(alternatives.filter(a => a.source === id).map(a => a.target));
                 const rows = alternativeRows(shapes, p, a => { const card = alternativeCard(shapes, a as SimpleRange); return card && [...shown.values()].some(x => iriId(x.figure.focus.value) === card && drawnTo.has(boxId(x.figure))) ? card : undefined; }, label);
-                leaves.push({
-                    type: TYPES.LEAF, id, ...geometry, size: { width: pl?.width ?? ONE_OF_WIDTH * scale, height: Math.max(pl?.height ?? 0, memberListHeight(rows.length, scale)) },
-                    text: `${p.name ?? formatPath(p.path)}: one of`, style: 'or', alternatives: rows
+                lists.push({
+                    type: TYPES.ONE_OF, id, ...geometry, size: { width: pl?.width ?? ONE_OF_WIDTH * scale, height: Math.max(pl?.height ?? 0, memberListHeight(rows.length, scale)) },
+                    name: `${p.name ?? formatPath(p.path)}: one of`, members: rows
                 });
             } else {
                 const text = rangeText(shapes, p.range, label);
-                leaves.push({ type: TYPES.LEAF, id, ...geometry, size: pillSize(text), text, style: leafStyle(p.range), alternatives: [] });
+                leaves.push({ type: TYPES.LEAF, id, ...geometry, size: pillSize(text), text, style: leafStyle(p.range) });
             }
         } else if (shapeOf(f) === SHN + 'ClassPill') {
             ids.add(iriId(f.focus.value));
             const text = shortIri(f.focus.value);
-            leaves.push({ type: TYPES.LEAF, id: boxId(f), ...geometry, size: pillSize(text), text, style: 'class', alternatives: [] });
+            leaves.push({ type: TYPES.LEAF, id: boxId(f), ...geometry, size: pillSize(text), text, style: 'class' });
         }
     }
 
@@ -217,6 +220,6 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     for (const [k, p] of vf.placed) if (k.startsWith('<')) { const id = iriId(k.slice(1, -1)); if (shapes.properties[id] || Object.values(shapes.properties).some(x => x.uri === k.slice(1, -1))) ids.add(id); }
     // A private pill has no placement: the layout moves it with its card, a move of it changes nothing.
     for (const l of leaves) if (l.privateOf) { delete l.privateOf; l.private = true; }
-    return { edges, cards: [...cards, ...sets], overlays: [...leaves, ...logic], ids };
+    return { edges, cards: [...cards, ...sets, ...lists], overlays: [...leaves, ...logic], ids };
 }
 

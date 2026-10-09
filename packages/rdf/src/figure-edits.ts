@@ -4,7 +4,7 @@
 //   data arrival  a new property shape is placed in each view that shows its start and its end
 // Relations and arrows of instances: placeConnectors. The ids of the diagram: notation-schema.ts (@catenary/model).
 
-import { LEAF_SUFFIX, NotationPlacement, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
+import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
 import { elementId } from './ids';
@@ -274,7 +274,8 @@ function placeEnd(g: ModelGraph, view: NamedNode, property: string, range: Range
     } else if (range.kind === 'scheme') term = range.schemes[0] ? rdf.namedNode(range.schemes[0]) : undefined;
     else if (range.kind === 'collection') term = rdf.namedNode(range.collection);
     if (!term || g.nodeOf(view, term)) return false;
-    const size = ops.cardTerm(g, elementId(term)) && !term.value.startsWith(ops.LIST_PREFIX) ? ops.cardSize(g, elementId(term)) : { width: 240, height: 120 };
+    // A list box ("in", "one of") grows to its rows; an "in" box is drawn as a pill of its text.
+    const size = ops.cardTerm(g, elementId(term)) && !term.value.startsWith(ops.LIST_PREFIX) ? ops.cardSize(g, elementId(term)) : { width: ONE_OF_WIDTH, height: 120 };
     const node = ops.addPlacement(g, view, term);
     ops.writeBox(g, view, node, { ...at, ...size });
     g.add(node, V.keptByLines, rdf.literal('true', rdf.namedNode('http://www.w3.org/2001/XMLSchema#boolean')), view);

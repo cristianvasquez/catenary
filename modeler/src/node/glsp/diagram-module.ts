@@ -32,6 +32,7 @@ export class ViewDiagramConfiguration implements DiagramConfiguration {
             [TYPES.NAME, GLabel],
             [TYPES.SHAPE, GNode],
             [TYPES.LEAF, GNode],
+            [TYPES.ONE_OF, GNode],
             [TYPES.LOGIC, GNode],
             [TYPES.VALUESET, GNode],
             [TYPES.PROPERTY, GEdge],
@@ -47,9 +48,9 @@ export class ViewDiagramConfiguration implements DiagramConfiguration {
         return [
             { elementTypeId: TYPES.CARD, ...hint }, { elementTypeId: TYPES.GROUP, ...hint },
             { elementTypeId: TYPES.NOTE, ...hint }, { elementTypeId: TYPES.VIEW_REFERENCE, ...hint }, { elementTypeId: TYPES.COLLECTION, ...hint },
-            { elementTypeId: TYPES.SHAPE, ...hint }, { elementTypeId: TYPES.VALUESET, ...hint },
-            // A box of a list ("in", "one of") or a class pill moves freely (a move places it); Del removes its lines too. A private pill
-            // does not move (no placement). Logical constraints are drawn at the middle of their member lines (ADR 0014).
+            { elementTypeId: TYPES.SHAPE, ...hint }, { elementTypeId: TYPES.VALUESET, ...hint }, { elementTypeId: TYPES.ONE_OF, ...hint },
+            // An "in" box or a class pill moves freely (a move places it); Del removes its lines too. A private pill does not move (no
+            // placement). Logical constraints are drawn at the middle of their member lines (ADR 0014).
             { elementTypeId: TYPES.LEAF, repositionable: true, deletable: true, resizable: false, reparentable: false },
             { elementTypeId: TYPES.LOGIC, repositionable: false, deletable: true, resizable: false, reparentable: false }
         ];
@@ -64,14 +65,14 @@ export class ViewDiagramConfiguration implements DiagramConfiguration {
             sourceElementTypeIds: [TYPES.CARD, TYPES.COLLECTION], targetElementTypeIds: [TYPES.CARD, TYPES.COLLECTION]
         }, {
             elementTypeId: TYPES.ARROW, repositionable: false, deletable: true, routable: false,
-            sourceElementTypeIds: [TYPES.CARD, TYPES.GROUP, TYPES.NOTE, TYPES.VIEW_REFERENCE, TYPES.COLLECTION, TYPES.SHAPE, TYPES.LEAF, TYPES.VALUESET],
-            targetElementTypeIds: [TYPES.CARD, TYPES.GROUP, TYPES.NOTE, TYPES.VIEW_REFERENCE, TYPES.COLLECTION, TYPES.SHAPE, TYPES.LEAF, TYPES.VALUESET]
+            sourceElementTypeIds: [TYPES.CARD, TYPES.GROUP, TYPES.NOTE, TYPES.VIEW_REFERENCE, TYPES.COLLECTION, TYPES.SHAPE, TYPES.LEAF, TYPES.ONE_OF, TYPES.VALUESET],
+            targetElementTypeIds: [TYPES.CARD, TYPES.GROUP, TYPES.NOTE, TYPES.VIEW_REFERENCE, TYPES.COLLECTION, TYPES.SHAPE, TYPES.LEAF, TYPES.ONE_OF, TYPES.VALUESET]
         }, {
             elementTypeId: TYPES.PROPERTY, repositionable: false, deletable: true, routable: false,
-            sourceElementTypeIds: [TYPES.SHAPE], targetElementTypeIds: [TYPES.SHAPE, TYPES.LEAF, TYPES.VALUESET]
+            sourceElementTypeIds: [TYPES.SHAPE], targetElementTypeIds: [TYPES.SHAPE, TYPES.LEAF, TYPES.ONE_OF, TYPES.VALUESET]
         }, {
             elementTypeId: TYPES.ALTERNATIVE, repositionable: false, deletable: false, routable: false,
-            sourceElementTypeIds: [TYPES.LEAF], targetElementTypeIds: [TYPES.SHAPE, TYPES.VALUESET, TYPES.LEAF]
+            sourceElementTypeIds: [TYPES.ONE_OF], targetElementTypeIds: [TYPES.SHAPE, TYPES.VALUESET, TYPES.LEAF]
         }];
     }
 

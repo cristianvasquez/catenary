@@ -26,7 +26,7 @@ import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
-    AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView,
+    AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView, OneOfNode, OneOfView,
     NoteNode, NoteView, PropertyEdge, PropertyEdgeView, RelationEdge, RelationEdgeView, ResizeHandleView, ShapeCardView, ShapeNode, ShapeRow, ShapeRowView, ValueSetNode, ValueSetView,
     CatenaryGraphView, ViewReferenceNode, ViewReferenceView
 } from './views';
@@ -75,6 +75,7 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     configureModelElement(context, CATENARY.ROW, ShapeRow, ShapeRowView);
     configureModelElement(context, CATENARY.PROPERTY, PropertyEdge, PropertyEdgeView);
     configureModelElement(context, CATENARY.LEAF, LeafNode, LeafView);
+    configureModelElement(context, CATENARY.ONE_OF, OneOfNode, OneOfView);
     configureModelElement(context, CATENARY.ALTERNATIVE, AlternativeEdge, AlternativeEdgeView);
     configureModelElement(context, CATENARY.LATENT, LatentEdge, LatentEdgeView);
     configureModelElement(context, CATENARY.TARGETING, TargetingEdge, TargetingEdgeView);

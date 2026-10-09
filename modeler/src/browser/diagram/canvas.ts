@@ -7,7 +7,8 @@
 // path (row or edge label) edits it; ⇥ or a drag of the row out of the card shows the property as an edge, its pill where it is dropped.
 // The link button draws a property "unnamed property N" (to a card or a value set: that target; to empty canvas: a picker with "+ New node
 // shape", "+ New concept scheme", …, the pill or the new target at the release point). No path is asked.
-// Value set nodes: double click on a concept renames it, × removes it, "+ concept" adds one. The logic handle of a selected edge drags a
+// Member-list boxes (collection, value set, "one of"): ➟ shows a member in its own box beside the container, × removes it, the add row
+// adds one (memberPress). Value sets: double click on a concept renames it. The logic handle of a selected edge drags a
 // logical constraint to another edge; a dragged edge end retargets the property.
 
 import { SelectAction } from '@eclipse-glsp/client';
@@ -15,7 +16,7 @@ import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-int
 import { CommandRegistry, MessageService, URI } from '@theia/core';
 import { ApplicationShell, ContextMenuRenderer, FrontendApplicationContribution, OpenerService, open } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { COMMON_DATATYPES, DEFAULT_SIZE, EXPLORER_DRAG, ExplorerDrag, GestureInfo, LATENT_SUFFIX, Point, Rect, Side, TYPES, TargetList, ViewGesture, compactIri, formatPath, ownerOfLabel } from '@catenary/model';
+import { COMMON_DATATYPES, DEFAULT_SIZE, EXPLORER_DRAG, ExplorerDrag, GestureInfo, LATENT_SUFFIX, LEAF_SUFFIX, Point, Rect, Side, TYPES, TargetList, ViewGesture, compactIri, formatPath, ownerOfLabel } from '@catenary/model';
 import { VIEW_SCHEME } from '../../common/protocol';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ModelActions } from '../actions';
@@ -37,7 +38,9 @@ export const DND_VIEW = 'application/x-catenary-view';
 /** Files dragged from the Theia file navigator (ApplicationShell.setDraggedEditorUris). */
 const DND_FILES = 'theia-editor-dnd';
 /** Elements that an arrow can connect. */
-const BOXES = '.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-collection, .catenary-leaf';
+const BOXES = '.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-member-box, .catenary-leaf';
+/** Boxes that Shift+click adds to or removes from the selection. */
+const TOGGLED = '.catenary-card, .catenary-group, .catenary-member-box';
 /** Elements that a connect gesture dims when they are not its targets (spec/ui-manifest.hs §5.5 Connect drags). */
 const CONNECTABLE = `${BOXES}, .catenary-edge, .catenary-logic, .shape-row, .member-row`;
 
@@ -126,7 +129,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             }
             const reference = idOf(target, '.catenary-view-reference');
             referencePress = reference ? { id: reference, x: e.clientX, y: e.clientY } : undefined;
-            if (this.shapesPress(w, target, e)) return;
+            if (this.memberPress(w, target, e) || this.shapesPress(w, target, e)) return;
             const halo = target.closest?.('.halo-action');
             const cardinality = target.closest?.('[data-card]');
             const property = cardinality ? idOf(target, '.catenary-edge') ?? idOf(target, '.shape-row') : undefined;
@@ -160,15 +163,6 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                 e.preventDefault();
                 e.stopPropagation();
                 this.haloAction(w, id, halo, e);
-            } else if (target.closest?.('.catenary-collection .member-take-out, .catenary-collection .member-remove, .catenary-collection .member-add')) {
-                // Collection rows: ➟ takes the member out, × removes its card from the view, "+ member" adds an instance.
-                const collection = idOf(target, '.catenary-collection'), member = target.closest('.member-row')?.getAttribute('data-member');
-                if (!collection) return;
-                e.preventDefault();
-                e.stopPropagation();
-                if (target.closest('.member-add')) this.addMember(w, collection, target.closest('.member-add')!);
-                else if (member && target.closest('.member-take-out')) void this.actions.uncollect(viewIdOf(w), [collection], [member]);
-                else if (member) void this.actions.removeFromView(viewIdOf(w), member);
             } else if (target.classList?.contains('edge-end')) {
                 const relation = idOf(target, '.catenary-edge');
                 if (!relation) return;
@@ -177,11 +171,11 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                 const end = target.getAttribute('data-end') === 'source' ? 'source' : 'target';
                 const other = target.parentElement?.querySelector(`.edge-end[data-end="${end === 'source' ? 'target' : 'source'}"]`)?.getBoundingClientRect();
                 this.endDrag(w, relation, end, other ? { x: other.left + other.width / 2, y: other.top + other.height / 2 } : { x: e.clientX, y: e.clientY }, e);
-            } else if (e.shiftKey && !target.closest?.('.catenary-resize-handle, .catenary-resize-grip') && (idOf(target, '.catenary-card') ?? idOf(target, '.catenary-group'))) {
+            } else if (e.shiftKey && !target.closest?.('.catenary-resize-handle, .catenary-resize-grip') && idOf(target, TOGGLED)) {
                 // GLSP adds with Ctrl only; with a selection, its Shift+click replaces the selection.
                 e.preventDefault();
                 e.stopPropagation();
-                this.toggle(w, (idOf(target, '.catenary-card') ?? idOf(target, '.catenary-group'))!);
+                this.toggle(w, idOf(target, TOGGLED)!);
             } else if ((target.classList?.contains('hit') || target.classList?.contains('line')) && target.parentElement?.classList.contains('catenary-edge')) {
                 // A click selects the edge; a drag moves its nearest end. GLSP does not get the press: it would pan the canvas.
                 const relation = idOf(target, '.catenary-edge');
@@ -230,7 +224,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                 return;
             }
             const property = t.closest?.('.edge-label, .row-path') ? idOf(t, '.catenary-edge') ?? idOf(t, '.shape-row') : undefined;
-            const leaf = idOf(t, '.catenary-leaf');
+            const leaf = idOf(t, '.catenary-leaf') ?? (t.closest?.('.vs-name') ? idOf(t, '.catenary-one-of') : undefined);
             const shapeClass = t.closest?.('.shape-class') ? idOf(t, '.catenary-card') : undefined;
             if (property || leaf || shapeClass) {
                 e.preventDefault();
@@ -246,7 +240,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                             onCommit: text => this.actions.setPathText(property, text, view) });
                     });
                 } else if (leaf) {
-                    const id = ownerOfLabel(leaf), inside = t.closest('.catenary-leaf')?.querySelector('text, .vs-name');
+                    const id = ownerOfLabel(leaf), inside = t.closest('.catenary-leaf, .catenary-one-of')?.querySelector('text, .vs-name');
                     void Promise.all([this.gesture(w, { kind: 'element', id }), this.model.service.shapes()]).then(([{ property: p }, shapes]) => {
                         if (!p) return;
                         inlineInput({ at, inside: live(inside, leaf, 'text, .vs-name'), value: this.actions.targetText(p.range, shapes), placeholder: 'target: a class name, xsd:string, any, a concept scheme, prefix:local; "a | b": one of', options: this.actions.targetOptions(),
@@ -499,7 +493,8 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         const run = (command: { id: string }) => void this.commands.executeCommand(command.id);
         const b = button.getBoundingClientRect();
         switch (button.getAttribute('data-action')) {
-            case 'remove': return run(ModelCommands.REMOVE_FROM_VIEW);
+            // A "one of" box is no element of its own: its list placement leaves, with the line to it.
+            case 'remove': return id.endsWith(LEAF_SUFFIX) ? void this.actions.removeFromView(viewIdOf(w), id) : run(ModelCommands.REMOVE_FROM_VIEW);
             case 'collect': return run(ModelCommands.COLLECT);
             case 'uncollect': return run(ModelCommands.UNCOLLECT);
             case 'reveal': return run(ModelCommands.SELECT_IN_EXPLORER);
@@ -692,51 +687,71 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             this.rowDrag(w, row, target.closest('.shape-row')!, e, range ? () => void this.pickValue(w, row, range) : undefined);
             return true;
         }
-        // "One of" card of an "or" range: ➟ shows the card of an alternative, × removes the alternative, "+ alternative" picks one more.
-        const oneOf = this.idOf(w, target, '.leaf-or');
-        if (oneOf && target.closest('.member-take-out, .member-remove, .member-add')) {
-            const property = ownerOfLabel(oneOf), key = target.closest('.member-row')?.getAttribute('data-member');
-            if (target.closest('.member-add')) {
-                const r = target.closest('.member-add')!.getBoundingClientRect();
-                void this.actions.addAlternative(property, view, { x: r.left, y: r.bottom + 4 });
-            } else if (key && target.closest('.member-remove')) void this.actions.removeAlternative(property, key, view);
-            else {
-                const card = target.closest('.member-take-out')!.getAttribute('data-instance');
-                if (card) void this.actions.showAlternative(view, property, card);
-            }
-            return stop();
-        }
+        // A concept row of a value set: a drag onto another concept sets broader.
         const set = this.idOf(w, target, '.valueset-card');
         const chip = target.closest('.member-row');
-        if (set && chip && target.closest('.member-take-out')) {
-            const instance = target.closest('.member-take-out')!.getAttribute('data-instance');
-            if (instance) void this.actions.showConcepts(view, set, [instance]);
-            return stop();
-        }
-        if (set && chip && target.closest('.member-remove')) {
-            void this.actions.removeConcept(set, chip.getAttribute('data-member')!);
-            return stop();
-        }
         if (set && chip && e.detail === 1) {
             this.conceptDrag(w, chip, e);
             return stop();
         }
-        if (set && target.closest('.member-add')) {
-            const r = target.closest('.member-add')!.getBoundingClientRect();
-            const kind = this.shown(w, set)?.kind;
-            inlineInput({ at: { x: r.left, y: r.top + r.height / 2 }, inside: target.closest('.member-add')!, placeholder: kind === 'scheme' ? 'new concept' : 'new or existing concept',
-                options: this.actions.conceptOptions(set),
-                onCommit: async (text, how) => {
-                    // The row shows at once; the server model confirms it, or a failure removes it (pending-members.ts).
-                    const label = text.trim(), card = this.editors.placementOf(w, set);
-                    if (label) void w.actionDispatcher.dispatch(PendingMemberAction.create(card, label, true));
-                    if (!await this.actions.addConcept(set, text) && label) void w.actionDispatcher.dispatch(PendingMemberAction.create(card, label, false));
-                    // Enter: the next one.
-                    if (how === 'enter') setTimeout(() => this.reopen(w, set, '.member-add'), 50);
-                } });
-            return stop();
-        }
         return false;
+    }
+
+    /**
+     * The buttons of a member-list box (a collection, a value set, a "one of" box): ➟ shows the member in its own box beside the container
+     * (the row becomes a line from the container), × removes the member, the add row adds one. The kinds differ only in these three
+     * effects. True: handled.
+     */
+    protected memberPress(w: GLSPDiagramWidget, target: Element, e: MouseEvent): boolean {
+        const button = target.closest?.('.member-take-out, .member-remove, .member-add');
+        const box = button?.closest('.catenary-member-box');
+        const id = box && this.idOf(w, box, '.catenary-member-box');
+        if (!button || !box || !id) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        const view = viewIdOf(w), member = button.closest('.member-row')?.getAttribute('data-member') ?? '';
+        const kind = box.matches('.catenary-collection') ? 'collection' : box.matches('.catenary-one-of') ? 'oneOf' : 'valueSet';
+        if (button.matches('.member-add')) {
+            const r = button.getBoundingClientRect();
+            if (kind === 'collection') this.addMember(w, id, button);
+            else if (kind === 'oneOf') void this.actions.addAlternative(ownerOfLabel(id), view, { x: r.left, y: r.bottom + 4 });
+            else this.addConcept(w, id, button);
+        } else if (button.matches('.member-remove')) {
+            if (!member) return true;
+            if (kind === 'collection') void this.actions.removeFromView(view, member);
+            else if (kind === 'oneOf') void this.actions.removeAlternative(ownerOfLabel(id), member, view);
+            else void this.actions.removeConcept(id, member);
+        } else {
+            // ➟ of a member that cannot have its own box is disabled (no data-instance).
+            const shown = button.getAttribute('data-instance');
+            if (!shown || !member) return true;
+            if (kind === 'collection') void this.actions.uncollect(view, [id], [member]);
+            else void this.actions.showMembers(view, [shown], this.besideMember(w, id, button));
+        }
+        return true;
+    }
+
+    /** Model point (center) of a member card taken out of the box `id`: right of the drawn box, level with the row of `button`. */
+    protected besideMember(w: GLSPDiagramWidget, id: string, button: Element): Point {
+        const drawn = this.shown(w, id) as { position?: Point; size?: { width: number } } | undefined;
+        const b = button.getBoundingClientRect(), row = this.editors.toModel(w, b.right, b.top + b.height / 2);
+        const right = drawn?.position && drawn.size ? drawn.position.x + drawn.size.width : row.x;
+        return { x: right + 100 + DEFAULT_SIZE.width / 2, y: row.y };
+    }
+
+    /** "+ concept" / "+ member" of a value set: a concept by label (Enter: the next one). The row shows at once (pending-members.ts). */
+    protected addConcept(w: GLSPDiagramWidget, set: string, add: Element): void {
+        const r = add.getBoundingClientRect();
+        const kind = this.shown(w, set)?.kind;
+        inlineInput({ at: { x: r.left, y: r.top + r.height / 2 }, inside: add, placeholder: kind === 'scheme' ? 'new concept' : 'new or existing concept',
+            options: this.actions.conceptOptions(set),
+            onCommit: async (text, how) => {
+                // The server model confirms the row, or a failure removes it.
+                const label = text.trim(), card = this.editors.placementOf(w, set);
+                if (label) void w.actionDispatcher.dispatch(PendingMemberAction.create(card, label, true));
+                if (!await this.actions.addConcept(set, text) && label) void w.actionDispatcher.dispatch(PendingMemberAction.create(card, label, false));
+                if (how === 'enter') setTimeout(() => this.reopen(w, set, '.member-add'), 50);
+            } });
     }
 
     /** After a change, press the element `selector` of `id` again (the next "+ attribute" or "+ concept"). */
@@ -808,13 +823,8 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         const r = add.getBoundingClientRect(), view = viewIdOf(w);
         inlineInput({ at: { x: r.left, y: r.top + r.height / 2 }, inside: add, placeholder: 'instance', options: this.actions.memberOptions(view, collection),
             onCommit: async (text, how) => {
-                if (await this.actions.addMember(view, collection, text) && how === 'enter') setTimeout(() => this.reopenCollection(w, collection), 50);
+                if (await this.actions.addMember(view, collection, text) && how === 'enter') setTimeout(() => this.reopen(w, collection, '.member-add'), 50);
             } });
-    }
-
-    protected reopenCollection(w: GLSPDiagramWidget, id: string): void {
-        const el = this.nodeOf(w, id)?.querySelector('.member-add');
-        if (el) this.addMember(w, id, el);
     }
 
     /** Drag a concept onto another concept to add skos:broader. A click leaves double-click rename available. */

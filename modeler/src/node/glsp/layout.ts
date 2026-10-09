@@ -199,7 +199,7 @@ export async function layoutView(part: Doc, viewId: string, showHidden: boolean,
     // A member of a collection is not placed: the collection is (the drawn edges go to it). Else the card of the element (its placement
     // id). An "in" or "one of" box (`<property element>_leaf`, placed by its list term): setBounds places that list.
     const item = (b: Box & { id: string }, group = false, element?: string): Item => ({ id: b.id, element, box: b, ext: { x: b.x, y: b.y, width: b.width, height: b.height }, group });
-    const listBoxes = children.filter(c => c.type === TYPES.LEAF && c.id.endsWith(LEAF_SUFFIX) && !c.private)
+    const listBoxes = children.filter(c => (c.type === TYPES.LEAF || c.type === TYPES.ONE_OF) && c.id.endsWith(LEAF_SUFFIX) && !c.private)
         .map(c => item({ id: c.id, ...(c.position as { x: number; y: number }), ...(c.size as { width: number; height: number }) }));
     const all: Item[] = [
         ...boxes(view, 'card').filter(n => !collectionOf(view, n.element)).map(n => item(n, false, n.element)),

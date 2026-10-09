@@ -177,8 +177,10 @@ export function placedTerm(figs: Figure[], t: NTerm): NTerm {
 export function removal(figs: Figure[], placed: Placements, t: NTerm): string[] {
     const before = new Map(placed), after = new Map(placed);
     after.delete(nkey(t));
-    const lineEnds = (s: ReturnType<typeof joinState>) => new Set(figs.filter(f => f.fs.kind !== 'Box' && s.shown(f)).flatMap(f => [f.end, ...f.starts,
-        ...(f.fs.kind === 'Hub' ? f.memberFigs.flatMap(m => m.fs.kind === 'Line' ? [m.end, ...m.starts] : [m]) : [])]).filter(Boolean).map(f => f!.id));
+    // What keeps a box: a shown line or hub member line that ends at it (ui-manifest §2.9 linesTo). A line that starts at the box (an
+    // alternative from its "one of" box) does not keep it.
+    const lineEnds = (s: ReturnType<typeof joinState>) => new Set(figs.filter(f => f.fs.kind !== 'Box' && s.shown(f)).flatMap(f => [f.end,
+        ...(f.fs.kind === 'Hub' ? f.memberFigs.flatMap(m => m.fs.kind === 'Line' ? [m.end] : [m]) : [])]).filter(Boolean).map(f => f!.id));
     const endsBefore = lineEnds(joinState(figs, before));
     const kept = (f: Figure) => f.fs.keptByLines || Boolean(before.get(nkey(f.placedAs))?.keptByLines);
     for (let changed = true; changed;) {
