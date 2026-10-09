@@ -86,52 +86,8 @@ export function primaryClass(meta: Classes, types: string[]): ClassDef | undefin
     return undefined;
 }
 
-/** The class of the views (each view graph has `<view> a view:View`). A class folder of the Model explorer, with the views. */
+/** The class of the views (each view graph has `<view> a view:View`). */
 export const VIEW_CLASS = NS.view + 'View';
-
-/**
- * The top rows of a concept tree: by folder key, 'scheme:<iri>' or 'no-scheme'. The other concepts are rows under their broader concepts.
- * In a scheme: the top concepts and the concepts with no broader concept in the scheme. No scheme: concepts with no scheme and no known broader concept.
- * A concept that no row reaches (a broader cycle) is also a top row: of its first scheme, else of No scheme. So each concept has a row.
- */
-export function conceptRoots(concepts: ConceptDef[]): Map<string, ConceptDef[]> {
-    const byIri = new Map(concepts.map(c => [c.iri, c]));
-    const roots = new Map<string, ConceptDef[]>();
-    const add = (key: string, c: ConceptDef) => roots.set(key, [...roots.get(key) ?? [], c]);
-    for (const c of concepts) {
-        if (!c.schemes.length && !c.broader.some(b => byIri.has(b))) add('no-scheme', c);
-        for (const s of c.schemes) if (c.top || !c.broader.some(b => byIri.get(b)?.schemes.includes(s))) add('scheme:' + s, c);
-    }
-    const reached = new Set<string>();
-    const reach = (c: ConceptDef) => {
-        if (reached.has(c.iri)) return;
-        reached.add(c.iri);
-        concepts.filter(x => x.broader.includes(c.iri)).forEach(reach);
-    };
-    [...roots.values()].flat().forEach(reach);
-    for (const c of concepts) {
-        if (reached.has(c.iri)) continue;
-        add(c.schemes.length ? 'scheme:' + c.schemes[0] : 'no-scheme', c);
-        reach(c);
-    }
-    return roots;
-}
-
-/** The first row of concept `iri` in the tree of `conceptRoots`: folder key and the broader concepts from the top row down. Undefined: not a concept. */
-export function conceptPath(concepts: ConceptDef[], iri: string): { folder: string; broader: string[] } | undefined {
-    const narrower = (c: string) => concepts.filter(x => x.broader.includes(c)).map(x => x.iri);
-    for (const [folder, top] of conceptRoots(concepts)) {
-        // Breadth first from the top rows; a path does not repeat a concept.
-        const queue: string[][] = top.map(c => [c.iri]);
-        while (queue.length) {
-            const path = queue.shift()!;
-            const last = path[path.length - 1];
-            if (last === iri) return { folder, broader: path.slice(0, -1) };
-            for (const n of narrower(last)) if (!path.includes(n)) queue.push([...path, n]);
-        }
-    }
-    return undefined;
-}
 
 /** Relation types the shapes permit from an instance with `from` types to one with `to` types (and IRI `toIri`: see RelationDef.values). */
 export function permittedRelations(meta: Classes, from: string[], to: string[], toIri?: string): RelationDef[] {

@@ -44,9 +44,7 @@ export interface ItemFacts {
     placedInActive: boolean;
     /** Number of views with a placement of the element. */
     views: number;
-    /** The element has a row in the Model explorer. */
-    revealable: boolean;
-    /** Files with statements of the element (Go to Source). */
+    /** Files with statements of the element (Open in → Source). */
     files: number;
     property?: PropertyFacts;
     /** The element is a class (a type of a resource, rdfs:Class, owl:Class or a target class): the node shapes that target it. */
@@ -54,6 +52,15 @@ export interface ItemFacts {
     /** Classes without a node shape that Propose Node Shapes from Data shapes: the element (a class), or its types in the data file. */
     unshaped: string[];
 }
+
+/**
+ * A presentation that shows an element (Open in…): its file as Source at the position of the element, the Model pane of a file
+ * with a row of it, or a Canvas that places it (`box`: its placement there). Lines and columns are 1-based (the file on disk).
+ */
+export type OpenTarget =
+    | { presentation: 'Source'; path: string; line?: number; column?: number }
+    | { presentation: 'Model'; path: string }
+    | { presentation: 'Canvas'; view: string; label: string; box?: string };
 
 export interface SelectionFacts {
     view?: string;
@@ -117,15 +124,11 @@ function groupable(f: SelectionFacts): Applies {
 
 /** The actions, in menu order. Ids are the command ids of the frontend. */
 export const ACTIONS: ActionDef[] = [
-    // Open and navigate
-    { id: 'catenary.openView', label: 'Open View', scope: 'elements', applies: f => all(f, i => has(i, 'view')) },
-    { id: 'catenary.showInView', label: 'Show in a View', scope: 'elements',
-        applies: f => { const i = one(f); return !!i && !has(i, 'view') && has(i, ...PLACEABLE) && (i.views > 0 || 'No view places the element.'); } },
+    // Open and navigate: one operation for every presentation, Source, Model and Canvas (spec/ui-manifest.hs §4.7).
+    { id: 'catenary.openIn', label: 'Open in…', key: 'F12', scope: 'elements',
+        applies: f => { const i = one(f); return !!i && (i.files > 0 || i.views > 0 || has(i, 'view') || 'No file and no view has the element.'); } },
     { id: 'catenary.nextOccurrence', label: 'Show in Next View', key: 'F3', scope: 'elements', applies: f => { const i = one(f); return !!i && i.views > 1; } },
     { id: 'catenary.previousOccurrence', label: 'Show in Previous View', key: 'Shift+F3', scope: 'elements', applies: f => { const i = one(f); return !!i && i.views > 1; } },
-    { id: 'catenary.selectInExplorer', label: 'Reveal in Explorer', scope: 'elements', applies: f => { const i = one(f); return !!i && i.revealable; } },
-    { id: 'catenary.goToSource', label: 'Go to Source', key: 'F12', scope: 'elements',
-        applies: f => { const i = one(f); return !!i && (i.files > 0 || 'No file has statements of the element.'); } },
     // Edit
     { id: 'catenary.rename', label: 'Rename', key: 'F2', scope: 'elements',
         applies: f => { const i = one(f); return !!i && (has(i, ...NAMED) || (!!f.view && has(i, 'group', 'note'))); } },

@@ -27,11 +27,10 @@ type Creator = { label: string; run: (text: string) => Promise<unknown> };
 /** Client coordinates: pickers open there, next to the element, instead of at the top of the window. */
 type Anchor = { x: number; y: number };
 
-/** Row buttons of Find Element: Show, Reveal in Explorer, Go to Source. */
+/** Row buttons of Find Element: Show, Open in… (F12). */
 const FIND_BUTTONS: QuickInputButton[] = [
     { iconClass: 'codicon codicon-eye', tooltip: 'Show (Alt+Enter)' },
-    { iconClass: 'codicon codicon-list-tree', tooltip: 'Reveal in Explorer' },
-    { iconClass: 'codicon codicon-go-to-file', tooltip: 'Go to Source' }
+    { iconClass: 'codicon codicon-go-to-file', tooltip: 'Open in…' }
 ];
 
 @injectable()
@@ -198,7 +197,7 @@ export class ModelActions {
     /**
      * Find Element (F8, Ctrl+T): all things, one section per kind; the picker filters by label, type and IRI. Enter adds the pick to
      * the current view (an element on it: selects it there), Ctrl+Enter adds it and keeps the picker open. Alt+Enter, or no view: show
-     * the element. Row buttons: Show, Reveal in Explorer, Go to Source.
+     * the element. Row buttons: Show, Open in….
      */
     async findElement(): Promise<void> {
         type Item = QuickPickItem & { hit: SearchHit };
@@ -246,7 +245,7 @@ export class ModelActions {
             pick.hide();
             const target = { ids: [hit.id] };
             if (button === FIND_BUTTONS[0]) await this.editors.show(hit.id);
-            else await this.commands.executeCommand(button === FIND_BUTTONS[1] ? 'catenary.selectInExplorer' : 'catenary.goToSource', target);
+            else await this.commands.executeCommand('catenary.openIn', target);
         });
         pick.show();
     }

@@ -251,15 +251,8 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-tree-name { flex: none; white-space: nowrap; }
 .catenary-explorer .catenary-tree-description { flex: 0 1 auto; min-width: 0; }
 .catenary-tree-caption.muted { color: var(--catenary-muted); font-style: italic; }
-/* Shown in the current view editor. */
-.catenary-explorer .theia-TreeNodeContent:has(.catenary-tree-caption.in-view) { opacity: 0.55; }
 .catenary-tree-badge { white-space: nowrap; margin-left: auto; font-size: 10px; font-weight: normal; font-style: normal; color: var(--catenary-muted); border: 1px solid var(--catenary-border); border-radius: 8px; padding: 0 5px; min-width: 12px; text-align: center; }
-.catenary-tree-problems { font-size: 10px; font-weight: 700; color: #fff; background: var(--catenary-danger); border-radius: 8px; padding: 0 5px; }
 .catenary-empty { padding: 12px; }
-.catenary-row-actions { display: none; flex: none; gap: 2px; margin-left: 4px; }
-.catenary-explorer .theia-TreeNode:hover .catenary-row-actions, .catenary-explorer .theia-TreeNode.theia-mod-selected .catenary-row-actions { display: flex; }
-.catenary-row-actions .action-label { cursor: pointer; padding: 1px; border-radius: 3px; }
-.catenary-row-actions .action-label:hover { background: var(--theia-toolbar-hoverBackground); }
 
 /* ---------------------------------------------------------------- links */
 

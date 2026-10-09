@@ -505,7 +505,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             case 'remove': return id.endsWith(LEAF_SUFFIX) ? void this.actions.removeFromView(viewIdOf(w), id) : run(ModelCommands.REMOVE_FROM_VIEW);
             case 'collect': return run(ModelCommands.COLLECT);
             case 'uncollect': return run(ModelCommands.UNCOLLECT);
-            case 'reveal': return run(ModelCommands.SELECT_IN_EXPLORER);
+            case 'openIn': return run(ModelCommands.OPEN_IN);
             case 'menu': return this.elementMenu(w, button);
             case 'link': case 'linkIn': {
                 const dir = button.getAttribute('data-action') === 'link' ? 'out' : 'in';

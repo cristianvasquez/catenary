@@ -204,7 +204,7 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
                     cards.add(elementId(r.s)); cards.add(elementId(r.o)); relations.push(id);
                 } else if (model.properties[id]) cards.add(model.properties[id].owner);
                 else if (ops.cardTerm(g, id)) cards.add(id);
-                else return fail('This selection contains an element that cannot be placed in a view.');
+                // A folder also holds elements that a view does not place (a class): they stay out.
             }
             if (!cards.size && !views.length) return fail('This folder has no elements to place.');
             placeAround(g, c.view, [...cards], c.at);

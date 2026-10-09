@@ -14,33 +14,32 @@ vi.mock('../src/browser/action-service', () => ({ ActionService: class {}, whenA
 vi.mock('../src/browser/diagram/canvas', () => ({ DND_INSTANCES: 'application/x-catenary-instances' }));
 vi.mock('@theia/markers/lib/browser/problem/problem-manager', () => ({ ProblemManager: class {} }));
 vi.mock('../src/browser/model-client', () => ({ ModelFrontend: class {} }));
-vi.mock('../src/browser/diagram/view-editors', () => ({ ViewEditors: class {} }));
 vi.mock('@theia/property-view/lib/browser/property-view-contribution', () => ({ PropertyViewContribution: class {} }));
 vi.mock('../src/browser/commands', () => ({ OpenModelCommands: { OPEN: { id: 'open' } } }));
 
 function fixture() {
-    const editors = { show: vi.fn(async () => true) };
+    const commands = { executeCommand: vi.fn(async () => undefined) };
     const selection = Object.assign(new SelectionModel(), { model: {
         onDidChange: () => ({ dispose() {} }), snapshot: { revision: 0 }, isOpen: true,
         service: { selected: async (s: ModelSelection) => ({ ...emptySelected(), view: s.view, ids: s.ids, elements: s.ids }) }
     } });
     const properties = { openView: vi.fn(async () => ({})) };
-    const handler = Object.assign(new ElementOpenHandler(), { editors, selection, properties });
-    return { handler, editors, selection, properties };
+    const handler = Object.assign(new ElementOpenHandler(), { commands, selection, properties });
+    return { handler, commands, selection, properties };
 }
 
 it('a click on a problem selects its instance, reveals Properties and opens no view', async () => {
-    const { handler, editors, selection, properties } = fixture();
+    const { handler, commands, selection, properties } = fixture();
     await handler.open(elementUri('i1'), { mode: 'reveal' } as object);
     expect(selection.selection).toEqual({ view: undefined, ids: ['i1'] });
     expect(properties.openView).toHaveBeenCalledWith({ activate: false, reveal: true });
-    expect(editors.show).not.toHaveBeenCalled();
+    expect(commands.executeCommand).not.toHaveBeenCalled();
 });
 
-it('a double-click on a problem shows its instance in a view', async () => {
-    const { handler, editors } = fixture();
+it('a double-click on a problem runs Open in… on its instance', async () => {
+    const { handler, commands } = fixture();
     await handler.open(elementUri('i1'));
-    expect(editors.show).toHaveBeenCalledWith('i1');
+    expect(commands.executeCommand).toHaveBeenCalledWith('catenary.openIn', { ids: ['i1'] });
 });
 
 it('a click on a problem without a focus instance changes no selection', async () => {

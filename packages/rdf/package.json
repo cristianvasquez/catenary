@@ -23,7 +23,9 @@
     "rdf-files": "workspace:*",
     "shacl-engine": "1.1.2",
     "shaclxtract": "^0.1.0",
-    "@catenary/shacl": "workspace:*"
+    "@catenary/shacl": "workspace:*",
+    "@catenary/explorer": "workspace:*",
+    "@catenary/rdfs": "workspace:*"
   },
   "devDependencies": {
     "@rdfjs/types": "^2.0.1",

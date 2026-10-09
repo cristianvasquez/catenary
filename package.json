@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.3.0",
   "scripts": {
     "build": "pnpm build:browser && pnpm -C electron-app build",
-    "build:browser": "pnpm -C packages/shacl build && pnpm -C packages/model build && pnpm -C packages/rdf-serialization build && pnpm -C packages/rdf-files build && pnpm -C packages/rdf build && pnpm -C modeler build && pnpm -C app build",
+    "build:browser": "pnpm -C packages/explorer build && pnpm -C packages/shacl build && pnpm -C packages/rdfs build && pnpm -C packages/model build && pnpm -C packages/rdf-serialization build && pnpm -C packages/rdf-files build && pnpm -C packages/rdf build && pnpm -C modeler build && pnpm -C app build",
     "start": "pnpm -C app start",
     "desktop": "bash scripts/desktop.sh",
     "install-desktop": "bash scripts/install-desktop.sh",

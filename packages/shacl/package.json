@@ -29,6 +29,9 @@
     "src",
     "notations"
   ],
+  "dependencies": {
+    "@catenary/explorer": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --config ../../vitest.config.mts packages/shacl/test"

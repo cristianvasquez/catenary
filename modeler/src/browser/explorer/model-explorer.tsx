@@ -1,34 +1,28 @@
-// Each file Model pane (ADR 0006): every folder is a SPARQL query of the backend, run when the folder opens or
-// refreshes. Top: one folder per type of every graph, No class, Relations (by predicate), Concepts (schemes, broader concepts).
+// Each file Model pane (ADR 0006): the sections of the explorer plugins of the backend (Classes, Shapes). A folder asks the
+// backend for its rows when it opens, one page at a time. A filter shows one flat list of the best matches.
 // It shows and sets the selection of the window (SelectionModel). The files: the Theia file navigator (ADR 0004).
 
-import { CancellationToken, Emitter, MenuPath, QuickInputService } from '@theia/core';
+import { CancellationToken, CommandService, Emitter, MenuPath, QuickInputService } from '@theia/core';
 import {
     ApplicationShell, CompositeTreeNode, ContextMenuRenderer, ExpandableTreeNode, NodeProps, Saveable, SaveableSource, SelectableTreeNode,
     Tree, TreeImpl, TreeModel, TreeNode, TreeProps, TreeSelection, TreeWidget, codicon
 } from '@theia/core/lib/browser';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
-import { ActionTarget, ExplorerKind, ExplorerRow, EXPLORER_DRAG, ExplorerDrag, fuzzyMatch, baseName, classKey, iriId, panelsUnchanged } from '@catenary/model';
+import { EXPLORER_PAGE, ExplorerRow, EXPLORER_DRAG, ExplorerDrag, fuzzyMatch, baseName, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
-import { ViewEditors } from '../diagram/view-editors';
-import { colorValue } from '../diagram/views';
 import { ModelActions } from '../actions';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel, sameIds } from '../selection-model';
 
 export const FILE_EXPLORER_ID = 'catenary-file-explorer';
-/** Prefix of the key of a class folder (packages/model/src/explorer.ts `classKey`). */
-const CLASS_KEY = classKey('');
+/** The Open in… command (ModelCommands.OPEN_IN): this file cannot import commands.ts, which imports it. */
+const OPEN_IN = 'catenary.openIn';
 /** Context menu of the explorers: each command shows when it applies to the selected nodes. */
 export const EXPLORER_CONTEXT_MENU: MenuPath = ['catenary-model-explorer-context'];
 
-/** Kinds of rows of the Model explorer (ExplorerRow.kind). */
-export type CatenaryKind = ExplorerKind;
-
 /** A row of the Model explorer: an ExplorerRow of the backend as a tree node. */
 export interface CatenaryNode extends SelectableTreeNode, Omit<ExplorerRow, 'folder' | 'name' | 'description' | 'icon'> {
-    error?: string;
     /** Codicon name (ExplorerRow.icon). */
     icon?: string;
     /** Short text after the name (ExplorerRow.description). */
@@ -36,17 +30,20 @@ export interface CatenaryNode extends SelectableTreeNode, Omit<ExplorerRow, 'fol
 }
 export type CatenaryFolder = CatenaryNode & ExpandableTreeNode;
 
+/** The last row of a folder with more rows than it shows: a click shows the next page. */
+interface MoreNode extends SelectableTreeNode { more: true }
+const isMore = (node: unknown): node is MoreNode => !!node && typeof node === 'object' && 'more' in node;
+
 export namespace CatenaryNode {
     export function is(node: unknown): node is CatenaryNode {
-        return !!node && typeof node === 'object' && 'kind' in node && 'key' in node && SelectableTreeNode.is(node as unknown as TreeNode);
+        return !!node && typeof node === 'object' && 'key' in node && SelectableTreeNode.is(node as unknown as TreeNode);
     }
-    /** Element ids of the rows of one kind. */
-    export function ids(nodes: readonly unknown[], kind: CatenaryKind): string[] {
-        return [...new Set(nodes.filter(isElement).filter(n => n.kind === kind).map(elementId))];
-    }
-    /** A row of an element: it can be the selection of the model. Every row of a resource is one. */
+    /** A row of an element: it can be the selection of the model. A folder can be one (a class, a node shape). */
     export function isElement(node: unknown): node is CatenaryNode {
         return is(node) && !!node.element;
+    }
+    export function isFolder(node: unknown): node is CatenaryFolder {
+        return is(node) && ExpandableTreeNode.is(node);
     }
     /** The element id of an element row. */
     export function elementId(node: CatenaryNode): string {
@@ -55,28 +52,24 @@ export namespace CatenaryNode {
 }
 
 /**
- * The tree of the backend rules (ADR 0006): the children of a node are `explorerChildren(key)`. Node ids are the path of keys
- * ('folder:<top key>/<key>/…'), stable over refreshes, so expansion and selection survive.
+ * The tree of the backend (ADR 0006): the children of a node are pages of `explorerChildren(key)`. Node ids are the path of keys
+ * ('folder:<top key>/<key>/…'), stable over refreshes, so expansion and selection survive. With a filter, the root has the rows of
+ * `explorerSearch` ('search:<key>').
  */
 @injectable()
 export class ModelTree extends TreeImpl {
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
     file?: string;
     filter = '';
-    protected beforeFilter = new Map<string, boolean>();
+    /** Node id of a folder -> the number of its rows to show (pages of EXPLORER_PAGE). */
+    protected shown = new Map<string, number>();
 
-    setFilter(filter: string): void {
-        const visit = (node: TreeNode) => {
-            if (ExpandableTreeNode.is(node)) {
-                if (!this.filter) this.beforeFilter.set(node.id, node.expanded);
-                else if (!filter) node.expanded = this.beforeFilter.get(node.id) ?? false;
-            }
-            if (CompositeTreeNode.is(node)) node.children.forEach(visit);
-        };
-        if (!this.filter) this.beforeFilter.clear();
-        if (this.root) visit(this.root);
-        this.filter = filter;
+    /** Show the next page of the folder of a "more" row. */
+    async showMore(node: TreeNode): Promise<void> {
+        const parent = node.parent;
+        if (!isMore(node) || !parent) return;
+        this.shown.set(parent.id, (this.shown.get(parent.id) ?? EXPLORER_PAGE) + EXPLORER_PAGE);
+        await this.refresh(parent);
     }
 
     override async resolveChildren(parent: CompositeTreeNode): Promise<TreeNode[]> {
@@ -85,21 +78,32 @@ export class ModelTree extends TreeImpl {
             if (CatenaryNode.is(ancestor) && ancestor.key === parent.key) return [];
         }
         if (top && !this.model.isOpen) return [];
-        let rows: ExplorerRow[];
+        const file = this.file, filter = this.filter;
+        let rows: ExplorerRow[], total: number;
         try {
-            const file = this.file, filter = this.filter;
-            rows = await this.model.service.explorerChildren(top ? undefined : (parent as unknown as CatenaryNode).key, this.editors.currentViewId(), file, filter);
+            if (top && filter) {
+                rows = await this.model.service.explorerSearch(filter, file);
+                total = rows.length;
+            } else {
+                const key = top ? undefined : (parent as unknown as CatenaryNode).key, limit = this.shown.get(parent.id) ?? EXPLORER_PAGE;
+                ({ rows, total } = await this.model.service.explorerChildren(key, file, 0));
+                while (rows.length < Math.min(limit, total)) rows = [...rows, ...(await this.model.service.explorerChildren(key, file, rows.length)).rows];
+            }
             if (file !== this.file || filter !== this.filter) return this.resolveChildren(parent);
         } catch (e) {
             console.error('[catenary] explorer', e);
             return [];
         }
-        return rows.map(({ folder, color, ...row }) => {
-            const node: CatenaryNode = { ...row, id: (top ? 'folder:' : parent.id + '/') + row.key, parent, selected: false, color: color && colorValue(color) };
-            const result = this.keep(folder ? { ...node, children: [], expanded: false } as CatenaryFolder : node);
-            if (this.filter && ExpandableTreeNode.is(result)) result.expanded = true;
-            return result;
+        const prefix = top ? (filter ? 'search:' : 'folder:') : parent.id + '/';
+        const nodes: TreeNode[] = rows.map(({ folder, ...row }) => {
+            const node: CatenaryNode = { ...row, id: prefix + row.key, parent, selected: false };
+            return this.keep(folder ? { ...node, children: [], expanded: false } as CatenaryFolder : node);
         });
+        if (total > rows.length) {
+            const more: MoreNode = { more: true, id: parent.id + '/#more', name: `Show ${Math.min(EXPLORER_PAGE, total - rows.length)} more (${rows.length} of ${total})`, parent, selected: false };
+            nodes.push(more);
+        }
+        return nodes;
     }
 
     /**
@@ -146,11 +150,11 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     @inject(ModelFrontend) protected readonly modelFrontend: ModelFrontend;
     @inject(Tree) protected readonly modelTree: ModelTree;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(SelectionModel) protected readonly elements: SelectionModel;
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(ActionService) protected readonly actionService: ActionService;
+    @inject(CommandService) protected readonly commands: CommandService;
     readonly saveable: ModelSaveable;
     /** True while the tree shows the SelectionModel: that tree selection change is not a user gesture. */
     protected applying = false;
@@ -169,7 +173,7 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     protected filterInput: HTMLInputElement | null = null;
 
     protected filterChanged(value: string): void {
-        this.modelTree.setFilter(value);
+        this.modelTree.filter = value;
         this.update();
         clearTimeout(this.filterTimer);
         this.filterTimer = setTimeout(() => { if (!this.isDisposed) void this.model.refresh(); }, 120);
@@ -287,20 +291,16 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
             await refreshed;
             await this.showSelection();
         }));
-        // A selection of element rows is the selection of the model: elements, with no view (spec 0.4: Del has no action on them);
-        // a row of a placement or a mark has the view of its graph. Folders only: nothing is selected (their actions: the folder target).
+        // A selection of element rows is the selection of the model: elements, with no view (spec 0.4: Del has no action on them).
+        // A "more" row shows the next page of its folder.
         this.toDispose.push(this.model.onSelectionChanged(nodes => {
+            const more = nodes.find(isMore);
+            if (more) return void this.modelTree.showMore(more);
             if (this.applying || this.shell.activeWidget !== this) return;
-            const rows = nodes.filter(CatenaryNode.isElement);
-            const ids = [...new Set(rows.map(CatenaryNode.elementId))];
-            if (ids.length) this.elements.set({ view: rows.find(n => n.view)?.view, ids });
-            else if (nodes.length) this.elements.set({ ids: [] });
-            // One view row selected: open the view, the focus stays in the tree.
-            if (rows.length === 1 && nodes.length === 1 && rows[0].kind === 'view') void this.editors.open(rows[0].element!, 'reveal');
+            const ids = [...new Set(nodes.filter(CatenaryNode.isElement).map(CatenaryNode.elementId))];
+            if (ids.length || nodes.length) this.elements.set({ ids });
         }));
         this.toDispose.push(this.elements.onDidChange(() => this.showSelection()));
-        // Another view editor becomes the current one: mark the elements of that view.
-        this.toDispose.push(this.editors.onDidChangeCurrentView(() => this.model.refresh()));
         this.modelFrontend.start().then(() => this.model.refresh());
     }
 
@@ -334,16 +334,22 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
 
     /** Expand the folders of a row of an element and select it. Several rows (types, concept tree): the user picks one. */
     async reveal(id: string): Promise<void> {
+        if (this.modelTree.filter) this.filterChanged('');
         await this.model.refresh();
-        const paths = await this.modelFrontend.service.explorerPaths(id);
+        const paths = await this.modelFrontend.service.explorerPaths(id, this.modelTree.file);
         const path = paths.length > 1
             ? (await this.quick.showQuickPick(paths.map(p => ({ label: p.name, path: p })), { placeholder: 'Reveal in folder' }))?.path
             : paths[0];
         if (!path) return;
-        let nodeId = 'folder:' + path.keys[0];
+        let parentId = 'catenary-root', nodeId = 'folder:' + path.keys[0];
         for (const [i, key] of path.keys.entries()) {
-            if (i > 0) nodeId += '/' + key;
-            const node = this.model.getNode(nodeId);
+            if (i > 0) [parentId, nodeId] = [nodeId, nodeId + '/' + key];
+            // A row after the shown pages: show the next page of its folder until it is there.
+            let node = this.model.getNode(nodeId);
+            for (let more = this.model.getNode(parentId + '/#more'); !node && more; more = this.model.getNode(parentId + '/#more')) {
+                await this.modelTree.showMore(more);
+                node = this.model.getNode(nodeId);
+            }
             if (i === path.keys.length - 1) {
                 if (SelectableTreeNode.is(node)) this.model.selectNode(node);
             } else if (ExpandableTreeNode.is(node)) {
@@ -360,29 +366,20 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     }
 
     protected override renderIcon(node: TreeNode, _props: NodeProps): React.ReactNode {
+        if (isMore(node)) return <span className={`${codicon('ellipsis')} catenary-tree-icon`} />;
         if (!CatenaryNode.is(node)) return undefined;
-        const icon = node.icon ?? (node.kind === 'relation' ? 'arrow-right' : node.kind === 'instance' ? 'symbol-object' : 'symbol-class');
-        return <span className={`${codicon(icon)} catenary-tree-icon`} style={node.color ? { color: node.color } : undefined} />;
+        return <span className={`${codicon(node.icon ?? 'symbol-misc')} catenary-tree-icon`} />;
     }
 
     protected override renderCaption(node: TreeNode, props: NodeProps): React.ReactNode {
+        if (isMore(node)) return <span className='catenary-tree-caption muted'>{node.name}</span>;
         if (!CatenaryNode.is(node)) return super.renderCaption(node, props);
-        const folder = node.kind === 'folder';
-        const cls = ['catenary-tree-caption', node.muted ? 'muted' : '', node.inView ? 'in-view' : '', folder ? 'folder' : '', node.error ? 'error' : ''].join(' ');
-        return <span className={cls} title={this.tooltip(node)}>
+        const cls = ['catenary-tree-caption', CatenaryNode.isFolder(node) ? 'folder' : ''].join(' ');
+        return <span className={cls} title={node.tooltip ?? node.name}>
             <span className='catenary-tree-name'>{this.captionText(node.name ?? '')}</span>
             {node.description ? <span className='catenary-tree-description'>{node.description}</span> : undefined}
-            {node.problems ? <span className='catenary-tree-problems' title={`${node.problems} violations`}>{node.problems}</span> : undefined}
-            {node.badge !== undefined ? <span className='catenary-tree-badge'>{node.badge}</span> : undefined}
-            {this.renderActions(node)}
+            {node.count !== undefined ? <span className='catenary-tree-badge'>{node.count}</span> : undefined}
         </span>;
-    }
-
-    /** One class folder selected (no element rows): the class is the target of the actions of the context menu (Propose Node Shapes from Data). */
-    protected override toContextMenuArgs(_node: SelectableTreeNode): ActionTarget[] | undefined {
-        const nodes = this.selectedNodes;
-        const iri = nodes.length === 1 && nodes[0].kind === 'folder' && nodes[0].key.startsWith(CLASS_KEY) ? nodes[0].key.slice(CLASS_KEY.length) : undefined;
-        return iri ? [{ ids: [iriId(iri)] }] : undefined;
     }
 
     /** As the base class, but the menu opens after the actions of its target are known (action-menus.ts). */
@@ -403,29 +400,15 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
             .then(() => this.contextMenuRenderer.render({ menuPath, context, anchor: { x, y }, args }));
     }
 
-    /** Buttons at the end of a row, shown on hover. */
-    protected renderActions(_node: CatenaryNode): React.ReactNode {
-        return undefined;
-    }
-
-    protected tooltip(node: CatenaryNode): string {
-        if (node.tooltip) return node.tooltip;
-        switch (node.kind) {
-            case 'instance': return `${node.name}: in ${node.badge} view(s)${node.muted ? ' (not placed in a view)' : ''}${node.inView ? ', also in the current view' : ''}. Double-click to show, drag to a view.`;
-            case 'relation': return `${node.name}: shown in ${node.badge} view(s)${node.inView ? ', also in the current view' : ''}. Drag to a view to add its subject and object.`;
-            default: return node.name ?? '';
-        }
-    }
-
     protected override createNodeAttributes(node: TreeNode, props: NodeProps): React.Attributes & React.HTMLAttributes<HTMLElement> {
         const attrs = super.createNodeAttributes(node, props);
-        if (!CatenaryNode.is(node) || !(node.element || node.kind === 'folder')) return attrs;
+        if (!CatenaryNode.is(node)) return attrs;
         return { ...attrs, draggable: true, onDragStart: (e: React.DragEvent) => {
             const nodes = node.selected ? this.selectedNodes : [node];
             const payload: ExplorerDrag = {
                 file: this.modelTree.file,
-                ids: nodes.filter(n => n.kind !== 'folder' && n.element).map(n => n.element!),
-                folders: nodes.filter(n => n.kind === 'folder').map(n => n.key)
+                ids: nodes.filter(n => !CatenaryNode.isFolder(n) && n.element).map(n => n.element!),
+                folders: nodes.filter(CatenaryNode.isFolder).map(n => n.key)
             };
             e.dataTransfer.setData(EXPLORER_DRAG, JSON.stringify(payload));
             e.dataTransfer.effectAllowed = 'copyMove';
@@ -438,16 +421,17 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
         return name.split('').map((c, i) => indices.has(i) ? <mark key={i}>{c}</mark> : c);
     }
 
+    /** Double-click or Enter on a leaf row of an element: Open in… (a folder row expands). */
     protected override handleDblClickEvent(node: TreeNode | undefined, event: React.MouseEvent<HTMLElement>): void {
-        if (CatenaryNode.isElement(node)) {
-            void this.editors.show(CatenaryNode.elementId(node));
+        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) {
+            void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
             event.stopPropagation();
         } else super.handleDblClickEvent(node, event);
     }
 
     protected override handleEnter(event: KeyboardEvent): void {
         const node = this.model.getFocusedNode();
-        if (CatenaryNode.isElement(node)) void this.editors.show(CatenaryNode.elementId(node));
+        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
         else super.handleEnter(event);
     }
 

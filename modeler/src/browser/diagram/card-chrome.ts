@@ -78,7 +78,7 @@ const CREATE_ICON = 'add';
 export function cardHalo(incoming: number, outgoing: number, targets = 0): HaloAction[] {
     return [
         HALO_REMOVE, HALO_MENU,
-        { action: 'reveal', dock: 'nw', icon: 'list-tree', title: 'Reveal in Model Explorer' },
+        { action: 'openIn', dock: 'nw', icon: 'go-to-file', title: 'Open in… (F12)' },
         ...(incoming ? [{ action: 'expandIn', dock: 'w' as const, icon: 'arrow-right', title: `Incoming: show related instances (${incoming} not in the view)`, count: incoming }] : []),
         ...(outgoing ? [{ action: 'expandOut', dock: 'e' as const, icon: 'arrow-right', title: `Outgoing: show related instances (${outgoing} not in the view)`, count: outgoing }] : []),
         ...(targets ? [{ action: 'expandTargets', dock: 'n' as const, icon: 'schema', title: `Show applicable node shapes (${targets} not in the view)`, count: targets }] : []),

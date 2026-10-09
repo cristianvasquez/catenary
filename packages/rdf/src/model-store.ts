@@ -8,19 +8,20 @@ import { shapeTargetMatches } from './shacl-targets';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, WorkspaceFiles, prefixesProblem,
-    setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
+    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, WorkspaceFiles, prefixesProblem,
+    setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri
+    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
 } from '@catenary/model';
-import type { NamedNode, Quad } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
-import { ActionContext, selectionActions } from './actions';
+import { FolderWatcher, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
+import { ActionContext, Placements, placements, selectionActions } from './actions';
 import { executeCommand } from './commands';
-import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements, filteredExplorerChildren } from './explorer';
+import type { ExplorerPort } from '@catenary/explorer';
+import { explorerChildren, explorerElements, explorerPaths, explorerSearch } from './explorer';
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
@@ -47,6 +48,9 @@ import { selected } from './selection';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
 
 export type { ChangeReason };
+
+/** The explorer reads of one file scope (no file: the workspace), kept until the dataset changes. */
+interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
 
 export interface ModelChange {
     reason: ChangeReason;
@@ -95,7 +99,7 @@ export class ModelStore implements ModelQueries {
 
     /** Changes each time the dataset changes. Keys the caches below. */
     protected content = 0;
-    protected cache: { content: number; placements?: Placements; instances?: number; explorer?: ExplorerContent } = { content: -1 };
+    protected cache: { content: number; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = { content: -1 };
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -168,21 +172,47 @@ export class ModelStore implements ModelQueries {
         return t?.termType === 'NamedNode' ? formData(this.graph, t) : '';
     }
 
-    /** The Model explorer (ADR 0006): the rules of explorer.ts on this store; `currentView`: the view of the asking window. */
-    protected explorerContext(currentView?: string): ExplorerContext {
-        const idx = this.shapesIndex();
-        const placed = this.cached('placements', () => placements(this.graph, idx.byTerm));
+    /** The port of the explorer plugins (explorer.ts) on this store. `file`: the scope, its subjects found once per dataset. */
+    protected explorerPort(file?: string): ExplorerPort {
+        const scopes = this.cached('explorer', () => new Map<string, ExplorerScope>());
+        let scope = scopes.get(file ?? '');
+        if (!scope) scopes.set(file ?? '', scope = { subjects: file ? this.subjectsOfFile(file) : undefined, memo: new Map() });
+        const { subjects, memo } = scope;
+        const byTerm = this.shapesIndex().byTerm;
         return {
-            g: this.graph, shapes: idx.model, meta: this.metamodel, byTerm: idx.byTerm, placements: placed, currentView, fileOf: t => this.ws?.filesOfSubject(t)[0],
-            content: this.cached('explorer', () => ({}))
+            select: query => this.graph.store.select(query) as unknown as Record<string, Term>[],
+            graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`,
+            labels: iris => labels(this.graph, [...iris]),
+            compact: shortIri,
+            id: iri => byTerm.get(termKey(rdf.namedNode(iri))) ?? iriId(iri),
+            inScope: iri => !subjects || subjects.has(iri),
+            memo: <T>(key: string, compute: () => T) => (memo.has(key) ? memo.get(key) : memo.set(key, compute()).get(key)) as T
         };
     }
 
-    /** Rows of a node key of the Model explorer; no key: the top folders. Nothing when no model is open. */
-    explorerChildren(key?: string, currentView?: string, file?: string, filter?: string): ExplorerRow[] {
-        if (!this.file) return [];
-        const ctx = this.explorerContext(currentView);
-        return file || filter ? filteredExplorerChildren(ctx, key, id => !file || this.elementInFile(id, file), filter) : explorerChildren(ctx, key);
+    /** The IRI subjects of the statements of a file. */
+    protected subjectsOfFile(file: string): Set<string> {
+        const ws = this.ws, subjects = new Set<string>();
+        const known = ws?.knownFile(path.resolve(this.folder, file));
+        if (!ws || !known) return subjects;
+        for (const q of this.graph.quads()) if (q.subject.termType === 'NamedNode' && !subjects.has(q.subject.value) && ws.filesOfQuad(q).includes(known)) subjects.add(q.subject.value);
+        return subjects;
+    }
+
+    /** The IRI of an element id: a property shape by the shapes index, else the IRI of the id. */
+    protected iriOf(id: string): string | undefined {
+        const t = this.shapesIndex().property.get(id)?.term ?? elementTerm(id);
+        return t?.termType === 'NamedNode' ? t.value : undefined;
+    }
+
+    /** One page of the rows of a key of the Model explorer; no key: the sections. Nothing when no model is open. */
+    explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage {
+        return this.file ? explorerChildren(this.explorerPort(file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
+    }
+
+    /** The element rows whose name matches `text`, best first. */
+    explorerSearch(text: string, file?: string): ExplorerRow[] {
+        return this.file ? explorerSearch(this.explorerPort(file), text) : [];
     }
 
     protected elementInFile(id: string, file: string): boolean {
@@ -196,8 +226,9 @@ export class ModelStore implements ModelQueries {
     }
 
     /** Paths to the rows of an element in the Model explorer (Reveal). */
-    explorerPaths(id: string): ExplorerPath[] {
-        return this.file ? explorerPaths(this.explorerContext(), id) : [];
+    explorerPaths(id: string, file?: string): ExplorerPath[] {
+        const iri = this.iriOf(id);
+        return this.file && iri ? explorerPaths(this.explorerPort(file), iri) : [];
     }
 
     /** Labels of all views (view id → label), by SPARQL: the titles of the view editors (ADR 0007 step 5). */
@@ -236,7 +267,7 @@ export class ModelStore implements ModelQueries {
 
     /** Element ids of the rows under a node key of the Model explorer, at any depth. */
     explorerElements(key: string, file?: string): string[] {
-        return this.file ? explorerElements(this.explorerContext(), key).filter(id => !file || this.elementInFile(id, file)) : [];
+        return this.file ? explorerElements(this.explorerPort(file), key).filter(id => !file || this.elementInFile(id, file)) : [];
     }
 
     explorerDrag(selection: ExplorerDrag): string[] {
@@ -283,7 +314,8 @@ export class ModelStore implements ModelQueries {
     selectionActions(target: ActionTarget): SelectionActions {
         if (!this.file) return { actions: [], items: [], cards: [] };
         const ctx: ActionContext = {
-            ...this.explorerContext(target.activeView),
+            g: this.graph, shapes: this.shapesIndex().model,
+            placements: this.cached('placements', () => placements(this.graph, this.shapesIndex().byTerm)),
             doc: this.scoped({ elements: target.ids, views: [target.view] }),
             viewOf: v => this.viewDoc(v).views[v],
             filesOf: id => this.filesOfElement(id)
@@ -455,7 +487,7 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * The files with statements of an element (Go to Source, spec 0.4): the triples with the element as subject; a relation: its
+     * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
      * triple; no such triples: the triples with it as object. Most statements first.
      */
     filesOfElement(id: string): string[] {
@@ -465,23 +497,59 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Go to Source: every file with statements of an element, and the line of the element in each (the file on disk: unsaved changes
-     * are not in it). The line is of the subject IRI; a property shape without its own line: the line of its node shape.
+     * Open in…: the presentations that show an element. Source: each file with statements of it, at its position in the file on disk
+     * (unsaved changes are not in it). Model: each of those files whose Model pane has a row of it. Canvas: each view that places it.
      */
-    async sources(id: string): Promise<{ path: string; line?: number }[]> {
+    async openTargets(id: string): Promise<OpenTarget[]> {
+        if (!this.file) return [];
+        const files = this.filesOfElement(id);
+        const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await this.positionIn(path, id) })));
+        const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
+        const shown = this.showing(id);
+        const canvases = shown.isView
+            ? [{ presentation: 'Canvas' as const, view: id, label: this.viewLabels()[id] ?? id }]
+            : shown.views.map(v => ({ presentation: 'Canvas' as const, view: v.id, label: v.label, box: v.box }));
+        return [...sources, ...models, ...canvases];
+    }
+
+    /**
+     * What shows an element in a text, best first: a relation is its statement; a property shape is its own block, else its entry in
+     * its node shape (by IRI, else a `[ … ]` node with its path); a logical constraint is its list in its node shape.
+     */
+    protected textTargets(id: string): TextTarget[] {
         const idx = this.shapesIndex();
-        const subject = relationTriple(id)?.s ?? idx.property.get(id)?.term ?? elementTerm(id);
-        const owner = idx.property.get(id)?.owner ?? idx.constraint.get(id)?.owner;
-        const out: { path: string; line?: number }[] = [];
-        for (const file of this.filesOfElement(id)) {
-            let line: number | undefined;
-            try {
-                const text = await fs.readFile(file, 'utf8');
-                line = (subject?.termType === 'NamedNode' ? sourceLine(text, subject.value) : undefined) ?? (owner ? sourceLine(text, owner.value) : undefined);
-            } catch { /* not on disk yet */ }
-            out.push({ path: file, line });
+        const rel = relationTriple(id);
+        if (rel) return [{ subject: rel.s.value, predicate: rel.p.value, object: rel.o.value }];
+        const property = idx.property.get(id), constraint = idx.constraint.get(id);
+        if (property) {
+            const path = idx.model.properties[id]?.path, p = NS.sh + 'property', own = property.term.value;
+            return [
+                { subject: own }, { subject: property.owner.value, predicate: p, object: own },
+                ...(path?.kind === 'iri' ? [{ subject: property.owner.value, predicate: p, inside: { predicate: NS.sh + 'path', object: path.iri } }] : []),
+                { subject: property.owner.value }
+            ];
         }
-        return out;
+        if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
+        const t = elementTerm(id);
+        return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
+    }
+
+    /** The position of an element in a file on disk: by its Turtle syntax tree, else the line of a text search (other formats). */
+    protected async positionIn(file: string, id: string): Promise<{ line?: number; column?: number }> {
+        let text: string;
+        try { text = await fs.readFile(file, 'utf8'); } catch { return {}; }
+        const targets = this.textTargets(id);
+        if (/\.ttl$/i.test(file)) {
+            for (const target of targets) {
+                const at = await turtlePosition(text, file, target).catch(() => undefined);
+                if (at) return at;
+            }
+        }
+        for (const { subject } of targets) {
+            const line = sourceLine(text, subject);
+            if (line) return { line };
+        }
+        return {};
     }
 
     protected scopeOf(patch: Patch): ChangeScope {

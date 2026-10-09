@@ -1,9 +1,9 @@
 // The read queries of the model: one declaration for the store (@catenary/rdf implements it), the RPC service and the CLI.
 // A new query: add it to ModelQueries and MODEL_QUERIES, then implement it in ModelStore. The compiler checks all three.
 
-import type { ActionTarget, SelectionActions } from './actions';
+import type { ActionTarget, OpenTarget, SelectionActions } from './actions';
 import type { AppearanceData, GestureInfo, Occurrence, Showing, ViewGesture } from './view-ui';
-import type { ExplorerDrag, ExplorerPath, ExplorerRow } from './explorer';
+import type { ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow } from './explorer';
 import type { OutlineNode } from './outline';
 import type { SelectionLinks, View } from './doc';
 import type { Choices, DeletePlan, ElementRow, LinkSection, NewLabelKind, RelationChoices } from './prompts';
@@ -22,10 +22,12 @@ export interface ModelQueries {
     copyAsRdf(viewId: string, ids: string[]): Promise<RdfCopy>;
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
     formData(instanceId: string): string;
-    /** Model explorer (ADR 0006): rows of a node key (none: the top folders); `currentView`: the view of the current view editor. */
-    explorerChildren(key?: string, currentView?: string, file?: string, filter?: string): ExplorerRow[];
+    /** Model explorer (ADR 0006): one page of the rows of a key (none: the sections), from `offset`. `file`: the scope. */
+    explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage;
+    /** Model explorer filter: the element rows whose name matches `text`, best first, at most one page. */
+    explorerSearch(text: string, file?: string): ExplorerRow[];
     /** Paths to the rows of an element in the Model explorer (Reveal). */
-    explorerPaths(id: string): ExplorerPath[];
+    explorerPaths(id: string, file?: string): ExplorerPath[];
     /** Element ids of the rows under a node key of the Model explorer, at any depth. */
     explorerElements(key: string, file?: string): string[];
     explorerDrag(selection: ExplorerDrag): string[];
@@ -51,8 +53,8 @@ export interface ModelQueries {
     links(ids: string[], view?: string): SelectionLinks;
     /** Shapes as N-Triples (all graphs merged), for the SHACL form. Empty if no shapes are loaded. */
     shapesText(): string;
-    /** Go to Source: every file with statements of an element, with the 1-based line of the element in each (the file on disk). */
-    sources(id: string): Promise<{ path: string; line?: number }[]>;
+    /** Open in…: the presentations that show an element (Source at its position, Model, Canvas). */
+    openTargets(id: string): Promise<OpenTarget[]>;
     /** The actions that apply to a target and the facts to run them (spec/ui-manifest.hs §4, actions.ts). */
     selectionActions(target: ActionTarget): SelectionActions;
     /** The selection resolved: the ids that still exist, their elements, by kind (selection.ts). */
@@ -99,8 +101,9 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     prepareRdfPaste: ['text', 'mediaType'],
     copyAsRdf: ['viewId', 'ids'],
     formData: ['instanceId'],
-    explorerChildren: ['key', 'currentView', 'file', 'filter'],
-    explorerPaths: ['id'],
+    explorerChildren: ['key', 'file', 'offset'],
+    explorerSearch: ['text', 'file'],
+    explorerPaths: ['id', 'file'],
     explorerElements: ['key', 'file'],
     explorerDrag: ['selection'],
     properties: ['id'],
@@ -114,7 +117,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     showing: ['id'],
     links: ['ids', 'view'],
     shapesText: [],
-    sources: ['id'],
+    openTargets: ['id'],
     selectionActions: ['target'],
     selected: ['selection'],
     view: ['viewId'],

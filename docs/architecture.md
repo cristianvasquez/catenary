@@ -40,11 +40,13 @@ The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in works
 
 ## Packages
 
-Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/shacl/common`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
+Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/explorer` and `@catenary/shacl/common`. `@catenary/shacl` and `@catenary/rdfs` import only `@catenary/explorer`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/rdfs`, `@catenary/explorer`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
-| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules and notation assets. | No runtime dependencies. Hosts supply query ports and graph identities. |
+| `packages/explorer` (`@catenary/explorer`) | The Model explorer plugin contract: rows, paths, the plugin interface and the query port. | None. |
+| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules, notation assets and the Shapes section of the Model explorer. | `@catenary/explorer`. Hosts supply query ports and graph identities. |
+| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. | `@catenary/explorer`. |
 | `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
 | `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
@@ -53,6 +55,11 @@ Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary
 | `app`, `electron-app` | Browser host and desktop host. | Theia packages and `modeler`. |
 
 Values that cross a package boundary are JSON, including RDF terms and IDs.
+
+### Add a Model explorer section
+
+1. Implement `ExplorerPlugin` (`packages/explorer/src/index.ts`) in the package of the vocabulary. Query only through the `ExplorerPort`.
+2. Add the plugin to `EXPLORER_PLUGINS` (`packages/rdf/src/explorer.ts`).
 
 ### Add a read query for the frontend
 
@@ -68,7 +75,10 @@ Paths are relative to the directory in the first column.
 
 | Directory | Files | Purpose |
 |---|---|---|
+| `packages/explorer/src` | `index.ts` | Model explorer plugin contract |
 | `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
+| | `backend/explorer.ts` | Shapes section of the Model explorer |
+| `packages/rdfs/src` | `index.ts` | Classes section of the Model explorer |
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts` | Read-model records, JSON terms, element IDs, snapshot schema |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
@@ -82,7 +92,7 @@ Paths are relative to the directory in the first column.
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
-| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches |
+| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, change events, undo and redo. History records quad changes and source-file transfers. |
 | | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, statement origin, file of new subjects, save and sync |
@@ -90,7 +100,8 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or one request |
-| | `explorer.ts`, `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
+| | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
+| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. The bundle copies all assets. |
@@ -102,7 +113,7 @@ Paths are relative to the directory in the first column.
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `insert-view.ts` | Insert View in a Markdown editor |
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
-| | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, fuzzy filter and folder drags. |
+| | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, pages, the flat fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |

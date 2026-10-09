@@ -1,7 +1,7 @@
 // SPARQL fragments of the read rules, for queries that Oxigraph evaluates (one text for each rule). A fragment is pattern text; the
 // caller gives the variable names. `n` makes the helper variables of a fragment unique when a query uses it more than once.
 
-import { ConceptDef, NS } from '@catenary/model';
+import { NS } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { ModelGraph, VALIDATION_GRAPH, labelFromIri } from './graph';
 
@@ -73,41 +73,6 @@ export function connections(s = '?s', p = '?p', o = '?o'): string {
         { ${things([], o, '?targetType', '?targetGraph', 'Target')} }`;
 }
 
-/** Things of selected types, with their statements across data graphs. */
-export function typedStatements(g: ModelGraph, types: string[]): Quad[] {
-    if (!types.length) return [];
-    return construct(g, `CONSTRUCT { ?s rdf:type ?type . ?s ?p ?o } WHERE {
-        VALUES ?type { ${types.map(iri).join(' ')} } { ${things()} }
-        OPTIONAL { GRAPH ?data { ?s ?p ?o } FILTER (?data != ${NOT_REPORT}) }
-    }`);
-}
-
-export interface Vocabulary {
-    concepts: ConceptDef[];
-    schemes: { iri: string; label: string }[];
-    collections: { iri: string; label: string; members: string[] }[];
-}
-
-/** Written SKOS types and relations. Inverse predicates give the same relation, not a derived type. */
-export function vocabulary(g: ModelGraph): Vocabulary {
-    const data = typedStatements(g, ['Concept', 'ConceptScheme', 'Collection'].map(t => NS.skos + t));
-    const subjects = (type: string) => [...new Set(data.filter(q => q.predicate.value === NS.rdf + 'type' && q.object.value === NS.skos + type).map(q => q.subject.value))];
-    const names = labels(g, [...new Set(data.map(q => q.subject.value))]);
-    const objects = (s: string, p: string) => data.filter(q => q.subject.value === s && q.predicate.value === NS.skos + p).map(q => q.object.value);
-    const inverse = (s: string, p: string) => data.filter(q => q.object.value === s && q.predicate.value === NS.skos + p).map(q => q.subject.value);
-    const unique = (ss: string[]) => [...new Set(ss)].sort();
-    return {
-        schemes: subjects('ConceptScheme').map(s => ({ iri: s, label: names.get(s)! })),
-        collections: subjects('Collection').map(s => ({ iri: s, label: names.get(s)!, members: unique(objects(s, 'member')) })),
-        concepts: subjects('Concept').map(s => ({
-            iri: s, label: names.get(s)!, notation: objects(s, 'notation').sort()[0], definition: objects(s, 'definition').sort()[0],
-            schemes: unique([...objects(s, 'inScheme'), ...objects(s, 'topConceptOf'), ...inverse(s, 'hasTopConcept')]),
-            broader: unique([...objects(s, 'broader'), ...inverse(s, 'narrower')]),
-            top: objects(s, 'topConceptOf').length > 0 || inverse(s, 'hasTopConcept').length > 0
-        }))
-    };
-}
-
 /** One thing and its types. Labels use the shared label query. */
 export function thingHead(g: ModelGraph, t: NamedNode): { label: string; types: string[] } | undefined {
     const found = construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
@@ -120,7 +85,7 @@ export function thingHead(g: ModelGraph, t: NamedNode): { label: string; types: 
 /** The property shapes (binds ?s ?type ?g): the subjects of sh:path (SHACL 2.3), type sh:PropertyShape. */
 export const PROPERTY_SHAPES = `{ GRAPH ?g { ?s sh:path ?anyPath } BIND (sh:PropertyShape AS ?type) }`;
 
-/** Every thing with its type (`things`, without the shapes: `shapeTypes`), and the broader class of the type. */
+/** Every thing with its type (`things`, without the shapes), and the broader class of the type. */
 export function thingTypes(g: ModelGraph): Quad[] {
     return construct(g, `CONSTRUCT {
         ?s rdf:type ?type .
@@ -152,18 +117,6 @@ export function labels(g: ModelGraph, iris: string[]): Map<string, string> {
     for (const q of found) (q.predicate.value === NS.rdfs + 'label' ? out : path).set(q.subject.value, q.object.value);
     for (const s of iris) if (!out.has(s)) out.set(s, labelFromIri(path.get(s) ?? s));
     return out;
-}
-
-/** Every shape with its type: node shapes by their type, property shapes by sh:path (SHACL 2.3). */
-export function shapeTypes(g: ModelGraph): Quad[] {
-    return construct(g, `CONSTRUCT {
-        ?s rdf:type ?type .
-    } WHERE {
-        { GRAPH ?g { ?s rdf:type sh:NodeShape } BIND (sh:NodeShape AS ?type) }
-        UNION
-        { GRAPH ?g { ?s sh:path ?path } BIND (sh:PropertyShape AS ?type) }
-        FILTER (?g != ${NOT_REPORT})
-    }`);
 }
 
 /** Case-insensitive label order, then lower case first. */

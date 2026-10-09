@@ -3,7 +3,7 @@
 // its violations. A double-click or Enter also shows it in a view. The rows of an instance have the context menu of the actions
 // (action-commands.ts) and drag to a view, as the rows of the Model Explorer. Status bar: model file, dirty, violations.
 
-import { MenuPath, URI } from '@theia/core';
+import { CommandService, MenuPath, URI } from '@theia/core';
 import {
     ContextMenuRenderer, FrontendApplicationContribution, LabelProviderContribution, OpenHandler, OpenerOptions, StatusBar, StatusBarAlignment,
     TreeNode, TreeProps, codicon
@@ -18,7 +18,6 @@ import { PropertyViewContribution } from '@theia/property-view/lib/browser/prope
 import { ActionTarget, Problem, baseName, panelsUnchanged } from '@catenary/model';
 import { ELEMENT_SCHEME } from '../common/protocol';
 import { ModelFrontend } from './model-client';
-import { ViewEditors } from './diagram/view-editors';
 import { OpenModelCommands } from './commands';
 import { SelectionModel } from './selection-model';
 import { ActionService, whenActionsKnown } from './action-service';
@@ -181,7 +180,7 @@ export class ElementLabelProvider implements LabelProviderContribution {
 export class ElementOpenHandler implements OpenHandler {
     readonly id = 'catenary-element-opener';
     readonly label = 'Show model element';
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
+    @inject(CommandService) protected readonly commands: CommandService;
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(PropertyViewContribution) protected readonly properties: PropertyViewContribution;
 
@@ -191,7 +190,7 @@ export class ElementOpenHandler implements OpenHandler {
 
     /**
      * Mode 'reveal' (a click or an arrow key on a problem): select the instance and reveal Properties (the focus stays in
-     * Problems), no view opens. Else (double-click, Enter): show it in a view.
+     * Problems), no view opens. Else (double-click, Enter): Open in… (spec/ui-manifest.hs §4.7).
      */
     async open(uri: URI, options?: OpenerOptions): Promise<object | undefined> {
         const id = uri.path.base;
@@ -200,7 +199,7 @@ export class ElementOpenHandler implements OpenHandler {
             this.selection.set({ ids: [id] });
             await this.properties.openView({ activate: false, reveal: true });
         } else {
-            await this.editors.show(id);
+            await this.commands.executeCommand('catenary.openIn', { ids: [id] });
         }
         return undefined;
     }

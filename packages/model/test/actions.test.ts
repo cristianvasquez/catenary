@@ -25,7 +25,7 @@ const doc = (): Doc => {
 };
 
 const item = (element: string, ...kinds: ElementKind[]): ItemFacts =>
-    ({ id: element, element, kinds, types: [], placed: true, placedInActive: true, views: 1, revealable: false, files: 0, unshaped: [] }) as unknown as ItemFacts;
+    ({ id: element, element, kinds, types: [], placed: true, placedInActive: true, views: 1, files: 0, unshaped: [] }) as unknown as ItemFacts;
 
 describe('displayCards (Show Details)', () => {
     it('takes the selected instance and node-shape cards, not value sets', () => {
