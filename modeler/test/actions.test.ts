@@ -179,13 +179,16 @@ it('openView: a view of the open workspace opens; else its workspace opens first
     const actions = Object.assign(new ModelActions(), { model, editors, messages });
     await actions.openView('here', '/ws/workspace.trig');
     expect(open).not.toHaveBeenCalled();
-    expect(editors.open).toHaveBeenLastCalledWith('here');
+    expect(editors.open).toHaveBeenLastCalledWith('here', 'activate', undefined);
     await actions.openView('far', '/other/workspace.trig');
     expect(open).toHaveBeenCalledWith('/other/workspace.trig');
-    expect(editors.open).toHaveBeenLastCalledWith('far');
+    expect(editors.open).toHaveBeenLastCalledWith('far', 'activate', undefined);
+    const options = { mode: 'reveal' as const, widgetOptions: { area: 'main' as const, mode: 'split-right' as const } };
+    await actions.openView('here', '/ws/workspace.trig', options);
+    expect(editors.open).toHaveBeenLastCalledWith('here', 'reveal', options);
     await actions.openView('lone');
     expect(messages.warn).toHaveBeenCalledTimes(1);
-    expect(editors.open).toHaveBeenCalledTimes(2);
+    expect(editors.open).toHaveBeenCalledTimes(3);
 });
 
 it('New View: the file dialog is the only dialog; the view opens as "unnamed view N" with no label follow-up', async () => {

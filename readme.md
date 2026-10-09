@@ -106,7 +106,7 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/do
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window; a headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
-The file navigator command **Open in Model Explorer** (`catenary.openFileExplorer`) opens a file-scoped tree. `explorerChildren(key, currentView, file, filter)` accepts source-file and fuzzy filters. `explorerDrag(selection)` resolves complete folder contents. The `moveElementsToFile` edit moves source statements, and `placeExplorerElements` places a mixed selection in one undo step.
+Model RDF files open as file-scoped Model documents. **Open as…** (`catenary.openAs`) and **Open beside…** (`catenary.openBeside`) select a presentation. Both accept a file path and a presentation name: `Source`, `Model`, `Canvas`, or `Settings`. Reopening focuses the existing pane. `explorerChildren(key, currentView, file, filter)` accepts source-file and fuzzy filters. `explorerDrag(selection)` resolves complete folder contents. The `moveElementsToFile` edit moves source statements, and `placeExplorerElements` places a mixed selection in one undo step.
 
 ## License
 

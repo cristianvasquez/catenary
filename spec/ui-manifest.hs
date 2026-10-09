@@ -369,7 +369,12 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- Reason: browsing must not replace the open workspace. A file with several ways to open asks which.
 -- A file with the workspace settings and a view opens as text, with the message "This file mixes workspace settings and a view.
 -- Move the view into its own file." Reason: a save of one part must not change the other (open.md D7).
--- A file with neither opens as text. "Open With" opens any file as text.
+-- Other model RDF files open as Model documents. Other files open as text. "Open With" opens any file as text.
+-- Source and Model are available for every model RDF file, including the workspace file.
+-- Open as and Open beside offer applicable presentations of the same file.
+-- Open beside places a new presentation in a split. Reopening focuses the existing pane in its current position.
+-- Model documents use the same tab movement and split controls as Source and Canvas.
+-- Reason: one file opener handles all presentations.
 -- A view outside the open workspace first opens the workspace that reads its file: the nearest folder above it with one
 -- workspace file. A view in no workspace gives a message. A view and the settings can switch to source text.
 -- Opening a document makes it active. It does not change the selection. Selection and active document are independent.
@@ -377,18 +382,29 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- The view must belong to the current workspace. An unknown ID shows an error and keeps normal startup behavior.
 -- The URL does not select a workspace or start a backend.
 -- A file with several views is open (open.md D4).
-data Document = OpenView Element | OpenWorkspace | AsText FilePath deriving Eq
+data Document = OpenView Element | OpenWorkspace | AsModel FilePath | AsText FilePath deriving Eq
 documentsIn :: FilePath -> [Document]
-data FileHolds = FileHolds { holdsWorkspace :: Bool, holdsViews :: [Id] }
--- | The documents of opening a file. More than one: the user picks one.
+data FileHolds = FileHolds { holdsWorkspace :: Bool, holdsViews :: [Id], holdsModel :: Bool }
+-- | Default documents. Several views: the user picks one canvas.
 openChoices :: FilePath -> FileHolds -> [Document]
 openChoices p h
   | holdsWorkspace h && not (null (holdsViews h)) = [AsText p]
   | otherwise = case [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h] of
-      [] -> [AsText p]
+      [] -> [if holdsModel h then AsModel p else AsText p]
       ds -> ds
 law_plainFileOpensAsText :: FilePath -> Bool
-law_plainFileOpensAsText p = openChoices p (FileHolds False []) == [AsText p]
+law_plainFileOpensAsText p = openChoices p (FileHolds False [] False) == [AsText p]
+law_modelFileDefaultsToModel :: FilePath -> Bool
+law_modelFileDefaultsToModel p = openChoices p (FileHolds False [] True) == [AsModel p]
+-- | Applicable presentations keep Source and Model for workspace and view files.
+presentationChoices :: FilePath -> FileHolds -> [Document]
+presentationChoices p h
+  | holdsWorkspace h && not (null (holdsViews h)) = [AsText p]
+  | holdsModel h || holdsWorkspace h || not (null (holdsViews h)) =
+      [AsText p, AsModel p] ++ [OpenWorkspace | holdsWorkspace h] ++ [OpenView (Node v) | v <- holdsViews h]
+  | otherwise = [AsText p]
+law_workspaceHasSourceAndModel :: FilePath -> Bool
+law_workspaceHasSourceAndModel p = all (`elem` presentationChoices p (FileHolds True [] True)) [AsText p, AsModel p, OpenWorkspace]
 -- | A preview keeps the documents that stay in the open workspace. `inOpen`: the document belongs to the open workspace.
 previewChoices :: (Document -> Bool) -> FilePath -> FileHolds -> [Document]
 previewChoices inOpen p h = case filter (\d -> d == AsText p || inOpen d) (openChoices p h) of
@@ -397,11 +413,13 @@ previewChoices inOpen p h = case filter (\d -> d == AsText p || inOpen d) (openC
 law_previewStaysInWorkspace :: (Document -> Bool) -> FilePath -> FileHolds -> Bool
 law_previewStaysInWorkspace inOpen p h = all (\d -> d == AsText p || inOpen d) (previewChoices inOpen p h)
 law_mixedFileOpensAsText :: FilePath -> Id -> Bool
-law_mixedFileOpensAsText p v = openChoices p (FileHolds True [v]) == [AsText p]
+law_mixedFileOpensAsText p v = openChoices p (FileHolds True [v] True) == [AsText p]
 openDocument :: Document -> UiState -> UiState
 openDocument d s = s { documents = nub (documents s ++ [d]), active = Just d }
 law_openKeepsSelection :: Document -> UiState -> Bool
 law_openKeepsSelection d s = selection (openDocument d s) == selection s
+law_reopenKeepsDocuments :: Document -> UiState -> Bool
+law_reopenKeepsDocuments d s = documents (openDocument d (openDocument d s)) == documents (openDocument d s)
 startupDocument :: Maybe Id -> [Id] -> Maybe Document -> Maybe Document   -- ?view, views of the workspace, restored active tab
 startupDocument (Just v) views restored = if v `elem` views then Just (OpenView (Node v)) else restored
 startupDocument Nothing _ restored = restored
@@ -1291,7 +1309,12 @@ folderOf ts _ = ts
 notPlaced :: Element -> Bool                        -- Delete Elements Not Placed in a View: own placements only
 notPlaced e = null (placements e)
 
--- | Open in Model Explorer opens a dockable tree for a file. Reopening that file focuses the same tree.
+-- | Model opens a document tree for a file. Reopening that presentation focuses the same tree.
+-- No global Model explorer appears in the default layout. Search remains workspace-wide.
+-- Reveal in Explorer selects a source file, opens its Model document, then reveals the resource.
+-- Show in View instead navigates the resource to a canvas that contains it.
+-- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
+-- Reason: presentation navigation must not change storage or explorer contents in this phase.
 -- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
 -- Fuzzy filtering matches characters in order, ranks word starts and consecutive matches, and highlights matching characters.
 -- Ancestors remain visible. Clearing the filter restores expansion state. The filter does not change drag membership.

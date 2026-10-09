@@ -2,7 +2,7 @@
 // Port of the command part of claude-attempt/src/ui/app.ts, with Theia dialogs and quick pick.
 
 import { MessageService, QuickInputService, QuickPickItem, QuickPickSeparator, URI } from '@theia/core';
-import { ConfirmDialog, SingleTextInputDialog } from '@theia/core/lib/browser';
+import { ConfirmDialog, SingleTextInputDialog, WidgetOpenerOptions } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
@@ -86,7 +86,7 @@ export class ModelActions {
      * Open the view `id`. When the open workspace does not have it, first open `workspaceFile`: the workspace that reads the file of
      * the view (FileContent). A view without a workspace: a message.
      */
-    async openView(id: string, workspaceFile?: string): Promise<void> {
+    async openView(id: string, workspaceFile?: string, options?: WidgetOpenerOptions): Promise<GLSPDiagramWidget | undefined> {
         const has = async () => id in await this.model.service.viewLabels();
         if (!this.model.isOpen || !await has()) {
             if (!workspaceFile) {
@@ -102,7 +102,7 @@ export class ModelActions {
                 return;
             }
         }
-        await this.editors.open(id);
+        return this.editors.open(id, options?.mode ?? 'activate', options);
     }
 
     /** Pick one of the recent workspace files and open it. */

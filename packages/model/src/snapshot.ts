@@ -47,19 +47,10 @@ export function mixedFileProblem(c: FileContent): string | undefined {
     return c.workspace && c.views.length ? 'This file mixes workspace settings and a view. Move the view into its own file.' : undefined;
 }
 
-/** How a file can open: as its workspace, or as one of its views. None: it opens as text (a plain file, or `mixedFileProblem`). */
-export type OpenMode = { kind: 'workspace' } | { kind: 'view'; id: string; label: string };
-export function openModes(c: FileContent): OpenMode[] {
-    if (mixedFileProblem(c)) return [];
-    return [...(c.workspace ? [{ kind: 'workspace' } as const] : []), ...c.views.map(v => ({ kind: 'view' as const, ...v }))];
-}
-
-/**
- * The open modes of a preview (a file selected while browsing the navigator): the ones that stay in the open workspace `openFile`.
- * Switching to another workspace needs an explicit open (double-click or Enter). `file`: the path of the file.
- */
-export function previewModes(c: FileContent, file: string, openFile?: string): OpenMode[] {
-    return openModes(c).filter(m => (m.kind === 'workspace' ? file : c.workspaceFile) === openFile && openFile !== undefined);
+/** A navigator preview can open a canvas or Settings only within the current workspace. */
+export function previewInWorkspace(c: FileContent, file: string, openFile?: string): boolean {
+    const workspace = c.workspace ? file : c.workspaceFile;
+    return !!openFile && !c.error && !mixedFileProblem(c) && (c.workspace || c.views.length > 0) && workspace === openFile;
 }
 
 /** What a model file contains (ADR 0004: from its triples, not from a role). */

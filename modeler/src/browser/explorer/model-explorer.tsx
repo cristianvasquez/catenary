@@ -1,24 +1,22 @@
-// The Model tab of the open workspace (ADR 0006): every folder is a SPARQL query of the backend, run when the folder opens or
+// Each file Model pane (ADR 0006): every folder is a SPARQL query of the backend, run when the folder opens or
 // refreshes. Top: one folder per type of every graph, No class, Relations (by predicate), Concepts (schemes, broader concepts).
 // It shows and sets the selection of the window (SelectionModel). The files: the Theia file navigator (ADR 0004).
 
-import { CancellationToken, Emitter, MenuPath, QuickInputService, URI } from '@theia/core';
+import { CancellationToken, Emitter, MenuPath, QuickInputService } from '@theia/core';
 import {
     ApplicationShell, CompositeTreeNode, ContextMenuRenderer, ExpandableTreeNode, NodeProps, Saveable, SaveableSource, SelectableTreeNode,
     Tree, TreeImpl, TreeModel, TreeNode, TreeProps, TreeSelection, TreeWidget, codicon
 } from '@theia/core/lib/browser';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
-import { ActionTarget, ExplorerKind, ExplorerRow, EXPLORER_DRAG, ExplorerDrag, fuzzyMatch, baseName, classKey, dirName, iriId, panelsUnchanged } from '@catenary/model';
+import { ActionTarget, ExplorerKind, ExplorerRow, EXPLORER_DRAG, ExplorerDrag, fuzzyMatch, baseName, classKey, iriId, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ViewEditors } from '../diagram/view-editors';
 import { colorValue } from '../diagram/views';
 import { ModelActions } from '../actions';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel, sameIds } from '../selection-model';
-import { RecentWorkspaces } from './recent-workspaces';
 
-export const MODEL_EXPLORER_ID = 'catenary-model-explorer';
 export const FILE_EXPLORER_ID = 'catenary-file-explorer';
 /** Prefix of the key of a class folder (packages/model/src/explorer.ts `classKey`). */
 const CLASS_KEY = classKey('');
@@ -142,16 +140,15 @@ class ModelSaveable implements Saveable {
     async save(): Promise<void> { await this.model.report(this.model.service.save()); }
 }
 
-/** The explorer widget of the workspace: the Model explorer (ModelExplorerWidget). */
+/** A file Model document with shared selection, filtering and resource navigation. */
 @injectable()
-export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableSource {
+export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     @inject(ModelFrontend) protected readonly modelFrontend: ModelFrontend;
     @inject(Tree) protected readonly modelTree: ModelTree;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(SelectionModel) protected readonly elements: SelectionModel;
     @inject(ModelActions) protected readonly actions: ModelActions;
-    @inject(RecentWorkspaces) protected readonly recent: RecentWorkspaces;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(ActionService) protected readonly actionService: ActionService;
     readonly saveable: ModelSaveable;
@@ -168,8 +165,85 @@ export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableS
         this.addClass('catenary-explorer');
     }
 
-    /** Title after each snapshot. */
-    protected abstract updateTitle(): void;
+    protected filterTimer?: ReturnType<typeof setTimeout>;
+    protected filterInput: HTMLInputElement | null = null;
+
+    protected filterChanged(value: string): void {
+        this.modelTree.setFilter(value);
+        this.update();
+        clearTimeout(this.filterTimer);
+        this.filterTimer = setTimeout(() => { if (!this.isDisposed) void this.model.refresh(); }, 120);
+    }
+
+    /** Typing on a row and typing in the input use the same filter, including unloaded descendants. */
+    protected typeToFilter(event: KeyboardEvent): void {
+        if (!this.modelFrontend.isOpen || (event.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || event.isComposing) return;
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f') {
+            event.preventDefault(); event.stopPropagation();
+            this.filterInput?.focus(); this.filterInput?.select();
+            return;
+        }
+        if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+        event.preventDefault(); event.stopPropagation();
+        this.filterChanged(this.modelTree.filter + event.key);
+        this.filterInput?.focus();
+        // React updates the controlled input after this event. Keep the caret after the inserted character.
+        if (this.filterInput) {
+            this.filterInput.value = this.modelTree.filter;
+            this.filterInput.setSelectionRange(this.filterInput.value.length, this.filterInput.value.length);
+        }
+    }
+
+    get file(): string | undefined { return this.modelTree.file; }
+
+    configure(file: string): void {
+        this.modelTree.file = file;
+        this.id = FILE_EXPLORER_ID + ':' + file;
+        this.title.label = `${baseName(file)} · Model`;
+        this.title.caption = file;
+        void this.model.refresh();
+    }
+
+    protected override renderTree(model: TreeModel): React.ReactNode {
+        const tree = this.modelTree;
+        if (!this.modelFrontend.isOpen) return super.renderTree(model);
+        const accept = (e: React.DragEvent) => {
+            if (tree.file && e.dataTransfer.types.includes(EXPLORER_DRAG)) {
+                e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
+            }
+        };
+        return <div className='catenary-file-tree' onDragEnter={accept} onDragOver={accept} onDrop={e => {
+            if (!tree.file || !e.dataTransfer.types.includes(EXPLORER_DRAG)) return;
+            e.preventDefault(); e.stopPropagation();
+            const payload = e.dataTransfer.getData(EXPLORER_DRAG);
+            void this.dropInFile(payload, tree.file);
+        }}>
+            <input ref={input => { this.filterInput = input; }} className='theia-input' aria-label='Filter model elements' placeholder='Fuzzy filter…' value={tree.filter}
+                onKeyDown={e => {
+                    e.stopPropagation();
+                    if (e.key === 'Escape') {
+                        e.preventDefault(); this.filterChanged(''); this.node.focus();
+                    } else if (e.key === 'ArrowDown') {
+                        e.preventDefault(); this.node.focus();
+                    }
+                }} onChange={e => this.filterChanged(e.target.value)} />
+            {super.renderTree(model)}
+        </div>;
+    }
+
+    protected async dropInFile(raw: string, destination: string): Promise<void> {
+        let selection: ExplorerDrag;
+        try { selection = JSON.parse(raw); } catch { return; }
+        if (!selection.file) {
+            await this.actions.confirm('Move elements', 'Drag from a file-scoped Model explorer to move source statements.', 'OK');
+            return;
+        }
+        if (selection.file === destination) return;
+        const ids = await this.modelFrontend.service.explorerDrag(selection);
+        if (!ids.length) return;
+        if (!await this.actions.confirm('Move elements', `Move ${ids.length} elements from ${selection.file} to ${destination}? Only statements from the source file move.`, 'Move')) return;
+        await this.modelFrontend.execute({ kind: 'moveElementsToFile', source: selection.file, destination, ids });
+    }
 
     /** The rows of an element in the loaded folders (an element has a row under each of its types, and concept rows). */
     protected nodesOf(id: string): CatenaryNode[] {
@@ -191,18 +265,23 @@ export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableS
     @postConstruct()
     protected override init(): void {
         super.init();
+        this.title.iconClass = codicon('symbol-class');
+        const onKeyDown = (event: KeyboardEvent) => this.typeToFilter(event);
+        this.node.addEventListener('keydown', onKeyDown, true);
+        this.toDispose.push({ dispose: () => {
+            clearTimeout(this.filterTimer);
+            this.node.removeEventListener('keydown', onKeyDown, true);
+        } });
         (this as { saveable: ModelSaveable }).saveable = new ModelSaveable(this.modelFrontend);
         const root: CompositeTreeNode = { id: 'catenary-root', name: 'Model', parent: undefined, children: [], visible: false } as CompositeTreeNode;
         this.model.root = root;
         this.toDispose.push(this.modelFrontend.onDidChange(async s => {
             // A write or a move of placements: the rows stay; only the dirty state can change. Rows show violation counts.
             if (panelsUnchanged(s.change, true)) {
-                this.updateTitle();
                 this.saveable.onDirtyChangedEmitter.fire();
                 return;
             }
             const refreshed = this.model.refresh();
-            this.updateTitle();
             this.saveable.onDirtyChangedEmitter.fire();
             this.update();
             await refreshed;
@@ -255,6 +334,7 @@ export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableS
 
     /** Expand the folders of a row of an element and select it. Several rows (types, concept tree): the user picks one. */
     async reveal(id: string): Promise<void> {
+        await this.model.refresh();
         const paths = await this.modelFrontend.service.explorerPaths(id);
         const path = paths.length > 1
             ? (await this.quick.showQuickPick(paths.map(p => ({ label: p.name, path: p })), { placeholder: 'Reveal in folder' }))?.path
@@ -358,142 +438,17 @@ export abstract class CatenaryTreeWidget extends TreeWidget implements SaveableS
         return name.split('').map((c, i) => indices.has(i) ? <mark key={i}>{c}</mark> : c);
     }
 
-    protected readonly onOpenEmitter = new Emitter<CatenaryNode>();
-    /** Double-click or Enter on a view, an instance or a relation. */
-    readonly onOpen = this.onOpenEmitter.event;
-
     protected override handleDblClickEvent(node: TreeNode | undefined, event: React.MouseEvent<HTMLElement>): void {
         if (CatenaryNode.isElement(node)) {
-            this.onOpenEmitter.fire(node);
+            void this.editors.show(CatenaryNode.elementId(node));
             event.stopPropagation();
-        } else {
-            super.handleDblClickEvent(node, event);
-        }
+        } else super.handleDblClickEvent(node, event);
     }
 
     protected override handleEnter(event: KeyboardEvent): void {
         const node = this.model.getFocusedNode();
-        if (CatenaryNode.isElement(node)) this.onOpenEmitter.fire(node);
+        if (CatenaryNode.isElement(node)) void this.editors.show(CatenaryNode.elementId(node));
         else super.handleEnter(event);
     }
 
-    protected override renderTree(model: TreeModel): React.ReactNode {
-        return this.modelFrontend.isOpen ? super.renderTree(model) : this.renderClosed();
-    }
-
-    /** Content when no workspace is open: open, new and recent workspaces. */
-    protected renderClosed(): React.ReactNode {
-        return <div className='catenary-empty catenary-start'>
-            <div>No workspace is open.</div>
-            <button className='theia-button' onClick={() => this.actions.openModel()}>Open Workspace…</button>
-            <button className='theia-button secondary' onClick={() => this.actions.newModel()}>New Workspace…</button>
-            {this.recent.paths.length ? <>
-                <div className='catenary-start-heading'>Recent</div>
-                {this.recent.paths.map(path => <div key={path} className='catenary-recent' title={path} onClick={() => this.actions.openModel(URI.fromFilePath(path))}>
-                    <span className={`${codicon('layers')} catenary-tree-icon`} />
-                    <span className='catenary-tree-name'>{baseName(path)}</span>
-                    <span className='catenary-tree-description'>{dirName(path)}</span>
-                </div>)}
-            </> : undefined}
-        </div>;
-    }
-}
-
-/** The Model tab: the tree of the backend rules (ModelTree), full height. */
-@injectable()
-export class ModelExplorerWidget extends CatenaryTreeWidget {
-    protected filterTimer?: ReturnType<typeof setTimeout>;
-    protected filterInput: HTMLInputElement | null = null;
-
-    protected filterChanged(value: string): void {
-        this.modelTree.setFilter(value);
-        this.update();
-        clearTimeout(this.filterTimer);
-        this.filterTimer = setTimeout(() => { if (!this.isDisposed) void this.model.refresh(); }, 120);
-    }
-
-    /** Typing on a row and typing in the input use the same filter, including unloaded descendants. */
-    protected typeToFilter(event: KeyboardEvent): void {
-        if (!this.modelFrontend.isOpen || (event.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || event.isComposing) return;
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f') {
-            event.preventDefault(); event.stopPropagation();
-            this.filterInput?.focus(); this.filterInput?.select();
-            return;
-        }
-        if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
-        event.preventDefault(); event.stopPropagation();
-        this.filterChanged(this.modelTree.filter + event.key);
-        this.filterInput?.focus();
-        // React updates the controlled input after this event. Keep the caret after the inserted character.
-        if (this.filterInput) {
-            this.filterInput.value = this.modelTree.filter;
-            this.filterInput.setSelectionRange(this.filterInput.value.length, this.filterInput.value.length);
-        }
-    }
-
-    configure(file: string): void {
-        this.modelTree.file = file;
-        this.id = FILE_EXPLORER_ID + ':' + file;
-        this.title.label = baseName(file);
-        this.title.caption = file;
-        void this.model.refresh();
-    }
-
-    protected override renderTree(model: TreeModel): React.ReactNode {
-        const tree = this.modelTree;
-        if (!this.modelFrontend.isOpen) return super.renderTree(model);
-        const accept = (e: React.DragEvent) => {
-            if (tree.file && e.dataTransfer.types.includes(EXPLORER_DRAG)) {
-                e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
-            }
-        };
-        return <div className='catenary-file-tree' onDragEnter={accept} onDragOver={accept} onDrop={e => {
-            if (!tree.file || !e.dataTransfer.types.includes(EXPLORER_DRAG)) return;
-            e.preventDefault(); e.stopPropagation();
-            const payload = e.dataTransfer.getData(EXPLORER_DRAG);
-            void this.dropInFile(payload, tree.file);
-        }}>
-            <input ref={input => { this.filterInput = input; }} className='theia-input' aria-label='Filter model elements' placeholder='Fuzzy filter…' value={tree.filter}
-                onKeyDown={e => {
-                    e.stopPropagation();
-                    if (e.key === 'Escape') {
-                        e.preventDefault(); this.filterChanged(''); this.node.focus();
-                    } else if (e.key === 'ArrowDown') {
-                        e.preventDefault(); this.node.focus();
-                    }
-                }} onChange={e => this.filterChanged(e.target.value)} />
-            {super.renderTree(model)}
-        </div>;
-    }
-
-    protected async dropInFile(raw: string, destination: string): Promise<void> {
-        let selection: ExplorerDrag;
-        try { selection = JSON.parse(raw); } catch { return; }
-        if (!selection.file) {
-            await this.actions.confirm('Move elements', 'Drag from a file-scoped Model explorer to move source statements.', 'OK');
-            return;
-        }
-        if (selection.file === destination) return;
-        const ids = await this.modelFrontend.service.explorerDrag(selection);
-        if (!ids.length) return;
-        if (!await this.actions.confirm('Move elements', `Move ${ids.length} elements from ${selection.file} to ${destination}? Only statements from the source file move.`, 'Move')) return;
-        await this.modelFrontend.execute({ kind: 'moveElementsToFile', source: selection.file, destination, ids });
-    }
-
-    @postConstruct()
-    protected override init(): void {
-        super.init();
-        this.id = MODEL_EXPLORER_ID;
-        this.title.label = 'Model';
-        this.title.caption = 'Model: the resources of every graph by type, relations, concepts';
-        this.title.iconClass = codicon('symbol-class');
-        const onKeyDown = (event: KeyboardEvent) => this.typeToFilter(event);
-        this.node.addEventListener('keydown', onKeyDown, true);
-        this.toDispose.push({ dispose: () => {
-            clearTimeout(this.filterTimer);
-            this.node.removeEventListener('keydown', onKeyDown, true);
-        } });
-    }
-
-    protected updateTitle(): void {}
 }

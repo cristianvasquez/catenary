@@ -3,7 +3,7 @@
 import { CenterAction, EditMode, FitToScreenAction, GViewportRootElement, codiconCSSString } from '@eclipse-glsp/client';
 import { GLSPDiagramManager, GLSPDiagramWidget, GLSPDiagramWidgetOptions, GLSPWidgetOpenerOptions } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, Emitter, MessageService, URI } from '@theia/core';
-import { ApplicationShell, FrontendApplicationContribution, StatusBar, StatusBarAlignment, WidgetOpenerOptions } from '@theia/core/lib/browser';
+import { ApplicationShell, FrontendApplicationContribution, StatusBar, StatusBarAlignment, WidgetOpenMode, WidgetOpenerOptions } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { CONTRIBUTION_ID, DIAGRAM_TYPE, VIEW_SCHEME, viewIdOfUri } from '../../common/protocol';
 import { Occurrence, labelProblem, panelsUnchanged } from '@catenary/model';
@@ -222,9 +222,9 @@ export class ViewEditors implements FrontendApplicationContribution {
         return this.all().find(w => viewIdOf(w) === viewId);
     }
 
-    async open(viewId: string, mode: 'activate' | 'reveal' = 'activate'): Promise<GLSPDiagramWidget> {
+    async open(viewId: string, mode: WidgetOpenMode = 'activate', options?: WidgetOpenerOptions): Promise<GLSPDiagramWidget> {
         const isNew = !this.find(viewId);
-        const w = await this.manager.open(viewUri(viewId), { mode });
+        const w = await this.manager.open(viewUri(viewId), { ...options, mode });
         // A view opened for the first time in this session fits to the screen.
         if (isNew && !this.fitted.has(viewId)) {
             this.fitted.add(viewId);
