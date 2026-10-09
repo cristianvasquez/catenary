@@ -88,7 +88,10 @@ describe('request-scoped read models give the answers of the whole read model', 
             const mine = store.hiddenNeighborCounts(view);
             for (const card of boxes(view, 'card')) {
                 if (!doc.instances[card.element]) continue;
-                expect(mine.get(card.element), card.element).toEqual(counts.get(card.element));
+                // The reference counts RDF neighbors. Shared SHACL applicability has separate integration tests.
+                const actual = mine.get(card.element), expected = counts.get(card.element);
+                expect({ in: actual?.in ?? 0, out: actual?.out ?? 0 }, card.element)
+                    .toEqual({ in: expected?.in ?? 0, out: expected?.out ?? 0 });
                 for (const dir of ['in', 'out'] as const) {
                     expect(store.neighborChoices(view.id, card.id, dir), `${card.id} ${dir}`).toEqual(neighborChoices(doc, store.meta, view.id, card.id, dir));
                 }

@@ -39,7 +39,8 @@ export function nodeShapeTerm(g: ModelGraph, id: string): NamedNode | undefined 
     if (t?.termType !== 'NamedNode') return undefined;
     const quads = g.match(t).filter(q => g.isShapesGraph(q.graph));
     if (quads.some(q => q.predicate.equals(S.path))) return undefined;
-    return quads.some(q => (q.predicate.equals(S.type) && q.object.equals(S.NodeShape)) || [S.targetClass, S.targetSubjectsOf, S.property, S.or, S.xone, S.and, S.not].some(p => p.equals(q.predicate)))
+    return (quads.some(q => (q.predicate.equals(S.type) && q.object.equals(S.NodeShape)) || [S.targetClass, S.targetSubjectsOf, S.targetObjectsOf, S.targetNode, S.node, S.property, S.or, S.xone, S.and, S.not].some(p => p.equals(q.predicate)))
+        || (quads.length > 0 && g.match(null, S.node, t).some(q => g.isShapesGraph(q.graph))))
         ? t : undefined;
 }
 
@@ -316,12 +317,13 @@ export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): 
         }
         if (old && next && old !== next) propose(g, { kind: 'renameClass', from: old, to: next }, `Target class of "${g.object(s, S.name, graph)?.value ?? shortIri(s.value)}": ${shortIri(old)} → ${shortIri(next)}`);
     }
-    if (patch.targetSubjectsOf !== undefined) {
-        const next = new Set(patch.targetSubjectsOf.map(iri => iri.trim()).filter(Boolean));
-        const existing = g.match(s, S.targetSubjectsOf).filter(q => g.isShapesGraph(q.graph));
+    for (const [values, predicate] of [[patch.targetSubjectsOf, S.targetSubjectsOf], [patch.targetObjectsOf, S.targetObjectsOf], [patch.nodes, S.node]] as const) {
+        if (values === undefined) continue;
+        const next = new Set(values.map(iri => iri.trim()).filter(Boolean));
+        const existing = g.match(s, predicate).filter(q => g.isShapesGraph(q.graph));
         for (const q of existing) if (!next.has(q.object.value)) g.remove(q);
         const retained = new Set(existing.map(q => q.object.value));
-        for (const iri of next) if (!retained.has(iri)) g.add(s, S.targetSubjectsOf, rdf.namedNode(iri), graph);
+        for (const iri of next) if (!retained.has(iri)) g.add(s, predicate, rdf.namedNode(iri), graph);
     }
     if (patch.closed !== undefined) {
         g.set(s, S.closed, patch.closed ? TRUE : undefined, graph);

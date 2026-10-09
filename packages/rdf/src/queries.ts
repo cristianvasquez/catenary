@@ -1,3 +1,4 @@
+import { shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
 
 import {
@@ -41,12 +42,13 @@ export function formCandidates(g: ModelGraph, instance: NamedNode): Quad[] {
     const head = thingHead(g, instance);
     if (!head) return [];
     const steps = 'sh:property|sh:node|sh:or|sh:and|sh:xone|sh:not|sh:qualifiedValueShape|rdf:first|rdf:rest';
-    const found = construct(g, `CONSTRUCT { ?ps sh:class ?c . ?sub rdfs:subClassOf ?c } WHERE {
-        VALUES ?t { ${head.types.map(iriText).join(' ')} }
-        { GRAPH ?tg { ?ns sh:targetClass ?t } FILTER (?tg != ${NOT_REPORT}) }
-        UNION { GRAPH ?tg { ?t a sh:NodeShape } FILTER (?tg != ${NOT_REPORT}) BIND (?t AS ?ns) }
-        GRAPH ?pg { ?ns (${steps})+ ?ps . ?ps sh:class ?c } FILTER (?pg != ${NOT_REPORT})
-        OPTIONAL { GRAPH ?sg { ?sub rdfs:subClassOf+ ?c } FILTER (?sg != ${NOT_REPORT}) }
+    const applicable = shapeTargetMatches(g, { nodes: [{ termType: 'NamedNode', value: instance.value }] });
+    if (!applicable.length) return [];
+    const found = construct(g, `CONSTRUCT { ?ps sh:class ?c . ?sub rdfs:subClassOf ?c }
+        ${shapeQueryScope(g).data.map(t => `FROM ${iriText(t)}`).join(' ')} WHERE {
+        VALUES ?ns { ${applicable.map(m => iriText(m.shape)).join(' ')} }
+        ?ns (${steps})+ ?ps . ?ps sh:class ?c .
+        OPTIONAL { ?sub rdfs:subClassOf+ ?c }
     }`);
     const classes = [...new Set(found.flatMap(q => q.predicate.value === NS.sh + 'class' ? [q.object.value] : [q.subject.value]))];
     if (!classes.length) return [];
@@ -184,21 +186,9 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
     for (const shape of elements.filter(e => e.kind === 'shape')) {
         const term = elementTerm(shape.id);
         if (!term) continue;
-        const found = g.store.select(`${PREFIXES} SELECT DISTINCT ?s WHERE {
-            VALUES ?shape { ${iriText(term.value)} }
-            { ${things()} }
-            { {
-                { { GRAPH ?sg { ?shape sh:targetClass ?class } FILTER (?sg != ${NOT_REPORT}) }
-                UNION { GRAPH ?sg { ?shape a rdfs:Class } FILTER (?sg != ${NOT_REPORT}) BIND (?shape AS ?class) } }
-                { ${things([], '?s', '?targetType', '?tg', 'InstanceTarget')} }
-                FILTER (?targetType = ?class || EXISTS { GRAPH ?cg { ?targetType rdfs:subClassOf+ ?class } FILTER (?cg != ${NOT_REPORT}) })
-            }
-            UNION { GRAPH ?sg { ?shape sh:targetNode ?s } FILTER (?sg != ${NOT_REPORT}) }
-            UNION { GRAPH ?sg { ?shape sh:targetSubjectsOf ?p } GRAPH ?dg { ?s ?p ?o } FILTER (?sg != ${NOT_REPORT} && ?dg != ${NOT_REPORT}) }
-            UNION { GRAPH ?sg { ?shape sh:targetObjectsOf ?p } GRAPH ?dg { ?o ?p ?s } FILTER (?sg != ${NOT_REPORT} && ?dg != ${NOT_REPORT}) }
-            }
-            FILTER (isIRI(?s))
-        }`);
+        const found = shapeTargetMatches(g, { shapes: [term.value] })
+            .filter(m => m.node.termType === 'NamedNode' && g.isInstance(rdf.namedNode(m.node.value)))
+            .map(m => ({ s: rdf.namedNode(m.node.value) }));
         const names = labels(g, found.map(b => b.s.value));
         for (const b of found) {
             const id = elementId(b.s as NamedNode);

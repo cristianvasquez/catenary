@@ -15,7 +15,8 @@
     "test": "vitest run --config ../../vitest.config.mts packages/model/test"
   },
   "dependencies": {
-    "canonical-md": "^0.3.0"
+    "canonical-md": "^0.3.0",
+    "@catenary/shacl": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.4"

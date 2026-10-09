@@ -1,3 +1,4 @@
+import { ShapeTargets } from '@catenary/shacl/common';
 // Read model of the shapes files: node shapes, property shapes and logical constraints, as plain JSON. @catenary/rdf derives it
 // from the shapes graphs. Also the pure parts of the shape editor: prefixes, property paths as text, cardinality, verbalization.
 // Ids (see @catenary/rdf ids.ts): node shape, property shape, concept scheme and collection n-<iri>; logical constraint
@@ -74,13 +75,10 @@ export interface ValueSet {
 export type LogicalOperator = 'or' | 'xone' | 'and' | 'not';
 export const LOGICAL_OPERATORS: LogicalOperator[] = ['or', 'xone', 'and', 'not'];
 
-export interface NodeShape {
+export interface NodeShape extends ShapeTargets {
     id: string;
     uri: string;
     label: string;                  // sh:name, else rdfs:label, else the local name
-    targetClass?: string;
-    /** Predicates of sh:targetSubjectsOf. Any matching predicate selects a subject. */
-    targetSubjectsOf?: string[];
     closed?: boolean;
     description?: string;
     /** Shapes file that holds the shape (absolute path, or the graph IRI when unknown). */
@@ -539,9 +537,12 @@ export function verbalizeConstraint(shapes: ShapesModel, c: LogicalConstraint): 
 /** Node shape and its properties, one sentence each. */
 export function verbalizeShape(shapes: ShapesModel, s: NodeShape, schemeLabel: (iri: string) => string = localName): string[] {
     const lines: string[] = [];
-    if (s.targetClass) lines.push(`A ${s.label} is an instance of ${shortIri(s.targetClass)}.`);
+    for (const c of s.targetClasses ?? (s.targetClass ? [s.targetClass] : [])) lines.push(`${s.label} checks instances of ${shortIri(c)}.`);
     if (s.targetSubjectsOf?.length) lines.push(`A ${s.label} checks subjects of ${s.targetSubjectsOf.map(shortIri).join(' or ')}.`);
+    if (s.targetObjectsOf?.length) lines.push(`${s.label} checks objects of ${s.targetObjectsOf.map(shortIri).join(' or ')}.`);
+    if (s.targetNodes?.length) lines.push(`${s.label} checks ${s.targetNodes.map(n => n.termType === 'NamedNode' ? shortIri(n.value) : JSON.stringify(n.value)).join(' or ')}.`);
     if (!lines.length) lines.push(`${s.label} has no target class: it checks only the nodes that other shapes send to it (sh:node).`);
+    if (s.nodes?.length) lines.push(`${s.label} also checks each focus node against ${s.nodes.map(shortIri).join(' and ')}.`);
     if (s.closed) lines.push(`A ${s.label} has no properties other than these (closed).`);
     for (const id of s.properties) {
         const p = shapes.properties[id];

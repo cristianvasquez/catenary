@@ -72,7 +72,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         g.add(rdf.namedNode(inst.uri), predicate, rdf.literal('active'), g.model);
 
         const p = store.properties(inst.id) as InstanceProperties;
-        expect(p.shapes).toContainEqual({ id: expect.any(String), uri: shape.value, label: 'SubjectShape' });
+        expect(p.shapes).toContainEqual({ id: expect.any(String), uri: shape.value, label: 'SubjectShape', predicates: [], reasons: [{ kind: 'targetSubjectsOf', target: { termType: 'NamedNode', value: predicate.value } }] });
     });
 
     it('instance: the link candidates of the form are of its sh:class classes and leave out the instance itself', () => {

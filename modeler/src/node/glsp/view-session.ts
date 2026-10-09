@@ -146,7 +146,7 @@ export class ViewGModelFactory implements GModelFactory {
         const schema = toSchema(this.session.part, store.meta, this.session.viewId, {
             showHidden: this.session.showHidden, cardScale: this.session.cardScale, violations: store.violations, schemeLabel: iri => schemes.get(iri) ?? iri.replace(/^.*[#/:]/, ''),
             hidden: { neighbors: id => neighbors.get(id), shapeSources: id => hiddenShapeSources(part.shapes, view, id).length },
-            notation: store.viewFigures(this.session.viewId)
+            notation: store.viewFigures(this.session.viewId), applicability: view ? store.viewApplicability(view) : []
         });
         const root = this.serializer.createRoot(schema as never) as GModelRoot;
         this.modelState.updateRoot(root);

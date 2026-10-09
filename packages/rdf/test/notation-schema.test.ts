@@ -26,6 +26,26 @@ const of = (g: ModelGraph, view: string, type: string) => schema(g, view).filter
 const element = (g: ModelGraph, view: string, id: unknown) => elementOfId(project(g).doc.views[view], id as string);
 
 describe('SHACL elements from the notation engine', () => {
+    it('draws object targeting from the object-end shape and draws node-level constraints', async () => {
+        const { g, view } = await setup(`
+            <urn:source> a sh:NodeShape ; sh:property <urn:property> ; sh:node <urn:shared> .
+            <urn:property> sh:path <urn:p> ; sh:node <urn:object> .
+            <urn:object> a sh:NodeShape . <urn:shared> a sh:NodeShape .
+            <urn:target> sh:targetObjectsOf <urn:p> .`, '', ['urn:source', 'urn:object', 'urn:shared', 'urn:target']);
+        const edges = of(g, view, TYPES.TARGETING);
+        const object = edges.find(e => e.name === 'objects of <urn:p>')!;
+        expect([element(g, view, object.sourceId), element(g, view, object.targetId)]).toEqual([iriId('urn:object'), iriId('urn:target')]);
+        const node = edges.find(e => e.name === 'sh:node')!;
+        expect([element(g, view, node.sourceId), element(g, view, node.targetId)]).toEqual([iriId('urn:source'), iriId('urn:shared')]);
+        expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('objects of p');
+    });
+
+    it('labels an object-target connector from its property owner when no object-end shape exists', async () => {
+        const { g, view } = await setup(`<urn:source> a sh:NodeShape ; sh:property <urn:property> .
+            <urn:property> sh:path <urn:p> . <urn:target> sh:targetObjectsOf <urn:p> .`, '', ['urn:source', 'urn:target']);
+        expect(of(g, view, TYPES.TARGETING).map(e => e.name)).toEqual(['objects of <urn:p>']);
+    });
+
     it('draws a self-targeting connector', async () => {
         const { g, view } = await setup(`
             <urn:self> a sh:NodeShape ; sh:targetSubjectsOf <urn:status> ; sh:property <urn:property> .

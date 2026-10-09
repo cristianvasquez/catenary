@@ -1058,6 +1058,21 @@ subjectTargetMatches targets predicates = any (`elem` predicates) targets
 law_subjectTargetUnion :: [Iri] -> [Iri] -> [Iri] -> Bool
 law_subjectTargetUnion a b predicates = subjectTargetMatches (a ++ b) predicates == (subjectTargetMatches a predicates || subjectTargetMatches b predicates)
 
+-- | Direct targets and positive node constraints define one checked-node relation.
+-- Queries return reasons. They exclude view graphs and the validation report.
+-- Node constraints check the same focus node. Property node constraints check path values.
+-- Constraint checking does not add a class type. Validation runs when shapes exist, without a palette class.
+shapesForNode :: (Eq n, Eq s) => [(n, s)] -> n -> [s]
+shapesForNode relation node = nub [s | (n, s) <- relation, n == node]
+nodesForShape :: (Eq n, Eq s) => [(n, s)] -> s -> [n]
+nodesForShape relation shape = nub [n | (n, s) <- relation, s == shape]
+law_targetNavigation :: (Eq n, Eq s) => [(n, s)] -> n -> s -> Bool
+law_targetNavigation relation node shape = (shape `elem` shapesForNode relation node) == (node `elem` nodesForShape relation shape)
+nodeReferenceChecks :: Iri -> [Iri] -> Bool -> [Iri]
+nodeReferenceChecks focus values propertyLevel = if propertyLevel then nub values else [focus]
+law_nodeNavigation :: Iri -> [Iri] -> Bool
+law_nodeNavigation focus values = nodeReferenceChecks focus values False == [focus] && nodeReferenceChecks focus values True == nub values
+
 -- 8.2 Shape proposal --------------------------------------------------------------------
 
 -- | proposeShapes (shape-proposal.ts, SHACLxtract) makes node shapes from the model graph and writes them to the shapes file.

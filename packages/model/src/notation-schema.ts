@@ -1,3 +1,4 @@
+import { shapeConnections, targetText } from '@catenary/shacl/common';
 // The SHACL and value-set elements of a view, from the notation engine (ADR 0014): what is drawn comes from the join of the figures
 // with the placements (notation-join.ts); the texts come from the shapes read model (shapes-doc.ts). The element types and ids of
 // the diagram stay as before, so that the client gestures keep their targets:
@@ -16,7 +17,7 @@ import { Figure, listHolder } from './notation';
 import { nkey } from './notation-graph';
 import { ViewFigures } from './notation-join';
 import { ONE_OF_WIDTH, SHAPE_CARD, ShapeRow, alternativeCard, alternativeRows, leafStyle, pillSize, shapeCardHeight } from './shapes-schema';
-import { PropertyShape, SimpleRange, cardinalityText, formatPath, pathParts, rangeText, shortIri } from './shapes-doc';
+import { PropertyShape, SimpleRange, alternativesOf, cardinalityText, formatPath, pathParts, rangeText, shortIri } from './shapes-doc';
 import { NS, localName } from './terms';
 
 const SHN = 'osg://vocab/notation/shapes#', VSN = 'osg://vocab/notation/skos#';
@@ -134,8 +135,8 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             const violations = shape.properties.reduce((sum, pid) => sum + (problems.get(pid) ?? 0), 0);
             cards.push({
                 type: TYPES.SHAPE, id: boxId(f), element: shape.id, ...geometry, size: { width, height },
-                className: 'NodeShape', name: shape.label, subtitle: [shape.targetClass ? shortIri(shape.targetClass) : '', shape.targetSubjectsOf?.length ? `subjects of ${shape.targetSubjectsOf.map(shortIri).join(' or ')}` : ''].filter(Boolean).join(' · ') || 'no target',
-                color: pl?.color ?? '', closed: !!shape.closed, violations, display: simple ? 'simple' : 'detailed', hiddenSources: opts.hidden?.shapeSources(shape.id) ?? 0,
+                className: 'NodeShape', name: shape.label, subtitle: targetText(shape, shortIri),
+                color: pl?.color ?? '', closed: !!shape.closed, violations, display: simple ? 'simple' : 'detailed', hiddenSources: opts.hidden?.shapeSources(shape.id) ?? 0, hiddenTargets: opts.hidden?.neighbors(shape.id)?.targets ?? 0,
                 children: simple ? [] : rows as unknown as ElementSchema[]
             });
         } else if (isValueSets(f)) {
@@ -187,16 +188,20 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     });
     const alternativeLane = edgeLanes(alternatives.map(a => [a.source, a.target]));
     for (const a of alternatives) edges.push({ type: TYPES.ALTERNATIVE, id: a.id, sourceId: a.source, targetId: a.target, ...alternativeLane(a.source, a.target) });
-    const targeting = Object.values(shapes.properties).flatMap(p => {
-        const predicate = p.path.kind === 'iri' ? p.path.iri : undefined;
-        if (!predicate || !shapeCards.has(p.owner)) return [];
-        return Object.values(shapes.nodeShapes).filter(shape => shape.targetSubjectsOf?.includes(predicate) && shapeCards.has(shape.id))
-            .map(shape => ({ p, target: shape.id }));
-    });
-    const targetingLane = edgeLanes(targeting.map(({ p, target }) => [shapeCards.get(p.owner)!, shapeCards.get(target)!]));
-    for (const { p, target } of targeting) {
-        const source = shapeCards.get(p.owner)!, end = shapeCards.get(target)!;
-        edges.push({ type: TYPES.TARGETING, id: `${p.id}_target_${target}`, sourceId: source, targetId: end, name: formatPath(p.path), ...targetingLane(source, end) });
+    const targeting = shapeConnections(
+        Object.values(shapes.nodeShapes).map(s => ({ ...s, nodes: s.nodes?.map(iriId) })),
+        Object.values(shapes.properties).map(p => ({
+            id: p.id, owner: p.owner, predicate: p.path.kind === 'iri' ? p.path.iri : undefined,
+            objects: alternativesOf(p.range).flatMap(r => r.kind === 'node' ? [r.shape] : r.kind === 'class'
+                ? Object.values(shapes.nodeShapes).filter(s => (s.targetClasses ?? [s.targetClass]).includes(r.class)).map(s => s.id) : [])
+                .filter(id => shapeCards.has(id))
+        }))
+    ).filter(c => shapeCards.has(c.source) && shapeCards.has(c.target));
+    const targetingLane = edgeLanes(targeting.map(c => [shapeCards.get(c.source)!, shapeCards.get(c.target)!]));
+    for (const c of targeting) {
+        const source = shapeCards.get(c.source)!, target = shapeCards.get(c.target)!;
+        const name = c.kind === 'node' ? 'sh:node' : `${c.kind === 'objects' ? 'objects of ' : ''}${formatPath({ kind: 'iri', iri: c.predicate! })}`;
+        edges.push({ type: TYPES.TARGETING, id: c.id, sourceId: source, targetId: target, name, ...targetingLane(source, target) });
     }
 
     // Logical constraints: a hub placement draws its member lines; the client places the circle at the middle of their labels.

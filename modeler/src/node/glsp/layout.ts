@@ -18,7 +18,7 @@ import { Action, ActionHandler, FitToScreenAction } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 import * as cola from 'webcola';
-import { Box, Doc, ElementSchema, LEAF_SUFFIX, Rect, TYPES, ViewFigures, collectionOf, groupOf, boxes, toSchema } from '@catenary/model';
+import { Box, Doc, ElementSchema, GraphOptions, LEAF_SUFFIX, Rect, TYPES, ViewFigures, collectionOf, groupOf, boxes, toSchema } from '@catenary/model';
 import { LAYOUT_SPACING, LayoutAlgorithm, layoutSpacing } from '../../common/protocol';
 import { ViewSession } from './view-session';
 
@@ -191,11 +191,11 @@ export function components(ids: string[], links: [string, string][]): string[][]
 /** `spacing`: px between boxes (Layered: twice that between layers; in a group: the largest of 1.5, 1, 0.5 × spacing or 40 px that fits). */
 /** `cardScale`: the card text scale of the client; drawn cards with rows grow with it. */
 export async function layoutView(part: Doc, viewId: string, showHidden: boolean, algorithm: LayoutAlgorithm = 'layered',
-    spacing: number = LAYOUT_SPACING.default, cardScale = 1, notation?: ViewFigures): Promise<Layout> {
+    spacing: number = LAYOUT_SPACING.default, cardScale = 1, notation?: ViewFigures, applicability?: GraphOptions['applicability']): Promise<Layout> {
     const view = part.views[viewId];
     if (!view) return { bounds: [], edges: [] };
     // Classes only give labels; sizes do not use them.
-    const children = (toSchema(part, { classes: [] }, viewId, { showHidden, cardScale, violations: [], notation }).children ?? []) as ElementSchema[];
+    const children = (toSchema(part, { classes: [] }, viewId, { showHidden, cardScale, violations: [], notation, applicability }).children ?? []) as ElementSchema[];
     // A member of a collection is not placed: the collection is (the drawn edges go to it). Else the card of the element (its placement
     // id). An "in" or "one of" box (`<property element>_leaf`, placed by its list term): setBounds places that list.
     const item = (b: Box & { id: string }, group = false, element?: string): Item => ({ id: b.id, element, box: b, ext: { x: b.x, y: b.y, width: b.width, height: b.height }, group });
@@ -325,7 +325,7 @@ export class LayoutViewHandler implements ActionHandler {
 
     async execute(action: LayoutViewAction): Promise<Action[]> {
         const { bounds, edges } = await layoutView(this.session.part, this.session.viewId, this.session.state.showHidden, action.algorithm,
-            layoutSpacing(action.spacing ?? LAYOUT_SPACING.default), this.session.state.cardScale, this.session.store.viewFigures(this.session.viewId));
+            layoutSpacing(action.spacing ?? LAYOUT_SPACING.default), this.session.state.cardScale, this.session.store.viewFigures(this.session.viewId), this.session.store.viewApplicability(this.session.part.views[this.session.viewId]));
         // The fit comes after the model update (ViewSession.edit): the viewport shows the new layout, not the area of the old one.
         if (bounds.length > 0) await this.session.edit({ kind: 'setLayout', view: this.session.viewId, bounds, clearSides: edges },
             () => [FitToScreenAction.create([], { padding: 40, maxZoom: 1, animate: true })]);

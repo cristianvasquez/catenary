@@ -1,3 +1,4 @@
+import { shapeTargetMatches } from './shacl-targets';
 // Request-scoped read models (ADR 0012): a Doc with only the elements, neighbors and views that one request needs, from SPARQL rows.
 // The store builds one for each request and keeps none. The records use the rules of project.ts (`instanceRecords`) and view-read.ts.
 // Every view has an entry: the views that the scope does not read have their label only (no boxes, edges or arrows).
@@ -204,6 +205,12 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         if (t?.termType === 'NamedNode' && g.isInstance(t)) cards.set(t.value, b.element);
     }
     const out = new Map<string, { in: number; out: number; targets?: number }>();
+    const placed = new Set(boxes(view, 'card').map(b => b.element));
+    for (const shape of Object.values(shapes.nodeShapes).filter(s => placed.has(s.id))) {
+        const targets = shapeTargetMatches(g, { shapes: [shape.uri] }).filter(m => m.node.termType === 'NamedNode'
+            && g.isInstance(rdf.namedNode(m.node.value)) && !placed.has(elementId(rdf.namedNode(m.node.value)))).length;
+        if (targets) out.set(shape.id, { in: 0, out: 0, targets });
+    }
     if (!cards.size) return out;
     const shownSets = Object.values(shapes.valueSets).filter(s => view.boxes.some(b => b.kind === 'card' && b.element === s.id));
     const shown = (iri: string) => cards.has(iri) || view.boxes.some(b => b.kind === 'card' && elementTerm(b.element)?.value === iri)
@@ -229,9 +236,10 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
     }
     for (const [self, o] of others) out.set(cards.get(self)!, { in: o.in.size, out: o.out.size });
     const shownShapes = new Set(boxes(view, 'card').map(c => c.element));
+    const shapeIds = new Map(Object.values(shapes.nodeShapes).map(s => [s.uri, s.id]));
+    const matches = shapeTargetMatches(g, { nodes: [...cards.keys()].map(value => ({ termType: 'NamedNode', value })) });
     for (const [uri, id] of cards) {
-        const targets = Object.values(shapes.nodeShapes).filter(shape => !shownShapes.has(shape.id)
-            && shape.targetSubjectsOf?.some(predicate => g.match(rdf.namedNode(uri), rdf.namedNode(predicate), null, rdf.namedNode(homeOf(uri))).length > 0)).length;
+        const targets = matches.filter(m => m.node.value === uri && shapeIds.has(m.shape) && !shownShapes.has(shapeIds.get(m.shape)!)).length;
         const row = out.get(id);
         if (targets && row) row.targets = targets;
         else if (targets) out.set(id, { in: 0, out: 0, targets });

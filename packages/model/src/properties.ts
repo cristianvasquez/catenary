@@ -1,3 +1,4 @@
+import type { TargetReason } from '@catenary/shacl/common';
 // Data of the Model properties panel (ADR 0007 step 2). The backend gives it by SPARQL (packages/rdf/src/properties.ts) for the
 // selected element; the frontend asks when the selection or the model changes.
 
@@ -22,8 +23,8 @@ export interface InstanceProperties extends Instance {
     kind: 'instance';
     /** Predicate IRI -> IRIs of the instances that are objects (relations). */
     targets: Record<string, string[]>;
-    /** Node shapes that apply through sh:targetClass or sh:targetSubjectsOf; by label. */
-    shapes: { id: string; uri: string; label: string }[];
+    /** Node shapes selected by shared SHACL target rules, with reasons. */
+    shapes: { id: string; uri: string; label: string; reasons?: TargetReason[]; predicates?: string[] }[];
     /** The results of the report graph with the instance as focus node. */
     results: ResultRow[];
     /** The other instances as the SHACL form sees them (link candidates): sorted N-Triples lines. */

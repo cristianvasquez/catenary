@@ -221,6 +221,9 @@ importers:
 
   packages/model:
     dependencies:
+      '@catenary/shacl':
+        specifier: workspace:*
+        version: link:../shacl
       canonical-md:
         specifier: ^0.3.0
         version: 0.3.0
@@ -231,6 +234,9 @@ importers:
 
   packages/rdf:
     dependencies:
+      '@catenary/shacl':
+        specifier: workspace:*
+        version: link:../shacl
       '@catenary/model':
         specifier: workspace:*
         version: link:../model
@@ -312,6 +318,8 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.6)(terser@5.51.2)(yaml@2.9.1)
+
+  packages/shacl: {}
 
 packages:
 

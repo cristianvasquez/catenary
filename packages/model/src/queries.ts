@@ -69,7 +69,7 @@ export interface ModelQueries {
     neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined;
     /** Halo incoming button of a node shape card: the node shapes with a property to `from` that the view does not show. */
     shapeSourceChoices(viewId: string, from: string): Choices | undefined;
-    /** Halo button of an instance card: node shapes with sh:targetSubjectsOf that applies to `from`, outside the view. */
+    /** Halo expansion: unshown shapes for an instance, or unshown instances for a shape. */
     shapeTargetChoices(viewId: string, from: string): Choices | undefined;
     /**
      * Link button of an instance card: per relation type, the instances it can link to (placed in the view first, at most 50, `more`: the

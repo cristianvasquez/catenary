@@ -1,0 +1,36 @@
+{
+  "name": "@catenary/shacl",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared SHACL targeting rules, queries and presentation.",
+  "exports": {
+    "./common": {
+      "types": "./lib/common/index.d.ts",
+      "default": "./lib/common/index.js"
+    },
+    "./backend": {
+      "types": "./lib/backend/index.d.ts",
+      "default": "./lib/backend/index.js"
+    },
+    "./notations/shapes.ttl": "./notations/shapes.ttl"
+  },
+  "typesVersions": {
+    "*": {
+      "common": [
+        "lib/common/index.d.ts"
+      ],
+      "backend": [
+        "lib/backend/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "notations"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --config ../../vitest.config.mts packages/shacl/test"
+  }
+}

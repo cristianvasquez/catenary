@@ -158,6 +158,10 @@ export interface NodeShapePatch {
     targetClass?: string;
     /** Replace all sh:targetSubjectsOf values. An empty array removes them. */
     targetSubjectsOf?: string[];
+    /** Replace all sh:targetObjectsOf values. An empty array removes them. */
+    targetObjectsOf?: string[];
+    /** Replace node constraints on this node shape. */
+    nodes?: string[];
     closed?: boolean;
     /** '' removes it. */
     description?: string;

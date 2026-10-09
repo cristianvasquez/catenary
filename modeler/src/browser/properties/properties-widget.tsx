@@ -249,17 +249,17 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
     // ------------------------------------------------------------ instance
 
     /** The SHACL form for the statements of an instance that its shapes describe. */
-    protected descriptionForm(inst: InstanceProperties, cls: ClassDef): React.ReactNode {
+    protected descriptionForm(inst: InstanceProperties, shape: InstanceProperties['shapes'][number]): React.ReactNode {
         const shapes = this.model.shapesText;
         if (shapes === undefined) return <div className='catenary-help'>Loading shapes…</div>;
-        const predicates = formPredicates(cls);
-        const shapeSubject = cls.shapes.find(s => s.includes(':'));
-        const key = this.dataKey(inst, describeProperties(inst, predicates));
+        const predicates = shape.predicates ?? [];
+        const shapeSubject = shape.uri;
+        const key = this.dataKey(inst, describeProperties(inst, inst.shapes.flatMap(s => s.predicates ?? [])));
         const have = this.formValues?.id === inst.id ? this.formValues : undefined;
         if (have?.key !== key) this.requestFormData(inst.id, key);
         if (!have) return <div className='catenary-help'>Loading…</div>;
         // The form shows the data that the backend sent for `have.key`; it holds while newer data (form data or properties) is on the way.
-        return <ShaclFormHost key={inst.id} shapes={shapes} subject={inst.uri} shapeSubject={shapeSubject}
+        return <ShaclFormHost key={inst.id + shape.id} shapes={shapes} subject={inst.uri} shapeSubject={shapeSubject}
             dataKey={have.key}
             hold={this.pending > 0 || have.key !== key || this.dataRequest !== undefined}
             values={() => have.text}
@@ -284,7 +284,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
 
     /** What a form for an instance shows: its description, and the other instances (link candidates). */
     protected dataKey(inst: InstanceProperties, d: Description): string {
-        return descriptionKey(d) + '\n--\n' + inst.candidates;
+        return descriptionKey(d) + '\n--\n' + inst.candidates + '\nshapes ' + this.model.snapshot.shapesVersion;
     }
 
     protected formChanged(id: string, predicates: string[], form: ShaclForm): string {
@@ -300,7 +300,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 this.update();
             });
         }
-        return this.dataKey(inst, after);
+        return this.dataKey(inst, { ...describeProperties(inst, inst.shapes.flatMap(s => s.predicates ?? [])), ...after });
     }
 
     protected instancePanel(id: string): React.ReactNode {
@@ -309,7 +309,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         if (inst?.kind !== 'instance') return this.loading();
         const cls = primaryClass(meta, inst.types);
         const problems = inst.results;
-        const known = new Set(cls ? formPredicates(cls) : []);
+        const known = new Set(inst.shapes.flatMap(s => s.predicates ?? []));
         const extra = Object.entries(inst.fields).filter(([p]) => !known.has(p));
         const problemText = (p: typeof problems[number]) => `${p.pathName && !p.message.includes(p.pathName) ? `${p.pathName}: ` : ''}${p.message}`;
         // Statements in protected files: no edit control. An edit in the form is refused and asks to unprotect (ModelFrontend.execute).
@@ -337,7 +337,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                             : <TextInput field='label' value={inst.label} onCommit={v => this.exec({ kind: 'rename', id: inst.id, label: v.trim() })} />}
                     </Row>}
             </Section>
-            {cls ? <Section title='Description'>{this.descriptionForm(inst, cls)}</Section> : undefined}
+            {inst.shapes.map(shape => <Section key={shape.id} title={inst.shapes.length === 1 ? 'Description' : shape.label}>{this.descriptionForm(inst, shape)}</Section>)}
             {extra.length ? <Section title='Not in shapes' scope={`${extra.reduce((n, [, vs]) => n + vs.length, 0)} statements`} {...this.fold('extra')}>{extra.map(([p, vs]) =>
                 <Row key={p} label={predicateName(meta, p)} tip={p}>{vs.map((v, i) => <div key={i} className='catenary-value'>
                     <span>{v.value}</span>
@@ -484,6 +484,12 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 </Row>
                 <Row label='Target subjects of' term='sh:targetSubjectsOf' tip='Enter one predicate per line. This shape checks subjects of any listed predicate. Empty: none.'>
                     <TextInput multiline value={shape.targetSubjectsOf?.map(compactIri).join('\n') ?? ''} onCommit={v => void this.actions.setTargetSubjectsOfText(id, v)} />
+                </Row>
+                <Row label='Node constraints' term='sh:node' tip='Enter one shape IRI per line. Each shape checks the same focus node.'>
+                    <TextInput multiline value={shape.nodes?.map(compactIri).join('\n') ?? ''} onCommit={v => void this.actions.setNodeConstraintsText(id, v)} />
+                </Row>
+                <Row label='Target objects of' term='sh:targetObjectsOf' tip='Enter one predicate per line. This shape checks objects of any listed predicate. Empty: none.'>
+                    <TextInput multiline value={shape.targetObjectsOf?.map(compactIri).join('\n') ?? ''} onCommit={v => void this.actions.setTargetObjectsOfText(id, v)} />
                 </Row>
                 <div className='catenary-row'>
                     <label className='catenary-check' title='No properties other than the ones of the shape (rdf:type is ignored).'>

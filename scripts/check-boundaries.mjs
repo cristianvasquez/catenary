@@ -10,8 +10,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const packages = ['packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
+const packages = ['packages/shacl', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
 const forbidden = [
+    { dir: 'packages/shacl/src/common', module: '@catenary/shacl/backend', why: 'shared SHACL rules must not load the backend' },
+    { dir: 'modeler/src/browser', module: '@catenary/shacl/backend', why: 'the browser reads SHACL through RPC' },
+    { dir: 'modeler/src/common', module: '@catenary/shacl/backend', why: 'shared adapters must not load the backend' },
+    { dir: 'packages/model/src', module: '@catenary/shacl/backend', why: 'model runs in the browser' },
     { dir: 'packages/rdf-files/src', module: '@catenary/model', why: 'rdf-files is generic: other projects use it' },
     { dir: 'packages/rdf-files/src', module: '@catenary/rdf', why: 'rdf-files is generic: other projects use it' },
     { dir: 'modeler/src/browser', module: '@catenary/rdf', why: 'the browser gets JSON from @catenary/model, never RDF' },
@@ -40,7 +44,7 @@ for (const pkg of packages) {
                 errors.push(`${rel}: '${s}' is not declared in ${pkg}/package.json`);
             }
             for (const f of forbidden) {
-                if (rel.startsWith(f.dir + '/') && packageName(s) === f.module) errors.push(`${rel}: imports ${f.module} (${f.why})`);
+                if (rel.startsWith(f.dir + '/') && (f.module.startsWith('@catenary/shacl/') ? s === f.module : packageName(s) === f.module)) errors.push(`${rel}: imports ${f.module} (${f.why})`);
             }
         }
     }

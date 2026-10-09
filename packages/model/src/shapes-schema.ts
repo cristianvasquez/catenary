@@ -139,9 +139,10 @@ export function targetSize(shapes: ShapesModel, p: PropertyShape, rows: number, 
 export function hiddenShapeSources(shapes: ShapesModel, view: View | undefined, id: string): { shape: NodeShape; properties: PropertyShape[] }[] {
     const target = shapes.nodeShapes[id];
     if (!target) return [];
-    const points = (r: SimpleRange) => r.kind === 'node' ? r.shape === id : r.kind === 'class' && r.class === target.targetClass;
-    const targetPredicate = (p: PropertyShape) => p.path.kind === 'iri' && target.targetSubjectsOf?.includes(p.path.iri);
+    const points = (r: SimpleRange) => r.kind === 'node' ? r.shape === id : r.kind === 'class' && (target.targetClasses ?? [target.targetClass]).includes(r.class);
+    const targetPredicate = (p: PropertyShape) => p.path.kind === 'iri' && (target.targetSubjectsOf?.includes(p.path.iri) || target.targetObjectsOf?.includes(p.path.iri));
     const found = new Map<string, PropertyShape[]>();
+    for (const source of Object.values(shapes.nodeShapes)) if (source.id !== id && !inView(view, source.id) && source.nodes?.includes(target.uri)) found.set(source.id, []);
     for (const p of Object.values(shapes.properties)) {
         if (p.owner === id || !shapes.nodeShapes[p.owner] || inView(view, p.owner) || !(targetPredicate(p) || alternativesOf(p.range).some(points))) continue;
         found.set(p.owner, [...(found.get(p.owner) ?? []), p]);
