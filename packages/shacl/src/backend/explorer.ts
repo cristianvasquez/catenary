@@ -58,7 +58,8 @@ function propertyRow(port: ExplorerPort, data: Shapes, p: Property): ExplorerRow
     };
 }
 
-const order = (p: Property) => p.facts.order === undefined ? Infinity : Number(p.facts.order);
+/** sh:order as a number; none or not a number: last. */
+const order = (p: Property) => { const n = Number(p.facts.order ?? NaN); return Number.isFinite(n) ? n : Infinity; };
 
 export const shaclExplorer: ExplorerPlugin = {
     id: 'shacl',

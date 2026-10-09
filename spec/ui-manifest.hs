@@ -1325,6 +1325,9 @@ editorFor f Nothing = AsText f
 -- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in scope is not shown.
 -- Classes: each object of rdf:type in scope, nested by written rdfs:subClassOf, then its direct instances. No inference, no hidden types.
 -- Shapes: each node shape (typed sh:NodeShape, or a subject of sh:property), then its property shapes in sh:order, then by name.
+-- A property shape row needs the node shape and the property shape in scope. Their statements can be in different files.
+-- Reason: a property shape that another file states is a reference in this file (the scope rule below).
+-- Classes include the vocabulary of view files (view:Placement). A data file has none: only its own subjects are in scope.
 -- An IRI has a row in each section that has it (a node shape is also an instance of sh:NodeShape). Reason: the data shows as written.
 -- A class row and a node shape row are also elements: their selection is the class or the shape.
 -- Rows have no view state and no violation counts. Properties shows the violations of the selected element.

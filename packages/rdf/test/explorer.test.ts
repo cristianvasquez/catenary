@@ -97,6 +97,7 @@ describe('Model explorer plugins (ADR 0006)', () => {
         const props = (file?: string) => store.explorerChildren('shacl/shape:urn:x:S', file && join(dir, file)).rows.map(r => r.key);
         expect(props()).toEqual(['shacl/property:urn:x:P']);
         expect(props('owner.ttl')).toEqual([]);
+        expect(props('property.ttl')).toEqual([]);
     });
 
     it('search: a flat ranked list of element rows, with where each row is', () => {
