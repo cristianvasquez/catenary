@@ -212,11 +212,15 @@ export class ModelStore implements ModelQueries {
 
     protected applicabilityOf(view: View): TargetMatch[] {
         const shown = new Set(boxes(view, 'card').map(b => b.element));
-        const nodes = [...shown].flatMap(id => {
+        const nodes: string[] = [], shapes: string[] = [];
+        for (const id of shown) {
             const t = elementTerm(id);
-            return t?.termType === 'NamedNode' && this.graph.isInstance(t) ? [{ termType: 'NamedNode' as const, value: t.value }] : [];
-        });
-        return shapeTargetMatches(this.graph, { nodes }).filter(m => shown.has(elementId(rdf.namedNode(m.shape))));
+            if (t?.termType === 'NamedNode') (this.graph.isInstance(t) ? nodes : shapes).push(t.value);
+        }
+        // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
+        if (!nodes.length || !shapes.length) return [];
+        return shapeTargetMatches(this.graph, { nodes: nodes.map(value => ({ termType: 'NamedNode', value })), shapes })
+            .filter(m => shown.has(elementId(rdf.namedNode(m.shape))));
     }
 
     /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
