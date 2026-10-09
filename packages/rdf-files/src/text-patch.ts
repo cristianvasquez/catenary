@@ -206,6 +206,50 @@ class Triples {
     props(k: string) { return this.out.get(k) ?? []; }
 }
 
+/**
+ * What to find in a Turtle text: the statements of `subject`; with `predicate`, the property of that predicate; with `object`,
+ * that object of the property. `inside`: an object that is a `[ … ]` node with this predicate and object (a nested
+ * property shape: `sh:property [ sh:path ex:p ]`). All terms are IRIs.
+ */
+export interface TextTarget {
+    subject: string;
+    predicate?: string;
+    object?: string;
+    inside?: { predicate: string; object: string };
+}
+
+/**
+ * The 1-based line and column of `target` in `text` (Turtle; `file` gives the base IRI): the first matching object (else property);
+ * no predicate: the first statement of the subject. Undefined: nothing matches.
+ */
+export async function turtlePosition(text: string, file: string, target: TextTarget): Promise<{ line: number; column: number } | undefined> {
+    const tree = await treeOf(file, text);
+    const r = new Resolver(fileIri(file));
+    const at = (n: Node) => ({ line: n.startPosition.row + 1, column: n.startPosition.column + 1 });
+    /** A term that does not resolve (an undeclared prefix) matches nothing. */
+    const safe = <T>(f: () => T): T | undefined => { try { return f(); } catch { return undefined; } };
+    const key = (n: Node) => safe(() => r.key(n));
+    const properties = (n: Node) => kids(n).filter(c => c.type === 'property_list').flatMap(l => kids(l).filter(c => c.type === 'property'))
+        .map(p => ({ node: p, p: safe(() => r.predicate(kids(p)[0]!)), objects: kids(kids(p)[1]!).filter(c => c.type !== 'comment') }));
+    /** The node of a matching property: its matching object, else the property. */
+    const match = (p: ReturnType<typeof properties>[number]): Node | undefined => {
+        if (target.predicate && p.p !== `<${target.predicate}>`) return undefined;
+        const { inside, object } = target;
+        if (inside) return p.objects.find(o => o.type === 'blank_node_property_list'
+            && properties(o).some(q => q.p === `<${inside.predicate}>` && q.objects.some(x => key(x) === `<${inside.object}>`)));
+        return object ? p.objects.find(o => key(o) === `<${object}>`) : p.node;
+    };
+    for (const n of kids(tree.rootNode)) {
+        if (n.type === 'directive') { safe(() => r.directive(n)); continue; }
+        const subject = n.type === 'triple' ? kids(n)[0] : undefined;
+        if (!subject || subject.type !== 'subject' || key(subject) !== `<${target.subject}>`) continue;
+        if (!target.predicate) return at(n);
+        const found = properties(n).map(match).find(Boolean);
+        if (found) return at(found);
+    }
+    return undefined;
+}
+
 /** A top-level statement of the text. */
 interface Statement {
     node: Node;

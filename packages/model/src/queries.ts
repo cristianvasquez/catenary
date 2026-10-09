@@ -1,7 +1,7 @@
 // The read queries of the model: one declaration for the store (@catenary/rdf implements it), the RPC service and the CLI.
 // A new query: add it to ModelQueries and MODEL_QUERIES, then implement it in ModelStore. The compiler checks all three.
 
-import type { ActionTarget, SelectionActions } from './actions';
+import type { ActionTarget, OpenTarget, SelectionActions } from './actions';
 import type { AppearanceData, GestureInfo, Occurrence, Showing, ViewGesture } from './view-ui';
 import type { ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow } from './explorer';
 import type { OutlineNode } from './outline';
@@ -53,8 +53,8 @@ export interface ModelQueries {
     links(ids: string[], view?: string): SelectionLinks;
     /** Shapes as N-Triples (all graphs merged), for the SHACL form. Empty if no shapes are loaded. */
     shapesText(): string;
-    /** Go to Source: every file with statements of an element, with the 1-based line of the element in each (the file on disk). */
-    sources(id: string): Promise<{ path: string; line?: number }[]>;
+    /** Open in…: the presentations that show an element (Source at its position, Model, Canvas). */
+    openTargets(id: string): Promise<OpenTarget[]>;
     /** The actions that apply to a target and the facts to run them (spec/ui-manifest.hs §4, actions.ts). */
     selectionActions(target: ActionTarget): SelectionActions;
     /** The selection resolved: the ids that still exist, their elements, by kind (selection.ts). */
@@ -117,7 +117,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     showing: ['id'],
     links: ['ids', 'view'],
     shapesText: [],
-    sources: ['id'],
+    openTargets: ['id'],
     selectionActions: ['target'],
     selected: ['selection'],
     view: ['viewId'],

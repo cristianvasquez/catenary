@@ -80,7 +80,7 @@ export namespace ModelCommands {
     export const COLLECT = cmd('catenary.collect', 'Collect into One Box', 'codicon codicon-group-by-ref-type');
     export const UNCOLLECT = cmd('catenary.uncollect', 'Expand Collection', 'codicon codicon-ungroup-by-ref-type');
     export const LAYOUT_VIEW = cmd('catenary.layoutView', 'Apply Layout…', 'codicon codicon-type-hierarchy-sub');
-    export const SELECT_IN_EXPLORER = cmd('catenary.selectInExplorer', 'Reveal in Explorer');
+    export const OPEN_IN = cmd('catenary.openIn', 'Open in…');
     export const FIND_ELEMENT = cmd('catenary.findElement', 'Find Element…', 'codicon codicon-search');
     export const NEXT_OCCURRENCE = cmd('catenary.nextOccurrence', 'Show in Next View');
     export const PREVIOUS_OCCURRENCE = cmd('catenary.previousOccurrence', 'Show in Previous View');

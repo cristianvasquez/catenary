@@ -35,10 +35,10 @@ const VIEW_HELP = 'A view shows all relations between its elements. Del hides an
     + 'Palette: select Instances or Shapes. Drag a node shape from the Model explorer (under its class) to show its card. On a shape card, → draws a property: to another card, or to empty canvas for a datatype, value set or scheme. '
     + 'Select a property edge and drag its violet handle to another edge: logical constraint. Click a cardinality to change it. Double-click a path to edit it. Ctrl+Del deletes from the shapes.';
 
-/** Actions with an icon in the toolbar under the head, in two groups: navigation, then explorer, source and name. The menu has all actions. */
+/** Actions with an icon in the toolbar under the head, in two groups: navigation, then name. The menu has all actions. */
 const TOOLBAR: [string, string][][] = [
-    [['catenary.openView', 'link-external'], ['catenary.showInView', 'eye'], ['catenary.previousOccurrence', 'chevron-left'], ['catenary.nextOccurrence', 'chevron-right']],
-    [['catenary.selectInExplorer', 'list-tree'], ['catenary.goToSource', 'go-to-file'], ['catenary.rename', 'edit'], ['catenary.editPath', 'edit']]
+    [['catenary.openIn', 'go-to-file'], ['catenary.previousOccurrence', 'chevron-left'], ['catenary.nextOccurrence', 'chevron-right']],
+    [['catenary.rename', 'edit'], ['catenary.editPath', 'edit']]
 ];
 const DELETE = 'catenary.deleteFromModel';
 

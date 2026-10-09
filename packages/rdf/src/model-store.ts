@@ -9,7 +9,7 @@ import { shapeTargetMatches } from './shacl-targets';
 
 import {
     ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
-    setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
+    setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
     TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
@@ -17,7 +17,7 @@ import {
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
+import { FolderWatcher, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
 import { ActionContext, Placements, placements, selectionActions } from './actions';
 import { executeCommand } from './commands';
 import type { ExplorerPort } from '@catenary/explorer';
@@ -316,7 +316,6 @@ export class ModelStore implements ModelQueries {
         const ctx: ActionContext = {
             g: this.graph, shapes: this.shapesIndex().model,
             placements: this.cached('placements', () => placements(this.graph, this.shapesIndex().byTerm)),
-            revealable: id => this.explorerPaths(id).length > 0,
             doc: this.scoped({ elements: target.ids, views: [target.view] }),
             viewOf: v => this.viewDoc(v).views[v],
             filesOf: id => this.filesOfElement(id)
@@ -488,7 +487,7 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * The files with statements of an element (Go to Source, spec 0.4): the triples with the element as subject; a relation: its
+     * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
      * triple; no such triples: the triples with it as object. Most statements first.
      */
     filesOfElement(id: string): string[] {
@@ -498,23 +497,59 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Go to Source: every file with statements of an element, and the line of the element in each (the file on disk: unsaved changes
-     * are not in it). The line is of the subject IRI; a property shape without its own line: the line of its node shape.
+     * Open in…: the presentations that show an element. Source: each file with statements of it, at its position in the file on disk
+     * (unsaved changes are not in it). Model: each of those files whose Model pane has a row of it. Canvas: each view that places it.
      */
-    async sources(id: string): Promise<{ path: string; line?: number }[]> {
+    async openTargets(id: string): Promise<OpenTarget[]> {
+        if (!this.file) return [];
+        const files = this.filesOfElement(id);
+        const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await this.positionIn(path, id) })));
+        const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
+        const shown = this.showing(id);
+        const canvases = shown.isView
+            ? [{ presentation: 'Canvas' as const, view: id, label: this.viewLabels()[id] ?? id }]
+            : shown.views.map(v => ({ presentation: 'Canvas' as const, view: v.id, label: v.label, box: v.box }));
+        return [...sources, ...models, ...canvases];
+    }
+
+    /**
+     * What shows an element in a text, best first: a relation is its statement; a property shape is its own block, else its entry in
+     * its node shape (by IRI, else a `[ … ]` node with its path); a logical constraint is its list in its node shape.
+     */
+    protected textTargets(id: string): TextTarget[] {
         const idx = this.shapesIndex();
-        const subject = relationTriple(id)?.s ?? idx.property.get(id)?.term ?? elementTerm(id);
-        const owner = idx.property.get(id)?.owner ?? idx.constraint.get(id)?.owner;
-        const out: { path: string; line?: number }[] = [];
-        for (const file of this.filesOfElement(id)) {
-            let line: number | undefined;
-            try {
-                const text = await fs.readFile(file, 'utf8');
-                line = (subject?.termType === 'NamedNode' ? sourceLine(text, subject.value) : undefined) ?? (owner ? sourceLine(text, owner.value) : undefined);
-            } catch { /* not on disk yet */ }
-            out.push({ path: file, line });
+        const rel = relationTriple(id);
+        if (rel) return [{ subject: rel.s.value, predicate: rel.p.value, object: rel.o.value }];
+        const property = idx.property.get(id), constraint = idx.constraint.get(id);
+        if (property) {
+            const path = idx.model.properties[id]?.path, p = NS.sh + 'property', own = property.term.value;
+            return [
+                { subject: own }, { subject: property.owner.value, predicate: p, object: own },
+                ...(path?.kind === 'iri' ? [{ subject: property.owner.value, predicate: p, inside: { predicate: NS.sh + 'path', object: path.iri } }] : []),
+                { subject: property.owner.value }
+            ];
         }
-        return out;
+        if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
+        const t = elementTerm(id);
+        return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
+    }
+
+    /** The position of an element in a file on disk: by its Turtle syntax tree, else the line of a text search (other formats). */
+    protected async positionIn(file: string, id: string): Promise<{ line?: number; column?: number }> {
+        let text: string;
+        try { text = await fs.readFile(file, 'utf8'); } catch { return {}; }
+        const targets = this.textTargets(id);
+        if (/\.ttl$/i.test(file)) {
+            for (const target of targets) {
+                const at = await turtlePosition(text, file, target).catch(() => undefined);
+                if (at) return at;
+            }
+        }
+        for (const { subject } of targets) {
+            const line = sourceLine(text, subject);
+            if (line) return { line };
+        }
+        return {};
     }
 
     protected scopeOf(patch: Patch): ChangeScope {

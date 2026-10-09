@@ -2,7 +2,7 @@
 // backend for its rows when it opens, one page at a time. A filter shows one flat list of the best matches.
 // It shows and sets the selection of the window (SelectionModel). The files: the Theia file navigator (ADR 0004).
 
-import { CancellationToken, Emitter, MenuPath, QuickInputService } from '@theia/core';
+import { CancellationToken, CommandService, Emitter, MenuPath, QuickInputService } from '@theia/core';
 import {
     ApplicationShell, CompositeTreeNode, ContextMenuRenderer, ExpandableTreeNode, NodeProps, Saveable, SaveableSource, SelectableTreeNode,
     Tree, TreeImpl, TreeModel, TreeNode, TreeProps, TreeSelection, TreeWidget, codicon
@@ -11,12 +11,13 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import React from '@theia/core/shared/react';
 import { EXPLORER_PAGE, ExplorerRow, EXPLORER_DRAG, ExplorerDrag, fuzzyMatch, baseName, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
-import { ViewEditors } from '../diagram/view-editors';
 import { ModelActions } from '../actions';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel, sameIds } from '../selection-model';
 
 export const FILE_EXPLORER_ID = 'catenary-file-explorer';
+/** The Open in… command (ModelCommands.OPEN_IN): this file cannot import commands.ts, which imports it. */
+const OPEN_IN = 'catenary.openIn';
 /** Context menu of the explorers: each command shows when it applies to the selected nodes. */
 export const EXPLORER_CONTEXT_MENU: MenuPath = ['catenary-model-explorer-context'];
 
@@ -149,11 +150,11 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     @inject(ModelFrontend) protected readonly modelFrontend: ModelFrontend;
     @inject(Tree) protected readonly modelTree: ModelTree;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
-    @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(SelectionModel) protected readonly elements: SelectionModel;
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(ActionService) protected readonly actionService: ActionService;
+    @inject(CommandService) protected readonly commands: CommandService;
     readonly saveable: ModelSaveable;
     /** True while the tree shows the SelectionModel: that tree selection change is not a user gesture. */
     protected applying = false;
@@ -415,16 +416,17 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
         return name.split('').map((c, i) => indices.has(i) ? <mark key={i}>{c}</mark> : c);
     }
 
+    /** Double-click or Enter on a leaf row of an element: Open in… (a folder row expands). */
     protected override handleDblClickEvent(node: TreeNode | undefined, event: React.MouseEvent<HTMLElement>): void {
-        if (CatenaryNode.isElement(node)) {
-            void this.editors.show(CatenaryNode.elementId(node));
+        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) {
+            void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
             event.stopPropagation();
         } else super.handleDblClickEvent(node, event);
     }
 
     protected override handleEnter(event: KeyboardEvent): void {
         const node = this.model.getFocusedNode();
-        if (CatenaryNode.isElement(node)) void this.editors.show(CatenaryNode.elementId(node));
+        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
         else super.handleEnter(event);
     }
 

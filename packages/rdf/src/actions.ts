@@ -1,5 +1,5 @@
 // The facts of a selection for the action model (packages/model/src/actions.ts): kinds and types of each element, placements,
-// Model explorer rows, files, property shape facts, target classes and classes without a node shape. From the store and its read
+// files, property shape facts, target classes and classes without a node shape. From the store and its read
 // model; the frontend gets the actions that apply (RPC `selectionActions`) and never computes them.
 
 import type { NamedNode, Term } from '@rdfjs/types';
@@ -19,8 +19,6 @@ export interface ActionContext {
     g: ModelGraph;
     shapes: ShapesModel;
     placements: Placements;
-    /** True when the Model explorer has a row of the element. */
-    revealable: (id: string) => boolean;
     /** The read model of the target: its elements and its view (scoped-doc.ts). */
     doc: Doc;
     /** The read model of one view (with its placement ids). */
@@ -105,7 +103,6 @@ export function selectionFacts(ctx: ActionContext, target: ActionTarget): Select
             placed: !!scope && (views.has(scope) || element !== id || !!boxOf(view, id) || !!view?.arrows.some(a => a.id === id)),
             placedInActive: !!target.activeView && views.has(target.activeView),
             views: views.size,
-            revealable: kinds.includes('view') || ctx.revealable(element),
             files: ctx.filesOf(element).length,
             property: p ? { owner: p.owner, fixed: lineProblem(p), takenOut: view ? isTakenOut(view, p) : undefined } : undefined,
             classShapes, unshaped

@@ -129,11 +129,11 @@ it.each([['/w/project', '/w/project'], ['/w/project.trig', '/w/project']])('New 
     expect(create).toHaveBeenCalledTimes(1);
 });
 
-it('viewAsItem: an empty selection on a canvas is its view for Go to Source only', () => {
-    expect(viewAsItem('catenary.goToSource', { view: 'v', ids: [], activeView: 'v' })).toEqual({ ids: ['v'], activeView: 'v' });
-    expect(viewAsItem('catenary.goToSource', { view: 'v', ids: ['c'] })).toEqual({ view: 'v', ids: ['c'] });
+it('viewAsItem: an empty selection on a canvas is its view for Open in… only', () => {
+    expect(viewAsItem('catenary.openIn', { view: 'v', ids: [], activeView: 'v' })).toEqual({ ids: ['v'], activeView: 'v' });
+    expect(viewAsItem('catenary.openIn', { view: 'v', ids: ['c'] })).toEqual({ view: 'v', ids: ['c'] });
     expect(viewAsItem('catenary.deleteFromModel', { view: 'v', ids: [] })).toEqual({ view: 'v', ids: [] });
-    expect(viewAsItem('catenary.goToSource', { ids: [] })).toEqual({ ids: [] });
+    expect(viewAsItem('catenary.openIn', { ids: [] })).toEqual({ ids: [] });
 });
 
 it('Propose Missing Shapes shows the new shapes in a new view: free label, cards, Layered layout, fit, selection', async () => {

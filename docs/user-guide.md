@@ -49,7 +49,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Move elements: drag from one file tree to another. Confirm the element count and destination. Only statements supplied by the source file move. Other files and resource IRIs stay unchanged. Undo restores the transfer.
 - Move a shape with its structural nodes. If a nested shape has an unselected parent, select that parent before moving it. View files are not file-move destinations.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
-- Card controls (halo): Reveal, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
+- Card controls (halo): Open in, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
 - Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group; its relations and arrows end at the group.
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
@@ -96,7 +96,7 @@ Notes save automatically after a short pause in typing. Close the editor when yo
 | Key | Effect |
 |---|---|
 | F2 | Rename the selected element, or edit a note |
-| F12 | Go to Source: open the file of the element at its line. With nothing selected on a canvas: the view file |
+| F12 | Open in…: open the element in another pane: Source at its statement, Model at its row, or a Canvas that shows it. With nothing selected on a canvas: the view. Double-click or Enter on a Model, Search or Problems row does the same |
 | Ctrl+T | Find an element |
 | F3 / Shift+F3 | Next / previous occurrence of the element in views |
 | Del | Remove the placement from the view. The model does not change |

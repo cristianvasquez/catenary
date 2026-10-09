@@ -3,18 +3,17 @@
 // (ActionService); this file only runs them. A command argument `{ ids, view? }` is an explicit target (a Links row, a class
 // folder); without it the command acts on the window selection.
 
-import { CommandContribution, CommandRegistry, DisposableCollection, MenuContribution, MenuModelRegistry, MenuPath, MessageService, QuickInputService, URI } from '@theia/core';
-import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
-import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
-import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, itemsOfKind } from '@catenary/model';
+import { CommandContribution, CommandRegistry, MenuContribution, MenuModelRegistry, MenuPath, MessageService, QuickInputService, URI } from '@theia/core';
+import { ApplicationShell, KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser';
+import { inject, injectable } from '@theia/core/shared/inversify';
+import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
+import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, OpenTarget, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, itemsOfKind } from '@catenary/model';
 import { ActionService, viewAsItem } from './action-service';
 import { ModelActions } from './actions';
 import { ModelCommands, CatenaryFileOpenHandler } from './commands';
 import { editCanvasName } from './diagram/name-edit';
-import { ViewEditors } from './diagram/view-editors';
-import { EXPLORER_CONTEXT_MENU } from './explorer/model-explorer';
+import { ViewEditors, viewIdOf } from './diagram/view-editors';
+import { EXPLORER_CONTEXT_MENU, ModelExplorerWidget } from './explorer/model-explorer';
 import { addMenuItems } from './menus';
 import { ModelFrontend } from './model-client';
 import { NoteEditor } from './notes/note-editor';
@@ -22,24 +21,23 @@ import { LINKS_CONTEXT_MENU } from './properties/links-widget';
 import { OUTLINE_CONTEXT_MENU } from './outline';
 import { SEARCH_CONTEXT_MENU } from './search/search-widget';
 import { PROBLEMS_CONTEXT_MENU } from './problems';
-import { sameIds } from './selection-model';
 
 /** Menu groups of the actions, the same in every context menu. Order inside a group: the order of ACTIONS. */
 export const ACTION_GROUPS: [string, string[]][] = [
-    ['1_open', ['catenary.openView', 'catenary.selectInExplorer', 'catenary.goToSource', 'catenary.addToView']],
+    ['1_open', ['catenary.openIn', 'catenary.addToView']],
     ['2_edit', ['catenary.rename', 'catenary.editPath', 'catenary.editTarget', 'catenary.addAlternative', 'catenary.groupOr', 'catenary.groupXone', 'catenary.groupAnd',
         'catenary.ungroup', 'catenary.duplicateView', 'catenary.proposeShapes', 'catenary.showAsEdge', 'catenary.showAsRow', 'catenary.collect', 'catenary.uncollect']],
     ['3_delete', ['catenary.removeFromView', 'catenary.deleteFromModel']]
 ];
 
 /**
- * "Go to" submenu, the same in every context menu (on the canvas: the GLSP submenu `navigate`, with Next/Previous Marker): first one
- * entry per view that shows the selected element (group a_views, from the occurrence of the selection), then Next/Previous View (b_cycle).
+ * "Go to" submenu, the same in every context menu (on the canvas: the GLSP submenu `navigate`, with Next/Previous Marker): Next and
+ * Previous View. Open in… lists the views that show the element.
  */
 const GO_TO: [string, string][] = [['catenary.nextOccurrence', 'Next View'], ['catenary.previousOccurrence', 'Previous View']];
 
 /** Actions with a global keybinding: the menu shows the key in its key column, the label does not repeat it. */
-const KEY_COLUMN = ['catenary.nextOccurrence', 'catenary.previousOccurrence', 'catenary.goToSource'];
+const KEY_COLUMN = ['catenary.nextOccurrence', 'catenary.previousOccurrence', 'catenary.openIn'];
 
 /** Context menus that show the actions, the prefix of their groups, and their "Go to" submenu. The canvas keeps the GLSP group names. */
 const MENUS: [MenuPath, string, MenuPath][] = [
@@ -58,35 +56,8 @@ export class ActionContribution implements CommandContribution, MenuContribution
     @inject(NoteEditor) protected readonly notes: NoteEditor;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(MessageService) protected readonly messages: MessageService;
-    @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
+    @inject(ApplicationShell) protected readonly shell: ApplicationShell;
     @inject(CatenaryFileOpenHandler) protected readonly files: CatenaryFileOpenHandler;
-    @inject(CommandRegistry) protected readonly commandRegistry: CommandRegistry;
-    @inject(MenuModelRegistry) protected readonly menuRegistry: MenuModelRegistry;
-    /** Commands and menu entries of the views in the canvas "Go to" submenu. */
-    protected readonly goToViews = new DisposableCollection();
-
-    @postConstruct()
-    protected init(): void {
-        this.editors.onDidChangeOccurrence(() => this.updateGoToViews());
-    }
-
-    /** One "Go to" entry per view that shows the selected element, in label order. Click: the element in that view. */
-    protected updateGoToViews(): void {
-        this.goToViews.dispose();
-        const selection = this.service.selectionTarget().ids;
-        (this.editors.occurrence?.views ?? []).forEach((v, i) => {
-            const id = `catenary.goToView.${i}`;
-            this.goToViews.push(this.commandRegistry.registerCommand({ id, label: v.label }, {
-                execute: () => this.editors.reveal(v.id, [v.box]),
-                // An explicit target (a Links row) that is not the selection: the views are of the selection, not of it.
-                isVisible: (arg?: unknown) => sameIds(this.service.targetOf(arg).ids, selection)
-            }));
-            for (const [, , goTo] of MENUS) {
-                this.goToViews.push(this.menuRegistry.registerMenuAction([...goTo, 'a_views'], { commandId: id, label: v.label, order: String(i).padStart(4, '0') }));
-            }
-        });
-    }
-
     registerCommands(registry: CommandRegistry): void {
         for (const a of ACTIONS) {
             const target = (arg?: unknown) => viewAsItem(a.id, this.service.targetOf(arg));
@@ -142,12 +113,9 @@ export class ActionContribution implements CommandContribution, MenuContribution
         const view = t.view;
         const a = this.actions;
         switch (id) {
-            case 'catenary.openView': return void await Promise.all(itemsOfKind(items, 'view').map(v => this.editors.open(v)));
-            case 'catenary.showInView': return void await this.editors.show(one.element);
+            case 'catenary.openIn': return this.openIn(one, view);
             case 'catenary.nextOccurrence': return this.editors.nextOccurrence(1);
             case 'catenary.previousOccurrence': return this.editors.nextOccurrence(-1);
-            case 'catenary.selectInExplorer': return this.reveal(one, view);
-            case 'catenary.goToSource': return this.goToSource(one.element);
             case 'catenary.rename': return this.rename(one, view);
             case 'catenary.editPath': return a.editPath(one.element, view);
             case 'catenary.editTarget': return a.editRange(one.element, view);
@@ -173,35 +141,28 @@ export class ActionContribution implements CommandContribution, MenuContribution
         }
     }
 
-    /** A view or a view reference: the file in the file navigator. Another element: its row in the Model explorer. */
-    protected async reveal(item: ItemFacts, view?: string): Promise<void> {
+    /**
+     * Open in…: the presentations that show the element (Source at its position, Model, Canvas), without the current pane. One opens
+     * at once; several give a pick. A view reference stands for the view that it shows.
+     */
+    protected async openIn(item: ItemFacts, view?: string): Promise<void> {
         const reference = item.kinds.includes('reference') && view
             ? boxes(await this.model.service.view(view), 'reference').find(r => r.id === item.element)?.target : undefined;
         const id = reference ?? item.element;
-        const file = this.model.snapshot.files.views.find(v => v.view === id)?.path;
-        if (file) {
-            await this.navigator.openView({ activate: true, reveal: true });
-            await this.navigator.selectFileNode(URI.fromFilePath(file));
-            return;
-        }
-        const source = await this.pickSource(id);
-        if (source) await (await this.files.openModel(source.path)).reveal(id);
-    }
-
-    /** Source resolution is shared by Go to Source and Reveal in Explorer. */
-    protected async pickSource(id: string) {
-        const sources = await this.model.service.sources(id);
-        if (!sources.length) { this.messages.info('No file has statements of the element.'); return undefined; }
-        return sources.length === 1 ? sources[0] : (await this.quick.showQuickPick(
-            sources.map(s => ({ label: baseName(s.path), description: s.line ? `line ${s.line}` : 'not in the file on disk', detail: s.path, source: s })),
-            { placeholder: 'Files with statements of the element' }))?.source;
-    }
-
-    /** Go to Source: the file with the statements of the element, at its line. */
-    protected async goToSource(id: string): Promise<void> {
-        const pick = await this.pickSource(id);
+        const current = this.shell.currentWidget;
+        const here = (t: OpenTarget) => t.presentation === 'Model' ? current instanceof ModelExplorerWidget && current.file === t.path
+            : t.presentation === 'Canvas' && current instanceof GLSPDiagramWidget && viewIdOf(current) === t.view;
+        const targets = (await this.model.service.openTargets(id)).filter(t => !here(t));
+        if (!targets.length) return void this.messages.info('No other pane shows the element.');
+        const where = (t: OpenTarget) => t.presentation === 'Canvas' ? t.label
+            : t.presentation === 'Source' && t.line ? `${baseName(t.path)}:${t.line}` : baseName(t.path);
+        const pick = targets.length === 1 ? targets[0] : (await this.quick.showQuickPick(
+            targets.map(t => ({ label: t.presentation, description: where(t), detail: t.presentation === 'Canvas' ? undefined : t.path, target: t })),
+            { placeholder: 'Open in' }))?.target;
         if (!pick) return;
-        const at = pick.line ? { line: pick.line - 1, character: 0 } : undefined;
+        if (pick.presentation === 'Model') return (await this.files.openModel(pick.path)).reveal(id);
+        if (pick.presentation === 'Canvas') return pick.box ? this.editors.reveal(pick.view, [pick.box]) : void await this.editors.open(pick.view);
+        const at = pick.line ? { line: pick.line - 1, character: (pick.column ?? 1) - 1 } : undefined;
         await this.files.openSource(URI.fromFilePath(pick.path), { mode: 'activate', selection: at ? { start: at, end: at } : undefined });
         if (!pick.line) this.messages.info(`${baseName(pick.path)}: the element is not in the file on disk (not saved yet, or written in a form that the search does not find).`);
     }
@@ -261,7 +222,7 @@ export class ActionContribution implements CommandContribution, MenuContribution
     }
 
     registerKeybindings(keybindings: KeybindingRegistry): void {
-        keybindings.registerKeybinding({ command: 'catenary.goToSource', keybinding: 'f12', when: '!editorTextFocus' });
+        keybindings.registerKeybinding({ command: 'catenary.openIn', keybinding: 'f12', when: '!editorTextFocus' });
     }
 }
 

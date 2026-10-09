@@ -315,7 +315,7 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     await row('Catalogue', 'dataset').locator('.row-card', { hasText: '0..*' }).waitFor();
     await settle();
 
-    // A property shape is one selection in the canvas and the Model explorer: Reveal in Explorer on a row selects its tree row; a click on
+    // A property shape is one selection in the canvas and the Model explorer: Open in… → Model on a row selects its tree row; a click on
     // the tree row shows it in Properties.
     const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: label }).first();
     const propsTitle = text => page.locator('.catenary-props .catenary-head .title:visible', { hasText: new RegExp(`^${text}$`) });
@@ -326,8 +326,9 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
       .filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp(`^${name}$`) }) });
     await row('Catalogue', 'dataset').locator('.row-path').click();
     await row('Catalogue', 'dataset').locator('.row-path').click({ button: 'right' });
-    await menuItem('Reveal in Explorer').click();
-    // The property shape has one row: under its node shape in Shapes (it has no rdf:type). One path, no picker.
+    await menuItem('Open in…').click();
+    // Source and Model (the canvas is the current pane). The property shape has one row: under its node shape in Shapes. One path, no picker.
+    await page.locator('.quick-input-list .monaco-list-row').filter({ has: page.locator('.label-name', { hasText: /^Model$/ }) }).click();
     await treeRow('dcat:dataset').and(page.locator('.theia-mod-selected')).waitFor();
     await canvasTab.click();
     await card('Software agent').locator('.shape-name').click();
@@ -713,22 +714,49 @@ test('browser: file presentations use document panes, focus existing panes and r
   assert.equal(viewModel, modelId(viewFile));
   assert.equal(open(viewFile, 'Canvas', true), canvasId);
   assert.deepEqual(cli('ui').selection, selection);
-  // The source-file reveal replaces the removed global explorer navigation.
+  // law_openInSkipsCurrent: Open in… is one action for every pane. It leaves out the current pane, opens one target at once, asks between several.
   assert.equal(cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Reveal class', targetClass: 'urn:test:Reveal' })).result.ok, true);
   const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Reveal', label: 'Reveal me' })).result;
   assert.equal(instance.ok, true);
+  let source;
+  for (let i = 0; i < 20 && !source?.line; i++) {
+    source = cli('rpc', 'openTargets', JSON.stringify(instance.id)).result.find(t => t.presentation === 'Source');
+    if (!source?.line) await page.waitForTimeout(150);
+  }
+  assert.ok(source?.line, 'the saved file has the instance');
   open(data, 'Model');
-  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(instance.id)}] }); return true`);
-  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('');
-  assert.equal(cli('run', 'catenary.selectInExplorer').status, 'done');
-  assert.equal(current(), modelId(data));
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
-  assert.equal(await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).count(), 1);
-  // Tree Enter still navigates a resource to a containing canvas, independently of file presentation.
+  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('reveal me');
+  const revealRow = tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ });
+  const selectRow = async () => {
+    await revealRow.click();
+    await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
+  };
+  // From its Model pane, before any view places it: Source is the only other pane. A double-click opens it at the statement.
+  await selectRow();
+  await revealRow.dblclick();
+  for (let i = 0; i < 40 && current() !== sourceId; i++) await page.waitForTimeout(100);
+  assert.equal(current(), sourceId);
+  assert.deepEqual(cli('eval', 'const c = ctx.shell.currentWidget.editor.cursor; return [c.line, c.character]'), [source.line - 1, source.column - 1]);
+  // Placed in a view: Enter in the tree asks between Source and Canvas.
   assert.equal(cli('exec', JSON.stringify({ kind: 'addToView', view, ids: [instance.id], at: { x: 0, y: 0 } })).result.ok, true);
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ }).click();
+  open(data, 'Model');
+  await selectRow();
   await page.keyboard.press('Enter');
+  const picks = page.locator('.quick-input-list .monaco-list-row');
+  const pickLabels = () => picks.evaluateAll(rows => rows.map(r => r.querySelector('.label-name')?.textContent).sort());
+  await picks.first().waitFor();
+  assert.deepEqual(await pickLabels(), ['Canvas', 'Source']);
+  await picks.filter({ has: page.locator('.label-name', { hasText: /^Canvas$/ }) }).first().click();
   await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).waitFor();
+  // On the canvas, F12 on the selected card asks between Source and Model. Model reveals the row.
+  assert.equal(current(), canvasId);
+  await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).locator('.card-name').first().click();
+  await page.keyboard.press('F12');
+  await picks.first().waitFor();
+  assert.deepEqual(await pickLabels(), ['Model', 'Source']);
+  await picks.filter({ has: page.locator('.label-name', { hasText: /^Model$/ }) }).first().click();
+  await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
+  assert.equal(current(), modelId(data));
   // The ordinary shell layout can move the Model document into a vertical split.
   open(data, 'Source');
   cli('eval', `const all = ctx.shell.getWidgets('main'); const w = all.find(w => w.id === ${JSON.stringify(modelId(data))}); const ref = all.find(w => w.id === ${JSON.stringify(sourceId)}); ctx.shell.addWidget(w, { area: 'main', mode: 'split-bottom', ref }); await ctx.shell.activateWidget(w.id); return true`);
