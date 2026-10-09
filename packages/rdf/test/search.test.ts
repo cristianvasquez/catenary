@@ -16,6 +16,7 @@ const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 <urn:x:set> a <http://www.w3.org/ns/dcat#Dataset> ; rdfs:label "Set of a robot" .
 <urn:x:two> <https://ekgf.github.io/dprod/outputDataset> <urn:x:set> .
 <urn:x:Na%C3%AFve%20name> a <urn:x:Robot> .
+<urn:x:declared> a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:label "Declared property" .
 `;
 
 let dir: string, store: ModelStore;
@@ -48,8 +49,9 @@ describe('search: the things', () => {
         expect(h.get('urn:k:S')).toMatchObject({ kind: 'valueSet', label: 'Scheme' });
         expect(h.get('urn:k:a')).toMatchObject({ kind: 'instance', label: 'A' });
         expect(h.get('osg://shapes/data-product-draft#Task')).toMatchObject({ kind: 'shape', label: 'Task' });
-        // Predicates are not things: they have no card.
+        // Predicates are not things: they have no card. Used, or declared with rdf:Property.
         expect(h.has('https://ekgf.github.io/dprod/outputDataset')).toBe(false);
+        expect(h.has('urn:x:declared')).toBe(false);
         expect([...h.values()].filter(x => x.kind === 'view').length).toBe(Object.keys(docOf(store).views).length);
         // Not things: RDF structure, the view and SHACL vocabularies, the internals of the views, the report.
         for (const p of ['type', 'first', 'rest', 'reifies']) expect(h.has(NS.rdf + p)).toBe(false);

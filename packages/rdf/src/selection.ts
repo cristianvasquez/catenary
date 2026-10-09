@@ -43,7 +43,7 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
         if (index.model.constraints[id]) return 'constraint';
         const ts = s ? types.get(s) : undefined;
         if (!ts) return undefined;
-        return ts.includes(NS.rdf + 'Property') ? undefined : searchKind(ts);
+        return searchKind(ts);
     };
     for (const c of candidates) {
         let element = c.id;

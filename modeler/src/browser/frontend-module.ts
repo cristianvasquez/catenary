@@ -181,7 +181,6 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         bind(FilterContribution).to(HiddenContributions).inSingletonScope();
         single(FileKindsDecorator, NavigatorTreeDecorator);
 
-
         // Prefixes of the workspace
         transient(WorkspaceSettingsWidget);
         widgetFactory(WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget);

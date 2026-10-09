@@ -116,7 +116,7 @@ function workspace(ctx: PropertiesContext): ElementProperties {
     const count = (query: string) => Number(rows(g, query)[0]?.n.value ?? 0);
     return {
         kind: 'workspace',
-        instances: [...types.values()].filter(ts => ['instance', 'valueSet'].includes(searchKind(ts))).length,
+        instances: [...types.values()].filter(ts => { const k = searchKind(ts); return k === 'instance' || k === 'valueSet'; }).length,
         relations: construct(g, `CONSTRUCT { ?s ?p ?o } WHERE { ${connections()} }`).length,
         views: count(`SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s a view:View } FILTER (?g != ${NOT_REPORT}) }`),
         violations: count(`SELECT (COUNT(DISTINCT ?r) AS ?n) WHERE { GRAPH <${VALIDATION_GRAPH}> { ?r sh:resultSeverity sh:Violation } }`)

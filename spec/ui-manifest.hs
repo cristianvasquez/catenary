@@ -1364,7 +1364,8 @@ law_folderDragAll selected descendants hidden =
 -- Enter adds the thing to the current view. A thing that the view shows already is selected there.
 -- Ctrl+Enter does the same and keeps the picker open. Alt+Enter shows the thing (§8.7). With no current view, Enter shows it.
 -- Row buttons: Show, Reveal in Explorer, Go to Source. A property shape adds its node shape. A view adds a view reference.
--- The new card goes to the pointer when the pointer is on the canvas, else to the canvas center.
+-- A view reference to the view itself is refused with a message. A predicate (rdf:Property) is not a thing: it has no card.
+-- The new card goes to the pointer when the pointer is on the canvas, else to the canvas center. Add to View from a menu does the same.
 data FindKey = Enter | CtrlEnter | AltEnter deriving Eq
 data FindEffect = AddCard | SelectInView | ShowThing deriving Eq
 findEffect :: Bool -> Bool -> FindKey -> FindEffect  -- a current view, the view shows the thing

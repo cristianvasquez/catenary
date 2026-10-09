@@ -235,8 +235,8 @@ export class ViewEditors implements FrontendApplicationContribution {
     protected readonly fitted = new Set<string>();
 
     /** Open (or show) a view, select elements in it and center them. */
-    async reveal(viewId: string, elements: string[]): Promise<void> {
-        const w = await this.open(viewId);
+    async reveal(viewId: string, elements: string[], mode: WidgetOpenMode = 'activate'): Promise<void> {
+        const w = await this.open(viewId, mode);
         // A view opened now has no model yet: the diagram ids (the placement of a card or an edge) and a CenterAction need it.
         await w.actionDispatcher.onceModelInitialized();
         const ids = elements.map(id => this.placementOf(w, id));

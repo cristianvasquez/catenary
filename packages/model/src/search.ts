@@ -10,13 +10,17 @@ export const SEARCH_KIND_NAMES: Record<SearchKind, string> = {
     instance: 'Instances', view: 'Views', shape: 'Node shapes', property: 'Property shapes', valueSet: 'Concept schemes and collections'
 };
 
-/** The kind of a thing from its types: the first known type in this order; no known type: an instance. */
-const KIND_OF_TYPE: [string, SearchKind][] = [
+/**
+ * The kind of a thing from its types: the first known type in this order; no known type: an instance. A predicate (rdf:Property)
+ * is not a thing: undefined. It has no card.
+ */
+const KIND_OF_TYPE: [string, SearchKind | undefined][] = [
     [NS.sh + 'PropertyShape', 'property'], [NS.sh + 'NodeShape', 'shape'], [NS.skos + 'ConceptScheme', 'valueSet'],
-    [NS.skos + 'Collection', 'valueSet'], [NS.view + 'View', 'view']
+    [NS.skos + 'Collection', 'valueSet'], [NS.view + 'View', 'view'], [NS.rdf + 'Property', undefined]
 ];
-export function searchKind(types: string[]): SearchKind {
-    return KIND_OF_TYPE.find(([t]) => types.includes(t))?.[1] ?? 'instance';
+export function searchKind(types: string[]): SearchKind | undefined {
+    const known = KIND_OF_TYPE.find(([t]) => types.includes(t));
+    return known ? known[1] : 'instance';
 }
 
 export interface SearchHit {

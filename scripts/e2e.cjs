@@ -992,6 +992,27 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.waitForTimeout(500);
   assert.equal(cards('Picked first'), 1, 'Enter on an element of the view adds no second card');
   await until(() => selected('Picked first'), 'Enter on an element of the view selects it there');
+  // Ctrl+Enter on an element of the view: selected there, the picker stays open.
+  await page.keyboard.press('F8');
+  await picker.waitFor();
+  await page.keyboard.type('Picked second');
+  await page.getByRole('option', { name: /Picked second/ }).first().waitFor();
+  await page.keyboard.press('Control+Enter');
+  await until(() => selected('Picked second'), 'Ctrl+Enter on an element of the view selects it there');
+  assert.equal(await picker.isVisible(), true, 'Ctrl+Enter on an element of the view keeps the picker open');
+  assert.equal(cards('Picked second'), 1);
+  // A view: a view reference; the second time it is selected, not added again.
+  const other = iriId('urn:name:Product%20context');
+  const references = () => cli('rpc', 'view', JSON.stringify(view)).result.boxes.filter(b => b.kind === 'reference' && b.target === other);
+  await page.locator('.quick-input-box input').fill('Product context');
+  await page.getByRole('option', { name: /Product context/ }).first().waitFor();
+  await page.keyboard.press('Control+Enter');
+  await until(() => references().length === 1, 'Enter on a view adds a view reference');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Control+Enter');
+  await until(() => cli('ui').selection.ids?.includes(references()[0].id), 'Ctrl+Enter on a view of the view selects its reference');
+  assert.equal(references().length, 1, 'a view reference is added once');
+  assert.equal(await picker.isVisible(), true);
 }));
 
 test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async ({ page, cli }) => {

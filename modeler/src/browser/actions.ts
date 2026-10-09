@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, boxes, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -204,18 +204,18 @@ export class ModelActions {
         type Item = QuickPickItem & { hit: SearchHit };
         const view = this.editors.currentViewId();
         const hits = await this.service.search();
-        const items = () => SEARCH_KINDS.flatMap(kind => {
+        const describe = (h: SearchHit) => [h.types.map(localName).join(', '), view && h.views.includes(view) ? 'on this view' : ''].filter(Boolean).join(' · ');
+        const items = SEARCH_KINDS.flatMap(kind => {
             const of = hits.filter(h => h.kind === kind);
-            return of.length ? [{ type: 'separator', label: SEARCH_KIND_NAMES[kind] } as const, ...of.map((h): Item => ({
-                hit: h, label: h.label, detail: h.iri, buttons: FIND_BUTTONS,
-                description: [h.types.map(localName).join(', '), view && h.views.includes(view) ? 'on this view' : ''].filter(Boolean).join(' · ')
-            }))] : [];
+            return of.length ? [{ type: 'separator', label: SEARCH_KIND_NAMES[kind] } as const,
+                ...of.map((h): Item => ({ hit: h, label: h.label, detail: h.iri, buttons: FIND_BUTTONS, description: describe(h) }))] : [];
         });
         const pick = this.quick.createQuickPick<Item>();
         pick.title = view ? 'Enter: add to the view · Ctrl+Enter: add more · Alt+Enter: show' : 'Enter: show';
         pick.placeholder = 'Find an element: label, type or IRI';
         pick.matchOnDescription = pick.matchOnDetail = true;
-        pick.items = items();
+        pick.keepScrollPosition = true;
+        pick.items = items;
         // The accept event has no modifiers: keep those of the last key or click.
         let mods = { ctrl: false, alt: false };
         const keys = (e: KeyboardEvent | MouseEvent) => { mods = { ctrl: e.ctrlKey || e.metaKey, alt: e.altKey }; };
@@ -230,11 +230,16 @@ export class ModelActions {
             const { ctrl, alt } = mods;
             if (!ctrl || !view || alt) pick.hide();
             if (!view || alt) return void await this.editors.show(hit.id);
-            await this.place(view, hit);
-            // The hits with the same card (a node shape and its property shapes) are on the view now.
+            if (!await this.place(view, hit)) return;
+            // The hits with the same card (a node shape and its property shapes), or the view, are on the view now.
             const card = hitCard(hit);
-            for (const h of card ? hits.filter(x => hitCard(x) === card && !x.views.includes(view)) : []) h.views.push(view);
-            if (ctrl) pick.items = items();
+            for (const item of items) {
+                if (!('hit' in item) || item.hit.views.includes(view) || (card ? hitCard(item.hit) !== card : item.hit !== hit)) continue;
+                item.hit.views.push(view);
+                item.description = describe(item.hit);
+            }
+            // The same item objects: the picker keeps its active row.
+            if (ctrl) pick.items = items;
         });
         pick.onDidTriggerItemButton(async ({ item, button }) => {
             const { hit } = item as Item;
@@ -246,13 +251,28 @@ export class ModelActions {
         pick.show();
     }
 
-    /** A hit of Find Element on a view: a view as a view reference, else its card; a card that the view has already: selected there. */
-    protected async place(view: string, hit: SearchHit): Promise<void> {
+    /**
+     * A hit of Find Element on a view: a view as a view reference, else its card. A card or reference that the view has already:
+     * selected there, without the focus (the picker stays open). False: nothing was added or selected.
+     */
+    protected async place(view: string, hit: SearchHit): Promise<boolean> {
         const card = hitCard(hit);
-        if (card && hit.views.includes(view)) return void await this.editors.show(card);
+        if (hit.views.includes(view)) {
+            // A view: its reference box (the canvas maps elements to their cards, not views to their references).
+            const shown = card ?? boxes(await this.service.view(view), 'reference').find(r => r.target === hit.id)?.id;
+            if (shown) await this.editors.reveal(view, [shown], 'reveal');
+            return !!shown;
+        }
+        if (hit.id === view) {
+            this.messages.info('A view cannot show a reference to itself.');
+            return false;
+        }
         const w = await this.viewEditor(view);
-        if (card) await this.addToView(view, [card], this.editors.dropPoint(w));
-        else await this.addViewReference(view, hit.id, this.editors.dropPoint(w));
+        const at = this.editors.dropPoint(w);
+        const r = card ? await this.executeAndSelect(view, { kind: 'addToView', view, ids: [card], at }, [card])
+            : await this.executeAndSelect(view, { kind: 'addViewReference', view, target: hit.id, at });
+        if (!r.ok) this.messages.warn(r.error);
+        return r.ok;
     }
 
     // ------------------------------------------------------------ instances
