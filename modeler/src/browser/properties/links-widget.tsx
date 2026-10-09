@@ -11,7 +11,7 @@ import {
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
-import { ActionTarget, LinkElement, SelectionLinks, panelsUnchanged } from '@catenary/model';
+import { ActionTarget, LinkElement, SelectionLinks, isTypedInstanceRow, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ModelActions } from '../actions';
 import { ViewEditors } from '../diagram/view-editors';
@@ -119,8 +119,8 @@ export class LinksWidget extends TreeWidget {
             (parent.children as TreeNode[]).push(n);
             return n;
         };
-        const folder = (id: string, name: string, elements: string[], count: number) =>
-            add<LinkFolder>(root, { id, name, link: 'folder', elements, description: String(count), children: [], expanded: true });
+        const folder = (id: string, name: string, elements: string[], count: number, parent: CompositeTreeNode = root, expanded = true) =>
+            add<LinkFolder>(parent, { id, name, link: 'folder', elements, description: String(count), children: [], expanded });
 
         const elements = this.subject();
         const ids = elements.map(e => e.id);
@@ -158,8 +158,9 @@ export class LinksWidget extends TreeWidget {
         }
 
         // Outgoing and incoming: one row for each (predicate, other end), with the selected elements that have it.
+        // Incoming rdf:type rows go in a closed Instances folder: a class can have thousands of instances (UI §8.8).
         for (const dir of ['out', 'in'] as const) {
-            const rows = new Map<string, LinkNode & { predicateName: string }>();
+            const rows = new Map<string, LinkNode & { predicate: string; predicateName: string }>();
             for (const r of this.links.rows.filter(x => x.dir === dir)) {
                 const target = r.id;
                 const key = `${r.predicate} ${target ?? r.iri ?? `_${rows.size}`}`;
@@ -168,15 +169,24 @@ export class LinksWidget extends TreeWidget {
                 const unknown = !!r.undeclared;
                 rows.set(key, {
                     id: `${dir}:${key}`, name: r.name, link: dir, elements: [r.element],
-                    relation: r.relation, target, predicateName: r.predicateName, muted: unknown || !target,
+                    relation: r.relation, target, predicate: r.predicate, predicateName: r.predicateName, muted: unknown || !target,
                     tooltip: `${r.predicate}${r.iri ? `\n${r.iri}` : ''}${unknown ? '\nNot declared in the shapes of this class.' : ''}${target ? '' : '\nNot an element of the model.'}`
-                } as LinkNode & { predicateName: string });
+                } as LinkNode & { predicate: string; predicateName: string });
             }
             const list = [...rows.values()].map(n => ({
                 ...n, description: [n.predicateName, many ? (n.elements.length > 1 ? `${n.elements.length} of ${ids.length}` : `${dir === 'out' ? 'from' : 'to'} ${labels.get(n.elements[0])}`) : ''].filter(x => x).join(' · ')
             })).sort((a, b) => a.description!.localeCompare(b.description!) || (a.name ?? '').localeCompare(b.name ?? ''));
             const f = folder(dir, dir === 'out' ? 'Outgoing' : 'Incoming', ids, list.length);
-            list.forEach(n => add(f, n));
+            const typed: typeof list = [];
+            for (const n of list) {
+                if (isTypedInstanceRow({ dir, predicate: n.predicate })) typed.push(n);
+                else add(f, n);
+            }
+            if (typed.length) {
+                const tf = folder('in:instances', 'Instances (rdf:type)', [...new Set(typed.flatMap(n => n.elements))], typed.length, f, false);
+                tf.tooltip = 'Subjects of rdf:type statements to the selected elements.';
+                typed.forEach(n => add(tf, n));
+            }
         }
 
         const shapes = elements.filter(e => e.kind === 'shape');

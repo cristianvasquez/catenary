@@ -7,6 +7,7 @@ import { elementId } from '../src/ids';
 import { OxigraphStore } from 'rdf-files';
 import { links, selectionLinks } from '../src/queries';
 import { readShapes } from '../src/shapes-read';
+import { scopedDoc } from '../src/scoped-doc';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
@@ -14,6 +15,7 @@ import { doc, example, meta, parseQuads } from './helpers';
 const linksOf = (g: ModelGraph, d: Doc, ids: string[]) =>
     links(g, readShapes(g.shapesAndVocabulary()), ids, id => !!(d.instances[id] || d.views[id] || d.shapes.nodeShapes[id] || d.shapes.valueSets[id]));
 const sorted = (xs: string[]) => [...xs].sort();
+const TYPE = NS.rdf + 'type';
 
 describe('links query', () => {
     it('instances: views and relations agree with the read model', async () => {
@@ -22,12 +24,26 @@ describe('links query', () => {
         for (const id of Object.keys(d.instances)) {
             const l = linksOf(g, d, [id]);
             expect(sorted(l.views.map(v => v.view))).toEqual(sorted(viewsShowing(d, id).map(v => v.id)));
-            const ends = (dir: 'out' | 'in') => sorted(l.rows.filter(r => r.dir === dir && r.id && d.instances[r.id]).map(r => `${r.predicate} ${r.id}`));
+            const ends = (dir: 'out' | 'in') => sorted(l.rows.filter(r => r.dir === dir && r.predicate !== TYPE && r.id && d.instances[r.id]).map(r => `${r.predicate} ${r.id}`));
             const rels = Object.values(d.relations);
             expect(ends('out')).toEqual(sorted(rels.filter(r => r.subject === id).map(r => `${r.predicate} ${r.object}`)));
             expect(ends('in')).toEqual(sorted(rels.filter(r => r.object === id).map(r => `${r.predicate} ${r.subject}`)));
-            expect(l.rows.some(r => r.predicate === NS.rdf + 'type')).toBe(false);
+            // law_typeRowsShown: the classes of the instance are outgoing rows.
+            expect(sorted(l.rows.filter(r => r.dir === 'out' && r.predicate === TYPE).map(r => r.iri!))).toEqual(sorted(d.instances[id].types));
         }
+    });
+
+    it('law_typeRowsShown: rdf:type is an outgoing row of the instance and an incoming row of the class', async () => {
+        const g = new ModelGraph(new OxigraphStore());
+        for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
+            ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person ; rdfs:label "B" ; ex:knows ex:Person .`)) {
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        }
+        const d = doc(g);
+        const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
+        expect(linksOf(g, d, [id('a')]).rows.map(r => `${r.dir} ${r.predicate} ${r.id}`)).toEqual([`out ${TYPE} ${id('Person')}`]);
+        expect(sorted(linksOf(g, d, [id('Person')]).rows.map(r => `${r.dir} ${r.predicate} ${r.id}`)))
+            .toEqual(sorted([`in ${TYPE} ${id('a')}`, `in ${TYPE} ${id('b')}`, `in http://ex/knows ${id('b')}`]));
     });
 
     it('relations: views with both ends, hidden edges marked; groups: their view; several ids at once', async () => {
@@ -84,7 +100,8 @@ describe('links query', () => {
         const t = linksOf(g, d, [task]);
         expect(t.views).toEqual([{ element: task, view }]);
         expect(sorted(t.rows.filter(r => r.dir === 'out').map(r => `${r.predicate} ${r.id}`)))
-            .toEqual(sorted([`${NS.sh}targetClass ${task}`, `${NS.sh}property ${owner.id}`, ...members.map(x => `${NS.sh}or ${x}`)]));
+            .toEqual(sorted([`${TYPE} undefined`, `${NS.sh}targetClass ${task}`, `${NS.sh}property ${owner.id}`, ...members.map(x => `${NS.sh}or ${x}`)]));
+        expect(t.rows.find(r => r.predicate === TYPE)!.iri).toBe(NS.sh + 'NodeShape');
         expect(t.rows.filter(r => r.dir === 'in')).toEqual([]);
 
         // A property shape with an IRI: its id, not a plain IRI.
@@ -168,4 +185,19 @@ describe('selectionLinks: the Links panel data (ADR 0007)', () => {
         expect(Object.keys(d.relations).length).toBeGreaterThan(0);
         expect(relationRows).toBe(2 * Object.keys(d.relations).length);
     });
+
+    it('law_typeRowsShown: rdf:type rows reach instances and classes outside the scoped read model', async () => {
+        const g = new ModelGraph(new OxigraphStore());
+        for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
+            ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person .`)) {
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        }
+        const idx = readShapes(g.shapesAndVocabulary()), m = await meta();
+        const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
+        // As ModelStore.links: a read model of the selection only, without its neighbors.
+        const scoped = (ids: string[]) => selectionLinks(g, idx, scopedDoc({ g, shapes: idx.model }, { elements: ids }), m, ids);
+        expect(sorted(scoped([id('Person')]).rows.map(r => `${r.dir} ${r.id} ${r.name}`))).toEqual(sorted([`in ${id('a')} A`, `in ${id('b')} b`]));
+        expect(scoped([id('a')]).rows.map(r => `${r.dir} ${r.id} ${r.name}`)).toEqual([`out ${id('Person')} Person`]);
+    });
 });
+
