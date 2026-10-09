@@ -114,6 +114,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **Prefixes**: hover a row to edit or remove it. Add a prefix in the last row. Above 12 prefixes, a filter shows. A warning icon marks a namespace that does not end with `/` or `#`.
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
 - **Imported**: globs of imported (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
+- **Validation**: select what SHACL validation checks after each change. Off shows no problems and no badges. Open views checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. All checks the whole model. The status bar shows the mode.
 
 The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 

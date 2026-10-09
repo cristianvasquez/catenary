@@ -71,16 +71,22 @@ const realTimers: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: h => cl
 
 export class ValidationRunner {
     violations: Violation[] = [];
+    protected stamp = '';
     protected run = 0;
     protected timer?: unknown;
 
     /**
      * `source`: the dataset and the metamodel at the time of the run (an open replaces them), and the statements of the model graph
-     * to validate (`data`; undefined: all of them). `changed`: the violations changed.
+     * to validate (`data`; undefined: all of them). `off` (the validation mode "off"): no run; the report and the violations are
+     * cleared. `focus` (the validation mode "views", read after `data`): the elements on the open views, by termKey; the SKOS
+     * statements of the shapes files then go in only for these elements and for the IRIs of `data`. `stamp`: read after `data`; a new
+     * stamp is a change too (the store counts what the run checked). `changed`: the violations or the stamp changed.
      * `timers`: tests give their own.
      */
     constructor(
-        protected readonly source: () => { graph: ModelGraph; metamodel: Metamodel; data?: () => Quad[] | undefined },
+        protected readonly source: () => {
+            graph: ModelGraph; metamodel: Metamodel; off?: boolean; data?: () => Quad[] | undefined; focus?: () => Set<string> | undefined; stamp?: () => string
+        },
         protected readonly changed: () => void,
         protected readonly timers: Timers = realTimers
     ) {}
@@ -102,6 +108,7 @@ export class ValidationRunner {
     /** No violations (a new dataset). */
     reset(): void {
         this.violations = [];
+        this.stamp = '';
     }
 
     protected validate(run: number): Promise<void> {
@@ -109,13 +116,26 @@ export class ValidationRunner {
     }
 
     protected async validateNow(run: number): Promise<void> {
-        const { graph: g, metamodel, data: own } = this.source();
+        const { graph: g, metamodel, off, data: own, focus: focusOf, stamp } = this.source();
         try {
+            if (off) {
+                tracer.note(`run ${run}: validation is off`);
+                return this.publish(run, g, [], [], '');
+            }
             // The SKOS statements of the shapes files are data too: a value "in scheme X" is checked against them.
-            const vocabulary = g.shapesTriples().filter(q => q.predicate.value.startsWith(NS.skos)
+            let vocabulary = g.shapesTriples().filter(q => q.predicate.value.startsWith(NS.skos)
                 || (q.predicate.value === NS.rdf + 'type' && q.object.value.startsWith(NS.skos)));
             // Imported files: only the statements that own data needs (Workspace.validationTriples).
-            const data = [...own?.() ?? g.modelTriples(), ...vocabulary];
+            const model = own?.() ?? g.modelTriples();
+            // Open views: only the SKOS statements of the elements on the views and of the IRIs that the data names.
+            const focus = focusOf?.();
+            if (focus) {
+                const needed = new Set(focus);
+                for (const q of model) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') needed.add(termKey(t));
+                vocabulary = vocabulary.filter(q => needed.has(termKey(q.subject)));
+            }
+            const data = [...model, ...vocabulary];
+            const runStamp = stamp?.() ?? '';
             tracer.note(`run ${run}: ${data.length} data triples, ${metamodel.dataset.size} shapes triples${workerFile ? ', in the worker' : ''}`, data.length);
             // The ids after the run: a change during the run made it stale (checked below), so the graph is the validated one.
             const instanceId = (iri: string) => {
@@ -131,16 +151,22 @@ export class ValidationRunner {
                 violations = violationsOf(r.results, metamodel, instanceId, shapeId);
                 report = reportQuads(r.report);
             }
-            if (run !== this.run) return discarded(run);
-            const graph = rdf.namedNode(VALIDATION_GRAPH);
-            for (const q of g.store.match(null, null, null, graph)) g.store.delete(q);
-            for (const q of report) g.store.add(q);
-            if (JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
-            tracer.note(`run ${run}: ${violations.length} violations, changed`);
-            this.violations = violations;
-            this.changed();
+            this.publish(run, g, violations, report, runStamp);
         } catch (e) {
             console.error('[catenary] validation failed', e);
         }
+    }
+
+    /** Replace the report graph and the violations, unless a newer run made this one stale. */
+    protected publish(run: number, g: ModelGraph, violations: Violation[], report: Quad[], stamp: string): void {
+        if (run !== this.run) return discarded(run);
+        const graph = rdf.namedNode(VALIDATION_GRAPH);
+        for (const q of g.store.match(null, null, null, graph)) g.store.delete(q);
+        for (const q of report) g.store.add(q);
+        if (stamp === this.stamp && JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
+        tracer.note(`run ${run}: ${violations.length} violations, changed`);
+        this.violations = violations;
+        this.stamp = stamp;
+        this.changed();
     }
 }

@@ -2,7 +2,7 @@
 // The backend owns the document (one model, many views; see ModelStore for the files). The frontend and the GLSP diagram
 // sessions only send edit commands and receive snapshots.
 
-import type { CommandResult, EditCommand, ExportProblem, ImportResult, ModelQueries, ModelSnapshot, Remote, TraceBatch, UnresolvedEmbed } from '@catenary/model';
+import type { CommandResult, EditCommand, ExportProblem, ImportResult, ModelQueries, ModelSnapshot, Remote, TraceBatch, UnresolvedEmbed, ValidationMode } from '@catenary/model';
 import type { RpcServer } from '@theia/core/lib/common/messaging/proxy-factory';
 
 export const MODEL_SERVICE_PATH = '/services/catenary';
@@ -48,6 +48,8 @@ export interface WorkspaceSettings {
     exclude?: string[];
     /** Globs of imported (read-only) files, relative to the workspace folder (ws:imported). */
     imported?: string[];
+    /** What SHACL validation checks (ws:validation): nothing, the elements on the open views, or the model. */
+    validation?: ValidationMode;
 }
 
 /** The check of a Markdown export (spec/ui-manifest.hs §9): the views to render, or why the export cannot run. */

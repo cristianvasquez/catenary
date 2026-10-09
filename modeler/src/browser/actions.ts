@@ -151,7 +151,8 @@ export class ModelActions {
     async save(): Promise<void> {
         if (!await this.model.report(this.model.service.save())) return;
         const count = this.model.snapshot.counts.violations;
-        if (count) this.messages.warn(`Saved. The model is not valid: ${count} violations (see Problems).`);
+        const views = this.model.snapshot.files.validation === 'views';
+        if (count) this.messages.warn(`Saved. The model is not valid: ${count} violations${views ? ' on the open views' : ''} (see Problems).`);
     }
 
     /** Report an error; show new import warnings. */
