@@ -5,7 +5,6 @@
 //  - time to green per profile: PR head push → the gate job passed (p50, p90), from the risk-profile status of the PR commit
 //  - runner minutes per workflow run, by profile (Windows ×2 and macOS ×10, the GitHub multipliers)
 //  - duplicate runs: automatic runs of one workflow on one commit (push and pull_request, branch and tag)
-//  - escapes: ci-escape issues (a failure on main after the merge), by the profile of the PR
 //  - flaky runs: runs that passed on a second attempt; release lead time: tag commit → published release
 import { execFileSync } from 'node:child_process';
 
@@ -58,9 +57,6 @@ for (const r of runs.filter(r => r.event !== 'workflow_dispatch' && r.event !== 
 const duplicates = [...dup.values()].filter(n => n > 1).reduce((n, c) => n + c - 1, 0);
 const flaky = runs.filter(r => r.run_attempt > 1 && r.conclusion === 'success').length;
 
-const escapes = pages(`repos/${repo}/issues?labels=ci-escape&state=all&since=${since}&per_page=100`).filter(i => Date.parse(i.created_at) >= Date.parse(since));
-const escapeProfile = i => /Profile of the PR: (\w+)/.exec(i.body ?? '')?.[1] ?? 'unknown';
-
 const releases = pages(`repos/${repo}/releases?per_page=100`).filter(r => r.published_at && Date.parse(r.published_at) >= Date.parse(since));
 const lead = releases.map(r => {
     try {
@@ -70,17 +66,15 @@ const lead = releases.map(r => {
 });
 
 const out = [`## CI metrics, last ${days} days (${repo})`, '',
-    '| Profile | PR runs | Time to green p50 (min) | p90 (min) | Runner min per run | Escapes |', '|---|---|---|---|---|---|'];
+    '| Profile | PR runs | Time to green p50 (min) | p90 (min) | Runner min per run |', '|---|---|---|---|---|'];
 for (const p of ['docs', 'cosmetic', 'standard', 'critical', 'platform', 'none']) {
     const r = byProfile.get(p);
-    const e = escapes.filter(i => escapeProfile(i) === p).length;
-    if (!r && !e) continue;
-    out.push(`| ${p} | ${r?.runs ?? 0} | ${pct(r?.green ?? [], 0.5)} | ${pct(r?.green ?? [], 0.9)} | ${r?.runs ? minutes(r.minutes / r.runs) : '–'} | ${e} |`);
+    if (!r) continue;
+    out.push(`| ${p} | ${r.runs} | ${pct(r.green, 0.5)} | ${pct(r.green, 0.9)} | ${minutes(r.minutes / r.runs)} |`);
 }
 out.push('', `- Workflow runs: ${runs.length}, runner minutes (weighted): ${minutes(totalMinutes)}`,
     `- Duplicate runs (one workflow, one commit; push, PR or tag): ${duplicates}`,
     `- Flaky runs (passed on a later attempt): ${flaky}`,
-    `- Escapes (ci-escape issues): ${escapes.length}${escapes.length ? ` — ${escapes.map(i => `#${i.number} ${escapeProfile(i)}`).join(', ')}` : ''}`,
     `- Release lead time (tag commit → published): ${lead.join(', ') || 'no release'}`,
-    '', 'Targets: docs p50 < 1 min, cosmetic p50 < 2 min, standard and critical p50 < 3.5 min, platform p50 < 5 min; at most 1 escape per 50 PRs of a reduced profile; 0 duplicate runs.');
+    '', 'Targets: docs p50 < 1 min, cosmetic p50 < 2 min, standard and critical p50 < 3.5 min, platform p50 < 5 min; 0 duplicate runs.');
 console.log(out.join('\n'));

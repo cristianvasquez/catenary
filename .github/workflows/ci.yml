@@ -5,7 +5,7 @@ name: CI
 #  - pull_request: the jobs of the profile. `required` jobs block the merge. `optional` jobs (e2e, Windows, release dry run) run in
 #    parallel and report on the PR; the label risk:hold makes the gate wait for them. Labels risk:critical and risk:platform raise
 #    the profile. After a label change, re-run the workflow.
-#  - push to main: after the merge, the full set, every job required. A failure opens an issue with the label ci-escape. The
+#  - push to main: after the merge, the full set, every job required. The
 #    release (release.yml) publishes only a commit whose run on main passed.
 #  - schedule (nightly) and workflow_dispatch: the full set plus the Windows tests and the Linux and Windows packages.
 # Repository variables: CI_PROFILES=off runs the full set for every PR. CI_SHADOW_EVERY=N runs the full unit suite as a
@@ -232,39 +232,6 @@ jobs:
           PLAN: ${{ toJSON(needs.classify.outputs) }}
           RESULTS: ${{ toJSON(needs) }}
         run: node scripts/risk-profile.mjs --gate
-
-  # After the merge and at night: a failure is an escape. Open one issue per commit.
-  escape:
-    needs: [classify, gate]
-    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.gate.result != 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      issues: write
-      pull-requests: read
-      statuses: read
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          if [ -n "$(gh issue list --label ci-escape --state open --search "${SHA:0:7} in:title" --json number --jq '.[].number')" ]; then
-            echo "An open ci-escape issue exists for ${SHA:0:7}"; exit 0
-          fi
-          pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '.[0].number // empty')
-          profile='none (no PR)'
-          if [ -n "$pr" ]; then
-            head=$(gh api "repos/$GH_REPO/pulls/$pr" --jq .head.sha)
-            profile=$(gh api "repos/$GH_REPO/commits/$head/statuses" --jq '[.[] | select(.context == "risk-profile")][0].description // "unknown"')
-          fi
-          gh label create ci-escape --color B60205 --description 'CI failed on main after the merge' --force
-          gh issue create --label ci-escape --title "CI failed on main at ${SHA:0:7} ($EVENT)" --body "$(printf '%s\n' \
-            "The full CI set failed on main after the merge. This commit cannot be released until a later commit passes." \
-            "" "- Run: $run_url" "- Commit: $SHA" "- PR: ${pr:+#$pr}" "- Profile of the PR: $profile" "" \
-            "If the PR ran a reduced profile, the classifier missed a risk: add a rule or a tripwire to scripts/risk-profile.mjs and a case to scripts/test/risk-profile.test.mjs.")"
 
   # Weekly numbers of the pipeline in the job summary of the nightly run.
   metrics:

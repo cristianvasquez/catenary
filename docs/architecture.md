@@ -157,7 +157,7 @@ Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole datas
 
 - The highest profile of all changed files wins. Added lines that write files, start processes or change IRIs raise the profile to `critical`. A `.only` in a test fails.
 - The labels `risk:critical` and `risk:platform` raise the profile. The label `risk:hold` makes the gate wait for the optional jobs (e2e, Windows tests). Re-run the workflow after a label change.
-- After the merge, `main` runs the full set, and every job blocks. A failure opens a `ci-escape` issue. The nightly run adds the Windows tests and the packages.
+- After the merge, `main` runs the full set, and every job blocks. The nightly run adds the Windows tests and the packages.
 - A tag `v*` runs only `release.yml`. It requires a passed CI run on `main` for the commit, then builds the packages once and starts each one.
 - To change a rule, edit `scripts/risk-profile.mjs` and the cases in `scripts/test/risk-profile.test.mjs`.
 
