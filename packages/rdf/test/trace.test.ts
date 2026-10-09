@@ -188,7 +188,8 @@ describe('traced store', () => {
                 const { spans } = tracer.take();
                 expect(spans.filter(s => s.name === 'read full view')).toHaveLength(0);
                 const origins = spans.filter(s => s.name === 'instance file origins');
-                expect(origins.length).toBeGreaterThan(0);
+                if (instances === 0) expect(origins).toHaveLength(0);
+                else expect(origins.length).toBeGreaterThan(0);
                 expect(origins.every(s => s.detail?.startsWith(`instances ${instances};`))).toBe(true);
                 expect(origins.every(s => s.queries === instances)).toBe(true);
             };
