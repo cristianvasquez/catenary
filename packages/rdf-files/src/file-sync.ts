@@ -1,6 +1,7 @@
 // Files on disk as the source of truth: one file operation at a time, a watch of a folder, the changes that another program made,
 // and writes of several files that succeed or fail together.
 
+import { createHash } from 'crypto';
 import { FSWatcher, promises as fs, statSync, watch } from 'fs';
 import * as path from 'path';
 
@@ -88,20 +89,22 @@ export class FolderWatcher {
 }
 
 /**
- * The files that this program wrote or removed, with their state on disk right after (size and modification time, or absent). A watch
- * event of such a file is the program's own write while the file keeps that state: the program need not read the file again.
+ * The files that this program wrote or removed, with the text that it wrote (a hash). A watch event of such a file is the program's own
+ * write while the file has that text: the program need not read the file again. The content is compared, not the size and the time:
+ * another program can write other text with the same size and time (a coarse file system clock, a tool that keeps the time).
  */
 export class OwnWrites {
     protected readonly files = new Map<string, string>();
 
-    /** Record the state of `file` now: call it right after a write or a removal of the file. */
-    note(file: string): void {
-        this.files.set(path.resolve(file), stateOf(file));
+    /** Record what this program wrote to `file`: its text, or undefined for a removal. */
+    note(file: string, text: string | undefined): void {
+        this.files.set(path.resolve(file), digest(text));
     }
 
-    /** `file` has the state that `note` recorded. */
-    isOwn(file: string): boolean {
-        return this.files.get(path.resolve(file)) === stateOf(file);
+    /** `file` has the text that `note` recorded (or is still absent after a noted removal). Reads only this file. */
+    async isOwn(file: string): Promise<boolean> {
+        const own = this.files.get(path.resolve(file));
+        return own !== undefined && own === digest(await readText(file));
     }
 
     clear(): void {
@@ -109,10 +112,7 @@ export class OwnWrites {
     }
 }
 
-const stateOf = (file: string): string => {
-    const s = statSync(file, { throwIfNoEntry: false, bigint: true });
-    return !s ? 'absent' : s.isFile() ? `${s.size} ${s.mtimeNs}` : 'other';
-};
+const digest = (text: string | undefined): string => text === undefined ? 'absent' : createHash('sha256').update(text).digest('hex');
 
 /** The text of a file, or undefined when it cannot be read (not on disk). */
 export const readText = (file: string): Promise<string | undefined> => fs.readFile(file, 'utf8').catch(() => undefined);

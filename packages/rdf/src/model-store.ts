@@ -17,7 +17,7 @@ import {
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
+import { FolderWatcher, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
 import { ActionContext, Placements, placements, selectionActions } from './actions';
 import { executeCommand } from './commands';
 import type { ExplorerPort } from '@catenary/explorer';
@@ -796,10 +796,7 @@ export class ModelStore implements ModelQueries {
     /** Write the changed files and commit them. A failure shows in the warnings until a write succeeds. */
     protected async write(): Promise<CommandResult> {
         const ws = this.ws;
-        const before = ws?.written.length ?? 0;
         const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
-        // The watch events of these writes are not changes on disk (syncFromOwnWrites).
-        for (const file of ws?.written.slice(before) ?? []) this.ownWrites.note(file);
         if (r.ok) {
             this.content++;
             this.changed('save');
@@ -829,16 +826,16 @@ export class ModelStore implements ModelQueries {
     watching = true;
     /** `referencedFiles()` at the last change: a difference is a file reference that changed state on disk. */
     protected referencedState = '';
-    protected readonly ownWrites = new OwnWrites();
     protected readonly watcher = new FolderWatcher(changed => void this.serial(() => this.syncFromWatch(changed)));
 
     /**
-     * After watch events: read the changes on disk, unless each event is a file that Catenary wrote and that still has the state of
+     * After watch events: read the changes on disk, unless each event is a file that Catenary wrote and that still has the text of
      * that write (a save renames its temporary files over the files, and the watch reports each rename). `changed`: undefined when an
      * event had no file name. Runs in the file queue, after the write that caused the events.
      */
     protected async syncFromWatch(changed?: string[]): Promise<void> {
-        if (changed?.length && changed.every(f => this.ownWrites.isOwn(f))) {
+        const own = this.ws?.ownWrites;
+        if (own && changed?.length && (await Promise.all(changed.map(f => own.isOwn(f)))).every(Boolean)) {
             tracer.root('file', 'own write: not read again', () => tracer.note(changed.map(f => path.basename(f)).join(', ')));
             return;
         }
@@ -962,7 +959,6 @@ export class ModelStore implements ModelQueries {
         if (this.ws) this.ws.retired = true;
         this.ws = r.workspace;
         this.graph = r.workspace.graph;
-        this.ownWrites.clear();
         this.history.clear();
         this.validation.reset();
         this.contentChanged();

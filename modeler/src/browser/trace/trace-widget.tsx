@@ -11,6 +11,7 @@ import { TRACE_KINDS, TraceSpan, TraceStat } from '@catenary/model';
 import { ModelService } from '../../common/protocol';
 import { ModelServiceProxy } from '../model-client';
 import { FrontendTrace } from './frontend-trace';
+import { addStats, sessionStats, statKey } from './trace-stats';
 
 export const TRACE_ID = 'catenary-trace';
 
@@ -34,23 +35,6 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric?: boolean }
     { key: 'size', label: 'Size', title: 'Sum of rows (queries), bytes (snapshots, round trips) or data triples (validation)', numeric: true }
 ];
 
-const statKey = (s: Pick<TraceStat, 'kind' | 'name'>) => `${s.kind} ${s.name}`;
-
-/** The totals of `a` and `b` added by key. */
-function addStats(a: TraceStat[], b: TraceStat[]): TraceStat[] {
-    const sum = new Map(a.map(s => [statKey(s), { ...s }]));
-    for (const s of b) {
-        const t = sum.get(statKey(s));
-        if (!t) { sum.set(statKey(s), { ...s }); continue; }
-        t.calls += s.calls;
-        t.totalMs += s.totalMs;
-        t.maxMs = Math.max(t.maxMs, s.maxMs);
-        t.size += s.size;
-        t.last = Math.max(t.last, s.last);
-    }
-    return [...sum.values()];
-}
-
 const ms = (n: number) => n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2);
 const clock = (t: number) => {
     const d = new Date(t);
@@ -66,12 +50,20 @@ export class TraceWidget extends ReactWidget {
     protected recording = false;
     protected paused = false;
     protected timer?: ReturnType<typeof setInterval>;
+    /** Counts the starts: the async steps of a start that a stop or a newer start replaced do nothing. */
+    protected session = 0;
+    /** A poll waits for its answer: the next poll is skipped (two polls would read the same spans). */
+    protected polling = false;
     /** The `seq` of the last backend batch. */
     protected seq = 0;
     protected spans: TraceSpan[] = [];
-    /** Backend totals of the current recording, and of the recordings before it (the backend clears its totals when it stops). */
+    /**
+     * Totals of the current session, and of the sessions before it. The backend totals are shared with other connections that trace:
+     * a session counts from the backend totals at its start (`baseline`), see trace-stats.ts.
+     */
     protected live: TraceStat[] = [];
     protected kept: TraceStat[] = [];
+    protected baseline: TraceStat[] = [];
     /** Time of recording (ms): before the current recording, and the start of the current one. */
     protected recordedMs = 0;
     protected recordingSince = 0;
@@ -118,9 +110,28 @@ export class TraceWidget extends ReactWidget {
         this.recording = true;
         this.recordingSince = Date.now();
         this.local.on = true;
-        this.service.setTracing(true).then(() => this.poll(), e => this.fail(e));
-        this.timer = setInterval(() => this.poll(), POLL_MS);
+        void this.begin(++this.session);
         this.update();
+    }
+
+    /**
+     * Read the backend totals and the last span number first: what another connection recorded while this panel was hidden is not
+     * part of this session. Then start the trace and the polls.
+     */
+    protected async begin(session: number): Promise<void> {
+        try {
+            const before = await this.service.trace(this.seq);
+            if (session !== this.session || !this.recording) return;
+            this.seq = before.seq;
+            this.baseline = before.stats;
+            await this.service.setTracing(true);
+            if (session !== this.session || !this.recording) return;
+            clearInterval(this.timer);
+            this.timer = setInterval(() => this.poll(), POLL_MS);
+            await this.poll();
+        } catch (e) {
+            this.fail(e);
+        }
     }
 
     protected stop(): void {
@@ -136,18 +147,22 @@ export class TraceWidget extends ReactWidget {
     }
 
     protected async poll(): Promise<void> {
-        if (!this.recording) return;
+        if (!this.recording || this.polling) return;
+        this.polling = true;
+        const session = this.session;
         try {
             const batch = await this.service.trace(this.seq);
-            if (!this.recording) return;
+            if (!this.recording || session !== this.session) return;
             this.seq = batch.seq;
-            this.live = batch.stats;
+            this.live = sessionStats(batch.stats, this.baseline);
             this.dropped += batch.dropped;
             this.error = undefined;
             const fresh = [...batch.spans, ...this.local.take()];
             if (fresh.length) this.spans = [...this.spans, ...fresh].slice(-KEEP);
         } catch (e) {
             this.fail(e);
+        } finally {
+            this.polling = false;
         }
         this.update();
     }
@@ -161,6 +176,7 @@ export class TraceWidget extends ReactWidget {
         this.spans = [];
         this.kept = [];
         this.live = [];
+        this.baseline = [];
         this.dropped = 0;
         this.open.clear();
         this.recordedMs = 0;

@@ -11,6 +11,8 @@ import type { Bindings, QuadStore } from 'rdf-files';
 /** A span that runs. Quad-store calls add to it and to its ancestors. */
 interface Open {
     id: number;
+    /** The recording in which the span started (Tracer.generation). */
+    generation: number;
     parent?: Open;
     queries: number;
     queryMs: number;
@@ -37,6 +39,8 @@ export class Tracer {
     protected spans: TraceSpan[] = [];
     protected seq = 0;
     protected readonly stats = new Map<string, TraceStat>();
+    /** Changes at each stop and clear: a span that started before it is not recorded (its data was cleared). */
+    protected generation = 0;
 
     /** A client starts (true) or stops (false) reading. Recording is on while one client or more read. Off clears all data. */
     setClient(on: boolean): void {
@@ -46,6 +50,7 @@ export class Tracer {
     }
 
     clear(): void {
+        this.generation++;
         this.spans = [];
         this.stats.clear();
     }
@@ -66,7 +71,7 @@ export class Tracer {
     /** Run `fn` as a span. A promise result ends the span when it settles. */
     span<T>(kind: TraceKind, name: string, fn: () => T): T {
         if (!this.on) return fn();
-        const open: Open = { id: ++this.nextId, parent: this.context.getStore(), queries: 0, queryMs: 0 };
+        const open: Open = { id: ++this.nextId, generation: this.generation, parent: this.context.getStore(), queries: 0, queryMs: 0 };
         const start = Date.now(), t0 = performance.now();
         const end = (error: boolean) => this.record(open, { kind, name, start, ms: performance.now() - t0, error });
         let r: T;
@@ -91,7 +96,7 @@ export class Tracer {
     /** A span without duration: something that happened (for example a scheduled validation). */
     event(kind: TraceKind, name: string, detail?: string): void {
         if (!this.on) return;
-        this.record({ id: ++this.nextId, parent: this.context.getStore(), queries: 0, queryMs: 0, detail }, { kind, name, start: Date.now(), ms: 0 });
+        this.record({ id: ++this.nextId, generation: this.generation, parent: this.context.getStore(), queries: 0, queryMs: 0, detail }, { kind, name, start: Date.now(), ms: 0 });
     }
 
     /** Set the detail text and the size of the running span. */
@@ -114,7 +119,7 @@ export class Tracer {
         } finally {
             const ms = performance.now() - t0;
             this.addQuery(parent, ms);
-            this.record({ id: ++this.nextId, parent, queries: 1, queryMs: ms, detail: query.length > MAX_DETAIL ? query.slice(0, MAX_DETAIL) + '…' : query, size: rows?.length },
+            this.record({ id: ++this.nextId, generation: this.generation, parent, queries: 1, queryMs: ms, detail: query.length > MAX_DETAIL ? query.slice(0, MAX_DETAIL) + '…' : query, size: rows?.length },
                 { kind: 'sparql', name: `${form}: ${queryKey(query)}`, start, ms, error: !rows });
         }
     }
@@ -137,7 +142,9 @@ export class Tracer {
         }
     }
 
+    /** Keep a span that ended. A span of an earlier recording is dropped: a stop or a clear removed its data. */
     protected record(open: Open, s: Pick<TraceSpan, 'kind' | 'name' | 'start' | 'ms' | 'error'>): void {
+        if (!this.on || open.generation !== this.generation) return;
         const span: TraceSpan = { id: open.id, kind: s.kind, name: s.name, start: s.start, ms: round(s.ms) };
         if (open.parent) span.parent = open.parent.id;
         if (open.detail !== undefined) span.detail = open.detail;

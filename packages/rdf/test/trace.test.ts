@@ -60,6 +60,25 @@ describe('tracer', () => {
         expect(stats.find(s => s.kind === 'match')).toMatchObject({ name: 'm', calls: 1 });
     });
 
+    it('a span that ends after the recording stopped or was cleared is not recorded', async () => {
+        const t = new Tracer();
+        t.setClient(true);
+        let finish!: () => void;
+        const running = t.span('validation', 'run', () => new Promise<void>(r => { finish = r; }));
+        t.setClient(false);
+        t.setClient(true);
+        finish();
+        await running;
+        let again!: () => void;
+        const cleared = t.span('validation', 'run', () => new Promise<void>(r => { again = r; }));
+        t.clear();
+        again();
+        await cleared;
+        t.span('rpc', 'after', () => 0);
+        expect(t.take().spans.map(s => s.name)).toEqual(['after']);
+        expect(t.take().stats.map(s => s.name)).toEqual(['after']);
+    });
+
     it('a failed span is marked and the error passes through', async () => {
         const t = new Tracer();
         t.setClient(true);

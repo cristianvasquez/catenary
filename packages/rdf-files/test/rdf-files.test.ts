@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -197,22 +197,26 @@ describe('file sync', () => {
         }
     });
 
-    it('own writes: a file keeps its noted state until another program writes or removes it', () => {
+    it('own writes: a file is own while it has the noted text, also when another text keeps its size and time', async () => {
         const root = tempDir(), a = join(root, 'a.ttl'), b = join(root, 'b.ttl');
         const own = new OwnWrites();
         writeFileSync(a, 'mine');
-        own.note(a);
-        expect(own.isOwn(a)).toBe(true);
-        expect(own.isOwn(b)).toBe(false);
-        writeFileSync(a, 'theirs, longer');
-        expect(own.isOwn(a)).toBe(false);
+        own.note(a, 'mine');
+        expect(await own.isOwn(a)).toBe(true);
+        expect(await own.isOwn(b)).toBe(false);
+        // Another program writes text of the same length and keeps the time.
+        const { atime, mtime } = statSync(a);
+        writeFileSync(a, 'them');
+        utimesSync(a, atime, mtime);
+        expect([statSync(a).size, statSync(a).mtime.getTime()]).toEqual([4, mtime.getTime()]);
+        expect(await own.isOwn(a)).toBe(false);
         rmSync(a);
-        own.note(a);
-        expect(own.isOwn(a)).toBe(true);
+        own.note(a, undefined);
+        expect(await own.isOwn(a)).toBe(true);
         writeFileSync(a, 'back');
-        expect(own.isOwn(a)).toBe(false);
+        expect(await own.isOwn(a)).toBe(false);
         own.clear();
-        expect(own.isOwn(a)).toBe(false);
+        expect(await own.isOwn(a)).toBe(false);
     });
 
     it('watches a folder that was missing at the first call, at the next call', async () => {

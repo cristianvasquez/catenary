@@ -9,7 +9,7 @@ import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import {
-    OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
+    OwnWrites, OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
     writeAll
 } from 'rdf-files';
 import {
@@ -65,6 +65,8 @@ export class Workspace {
     prefixes?: Record<string, string>;
     /** Written or removed paths awaiting a successful commit. */
     written: string[] = [];
+    /** The text of each write and each removal of this workspace: their watch events are not changes on disk. */
+    readonly ownWrites = new OwnWrites();
     /** pathKey of each file with changes in git that Catenary did not write. */
     protected uncommitted = new Set<string>();
     /** The workspace file was removed or moved on disk: no watch, no reads, no writes until the next open. */
@@ -738,7 +740,8 @@ export class Workspace {
         }
         if (this.retired) return { ok: false, error: 'Another workspace was opened during the save.' };
         // All files or none: temporary files first, then a rename of each.
-        const error = await writeAll(writes, ({ file, done }) => {
+        const error = await writeAll(writes, ({ file, text, done }) => {
+            this.ownWrites.note(file, text);
             this.written.push(file);
             done();
         }, '.catenary-tmp');
@@ -747,6 +750,7 @@ export class Workspace {
             const f = this.viewFiles.get(v)!;
             try {
                 await fs.rm(f.path, { force: true });
+                this.ownWrites.note(f.path, undefined);
             } catch (e) {
                 return { ok: false, error: `Cannot remove ${f.path}: ${(e as Error).message}` };
             }
