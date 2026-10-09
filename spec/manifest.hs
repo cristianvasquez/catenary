@@ -1382,6 +1382,17 @@ panelsUnchanged (Just c) showsViolations = case reason c of
 refreshes :: Doc -> Maybe SnapshotChange -> Bool
 refreshes _ Nothing = True
 refreshes d (Just c) = shapesFlag c || any (`elem` docViews d) (changedViews c) || any (`elem` docElements d) (changedElements c)
+-- | A validation run that changes the violations has a scope: the instances and property shapes whose count of violations changed.
+-- A card shows these counts, so a view that shows none of them does not refresh (model-store.ts violationScope).
+-- Reason: a run without a scope rebuilt every open view after each edit.
+violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
+violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
+-- | A move, resize or style change of placements keeps the reads that do not read the geometry: the figures, hidden neighbor counts
+-- and shape applicability of each view, the explorer, the instance count and the file kinds. A write of the files keeps all reads.
+-- The notation engine input follows each add and delete of the store: a change does not build it again (notations.ts IndexedStore).
+-- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
+keepsReads :: SnapshotChange -> Bool
+keepsReads c = reason c == SaveChange || (reason c `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c)
 law_snapshotMirrorsHistory :: Backend -> Bool
 law_snapshotMirrorsHistory b =
   let s = snapshotOf b

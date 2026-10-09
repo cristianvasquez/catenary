@@ -23,6 +23,7 @@ import { shapesIndexOf } from './shapes-read';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
 import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
+import { IndexedStore } from './notations';
 import { TracedStore } from './trace';
 import { canonical, parseTrig, writeTrig } from './trig';
 
@@ -31,12 +32,14 @@ const PLACE_KINDS = ['shapes', 'concepts', 'instances'] as const;
 export interface WorkspaceOptions {
     /** Changes each time the dataset changes: it keys the cache of the canonical forms. */
     content: () => number;
+    /** Changes each time the dataset changes in more than the geometry of placements: it keys the reads that a move keeps. Default: `content`. */
+    data?: () => number;
     /** A note of a read or a write (the warnings and the log). */
     note: (text: string) => void;
 }
 
 export class Workspace {
-    readonly graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+    readonly graph = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore())));
     /** The workspace file: the manifest. */
     readonly workspace: WorkspaceFile;
     /** View graph IRI -> its view file. The entry of a deleted view stays until a save removes the file (an undo brings it back). */
@@ -203,7 +206,7 @@ export class Workspace {
 
     /** What each model file contains: shapes (its graph has quads), concepts and instances (typed subjects of the model graph). */
     protected fileKinds(): Map<string, Set<FileKind>> {
-        const content = this.options.content();
+        const content = (this.options.data ?? this.options.content)();
         if (this.kindsCache?.content === content) return this.kindsCache.kinds;
         const kinds = new Map<string, Set<FileKind>>();
         this.kindsCache = { content, kinds };

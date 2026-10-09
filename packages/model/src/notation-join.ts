@@ -33,9 +33,12 @@ export type LineState = 'line' | 'hidden' | 'covered' | undefined;
 /** The figures of a view and what the view draws. */
 export interface ViewFigures { derivation: Derivation; placed: Placements; join: Join }
 
-/** The figures of a view (`data`: the triples of the workspace) and their join with its placements. */
-export function viewFigures(data: TripleIndex, notes: Notations, viewIri: string): ViewFigures {
-    const derivation = deriveFigures(data, notes, viewIri), placed = placementsOf(data, viewIri);
+/**
+ * The figures of a view (`data`: the triples of the workspace) and their join with its placements. `derivation`: the figures of the
+ * view from an earlier call, when `data` changed since then only in what the figures do not read.
+ */
+export function viewFigures(data: TripleIndex, notes: Notations, viewIri: string, derivation = deriveFigures(data, notes, viewIri)): ViewFigures {
+    const placed = placementsOf(data, viewIri);
     return { derivation, placed, join: join(derivation, placed) };
 }
 

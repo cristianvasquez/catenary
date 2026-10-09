@@ -12,7 +12,7 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
+    Derivation, ViewFigures, boxes, deriveFigures, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
@@ -32,7 +32,7 @@ import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
 import { formData, selectionLinks } from './queries';
 import { readView, viewLabels } from './view-read';
-import { readNotations, storeIndex } from './notations';
+import { IndexedStore, LAYOUT_PREDICATES, readNotations, storeIndex } from './notations';
 import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, instanceLabels, readWarnings, scopedDoc } from './scoped-doc';
 import { movedIds } from './moved-ids';
 import { Metamodel, emptyMetamodel, formShapes, metamodelFromQuads } from './shapes';
@@ -49,6 +49,9 @@ import { selected } from './selection';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
 
 export type { ChangeReason };
+
+/** The reads of one view for its diagram that do not depend on the geometry of its placements. */
+interface ViewReads { figures?: Derivation; neighbors?: Map<string, { in: number; out: number; targets?: number }>; applicability?: TargetMatch[] }
 
 /** The explorer reads of one file scope (no file: the workspace), kept until the dataset changes. */
 interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
@@ -71,10 +74,28 @@ export interface ChangeScope {
     layout: boolean;
 }
 
-/** Predicates of the geometry and the style of a placement: a change of these only moves, resizes or restyles what a view shows. */
-const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
-
 export type Listener = (change: ModelChange) => void;
+
+/** Each change of the patch is the geometry or the style of a placement (LAYOUT_PREDICATES of a view graph). */
+const isLayoutOnly = (patch: Patch) => patch.length > 0 && patch.every(({ quad: q }) => LAYOUT_PREDICATES.has(q.predicate.value) && q.graph.value !== MODEL_GRAPH);
+
+/**
+ * What a validation run changed for the diagrams: the instances and the property shapes whose count of violations changed (a card
+ * shows these counts, diagram-schema.ts and notation-schema.ts). A view that shows none of them stays as it is.
+ */
+export function violationScope(before: Violation[], after: Violation[]): ChangeScope {
+    const counts = (vs: Violation[]) => {
+        const m = new Map<string, number>();
+        for (const v of vs) {
+            if (v.severity !== 'Violation') continue;
+            for (const id of [v.instance, v.shape]) if (id) m.set(id, (m.get(id) ?? 0) + 1);
+        }
+        return m;
+    };
+    const was = counts(before), now = counts(after);
+    const elements = [...new Set([...was.keys(), ...now.keys()])].filter(id => was.get(id) !== now.get(id));
+    return { views: [], elements, shapes: false, layout: false };
+}
 
 /** A command refused because it changes protected files (absolute paths). */
 function importedFailure(folder: string, files: string[]): CommandResult {
@@ -87,7 +108,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
 }
 
 export class ModelStore implements ModelQueries {
-    protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+    protected graph = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore())));
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
@@ -95,7 +116,7 @@ export class ModelStore implements ModelQueries {
     protected readonly history = new History();
     protected readonly validation = new ValidationRunner(
         () => ({ graph: this.graph, metamodel: this.metamodel, off: this.ws?.validation === 'off', data: () => this.validationData(), focus: () => this.focus,
-            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), () => this.changed('validation'));
+            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), before => this.changed('validation', undefined, violationScope(before, this.violations)));
     /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
     protected readonly openViews = new Map<string, string>();
     /** In the validation mode "views": the instances that the last run checked, and the elements on the open views (by termKey). */
@@ -104,8 +125,11 @@ export class ModelStore implements ModelQueries {
     shapesVersion = 0;
     revision = 0;
 
-    /** Changes each time the dataset changes. Keys the caches below. */
+    /** Changes each time the dataset changes. */
     protected content = 0;
+    /** The changes of `content` that were layout-only patches (`isLayoutOnly`). `content - layoutChanges` keys the caches below. */
+    protected layoutChanges = 0;
+    /** Reads that no layout predicate changes: a move or a resize keeps them. */
     protected cache: { content: number; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = { content: -1 };
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
@@ -121,7 +145,8 @@ export class ModelStore implements ModelQueries {
     }
 
     protected cached<K extends 'placements' | 'instances' | 'explorer'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
-        if (this.cache.content !== this.content) this.cache = { content: this.content };
+        const key = this.content - this.layoutChanges;
+        if (this.cache.content !== key) this.cache = { content: key };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
     }
 
@@ -147,24 +172,45 @@ export class ModelStore implements ModelQueries {
         return this.decorate(readView(this.graph, viewId, shapes));
     }
 
-    /** The triples of the store for the notation engine, built again after each change of the dataset. */
-    protected figureData?: { content: number; index: TripleIndex };
-
-    /** The figures of a view and their join with its placements (ADR 0014). Undefined: no such view. */
+    /**
+     * The figures of a view and their join with its placements (ADR 0014). Undefined: no such view. The store keeps the engine input
+     * up to date, and a move or a resize keeps the figures (viewReads): only the join with the placements runs again.
+     */
     viewFigures(viewId: string): ViewFigures | undefined {
         const iri = idIri(viewId);
         if (!iri) return undefined;
-        if (this.figureData?.content !== this.content) this.figureData = { content: this.content, index: storeIndex(this.graph) };
-        return viewFigures(this.figureData.index, readNotations(), iri);
+        return tracer.span('refresh', 'figures', () => {
+            const data = storeIndex(this.graph), notes = readNotations(), reads = this.viewReads(viewId);
+            return viewFigures(data, notes, iri, reads.figures ??= deriveFigures(data, notes, iri));
+        });
     }
 
     /** For each instance card of the view: the number of related instances in and out that the view does not show (card halo). */
     hiddenNeighborCounts(view: View): Map<string, { in: number; out: number; targets?: number }> {
-        return hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
+        const reads = this.viewReads(view.id);
+        return reads.neighbors ??= hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
+    }
+
+    /**
+     * The reads of each view that a move or a resize keeps: they read which elements the view shows, not where. Kept while the store
+     * changes only in the geometry of placements and the validation report (IndexedStore.dataVersion counts each other add and delete).
+     */
+    protected viewReadCache = { store: undefined as unknown, input: -1, byView: new Map<string, ViewReads>() };
+
+    protected viewReads(viewId: string): ViewReads {
+        const store = this.graph.store;
+        if (!(store instanceof IndexedStore)) return {};
+        if (this.viewReadCache.store !== store || this.viewReadCache.input !== store.dataVersion) this.viewReadCache = { store, input: store.dataVersion, byView: new Map() };
+        const byView = this.viewReadCache.byView;
+        return byView.get(viewId) ?? byView.set(viewId, {}).get(viewId)!;
     }
 
     /** Derived checked-node connections whose instance and shape cards are both in this view. */
     viewApplicability(view: View): TargetMatch[] {
+        return this.viewReads(view.id).applicability ??= this.applicabilityOf(view);
+    }
+
+    protected applicabilityOf(view: View): TargetMatch[] {
         const shown = new Set(boxes(view, 'card').map(b => b.element));
         const nodes = [...shown].flatMap(id => {
             const t = elementTerm(id);
@@ -794,6 +840,7 @@ export class ModelStore implements ModelQueries {
     protected track(patch: Patch): void {
         this.ws?.track(patch);
         this.content++;
+        if (isLayoutOnly(patch)) this.layoutChanges++;
     }
 
     /**
@@ -805,6 +852,7 @@ export class ModelStore implements ModelQueries {
         const shapes = !patch || !!shapesBefore;
         if (shapes) this.rebuildMetamodel();
         this.content++;
+        if (patch && isLayoutOnly(patch)) this.layoutChanges++;
         this.movedIds = patch ? movedIds(this.graph, patch, shapesBefore ? { before: shapesBefore, after: this.shapesIndex() } : undefined) : {};
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
         for (const [from, to] of Object.entries(this.movedIds)) this.ws?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
@@ -817,11 +865,11 @@ export class ModelStore implements ModelQueries {
         }
     }
 
-    protected changed(reason: ChangeReason, patch?: Patch): void {
+    /** `scope`: what a change without a patch touched (a validation run); else the scope of `patch`; neither: anything. */
+    protected changed(reason: ChangeReason, patch?: Patch, scope = patch && this.scopeOf(patch)): void {
         if (reason !== 'edit' && reason !== 'undo' && reason !== 'redo') this.movedIds = {};
         this.revision++;
         if (this.ws && reason !== 'disk') this.referencedState = this.referencedFiles();
-        const scope = patch && this.scopeOf(patch);
         this.lastChange = { reason, ...scope };
         if (tracer.on) {
             tracer.span('change', reason, () => {
@@ -855,10 +903,8 @@ export class ModelStore implements ModelQueries {
     protected async write(): Promise<CommandResult> {
         const ws = this.ws;
         const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
-        if (r.ok) {
-            this.content++;
-            this.changed('save');
-        }
+        // A write does not change the dataset: the caches stay (only the dirty state changes).
+        if (r.ok) this.changed('save');
         const notes = [...new Set(this.commitNotes.splice(0))];
         const warningCount = this.warnings.length;
         const files = ws?.committable() ?? [];
@@ -1012,7 +1058,7 @@ export class ModelStore implements ModelQueries {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
-        const r = await Workspace.open(primaryPath, ofFolder, { content: () => this.content, note: text => this.note(text) });
+        const r = await Workspace.open(primaryPath, ofFolder, { content: () => this.content, data: () => this.content - this.layoutChanges, note: text => this.note(text) });
         if ('error' in r) return { ok: false, error: r.error };
         if (this.ws) this.ws.retired = true;
         this.ws = r.workspace;
