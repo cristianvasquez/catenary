@@ -30,13 +30,18 @@ export interface WatchOptions {
     ignore?: (name: string) => boolean;
 }
 
-/** A recursive watch of one folder. `onSettled` runs after `debounce` ms without events. The watch does not keep the process alive. */
+/**
+ * A recursive watch of one folder. `onSettled` runs after `debounce` ms without events, with the absolute paths of the events since the
+ * last call. `changed` is undefined when an event had no file name (the platform did not give one). The watch does not keep the process alive.
+ */
 export class FolderWatcher {
     protected watcher?: FSWatcher;
     protected timer?: ReturnType<typeof setTimeout>;
     protected watched?: string;
+    /** Paths of the events since the last `onSettled`. Undefined: an event without a name. */
+    protected changed?: Set<string> = new Set();
 
-    constructor(protected readonly onSettled: () => void, protected readonly options: WatchOptions = {}) {}
+    constructor(protected readonly onSettled: (changed?: string[]) => void, protected readonly options: WatchOptions = {}) {}
 
     /** The watched folder. */
     get folder(): string | undefined {
@@ -50,8 +55,14 @@ export class FolderWatcher {
         const ignore = this.options.ignore ?? isHidden;
         const onEvent = (_event: string, name: string | Buffer | null) => {
             if (name && ignore(String(name))) return;
+            if (!name) this.changed = undefined;
+            else this.changed?.add(path.join(folder, String(name)));
             clearTimeout(this.timer);
-            this.timer = setTimeout(this.onSettled, this.options.debounce ?? 150);
+            this.timer = setTimeout(() => {
+                const changed = this.changed && [...this.changed];
+                this.changed = new Set();
+                this.onSettled(changed);
+            }, this.options.debounce ?? 150);
             this.timer.unref?.();
         };
         // A recursive watch of a missing folder does not throw on every platform: check first.
@@ -71,9 +82,37 @@ export class FolderWatcher {
         this.watcher?.close();
         this.watcher = undefined;
         this.watched = undefined;
+        this.changed = new Set();
         clearTimeout(this.timer);
     }
 }
+
+/**
+ * The files that this program wrote or removed, with their state on disk right after (size and modification time, or absent). A watch
+ * event of such a file is the program's own write while the file keeps that state: the program need not read the file again.
+ */
+export class OwnWrites {
+    protected readonly files = new Map<string, string>();
+
+    /** Record the state of `file` now: call it right after a write or a removal of the file. */
+    note(file: string): void {
+        this.files.set(path.resolve(file), stateOf(file));
+    }
+
+    /** `file` has the state that `note` recorded. */
+    isOwn(file: string): boolean {
+        return this.files.get(path.resolve(file)) === stateOf(file);
+    }
+
+    clear(): void {
+        this.files.clear();
+    }
+}
+
+const stateOf = (file: string): string => {
+    const s = statSync(file, { throwIfNoEntry: false, bigint: true });
+    return !s ? 'absent' : s.isFile() ? `${s.size} ${s.mtimeNs}` : 'other';
+};
 
 /** The text of a file, or undefined when it cannot be read (not on disk). */
 export const readText = (file: string): Promise<string | undefined> => fs.readFile(file, 'utf8').catch(() => undefined);

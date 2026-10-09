@@ -135,7 +135,7 @@ Paths are relative to the directory in the first column.
 - Other formats, TriG view files and failed patches get a whole-file write: first in the style of the file, then with the canonical writer as fallback.
 - Writes go to temporary files, then rename. Cross-file rollback does not exist (open work STORE2).
 - Catenary refuses to overwrite a file whose disk text differs from its last read or write.
-- The watcher reads changed files 150 ms after the last event. A read from disk clears the undo history.
+- The watcher reads changed files 150 ms after the last event. It does not read when each event is a file that Catenary wrote and that is unchanged since. A read from disk clears the undo history.
 
 ## Testing
 

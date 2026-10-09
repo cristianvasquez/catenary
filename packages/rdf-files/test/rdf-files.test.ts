@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
-    FolderWatcher, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
+    FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
     readUnchanged, serializeRdf, writeAll, writeProblem
 } from 'rdf-files';
 
@@ -177,6 +177,42 @@ describe('file sync', () => {
         } finally {
             w.close();
         }
+    });
+
+    it('gives the paths of the events since the last call', async () => {
+        const root = tempDir();
+        const calls: (string[] | undefined)[] = [];
+        const w = new FolderWatcher(changed => calls.push(changed), { debounce: 50 });
+        w.watch(root);
+        try {
+            writeFileSync(join(root, 'a.ttl'), '1');
+            writeFileSync(join(root, 'b.ttl'), '1');
+            await until(() => calls.length > 0);
+            expect([...new Set(calls[0])].sort()).toEqual([join(root, 'a.ttl'), join(root, 'b.ttl')]);
+            writeFileSync(join(root, 'b.ttl'), '2');
+            await until(() => calls.length > 1);
+            expect([...new Set(calls[1])]).toEqual([join(root, 'b.ttl')]);
+        } finally {
+            w.close();
+        }
+    });
+
+    it('own writes: a file keeps its noted state until another program writes or removes it', () => {
+        const root = tempDir(), a = join(root, 'a.ttl'), b = join(root, 'b.ttl');
+        const own = new OwnWrites();
+        writeFileSync(a, 'mine');
+        own.note(a);
+        expect(own.isOwn(a)).toBe(true);
+        expect(own.isOwn(b)).toBe(false);
+        writeFileSync(a, 'theirs, longer');
+        expect(own.isOwn(a)).toBe(false);
+        rmSync(a);
+        own.note(a);
+        expect(own.isOwn(a)).toBe(true);
+        writeFileSync(a, 'back');
+        expect(own.isOwn(a)).toBe(false);
+        own.clear();
+        expect(own.isOwn(a)).toBe(false);
     });
 
     it('watches a folder that was missing at the first call, at the next call', async () => {
