@@ -1187,7 +1187,9 @@ law_ownStatementsValidated own model = all (`elem` validationData own model) own
 -- | ws:validation chooses what validation checks: Off, OpenViews ("views") or All. All is the default, and writers do not store it.
 -- Reason: a full run after each edit is slow on a large model. The author chooses speed or completeness for the workspace.
 -- Off: no run, an empty report graph, no violations. OpenViews: the own statements whose subject is on an open view (an editor
--- shows the view), then the statements of these subjects and the types of their targets, as validationData does.
+-- shows the view), then the statements of these subjects and the types of their targets, as validationData does. The SKOS
+-- statements of the shapes graphs go in only for the elements on the open views and the IRIs that these statements name.
+-- The status bar counts an instance as checked only when the input has statements about it (not one that only imported files describe).
 -- A shape that reads an element outside the open views can report too much or too little (spec/open.md VALIDATION2).
 -- In OpenViews, a change of the open views and a change of a placement on an open view (not the layout) start a run.
 data ValidationMode = ValidationOff | ValidationOpenViews | ValidationAll deriving Eq

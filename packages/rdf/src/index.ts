@@ -3,3 +3,4 @@
 
 export { ChangeReason, ChangeScope, ModelChange, ModelStore } from './model-store';
 export { useValidationWorker } from './validation-runner';
+export { tracer } from './trace';

@@ -133,6 +133,36 @@ describe('validation mode', () => {
         expect(foci(store)).toEqual(['urn:ex:hidden', 'urn:ex:shown']);
     });
 
+    it('views: the SKOS statements of the shapes files go in only for the open views and the IRIs that the data names', async () => {
+        const ws = workspace('views');
+        writeFileSync(join(ws.dir, 'shapes.ttl'), `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:ConceptShape a sh:NodeShape ; sh:targetClass skos:Concept ; sh:property ex:ConceptShape-note .
+ex:ConceptShape-note sh:path skos:note ; sh:minCount 1 .
+ex:scheme a skos:ConceptScheme .
+# An sh: statement puts the concept into the shapes graph of the file: its SKOS statements are the vocabulary of validation.
+ex:loose a skos:Concept ; skos:inScheme ex:scheme ; sh:name "Loose" .\n`);
+        const store = await opened(ws.path);
+        await store.validate();
+        expect(store.violations).toEqual([]);
+        ok(await store.setSettings({ validation: 'all' }));
+        await store.validate();
+        expect(foci(store)).toEqual(['urn:ex:loose']);
+    });
+
+    it('views: an instance that only an imported file describes is not counted as checked', async () => {
+        const ws = workspace('views');
+        writeFileSync(join(ws.dir, 'official.ttl'), `@prefix ex: <urn:ex:> .\nex:official a ex:Thing ; ex:name "Official" .\n`);
+        const store = await opened(ws.path);
+        ok(await store.setImported('official.ttl', true));
+        const view = elementId(rdf.namedNode(VIEW));
+        ok(store.execute({ kind: 'addToView', view, ids: [elementId(rdf.namedNode('urn:ex:official'))], at: { x: 200, y: 0 } }));
+        store.setOpenView('client-1', view);
+        await store.validate();
+        // shown (own data) is checked; official (imported only) is on the view but not checked.
+        expect(store.snapshot().counts.validated).toBe(1);
+    });
+
     it('rejects an unknown mode', async () => {
         const store = await opened(workspace().path);
         const r = await store.setSettings({ validation: 'some' as never });

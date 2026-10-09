@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
-    FolderWatcher, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
+    FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
     readUnchanged, serializeRdf, writeAll, writeProblem
 } from 'rdf-files';
 
@@ -177,6 +177,46 @@ describe('file sync', () => {
         } finally {
             w.close();
         }
+    });
+
+    it('gives the paths of the events since the last call', async () => {
+        const root = tempDir();
+        const calls: (string[] | undefined)[] = [];
+        const w = new FolderWatcher(changed => calls.push(changed), { debounce: 50 });
+        w.watch(root);
+        try {
+            writeFileSync(join(root, 'a.ttl'), '1');
+            writeFileSync(join(root, 'b.ttl'), '1');
+            await until(() => calls.length > 0);
+            expect([...new Set(calls[0])].sort()).toEqual([join(root, 'a.ttl'), join(root, 'b.ttl')]);
+            writeFileSync(join(root, 'b.ttl'), '2');
+            await until(() => calls.length > 1);
+            expect([...new Set(calls[1])]).toEqual([join(root, 'b.ttl')]);
+        } finally {
+            w.close();
+        }
+    });
+
+    it('own writes: a file is own while it has the noted text, also when another text keeps its size and time', async () => {
+        const root = tempDir(), a = join(root, 'a.ttl'), b = join(root, 'b.ttl');
+        const own = new OwnWrites();
+        writeFileSync(a, 'mine');
+        own.note(a, 'mine');
+        expect(await own.isOwn(a)).toBe(true);
+        expect(await own.isOwn(b)).toBe(false);
+        // Another program writes text of the same length and keeps the time.
+        const { atime, mtime } = statSync(a);
+        writeFileSync(a, 'them');
+        utimesSync(a, atime, mtime);
+        expect([statSync(a).size, statSync(a).mtime.getTime()]).toEqual([4, mtime.getTime()]);
+        expect(await own.isOwn(a)).toBe(false);
+        rmSync(a);
+        own.note(a, undefined);
+        expect(await own.isOwn(a)).toBe(true);
+        writeFileSync(a, 'back');
+        expect(await own.isOwn(a)).toBe(false);
+        own.clear();
+        expect(await own.isOwn(a)).toBe(false);
     });
 
     it('watches a folder that was missing at the first call, at the next call', async () => {
