@@ -7,7 +7,7 @@ import { AbstractViewContribution, ReactWidget, codicon } from '@theia/core/lib/
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
-import { TRACE_KINDS, TraceSpan, TraceStat } from '@catenary/model';
+import { TRACE_KINDS, TraceSpan, TraceStat, traceMetrics } from '@catenary/model';
 import { ModelService } from '../../common/protocol';
 import { ModelServiceProxy } from '../model-client';
 import { FrontendTrace } from './frontend-trace';
@@ -57,6 +57,7 @@ export class TraceWidget extends ReactWidget {
     /** The `seq` of the last backend batch. */
     protected seq = 0;
     protected spans: TraceSpan[] = [];
+    protected loopDelay: number[] = [];
     /**
      * Totals of the current session, and of the sessions before it. The backend totals are shared with other connections that trace:
      * a session counts from the backend totals at its start (`baseline`), see trace-stats.ts.
@@ -140,6 +141,7 @@ export class TraceWidget extends ReactWidget {
         this.recordedMs += Date.now() - this.recordingSince;
         clearInterval(this.timer);
         this.local.on = false;
+        this.spans = [...this.spans, ...this.local.take()].slice(-KEEP);
         this.kept = addStats(this.kept, this.live);
         this.live = [];
         this.service.setTracing(false).catch(e => this.fail(e));
@@ -154,6 +156,7 @@ export class TraceWidget extends ReactWidget {
             const batch = await this.service.trace(this.seq);
             if (!this.recording || session !== this.session) return;
             this.seq = batch.seq;
+            this.loopDelay = batch.loopDelay ?? [];
             this.live = sessionStats(batch.stats, this.baseline);
             this.dropped += batch.dropped;
             this.error = undefined;
@@ -174,6 +177,7 @@ export class TraceWidget extends ReactWidget {
 
     protected clear(): void {
         this.spans = [];
+        this.loopDelay = [];
         this.kept = [];
         this.live = [];
         this.baseline = [];
@@ -200,8 +204,25 @@ export class TraceWidget extends ReactWidget {
     protected render(): React.ReactNode {
         return <>
             {this.renderToolbar()}
+            {this.renderMetrics()}
             <div className='catenary-trace-body'>{this.mode === 'summary' ? this.renderSummary() : this.renderTimeline()}</div>
         </>;
+    }
+
+    protected renderMetrics(): React.ReactNode {
+        const metrics = traceMetrics(addStats(addStats(this.kept, this.live), this.local.stats()), this.spans, this.loopDelay);
+        const distribution = (d: typeof metrics.visibleUpdate) => d.samples
+            ? `p50 ${ms(d.p50!)} · p95 ${ms(d.p95!)} · max ${ms(d.max!)} ms (${d.samples} samples)` : 'No samples';
+        return <table className='catenary-trace-table' aria-label='Performance metrics'>
+            <tbody>
+                <tr title='Input to the first visible model DOM change and two animation frames. Not full operation completion.'><th scope='row'>First model update</th><td>{distribution(metrics.visibleUpdate)}</td></tr>
+                <tr title='Timer lateness beyond a 50 ms interval. Includes OS scheduling delays.'><th scope='row'>Backend event-loop delay</th><td>{distribution(metrics.eventLoop)}</td></tr>
+                <tr><th scope='row'>RPC count</th><td>{metrics.rpcCount}</td></tr>
+                <tr title='SELECT, CONSTRUCT and pattern-match time. Each query counts once.'><th scope='row'>RDF query time</th><td>{ms(metrics.queryMs)} ms</td></tr>
+                <tr><th scope='row'>Full-view reads</th><td>{metrics.fullViewReads}</td></tr>
+                <tr><td colSpan={2}>Totals cover recording time. Percentiles use retained samples. Backend measurements include other tracing connections.</td></tr>
+            </tbody>
+        </table>;
     }
 
     protected renderToolbar(): React.ReactNode {
@@ -216,10 +237,10 @@ export class TraceWidget extends ReactWidget {
                 <option value=''>All kinds</option>
                 {[...TRACE_KINDS, 'match' as const].map(k => <option key={k} value={k}>{k}</option>)}
             </select>
-            <button className='theia-button secondary' onClick={() => this.togglePause()} title={this.paused ? 'Record again' : 'Stop recording'}>
+            <button className='theia-button secondary' aria-label={this.paused ? 'Resume' : 'Pause'} onClick={() => this.togglePause()} title={this.paused ? 'Record again' : 'Stop recording'}>
                 <span className={codicon(this.paused ? 'debug-start' : 'debug-pause')} /> {this.paused ? 'Resume' : 'Pause'}
             </button>
-            <button className='theia-button secondary' onClick={() => this.clear()} title='Remove the spans and the totals'>
+            <button className='theia-button secondary' aria-label='Clear' onClick={() => this.clear()} title='Remove the spans and the totals'>
                 <span className={codicon('clear-all')} /> Clear
             </button>
             <span className={`catenary-trace-state ${this.recording ? 'on' : ''}`}>

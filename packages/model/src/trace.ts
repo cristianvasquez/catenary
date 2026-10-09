@@ -22,9 +22,11 @@ export type TraceKind =
     /** File writes and reads after a change on disk. */
     | 'file'
     /** A request as the browser measured it: the round trip, with the size of the answer. */
-    | 'roundtrip';
+    | 'roundtrip'
+    /** Input to the first visible model DOM change and a paint opportunity. */
+    | 'paint';
 
-export const TRACE_KINDS: readonly TraceKind[] = ['rpc', 'command', 'change', 'snapshot', 'refresh', 'shacl', 'validation', 'sparql', 'file', 'roundtrip'];
+export const TRACE_KINDS: readonly TraceKind[] = ['rpc', 'command', 'change', 'snapshot', 'refresh', 'shacl', 'validation', 'sparql', 'file', 'roundtrip', 'paint'];
 
 /** One measured operation. `parent`: the span that caused it (its id), which can end after this span. */
 export interface TraceSpan {
@@ -69,6 +71,8 @@ export interface TraceBatch {
     on: boolean;
     /** Spans that the buffer dropped before a client read them. */
     dropped: number;
+    /** Latest 600 backend timer-delay samples (50 ms interval), shared by tracing connections. */
+    loopDelay?: number[];
 }
 
 /**

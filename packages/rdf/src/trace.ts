@@ -41,16 +41,36 @@ export class Tracer {
     protected readonly stats = new Map<string, TraceStat>();
     /** Changes at each stop and clear: a span that started before it is not recorded (its data was cleared). */
     protected generation = 0;
+    protected loopTimer?: ReturnType<typeof setInterval>;
+    protected loopLast = 0;
+    protected loopDelay: number[] = [];
 
     /** A client starts (true) or stops (false) reading. Recording is on while one client or more read. Off clears all data. */
     setClient(on: boolean): void {
         this.clients = Math.max(0, this.clients + (on ? 1 : -1));
         this.on = this.clients > 0;
-        if (!this.on) this.clear();
+        if (this.on && !this.loopTimer) {
+            this.loopLast = performance.now();
+            this.loopTimer = setInterval(() => this.sampleLoop(), 50);
+            this.loopTimer.unref();
+        }
+        if (!this.on) {
+            clearInterval(this.loopTimer);
+            this.loopTimer = undefined;
+            this.clear();
+        }
+    }
+
+    protected sampleLoop(now = performance.now()): void {
+        this.loopDelay.push(round(Math.max(0, now - this.loopLast - 50)));
+        this.loopDelay = this.loopDelay.slice(-600);
+        this.loopLast = now;
     }
 
     clear(): void {
         this.generation++;
+        this.loopDelay = [];
+        this.loopLast = performance.now();
         this.spans = [];
         this.stats.clear();
     }
@@ -64,6 +84,7 @@ export class Tracer {
             spans: this.spans.slice(from),
             stats: [...this.stats.values()].map(s => ({ ...s })),
             on: this.on,
+            loopDelay: [...this.loopDelay],
             dropped: since > 0 && since + 1 < first ? first - since - 1 : 0
         };
     }

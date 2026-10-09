@@ -80,7 +80,7 @@ Paths are relative to the directory in the first column.
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
 | `packages/rdfs/src` | `index.ts` | Classes section of the Model explorer |
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
-| `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records |
+| `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts`, `trace-metrics.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records and metric calculations |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, prefixes, form conversion |
@@ -114,7 +114,7 @@ Paths are relative to the directory in the first column.
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `insert-view.ts` | Insert View in a Markdown editor |
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
-| | `trace/` | Trace panel (bottom area) and the round trip of each request |
+| | `trace/` | Trace panel (bottom area), request round trips and `visible-update-trace.ts` (model input to a paint opportunity) |
 | | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, pages, the flat fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |

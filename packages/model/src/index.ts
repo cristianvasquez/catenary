@@ -30,6 +30,7 @@ export * from './shapes-schema';
 export * from './snapshot';
 export * from './terms';
 export * from './trace';
+export * from './trace-metrics';
 export * from './validation';
 export * from './view-schema';
 export * from './view-ui';

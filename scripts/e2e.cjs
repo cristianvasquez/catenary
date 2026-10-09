@@ -1295,3 +1295,33 @@ test('browser: law_hiddenPanelNoRead and law_saveKeepsRevision: panels read on s
   assert.ok(!saved.some(name => ['properties', 'appearance', 'links', 'view', 'elementRows'].includes(name)), JSON.stringify(saved));
   cli('rpc', 'setTracing', 'false');
 }));
+
+test('browser: Trace performance metrics record model input and stop on pause', { timeout: 90000 }, t => withFixtureApp(t, 'trace-metrics', async ({ page, cli }) => {
+  cli('rpc', 'setSettings', JSON.stringify({ validation: 'off' }));
+  const view = cli('model', 'files').views[0].view;
+  assert.equal(cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Metric', label: 'Metric card', view, at: { x: 200, y: 200 } })).result.ok, true);
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); ctx.selection.set({ids: []}); return true`);
+  cli('run', 'catenary.toggleTrace');
+  const panel = page.locator('#catenary-trace');
+  const table = panel.getByRole('table', { name: 'Performance metrics' });
+  const metric = label => table.getByRole('row').filter({ has: page.getByRole('rowheader', { name: label, exact: true }) }).locator('td');
+  await table.waitFor();
+  await page.waitForTimeout(1200);
+  await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+  const card = page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Metric card' }).first();
+  await card.locator('.card-name').first().click();
+  cli('rpc', 'view', JSON.stringify(view));
+  await page.waitForTimeout(2200);
+  assert.match(await metric('First model update').innerText(), /p50 .*p95 .*samples/);
+  assert.match(await metric('Backend event-loop delay').innerText(), /p50 .*p95 .*samples/);
+  assert.ok(Number(await metric('RPC count').innerText()) > 0);
+  assert.match(await metric('RDF query time').innerText(), /[\d.]+ ms/);
+  assert.ok(Number(await metric('Full-view reads').innerText()) >= 1);
+  await panel.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.equal(cli('rpc', 'trace', '0').result.on, false);
+  await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+  assert.equal(await metric('First model update').innerText(), 'No samples');
+  assert.equal(await metric('Backend event-loop delay').innerText(), 'No samples');
+  assert.equal(await metric('RPC count').innerText(), '0');
+}));

@@ -32,6 +32,24 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 
 Catenary resets saved layouts once when you first open this version. Later sessions restore your pane arrangement.
 
+## Performance checks
+
+1. Open View → Trace.
+2. Select Clear before an operation.
+3. Select, delete, move or undo on a test workspace.
+4. Read the five metrics above Summary.
+5. Select Pause or hide Trace to stop recording.
+
+| Metric | Meaning |
+|---|---|
+| First model update | Model input → visible DOM change → two animation frames. Not complete panel updates or proof of screen presentation. |
+| Backend event-loop delay | Timer lateness at 50 ms intervals, including OS scheduling delays. Latest 600 samples. |
+| RPC count | Backend requests during recording. |
+| RDF query time | SELECT, CONSTRUCT and pattern-match time, counted once per query. |
+| Full-view reads | Complete view reads during recording. |
+
+Percentiles use retained samples. Inputs without an update expire after five seconds. Backend measurements include other tracing connections. Compare repeated runs with the same workspace and panel layout.
+
 ## Views and canvases
 
 In the browser, append `?view=<view-id>` to the backend URL to open a specific view. Use `pnpm -s catenary --port PORT model views --keys` to get view IDs. For example: `http://localhost:3931/?view=n-urn_3aname_3aPackage_2520provenance`. The link selects a view in the current workspace after startup, even when other tabs were restored. An unknown view shows an error and leaves normal startup behavior unchanged. The link does not select a workspace or start a backend.

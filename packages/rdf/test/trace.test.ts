@@ -32,6 +32,27 @@ const causes = (spans: TraceSpan[], s: TraceSpan): string[] => {
 };
 
 describe('tracer', () => {
+    it('law_traceLoopSamplesBounded: measures timer lateness, clears and stops with its last client', () => {
+        class ClockTracer extends Tracer {
+            resetClock() { this.loopLast = 0; }
+            tick(now: number) { this.sampleLoop(now); }
+            get sampling() { return this.loopTimer !== undefined; }
+        }
+        const t = new ClockTracer();
+        expect(t.sampling).toBe(false);
+        t.setClient(true);
+        t.resetClock();
+        for (let i = 1; i <= 610; i++) t.tick(i * 50);
+        t.tick(610 * 50 + 170);
+        expect(t.take().loopDelay).toHaveLength(600);
+        expect(t.take().loopDelay!.at(-1)).toBe(120);
+        expect(t.take().spans).toHaveLength(0);
+        t.clear();
+        expect(t.take().loopDelay).toEqual([]);
+        t.setClient(false);
+        expect(t.sampling).toBe(false);
+    });
+
     it('records figure synchronization when no notation changes need processing', () => {
         const g = emptyGraph();
         tracer.setClient(true);

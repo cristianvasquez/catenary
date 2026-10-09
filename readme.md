@@ -107,7 +107,7 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/do
 
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
 
-`rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts.
+`rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See [Performance checks](docs/user-guide.md#performance-checks) for the five Trace metrics.
 
 `rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.
 

@@ -1525,6 +1525,17 @@ panelShows new lastAnswer = new <|> lastAnswer
 traceRecords :: [Bool] -> Bool                       -- per connection: its Trace panel is visible and not paused
 traceRecords = or
 
+-- | The Trace panel shows first model-update latency, backend timer delay, RPC count, RDF query time and full-view reads.
+-- Latency starts at a model pointer or keyboard input and ends two animation frames after its first visible model DOM change.
+-- It is a paint opportunity, not proof of screen presentation or completion of all updates. Pending inputs expire after five seconds.
+-- Backend delay is lateness beyond a 50 ms timer interval. Keep at most 600 samples without using the span buffer.
+-- Percentiles use nearest rank over retained samples. Query time sums SELECT, CONSTRUCT and match totals, not inclusive parent spans.
+-- Reason: distinguish user feedback, event-loop blocking and unnecessary reads without counting query work twice.
+law_traceQueryTimeOnce :: [Double] -> Double -> Bool
+law_traceQueryTimeOnce queryDurations reported = abs (sum queryDurations - reported) < 0.01
+law_traceLoopSamplesBounded :: Int -> Bool
+law_traceLoopSamplesBounded samples = samples >= 0 && samples <= 600
+
 -- 8.12 Source editors ---------------------------------------------------------------
 
 -- | Source editors (Turtle, TriG): highlight directives, IRIs, names, literals, comments, punctuation.
