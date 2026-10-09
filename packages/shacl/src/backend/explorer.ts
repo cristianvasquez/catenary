@@ -25,10 +25,12 @@ function read(port: ExplorerPort): Shapes {
         }
         const properties = new Map<string, Property>(), owners = new Map<string, string[]>();
         for (const r of port.select(`${PREFIXES} SELECT ?s ?p ?k ?v WHERE {
-                ${port.graph('?s sh:property|((sh:or|sh:xone|sh:and)/rdf:rest*/rdf:first) ?p . ?p sh:path ?path')}
+                ${port.graph('?s sh:property|((sh:or|sh:xone|sh:and)/rdf:rest*/rdf:first) ?p')}
+                ${port.graph('?p sh:path ?path', '?g1')}
                 OPTIONAL { ${port.graph('?p ?k ?v', '?g2')} VALUES ?k { ${FACTS.map(f => 'sh:' + f).join(' ')} } } }`)) {
+            // Both in scope: a property shape that another file states is a reference only.
             const list = shapes.get(r.s.value);
-            if (!list) continue;
+            if (!list || !port.inScope(r.p.value)) continue;
             let p = properties.get(r.p.value);
             if (!p) properties.set(r.p.value, p = { iri: r.p.value, facts: {} });
             if (!list.includes(p)) list.push(p);

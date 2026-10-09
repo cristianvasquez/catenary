@@ -341,10 +341,15 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
             ? (await this.quick.showQuickPick(paths.map(p => ({ label: p.name, path: p })), { placeholder: 'Reveal in folder' }))?.path
             : paths[0];
         if (!path) return;
-        let nodeId = 'folder:' + path.keys[0];
+        let parentId = 'catenary-root', nodeId = 'folder:' + path.keys[0];
         for (const [i, key] of path.keys.entries()) {
-            if (i > 0) nodeId += '/' + key;
-            const node = this.model.getNode(nodeId);
+            if (i > 0) [parentId, nodeId] = [nodeId, nodeId + '/' + key];
+            // A row after the shown pages: show the next page of its folder until it is there.
+            let node = this.model.getNode(nodeId);
+            for (let more = this.model.getNode(parentId + '/#more'); !node && more; more = this.model.getNode(parentId + '/#more')) {
+                await this.modelTree.showMore(more);
+                node = this.model.getNode(nodeId);
+            }
             if (i === path.keys.length - 1) {
                 if (SelectableTreeNode.is(node)) this.model.selectNode(node);
             } else if (ExpandableTreeNode.is(node)) {

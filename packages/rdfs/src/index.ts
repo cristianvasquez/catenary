@@ -74,11 +74,20 @@ function instanceRow(port: ExplorerPort, data: Classes, s: string): ExplorerRow 
     return { key: 'instance:' + s, name: data.names.get(s)!, folder: false, element: port.id(s), icon: 'symbol-object', tooltip: s };
 }
 
-/** The paths of class `c`: one for each chain of superclasses to a top class. */
-function classPaths(data: Classes, c: string, seen: string[] = []): string[][] {
-    if (seen.includes(c)) return [];
-    const up = (data.supers.get(c) ?? []).flatMap(d => classPaths(data, d, [...seen, c]));
-    return (up.length ? up : [[]]).map(p => [...p, c]);
+/** The paths of class `c`: one for each chain of subclasses from a top row to it. */
+function classPaths(data: Classes, c: string): string[][] {
+    // Down from the top rows (a subclass cycle has one), only through the classes above `c`; a path repeats no class.
+    const above = new Set<string>();
+    const up = (x: string) => { if (!above.has(x)) { above.add(x); (data.supers.get(x) ?? []).forEach(up); } };
+    up(c);
+    const out: string[][] = [];
+    const down = (path: string[]) => {
+        const last = path[path.length - 1];
+        if (last === c) return void out.push(path);
+        for (const s of data.subs.get(last) ?? []) if (above.has(s) && !path.includes(s)) down([...path, s]);
+    };
+    for (const t of data.tops) if (above.has(t)) down([t]);
+    return out;
 }
 
 const pathOf = (data: Classes, classes: string[], last?: string): ExplorerPath => ({

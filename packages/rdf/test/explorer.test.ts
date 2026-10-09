@@ -23,6 +23,8 @@ beforeEach(async () => {
     writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
     writeFileSync(join(dir, 'data.ttl'), DATA);
     writeFileSync(join(dir, 'more.ttl'), MORE);
+    writeFileSync(join(dir, 'owner.ttl'), `@prefix sh: <${NS.sh}> . <urn:x:S> a sh:NodeShape ; sh:property <urn:x:P> .`);
+    writeFileSync(join(dir, 'property.ttl'), `@prefix sh: <${NS.sh}> . <urn:x:P> sh:path <urn:x:q> .`);
     store = new ModelStore();
     store.watching = false;
     expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
@@ -67,6 +69,12 @@ describe('Model explorer plugins (ADR 0006)', () => {
         const top = rows('rdfs/classes').filter(r => [cls('urn:x:A'), cls('urn:x:B')].includes(r.key));
         expect(top).toHaveLength(1);
         expect(store.explorerElements(top[0].key)).toContain(iriId('urn:x:a'));
+        // Reveal paths start at that top row, for each class of the cycle and for its instance.
+        for (const id of ['urn:x:A', 'urn:x:B', 'urn:x:a']) {
+            const paths = store.explorerPaths(iriId(id));
+            expect(paths.length, id).toBeGreaterThan(0);
+            for (const p of paths) expect(p.keys[1], id).toBe(top[0].key);
+        }
     });
 
     it('pages of EXPLORER_PAGE rows with the total', () => {
@@ -83,6 +91,12 @@ describe('Model explorer plugins (ADR 0006)', () => {
         const props = rows('shacl/shape:' + shape.uri);
         expect(props.map(r => r.element).sort()).toEqual([...shape.properties].sort());
         expect(store.explorerPaths(shape.properties[0]).map(p => p.keys)).toContainEqual(['shacl/shapes', 'shacl/shape:' + shape.uri, props.find(r => r.element === shape.properties[0])!.key]);
+    });
+
+    it('a property shape that another file states is a reference: no row in the file of its node shape', () => {
+        const props = (file?: string) => store.explorerChildren('shacl/shape:urn:x:S', file && join(dir, file)).rows.map(r => r.key);
+        expect(props()).toEqual(['shacl/property:urn:x:P']);
+        expect(props('owner.ttl')).toEqual([]);
     });
 
     it('search: a flat ranked list of element rows, with where each row is', () => {

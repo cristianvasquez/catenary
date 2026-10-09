@@ -5,6 +5,7 @@
 
 import { CommandContribution, CommandRegistry, MenuContribution, MenuModelRegistry, MenuPath, MessageService, QuickInputService, URI } from '@theia/core';
 import { ApplicationShell, KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser';
+import { EditorWidget } from '@theia/editor/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
 import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, OpenTarget, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, itemsOfKind } from '@catenary/model';
@@ -149,9 +150,12 @@ export class ActionContribution implements CommandContribution, MenuContribution
         const reference = item.kinds.includes('reference') && view
             ? boxes(await this.model.service.view(view), 'reference').find(r => r.id === item.element)?.target : undefined;
         const id = reference ?? item.element;
-        const current = this.shell.currentWidget;
+        // The current pane: the focused main-area pane, else the current tab of the main area (Open in… from a side panel).
+        const focused = this.shell.currentWidget;
+        const current = focused && this.shell.getAreaFor(focused) === 'main' ? focused : this.shell.getCurrentWidget('main');
         const here = (t: OpenTarget) => t.presentation === 'Model' ? current instanceof ModelExplorerWidget && current.file === t.path
-            : t.presentation === 'Canvas' && current instanceof GLSPDiagramWidget && viewIdOf(current) === t.view;
+            : t.presentation === 'Canvas' ? current instanceof GLSPDiagramWidget && viewIdOf(current) === t.view
+            : current instanceof EditorWidget && current.editor.uri.toString() === URI.fromFilePath(t.path).toString();
         const targets = (await this.model.service.openTargets(id)).filter(t => !here(t));
         if (!targets.length) return void this.messages.info('No other pane shows the element.');
         const where = (t: OpenTarget) => t.presentation === 'Canvas' ? t.label
