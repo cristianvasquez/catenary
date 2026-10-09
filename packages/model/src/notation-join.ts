@@ -140,6 +140,19 @@ export function join(d: Derivation, placed: Placements): Join {
     return { boxes, hubs, lines, parts, links, problems };
 }
 
+/**
+ * The member-list rule (ui-manifest §6.5), one for every container box: a node shape card, a value set, a "one of" box, an entity group.
+ * A part of the box is a row unless the view draws it, as its own box or as a line from the box. `box`: the join box of the container;
+ * absent (the view does not draw it with the notation engine): nothing is drawn from it, every part is a row. The test takes the focus
+ * IRI of a part.
+ */
+export function partIsRow(box: JoinBox | undefined): (focus: string) => boolean {
+    if (!box) return () => true;
+    const focusOf = (rows: { part?: Figure; sub?: { part?: Figure }[] }[]) => new Set(rows.flatMap(r => [r, ...(r.sub ?? [])]).flatMap(r => r.part ? [r.part.focus.value] : []));
+    const parts = focusOf(box.figure.rows), rows = focusOf(box.rows);
+    return focus => !parts.has(focus) || rows.has(focus);
+}
+
 /** The join as text lines (test fixtures: packages/rdf/test/fixtures/notation/expected/*.join.txt). */
 export function joinText(d: Derivation, j: Join): string[] {
     const shape = (f: Figure) => localName(f.fs.node.value);
@@ -177,8 +190,10 @@ export function placedTerm(figs: Figure[], t: NTerm): NTerm {
 export function removal(figs: Figure[], placed: Placements, t: NTerm): string[] {
     const before = new Map(placed), after = new Map(placed);
     after.delete(nkey(t));
-    const lineEnds = (s: ReturnType<typeof joinState>) => new Set(figs.filter(f => f.fs.kind !== 'Box' && s.shown(f)).flatMap(f => [f.end, ...f.starts,
-        ...(f.fs.kind === 'Hub' ? f.memberFigs.flatMap(m => m.fs.kind === 'Line' ? [m.end, ...m.starts] : [m]) : [])]).filter(Boolean).map(f => f!.id));
+    // What keeps a box: a shown line or hub member line that ends at it (ui-manifest §2.9 linesTo). A line that starts at the box (an
+    // alternative from its "one of" box) does not keep it.
+    const lineEnds = (s: ReturnType<typeof joinState>) => new Set(figs.filter(f => f.fs.kind !== 'Box' && s.shown(f)).flatMap(f => [f.end,
+        ...(f.fs.kind === 'Hub' ? f.memberFigs.flatMap(m => m.fs.kind === 'Line' ? [m.end] : [m]) : [])]).filter(Boolean).map(f => f!.id));
     const endsBefore = lineEnds(joinState(figs, before));
     const kept = (f: Figure) => f.fs.keptByLines || Boolean(before.get(nkey(f.placedAs))?.keptByLines);
     for (let changed = true; changed;) {

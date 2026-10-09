@@ -97,10 +97,10 @@ export function pills(shapes: ShapesModel): Map<string, { iri: string; range: Si
     return out;
 }
 
-/** Width of a "one of" card. */
-export const ONE_OF_WIDTH = 240;
+/** Default width of a "one of" box: the width of the other member-list boxes (value set, collection). */
+export const ONE_OF_WIDTH = 320;
 
-/** A row of a "one of" card: an alternative. `takeOut`: the id of the card that shows it (node shape, value set), else empty. */
+/** A row of a "one of" box: an alternative. `takeOut`: the id of the card that shows it (node shape, value set), else empty. */
 export interface AlternativeRow { key: string; label: string; sub: string; style: LeafStyle; takeOut: string; takeOutTitle: string }
 
 /** The card that shows an alternative: a node shape (sh:node; for a class, its first node shape by id), a value set; else undefined. */
@@ -114,10 +114,10 @@ const ALTERNATIVE_KIND: Record<SimpleRange['kind'], string> = {
     node: 'node shape', class: 'class', datatype: 'datatype', nodeKind: 'node kind', in: 'values', scheme: 'concept scheme', collection: 'collection'
 };
 
-/** Rows of the "one of" card of `p`: its alternatives without a card in the view (`target`). */
-export function alternativeRows(shapes: ShapesModel, p: PropertyShape, target: (r: Range) => string | undefined, label: (iri: string) => string = localName): AlternativeRow[] {
+/** Rows of the "one of" box of `p`: the alternatives (in list order) that `isRow` keeps (the member-list rule, `partIsRow`). */
+export function alternativeRows(shapes: ShapesModel, p: PropertyShape, isRow: (index: number) => boolean, label: (iri: string) => string = localName): AlternativeRow[] {
     if (p.range.kind !== 'or') return [];
-    return p.range.alternatives.filter(a => !target(a)).map(a => {
+    return p.range.alternatives.filter((_, i) => isRow(i)).map(a => {
         const card = alternativeCard(shapes, a);
         return {
             key: rangeKey(a), label: rangeText(shapes, a, label), sub: ALTERNATIVE_KIND[a.kind], style: leafStyle(a), takeOut: card ?? '',
@@ -126,7 +126,7 @@ export function alternativeRows(shapes: ShapesModel, p: PropertyShape, target: (
     });
 }
 
-/** Size of the target box of a property edge: a pill, or the "one of" card with `rows` rows. */
+/** Size of the target box of a property edge: a pill, or the "one of" box with `rows` rows. */
 export function targetSize(shapes: ShapesModel, p: PropertyShape, rows: number, label: (iri: string) => string = localName, scale = 1): { width: number; height: number } {
     return p.range.kind === 'or' ? { width: ONE_OF_WIDTH * scale, height: memberListHeight(rows, scale) } : pillSize(rangeText(shapes, p.range, label));
 }

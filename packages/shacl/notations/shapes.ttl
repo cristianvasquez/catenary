@@ -17,6 +17,8 @@ shn:notation a nt:Notation ;
 # Its logical constraints are parts too: unplaced, a constraint is a row group with its members as sub-rows.
 # A scheme or collection helper (shn:SchemeHelper, shn:CollectionHelper) has no card: the compact notation draws the
 # property line to the scheme or the collection.
+# An alternative of "one of" (an untyped list member with sh:node and no property shapes) is no card: it is a line
+# (shn:Alternative). A typed node shape in a list stays a card.
 # A property shape under sh:not is a part too: a row (or line) with the tag «not».
 shn:Card a nt:Figure ;
     nt:kind nt:Box ;
@@ -24,7 +26,10 @@ shn:Card a nt:Figure ;
     sh:targetClass sh:NodeShape ;
     sh:targetSubjectsOf sh:targetClass, sh:targetSubjectsOf, sh:targetObjectsOf, sh:targetNode, sh:node, sh:property ;
     sh:targetObjectsOf sh:node ;
-    nt:when [ sh:not [ sh:or ( shn:SchemeHelper shn:CollectionHelper ) ] ; sh:property [ sh:path sh:path ; sh:maxCount 0 ] ] ;
+    nt:when [ sh:not [ sh:or ( shn:SchemeHelper shn:CollectionHelper ) ] ; sh:property [ sh:path sh:path ; sh:maxCount 0 ] ;
+              sh:or ( [ sh:class sh:NodeShape ]
+                      [ sh:property [ sh:path [ sh:inversePath rdf:first ] ; sh:maxCount 0 ] ]
+                      [ sh:property [ sh:path sh:property ; sh:minCount 1 ] ] ) ] ;
     sh:property
         [ sh:path [ sh:alternativePath ( rdfs:label sh:name ) ] ; nt:role nt:title ] ,
         [ sh:path sh:targetClass ; nt:role nt:text ] ,

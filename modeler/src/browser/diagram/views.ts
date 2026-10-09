@@ -11,7 +11,7 @@ import { NoteMarkdown } from '../notes/note-markdown';
 import { VNode, h } from 'snabbdom';
 import { type AlternativeRow, type Side } from '@catenary/model';
 import {
-    BOX_HALO, COLLECTION_HALO, CollectionMember, MULTI_HALO, NOTE_HALO, cardHalo, shapeHalo, colorVars, handlePoint, renderCard, renderCollection, renderHalo, renderPill,
+    BOX_HALO, COLLECTION_HALO, CollectionMember, MULTI_HALO, NOTE_HALO, ONE_OF_HALO, cardHalo, shapeHalo, colorVars, handlePoint, renderCard, renderCollection, renderHalo, renderPill,
     renderOneOf, renderShapeCard, renderShapeRow, renderValueSet, resizeHandle, s, vars
 } from './card-chrome';
 import { edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrome';
@@ -67,13 +67,21 @@ export class ViewReferenceNode extends GNode {
     color = '';
 }
 
-export class CollectionNode extends GNode {
+/**
+ * A container: a box whose parts are rows (ui-manifest §6.5): a node shape card, an instance collection, a SKOS scheme or collection, the
+ * "one of" box of a property. One behavior for all: select, move, resize (eight handles), Del, hover; the halo of the only selected box.
+ * The kinds differ in their rows and in the effects of their row buttons (CanvasInteractions.containers).
+ */
+export abstract class ContainerNode extends GNode {
     static override readonly DEFAULT_FEATURES = [
         selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
     ];
     readonly resizeLocations = ResizeHandleLocation.ALL;
-    members: CollectionMember[] = [];
     color = '';
+}
+
+export class CollectionNode extends ContainerNode {
+    members: CollectionMember[] = [];
 }
 
 export class GroupNode extends GNode {
@@ -115,16 +123,11 @@ export class BundleEdge extends GEdge {
 
 // ------------------------------------------------------------------ shapes views
 
-/** Node shape card. Its children: the name label and the attribute rows (ShapeRow). */
-export class ShapeNode extends GNode {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
-    ];
-    readonly resizeLocations = ResizeHandleLocation.ALL;
+/** Node shape card: a container whose rows are its property shapes (ShapeRow children). */
+export class ShapeNode extends ContainerNode {
     className = '';
     name = '';
     subtitle = '';
-    color = '';
     closed = false;
     violations = 0;
     display = 'detailed';
@@ -148,17 +151,18 @@ export class ShapeRow extends GChildElement {
     group = '';
 }
 
-/** SKOS concept scheme or collection. Its child: the name label. */
-export class ValueSetNode extends GNode {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
-    ];
-    readonly resizeLocations = ResizeHandleLocation.ALL;
+/** SKOS concept scheme or collection: its concepts without a card are rows. */
+export class ValueSetNode extends ContainerNode {
     name = '';
     kind: 'scheme' | 'collection' = 'scheme';
     uri = '';
     members: { uri: string; label: string; broader?: string[]; instance: string }[] = [];
-    color = '';
+}
+
+/** "One of" box of a property (sh:or of ranges): its alternatives without a line are rows. Its id: `<property id>_leaf`. */
+export class OneOfNode extends ContainerNode {
+    name = '';
+    members: AlternativeRow[] = [];
 }
 
 /** Property shape drawn as an edge (its id is the property shape id). */
@@ -177,14 +181,12 @@ export class PropertyEdge extends GEdge {
 
 /**
  * Pill: the end of a property line that is not a card (ADR 0014). A class without a node shape (shared, placed); the "in" box of a
- * property (placed by its list); a private pill of a datatype, node kind or "any" (beside its card, not placed). Style "or": the
- * "one of" box of an "or" range, with its alternatives as rows.
+ * property (placed by its list); a private pill of a datatype, node kind or "any" (beside its card, not placed).
  */
 export class LeafNode extends GNode {
     static override readonly DEFAULT_FEATURES = [selectFeature, moveFeature, hoverFeedbackFeature, fadeFeature];
     text = '';
     style = '';
-    alternatives: AlternativeRow[] = [];
 }
 
 /** The dashed edge of a property shown as a row (`TYPES.LATENT`). Not selectable: its button shows the property as an edge. */
@@ -204,7 +206,7 @@ export class TargetingEdge extends GEdge {
     lanes = 1;
 }
 
-/** From a "one of" card to the card of an alternative. Not selectable: edit the alternatives on the card. */
+/** From a "one of" box to the card of an alternative. Not selectable: edit the alternatives on the box. */
 export class AlternativeEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [fadeFeature];
     lane = 0;
@@ -233,18 +235,26 @@ export class ShapeCardView extends ShapeView {
 @injectable()
 export class ShapeRowView implements IView {
     render(row: Readonly<ShapeRow>, _context: RenderingContext): VNode {
-        return renderShapeRow({ parts: row.parts, range: row.range, style: row.style, card: row.card, violations: row.violations, selected: row.selected, relation: row.relation, group: row.group });
+        return renderShapeRow({ id: row.id, parts: row.parts, range: row.range, style: row.style, card: row.card, violations: row.violations, selected: row.selected, relation: row.relation, group: row.group });
     }
 }
+
+/** The box props of a member-list container. */
+const memberBox = (node: Readonly<ContainerNode>) => ({ width: node.size.width, height: node.size.height, color: node.color, selected: node.selected, hover: node.hoverFeedback });
 
 @injectable()
 export class ValueSetView extends ShapeView {
     render(node: Readonly<ValueSetNode>, context: RenderingContext): VNode | undefined {
         if (!this.isVisible(node, context)) return undefined;
-        return renderValueSet({
-            width: node.size.width, height: node.size.height, name: node.name, kind: node.kind, uri: node.uri, members: node.members, color: node.color,
-            selected: node.selected, hover: node.hoverFeedback
-        }, renderChildren(node, context, true));
+        return renderValueSet({ ...memberBox(node), name: node.name, kind: node.kind, uri: node.uri, members: node.members }, renderChildren(node, context, true));
+    }
+}
+
+@injectable()
+export class OneOfView extends ShapeView {
+    render(node: Readonly<OneOfNode>, context: RenderingContext): VNode | undefined {
+        if (!this.isVisible(node, context)) return undefined;
+        return renderOneOf({ ...memberBox(node), name: node.name, members: node.members }, renderChildren(node, context, true));
     }
 }
 
@@ -330,9 +340,7 @@ export class TargetingEdgeView implements IView {
 export class LeafView extends ShapeView {
     render(node: Readonly<LeafNode>, context: RenderingContext): VNode | undefined {
         if (!this.isVisible(node, context)) return undefined;
-        const v = node.style === 'or'
-            ? renderOneOf({ width: node.size.width, height: node.size.height, title: node.text, rows: node.alternatives })
-            : renderPill({ width: node.size.width, height: node.size.height, text: node.text, style: node.style });
+        const v = renderPill({ width: node.size.width, height: node.size.height, text: node.text, style: node.style });
         v.data!.class = { ...v.data!.class, selected: node.selected };
         return v;
     }
@@ -380,7 +388,7 @@ export class CardView extends ShapeView {
 }
 
 const isBox = (e: GModelElement) => e instanceof CardNode || e instanceof GroupNode || e instanceof NoteNode || e instanceof ViewReferenceNode
-    || e instanceof CollectionNode || e instanceof ShapeNode || e instanceof ValueSetNode;
+    || e instanceof ContainerNode;
 
 /**
  * Diagram: as GLSP, then the halo of the only selected box (card, group, note, view reference, collection) or of several, after all
@@ -410,7 +418,8 @@ export class CatenaryGraphView extends GLSPProjectionView {
             const node = boxes[0];
             const { x, y } = node.position, { width, height } = node.size;
             const actions = node instanceof CardNode ? cardHalo(node.hiddenIn, node.hiddenOut, node.hiddenTargets) : node instanceof CollectionNode ? COLLECTION_HALO
-                : node instanceof ShapeNode ? shapeHalo(node.hiddenSources, node.hiddenTargets) : node instanceof NoteNode ? NOTE_HALO : BOX_HALO;
+                : node instanceof ShapeNode ? shapeHalo(node.hiddenSources, node.hiddenTargets) : node instanceof NoteNode ? NOTE_HALO
+                : node instanceof OneOfNode ? ONE_OF_HALO : BOX_HALO;
             layer.children = [...(layer.children ?? []), svg('g', { 'class-catenary-halo': true, 'data-element': node.id, transform: `translate(${x},${y})` },
                 ...renderHalo(width, height, k, actions))];
         } else if (boxes.length > 1) {
@@ -519,9 +528,7 @@ export class ViewReferenceView extends ShapeView {
 export class CollectionView extends ShapeView {
     render(node: Readonly<CollectionNode>, context: RenderingContext): VNode | undefined {
         if (!this.isVisible(node, context)) return undefined;
-        return renderCollection({
-            width: node.size.width, height: node.size.height, members: node.members, color: node.color, selected: node.selected, hover: node.hoverFeedback
-        }, renderChildren(node, context, true));
+        return renderCollection({ ...memberBox(node), members: node.members }, renderChildren(node, context, true));
     }
 }
 

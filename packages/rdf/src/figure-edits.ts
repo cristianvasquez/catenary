@@ -4,7 +4,7 @@
 //   data arrival  a new property shape is placed in each view that shows its start and its end
 // Relations and arrows of instances: placeConnectors. The ids of the diagram: notation-schema.ts (@catenary/model).
 
-import { LEAF_SUFFIX, NotationPlacement, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
+import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
 import { elementId } from './ids';
@@ -184,9 +184,15 @@ export function syncFigures(g: ModelGraph, arrivals: boolean): void {
             for (const k of left) for (const x of removal(vf.derivation.figures, before, termOf(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
         }
         const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
-        if (arrivals) for (const k of added.get(view.value)?.keys ?? []) {
+        for (const k of added.get(view.value)?.keys ?? []) {
             if (!now.has(k)) continue;
-            for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x)) add.add(x);
+            // With arrivals off, an added box still draws its own lines to the shown cards: the part lines without nt:from (they start at
+            // the box because they are its parts, as the alternatives of a "one of" box). They are the content of the box, as its rows are
+            // (ui-manifest §6.5). A line with nt:from (a property of a card) is not: only the requested property becomes a line.
+            const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
+            const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && !r.part.startValues.length
+                && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
+            for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
         }
         if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
         if (lists) {
@@ -274,7 +280,8 @@ function placeEnd(g: ModelGraph, view: NamedNode, property: string, range: Range
     } else if (range.kind === 'scheme') term = range.schemes[0] ? rdf.namedNode(range.schemes[0]) : undefined;
     else if (range.kind === 'collection') term = rdf.namedNode(range.collection);
     if (!term || g.nodeOf(view, term)) return false;
-    const size = ops.cardTerm(g, elementId(term)) && !term.value.startsWith(ops.LIST_PREFIX) ? ops.cardSize(g, elementId(term)) : { width: 240, height: 120 };
+    // A list box ("in", "one of") grows to its rows; an "in" box is drawn as a pill of its text.
+    const size = ops.cardTerm(g, elementId(term)) && !term.value.startsWith(ops.LIST_PREFIX) ? ops.cardSize(g, elementId(term)) : { width: ONE_OF_WIDTH, height: 120 };
     const node = ops.addPlacement(g, view, term);
     ops.writeBox(g, view, node, { ...at, ...size });
     g.add(node, V.keptByLines, rdf.literal('true', rdf.namedNode('http://www.w3.org/2001/XMLSchema#boolean')), view);

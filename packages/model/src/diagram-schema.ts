@@ -8,7 +8,8 @@ import { Doc, View, boxes, cardOf, edgeLayout, elementOfId, relationsInView } fr
 import { Classes, predicateName, primaryClass } from './metamodel';
 import { localName } from './terms';
 import type { Violation } from './validation';
-import type { ViewFigures } from './notation-join';
+import { type ViewFigures, partIsRow } from './notation-join';
+import { idIri } from './ids';
 
 export const TYPES = {
     GRAPH: 'graph',
@@ -27,9 +28,11 @@ export const TYPES = {
     PROPERTY: 'edge:property',
     LEAF: 'node:leaf',
     LOGIC: 'node:logic',
-    /** From the "one of" card of a property (sh:or of ranges) to the card of an alternative. */
+    /** The "one of" box of a property (sh:or of ranges): a member list of its alternatives, as a value set or a collection. */
+    ONE_OF: 'node:one-of',
+    /** From the "one of" box of a property to the card of an alternative. */
     ALTERNATIVE: 'edge:alternative',
-    /** A SKOS concept scheme or collection: a node with its concepts as chips. */
+    /** A SKOS concept scheme or collection: a node with its concepts as member rows. */
     VALUESET: 'node:valueset',
     /** A row of the attribute list of a shape card: a property shape (child of the card). */
     ROW: 'label:row',
@@ -47,8 +50,8 @@ export const LEAF_SUFFIX = '_leaf';
 export const LATENT_SUFFIX = '_latent';
 
 /**
- * Member list of an instance collection and of a SKOS scheme or collection card (model units): header, one row for each member,
- * the "+ member" / "+ concept" row. The box grows to show all rows.
+ * Member list of the container boxes (an instance collection, a SKOS scheme or collection, a "one of" box), in model units: header, one
+ * row for each member, the add row. The box grows to show all rows. A member that has its own box in the view is a line, not a row.
  */
 export const MEMBER_LIST = { head: 64, row: 46, add: 34, pad: 10 };
 /** `scale`: the card text scale of the client (`GraphOptions.cardScale`); the rows grow with the text. */
@@ -176,14 +179,20 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
         }))
     ];
 
-    const collections: ElementSchema[] = boxes(view, 'collection').map(c => ({
-        type: TYPES.COLLECTION, id: c.id, position: { x: c.x, y: c.y }, size: { width: c.width, height: Math.max(c.height, memberListHeight(c.members.filter(m => doc.instances[m]).length, opts.cardScale)) },
-        color: c.color ?? '',
-        members: c.members.filter(m => doc.instances[m]).map(m => {
-            const inst = doc.instances[m];
-            return { id: m, label: inst.label, className: className(inst.types), classColor: primaryClass(meta, inst.types)?.color ?? '' };
-        }).sort((a, b) => a.label.localeCompare(b.label))
-    }));
+    // An entity group lists its members by the member-list rule (`partIsRow`), as the other containers.
+    const groupBox = (id: string) => opts.notation?.join.boxes.find(b => b.figure.focus.value === idIri(id));
+    const collections: ElementSchema[] = boxes(view, 'collection').map(c => {
+        const isRow = partIsRow(groupBox(c.id));
+        const members = c.members.filter(m => doc.instances[m] && isRow(doc.instances[m].uri));
+        return {
+            type: TYPES.COLLECTION, id: c.id, position: { x: c.x, y: c.y }, size: { width: c.width, height: Math.max(c.height, memberListHeight(members.length, opts.cardScale)) },
+            color: c.color ?? '',
+            members: members.map(m => {
+                const inst = doc.instances[m];
+                return { id: m, label: inst.label, className: className(inst.types), classColor: primaryClass(meta, inst.types)?.color ?? '' };
+            }).sort((a, b) => a.label.localeCompare(b.label))
+        };
+    });
 
     return { edges, cards, collections };
 }

@@ -2,6 +2,7 @@
 // Sizes marked "screen" are divided by the zoom, so they stay constant on screen.
 
 import { VNode, VNodeData, h } from 'snabbdom';
+import type { AlternativeRow } from '@catenary/model';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -87,6 +88,8 @@ export function cardHalo(incoming: number, outgoing: number, targets = 0): HaloA
 }
 /** Group, view reference. */
 export const BOX_HALO: HaloAction[] = [HALO_REMOVE, HALO_MENU];
+/** "One of" box: the element actions are on its property (row or line). Remove: the box and the line to it leave the view. */
+export const ONE_OF_HALO: HaloAction[] = [HALO_REMOVE];
 /** Note. `arrow`: drag to another element of the view (an arrow to it). */
 export const NOTE_HALO: HaloAction[] = [HALO_REMOVE, HALO_MENU, { action: 'arrow', dock: 'se', icon: CREATE_ICON, title: 'Arrow: drag to an element of the view' }];
 /** Collection: `uncollect` shows the cards of all members again (Reactodia: ungroup). */
@@ -184,7 +187,7 @@ export function renderCard(p: CardProps, handles: VNode[]): VNode {
 }
 
 export interface CollectionMember { id: string; label: string; className: string; classColor: string }
-export interface CollectionProps { width: number; height: number; members: CollectionMember[]; color: string; selected: boolean; hover: boolean }
+export interface CollectionProps extends MemberBoxProps { members: CollectionMember[] }
 
 /**
  * One row of a member list. `key`: the member (instance id or concept IRI, `data-member`). `takeOut`: the instance id that ➟ shows as
@@ -211,22 +214,33 @@ export function renderMemberList(head: VNode[], rows: MemberRow[], add: string):
     ]);
 }
 
+/** Box props shared by the member-list boxes (collection, value set, "one of"). */
+export interface MemberBoxProps { width: number; height: number; color: string; selected: boolean; hover: boolean }
+
+/**
+ * A member-list box: an instance collection, a SKOS scheme or collection, the "one of" box of a property. One body, the member list
+ * (renderMemberList) and the resize handles (`handles`, rendered by the caller). `kind`: the classes of the kind (colors, gestures).
+ * A member with its own box in the view is a line from this box, not a row; a removal of that box gives the row back.
+ */
+export function renderMemberBox(kind: string[], p: MemberBoxProps, content: VNode, handles: VNode[]): VNode {
+    return s('g', {
+        class: { 'catenary-member-box': true, ...Object.fromEntries(kind.map(k => [k, true])), colored: !!p.color, selected: p.selected, mouseover: p.hover },
+        style: vars(colorVars(p.color))
+    }, [
+        s('rect', { class: { body: true }, attrs: { width: p.width, height: p.height, rx: 10 } }),
+        s('foreignObject', { class: { 'member-box-fo': true }, attrs: { width: p.width, height: p.height } }, [content]),
+        ...handles
+    ]);
+}
+
 /** Collection (Reactodia entity group): the member list of its cards. `handles`: the resize handles, rendered by the caller. */
 export function renderCollection(p: CollectionProps, handles: VNode[]): VNode {
-    const { width, height, members } = p;
-    const rows = members.map(m => ({
+    const rows = p.members.map(m => ({
         key: m.id, label: m.label, sub: m.className, color: m.classColor, takeOut: m.id,
         takeOutTitle: 'Take out of the collection', removeTitle: 'Remove from the view'
     }));
-    const content = renderMemberList([h('div', { class: { 'member-head': true } }, `Collection · ${members.length}`)], rows, '+ member');
-    return s('g', {
-        class: { 'catenary-collection': true, colored: !!p.color, selected: p.selected, mouseover: p.hover },
-        style: vars(colorVars(p.color))
-    }, [
-        s('rect', { class: { body: true }, attrs: { width, height, rx: 10 } }),
-        s('foreignObject', { class: { 'collection-fo': true }, attrs: { width, height } }, [content]),
-        ...handles
-    ]);
+    const content = renderMemberList([h('div', { class: { 'member-head': true } }, `Collection · ${p.members.length}`)], rows, '+ member');
+    return renderMemberBox(['catenary-collection'], p, content, handles);
 }
 
 // ------------------------------------------------------------------ shapes views
@@ -296,6 +310,8 @@ export function renderShapeCard(p: ShapeCardProps, rows: VNode[], handles: VNode
 }
 
 export interface RowProps {
+    /** The property shape id, or the constraint id of a row group head (`data-member`, as a member row). */
+    id: string;
     parts: { text: string; color?: string }[];
     range: string;
     style: string;
@@ -312,12 +328,12 @@ export interface RowProps {
  * another), cardinality (`data-card`: click cycles it), and ⇥ (show as an edge; or drag the row out of the card).
  */
 export function renderShapeRow(p: RowProps): VNode {
-    if (p.group === 'head') return h('div', { class: { 'shape-row': true, 'row-group-head': true, selected: p.selected } }, [
+    if (p.group === 'head') return h('div', { class: { 'shape-row': true, 'row-group-head': true, selected: p.selected }, attrs: { 'data-member': p.id } }, [
         h('span', { class: { 'row-group-name': true }, attrs: { title: 'Logical constraint: its members follow' } }, p.parts.map(x => x.text).join('')),
         h('span', {}, ''), h('span', {}, ''),
         h('span', { class: { 'row-out': true }, attrs: { title: 'Show the constraint as a hub with its member lines' } }, [arrowButton('out')])
     ]);
-    return h('div', { class: { 'shape-row': true, 'row-group-member': p.group === 'member', relation: p.relation, selected: p.selected, invalid: p.violations > 0 } }, [
+    return h('div', { class: { 'shape-row': true, 'row-group-member': p.group === 'member', relation: p.relation, selected: p.selected, invalid: p.violations > 0 }, attrs: { 'data-member': p.id } }, [
         h('span', { class: { 'row-path': true }, attrs: { title: 'Path. Double-click or F2: edit' } }, p.parts.map(x => h('span', { style: x.color ? { color: x.color } : {}, class: { muted: !x.color } }, x.text))),
         h('span', { class: { 'row-range': true, [`leaf-${p.style}`]: true }, attrs: { title: 'Value. Click: change' } }, p.range),
         h('span', { class: { 'row-card': true }, attrs: { 'data-card': '1', title: 'Cardinality: click for the next one (0..* → 0..1 → 1 → 1..*)' } }, p.card),
@@ -325,17 +341,12 @@ export function renderShapeRow(p: RowProps): VNode {
     ]);
 }
 
-export interface ValueSetProps {
-    width: number;
-    height: number;
+export interface ValueSetProps extends MemberBoxProps {
     name: string;
     kind: 'scheme' | 'collection';
     uri: string;
     /** Concepts without a card in the view. `instance`: the id of the concept as an instance (data file), else empty. */
     members: { uri: string; label: string; broader?: string[]; instance: string }[];
-    color: string;
-    selected: boolean;
-    hover: boolean;
 }
 
 /**
@@ -343,7 +354,6 @@ export interface ValueSetProps {
  * card; ×: remove; drag onto a concept: broader), "+ concept" / "+ member".
  */
 export function renderValueSet(p: ValueSetProps, handles: VNode[]): VNode {
-    const { width, height } = p;
     const label = (uri: string) => p.members.find(c => c.uri === uri)?.label ?? uri;
     const rows = p.members.map(m => ({
         key: m.uri, label: m.label, sub: m.uri.replace(/^.*[#/:]/, ''), color: p.color, takeOut: m.instance,
@@ -355,30 +365,26 @@ export function renderValueSet(p: ValueSetProps, handles: VNode[]): VNode {
         h('div', { class: { 'vs-name': true } }, p.name),
         h('div', { class: { 'vs-kind': true } }, `${p.kind === 'scheme' ? 'concept scheme' : 'collection'} · ${p.members.length}`)
     ], rows, p.kind === 'scheme' ? '+ concept' : '+ member');
-    return s('g', {
-        class: { 'catenary-card': true, 'valueset-card': true, [`valueset-${p.kind}`]: true, colored: !!p.color, selected: p.selected, mouseover: p.hover },
-        style: vars(colorVars(p.color))
-    }, [
-        s('rect', { class: { body: true }, attrs: { width, height, rx: 10 } }),
-        s('foreignObject', { class: { 'card-fo': true }, attrs: { width, height } }, [content]),
-        ...handles
-    ]);
+    return renderMemberBox(['catenary-card', 'valueset-card', `valueset-${p.kind}`], p, content, handles);
+}
+
+export interface OneOfProps extends MemberBoxProps {
+    name: string;
+    /** The alternatives without a line from this box. `key`: the range key of the alternative. */
+    members: AlternativeRow[];
 }
 
 /**
- * "One of" card: the target of a property with an "or" range. Its rows are the alternatives without a card in the view (➟: show the
- * card of the alternative; ×: remove the alternative), then "+ alternative". `key` of a row: the range key of the alternative.
+ * "One of" box: the target of a property with an "or" range. Its rows are the alternatives without a line to their card (➟: show
+ * the card of the alternative; ×: remove the alternative), then "+ target". The name is the target text (double-click: edit).
  */
-export function renderOneOf(p: { width: number; height: number; title: string; rows: { key: string; label: string; sub: string; style: string; takeOut: string; takeOutTitle: string }[] }): VNode {
-    const rows = p.rows.map(r => ({ key: r.key, label: r.label, sub: r.sub, color: '', takeOut: r.takeOut, takeOutTitle: r.takeOutTitle, removeTitle: 'Remove this target' }));
+export function renderOneOf(p: OneOfProps, handles: VNode[]): VNode {
+    const rows = p.members.map(r => ({ key: r.key, label: r.label, sub: r.sub, color: '', takeOut: r.takeOut, takeOutTitle: r.takeOutTitle, removeTitle: 'Remove this target' }));
     const content = renderMemberList([
-        h('div', { class: { 'vs-name': true } }, p.title),
+        h('div', { class: { 'vs-name': true } }, p.name),
         h('div', { class: { 'vs-kind': true } }, 'sh:or · each value is one of these targets')
     ], rows, '+ target');
-    return s('g', { class: { 'catenary-leaf': true, 'leaf-or': true } }, [
-        s('rect', { class: { body: true }, attrs: { width: p.width, height: p.height, rx: 10 } }),
-        s('foreignObject', { class: { 'card-fo': true }, attrs: { width: p.width, height: p.height } }, [content])
-    ]);
+    return renderMemberBox(['catenary-one-of'], p, content, handles);
 }
 
 /** Pill: the target of a property edge that is not a card (datatype, node kind, value set, scheme, a class or shape outside the view). */

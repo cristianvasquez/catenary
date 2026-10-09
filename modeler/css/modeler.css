@@ -47,13 +47,13 @@
 .halo-action[data-action="link"], .halo-action[data-action="linkIn"] { cursor: crosshair; }
 .halo-action > .halo-count { fill: var(--catenary-fg); stroke: var(--catenary-bg); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; vector-effect: non-scaling-stroke; text-anchor: middle; dominant-baseline: middle; font-weight: 600; pointer-events: none; }
 
-/* Collection (card-chrome.ts renderCollection): a list of member rows. Only the ➟ buttons take pointer events. */
-.catenary-collection { --c: var(--catenary-muted); }
-.catenary-collection > .body { fill: color-mix(in srgb, var(--c) 8%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.catenary-collection.mouseover > .body { stroke-width: 2.5; }
-.catenary-collection.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
-.catenary-collection .collection-fo { pointer-events: none; }
-/* Member list: instance collection and SKOS scheme or collection card (MEMBER_LIST in diagram-schema.ts: head 64, row 46, add 34; all × card scale). */
+/* Member-list boxes (card-chrome.ts renderMemberBox): instance collection, SKOS scheme or collection, "one of". Only the rows take pointer events. */
+.catenary-member-box { --c: var(--catenary-muted); }
+.catenary-member-box > .body { fill: color-mix(in srgb, var(--c) 8%, var(--catenary-bg)); stroke: color-mix(in srgb, var(--c) 65%, var(--catenary-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.catenary-member-box.mouseover > .body { stroke-width: 2.5; }
+.catenary-member-box.selected > .body { stroke: var(--catenary-accent); stroke-width: 2.5; }
+.catenary-member-box .member-box-fo { pointer-events: none; }
+/* Member list of these boxes (MEMBER_LIST in diagram-schema.ts: head 64, row 46, add 34; all × card scale). */
 /* One type scale for all cards (instance, node shape, scheme, collection): kind 12, name 22, text 16, detail 14 (px × --catenary-card-scale). */
 .member-list { box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; padding: calc(10px * var(--catenary-card-scale, 1)) calc(14px * var(--catenary-card-scale, 1)); color: var(--catenary-fg); user-select: none; }
 .member-head { height: calc(44px * var(--catenary-card-scale, 1)); font-size: calc(12px * var(--catenary-card-scale, 1)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--catenary-muted); }
@@ -489,10 +489,10 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-leaf.leaf-in > text, .catenary-leaf.leaf-scheme > text { fill: #4ade80; }
 .catenary-leaf.leaf-class > .body { stroke: #3b82f6; stroke-dasharray: none; }
 .catenary-leaf.leaf-class > text { fill: var(--catenary-fg); }
-/* "One of" card (sh:or of ranges): violet as the logical constraints; its rows take the pointer (member list). */
-.catenary-leaf.leaf-or > .body { fill: color-mix(in srgb, #8b7cf6 8%, var(--catenary-bg)); stroke: #8b7cf6; stroke-dasharray: none; }
-.catenary-leaf.leaf-or .card-fo { pointer-events: none; }
-.catenary-leaf.leaf-or .member-row { --k: #8b7cf6; }
+/* "One of" box (sh:or of ranges): a member-list box, violet as the logical constraints. */
+.catenary-one-of { --c: #8b7cf6; }
+.catenary-one-of > .body { stroke: var(--c); }
+.catenary-one-of .member-row { --k: #8b7cf6; }
 .catenary-alternative > .line { stroke: #8b7cf6; }
 .catenary-alternative > .line, .catenary-alternative > .hit { cursor: default; }
 .catenary-logic > .link { stroke: #8b7cf6; fill: none; pointer-events: none; }
@@ -509,7 +509,7 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-name-input { min-height: 22px; }
 .catenary-embedded-input { min-height: 20px; }
 /* The card content has no pointer events (card-fo); the name slots take the double-click of canvas.ts (rename). */
-.catenary-card .card-name, .shape-card .shape-name, .valueset-card .vs-name, .shape-card .shape-class { pointer-events: auto; cursor: text; }
+.catenary-card .card-name, .shape-card .shape-name, .valueset-card .vs-name, .catenary-one-of .vs-name, .shape-card .shape-class { pointer-events: auto; cursor: text; }
 
 /* Workspace settings view (workspace-settings.tsx): one column in the main area. */
 .catenary-settings { max-width: 760px; margin: 0 auto; padding-top: 8px; }
@@ -550,7 +550,7 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-view-reference.broken .view-reference-body { color: var(--theia-descriptionForeground); }
 /* Connect gesture (canvas.ts dragLine, spec/ui-manifest.hs 0.4): the elements that are not targets are dimmed; the target under the pointer is highlighted. */
 .connect-dragging .connect-dimmed { opacity: 0.25; }
-.connect-dragging :is(.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-collection, .catenary-leaf).drop-target > .body { stroke: var(--catenary-accent); stroke-width: 3.5; }
+.connect-dragging :is(.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-member-box, .catenary-leaf).drop-target > .body { stroke: var(--catenary-accent); stroke-width: 3.5; }
 .connect-dragging .member-row.drop-target { outline: 2px solid var(--catenary-accent); }
 .connect-dragging .catenary-edge.property.drop-target > .line { stroke: #8b7cf6; stroke-width: 3.5; }
 .connect-dragging .shape-row.drop-target { outline: 2px solid #8b7cf6; }

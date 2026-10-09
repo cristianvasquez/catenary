@@ -81,8 +81,8 @@ nt:styled a nt:Role ; rdfs:comment "The value is a style key." .
 
 nt:title a rdf:Property ; rdfs:comment "A title. On a figure shape: fixed for all its figures." .
 nt:keptByLines a rdf:Property ; rdfs:comment """On a Box figure shape (true): the box is on the canvas only as the end of lines. It leaves the view
-when a removal takes its last line ("in" and "one of" boxes, class pills). On a placement, view:keptByLines does the same
-for one box: the box that a line or hub brought (⇥ on a row). A box that the user placed has no flag and stays.""" .
+when a removal takes its last line that ends at it ("in" and "one of" boxes, class pills). A line that starts at the box (an
+alternative of "one of") does not keep it. On a placement, view:keptByLines does the same for one box: the box that a line or hub brought (⇥ on a row). A box that the user placed has no flag and stays.""" .
 nt:private a rdf:Property ; rdfs:comment """On a property shape with nt:role nt:to (true): the end is private to the line. It is drawn as a
 pill beside the start, with the label of the value. It has no figure, no placement and no element, and lines do not share it.
 A Line whose end is private or open (nt:openEnd) shows only as a member of a shown hub: the only reason to draw such a

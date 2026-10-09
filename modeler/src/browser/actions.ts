@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -628,27 +628,17 @@ export class ModelActions {
             return;
         }
         const p = shapes.properties[id];
-        const card = p && cardOf(stored, p.owner);
-        if (!p || !card) return;
-        // Default: right of the card; a target card is centered there, so it needs more room than a pill.
-        const dx = targetCard(shapes, p.range) ? 400 : 220;
-        await this.executeAndSelect(view, { kind: 'showAsEdge', view, id, at: at ?? { x: card.x + card.width + dx, y: card.y + card.height / 2 } }, [id]);
+        const end = p && endPoint(stored, shapes, p);
+        if (!p || !end) return;
+        await this.executeAndSelect(view, { kind: 'showAsEdge', view, id, at: at ?? end }, [id]);
     }
 
-    /** Concepts of a scheme or collection card get their cards, right of it. Their chips go (a concept is drawn once in a view). */
-    async showConcepts(view: string, set: string, instances: string[]): Promise<void> {
-        const card = cardOf(await this.service.view(view), set);
-        if (!card) return;
-        await this.executeAndSelect(view, { kind: 'addToView', view, ids: instances, at: { x: card.x + card.width + 220, y: card.y + card.height / 2 } }, instances);
-    }
-
-    /** The card of an alternative of an "or" range (node shape, value set) gets into the view, right of the "one of" card. */
-    async showAlternative(view: string, property: string, card: string): Promise<void> {
-        const [shapes, v] = await Promise.all([this.service.shapes(), this.service.view(view)]);
-        const p = shapes.properties[property];
-        const oneOf = cardOf(v, property) ?? (p && cardOf(v, p.owner));
-        if (!oneOf) return;
-        await this.executeAndSelect(view, { kind: 'addToView', view, ids: [card], at: { x: oneOf.x + oneOf.width + 480, y: oneOf.y + oneOf.height / 2 } }, [card]);
+    /**
+     * Members of a member-list box (a concept of a value set, the card of an alternative of a "one of" box) get their own cards, centered at
+     * `at` (beside the box). Their rows go: the view draws the line from the box to each card (a concept is drawn once in a view).
+     */
+    async showMembers(view: string, ids: string[], at: Point): Promise<void> {
+        await this.executeAndSelect(view, { kind: 'addToView', view, ids, at }, ids);
     }
 
     /**
@@ -676,14 +666,25 @@ export class ModelActions {
         const current = alternativesOf(p.range);
         const fresh = added.filter(a => !current.some(c => rangeKey(c) === rangeKey(a)));
         if (!fresh.length) { this.messages.info(`${rangeText(shapes, range)} is already a target.`); return; }
-        await this.setProperty(property, { range: orRange([...current, ...fresh]) }, view);
+        await this.setTargets(property, orRange([...current, ...fresh]), view);
+    }
+
+    /**
+     * A new range of a property from the canvas. A line of the view keeps its line: the new end box ("one of", a card) is placed beside
+     * the owner card when the view does not show it, as Show as Edge does.
+     */
+    protected async setTargets(property: string, range: Range, view?: string): Promise<void> {
+        if (!view) { await this.setProperty(property, { range }); return; }
+        const [shapes, stored] = await Promise.all([this.service.shapes(), this.service.view(view)]);
+        const p = shapes.properties[property];
+        await this.setRange(property, range, view, p && endPoint(stored, shapes, { ...p, range }));
     }
 
     /** Remove an alternative (by its range key) of an "or" range. One left: the range is that alternative. */
     async removeAlternative(property: string, key: string, view?: string): Promise<void> {
         const p = (await this.service.shapes()).properties[property];
         if (p?.range.kind !== 'or') return;
-        await this.setProperty(property, { range: orRange(p.range.alternatives.filter(a => rangeKey(a) !== key)) }, view);
+        await this.setTargets(property, orRange(p.range.alternatives.filter(a => rangeKey(a) !== key)), view);
     }
 
     /** Text of a range for a target input: prefix:local for a class or datatype; "a | b" for an "or" range. `shapes`: the labels of value sets. */
@@ -1064,4 +1065,10 @@ export class ModelActions {
             qp.show();
         });
     }
+}
+
+/** Default center of the end box of a property line in `view`: right of the owner card; a target card needs more room than a pill. */
+function endPoint(view: View | undefined, shapes: ShapesModel, p: PropertyShape): Point | undefined {
+    const card = cardOf(view, p.owner);
+    return card && { x: card.x + card.width + (targetCard(shapes, p.range) ? 400 : 220), y: card.y + card.height / 2 };
 }
