@@ -80,14 +80,15 @@ export class ValidationRunner {
      * to validate (`data`; undefined: all of them). `off` (the validation mode "off"): no run; the report and the violations are
      * cleared. `focus` (the validation mode "views", read after `data`): the elements on the open views, by termKey; the SKOS
      * statements of the shapes files then go in only for these elements and for the IRIs of `data`. `stamp`: read after `data`; a new
-     * stamp is a change too (the store counts what the run checked). `changed`: the violations or the stamp changed.
+     * stamp is a change too (the store counts what the run checked). `changed`: the violations or the stamp changed (`before`: the
+     * violations before the run).
      * `timers`: tests give their own.
      */
     constructor(
         protected readonly source: () => {
             graph: ModelGraph; metamodel: Metamodel; off?: boolean; data?: () => Quad[] | undefined; focus?: () => Set<string> | undefined; stamp?: () => string
         },
-        protected readonly changed: () => void,
+        protected readonly changed: (before: Violation[]) => void,
         protected readonly timers: Timers = realTimers
     ) {}
 
@@ -165,8 +166,9 @@ export class ValidationRunner {
         for (const q of report) g.store.add(q);
         if (stamp === this.stamp && JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
         tracer.note(`run ${run}: ${violations.length} violations, changed`);
+        const before = this.violations;
         this.violations = violations;
         this.stamp = stamp;
-        this.changed();
+        this.changed(before);
     }
 }

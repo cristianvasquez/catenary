@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Join, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
-import type { ModelGraph } from '../src/graph';
+import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
 import { nquads, readNotations, storeIndex } from '../src/notations';
@@ -24,14 +24,16 @@ const PREFIXES = `@prefix ex: <${EX}> . @prefix sh: <http://www.w3.org/ns/shacl#
 @prefix dct: <http://purl.org/dc/terms/> . @prefix nt: <osg://vocab/notation#> . @prefix shn: <osg://vocab/notation/shapes#> .
 @prefix vsn: <osg://vocab/notation/skos#> . @prefix mkn: <osg://vocab/notation/marks#> .\n`;
 
-let dir: string, store: ModelStore, data: TripleIndex, notes: Notations;
+let dir: string, store: ModelStore, data: TripleIndex, base: NQuad[], notes: Notations;
 beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'catenary-notation-'));
     cpSync(FIXTURE, dir, { recursive: true });
     store = new ModelStore();
     store.watching = false;
     expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-    data = storeIndex((store as unknown as { graph: ModelGraph }).graph);
+    const graph = (store as unknown as { graph: ModelGraph }).graph;
+    data = storeIndex(graph);
+    base = nquads(graph.quads().filter(q => q.graph.value !== VALIDATION_GRAPH));
     notes = readNotations();
 });
 afterAll(async () => {
@@ -46,7 +48,7 @@ const list = (h: string) => nkey(iri(`urn:trellis:list:${h}`));
 /** The figures and the join of the shapes view with extra Turtle (scratch data of the "Verified" checks). */
 async function withTurtle(ttl: string, v = 'shapes') {
     const extra = nquads(skolemize([...await rdf.io.dataset.fromText('text/turtle', PREFIXES + ttl)]).quads);
-    return view(v, new TripleIndex([...data.quads, ...extra] as NQuad[]));
+    return view(v, new TripleIndex([...base, ...extra] as NQuad[]));
 }
 const rowsOf = (j: Join, title: string) => j.boxes.find(b => b.figure.title === title)?.rows.map(r => r.text);
 

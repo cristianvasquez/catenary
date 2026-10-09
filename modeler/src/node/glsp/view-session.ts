@@ -31,9 +31,13 @@ export class ViewState {
         this.part = tracer.span('refresh', 'read view', () => this.store.viewDoc(this.viewId));
     }
 
-    /** A change with this scope can change what the view shows. A shapes change: shape cards, and class names on instance cards. */
+    /**
+     * A change with this scope can change what the view shows. A shapes change: shape cards, and class names on instance cards. An
+     * element: an instance, or a property shape of a shape card (a validation run changes its count of violations).
+     */
     affectedBy(scope?: ChangeScope): boolean {
-        return !scope || scope.shapes || scope.views.some(id => !!this.part.views[id]) || scope.elements.some(id => !!this.part.instances[id]);
+        return !scope || scope.shapes || scope.views.some(id => !!this.part.views[id])
+            || scope.elements.some(id => !!this.part.instances[id] || !!this.part.shapes.properties[id]);
     }
 }
 

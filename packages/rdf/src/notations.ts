@@ -4,8 +4,8 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
 import type { Quad, Term } from '@rdfjs/types';
-import { NQuad, NTerm, Notations, TermJSON, TripleIndex, notations, termToJSON } from '@catenary/model';
-import { parseRdfSync } from 'rdf-files';
+import { NQuad, NS, NTerm, Notations, TermJSON, TripleIndex, notations, termToJSON } from '@catenary/model';
+import { Bindings, QuadStore, parseRdfSync } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { skolemize } from './skolem';
 import { rdf } from './terms';
@@ -47,8 +47,59 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     return n;
 }
 
-/** The engine input of a store: all its quads except the validation report. */
+/**
+ * Predicates of the geometry and the style of a placement. A change of these only moves, resizes or restyles what a view shows: the
+ * figures do not read them (no built-in notation names them, test indexed-store.test.ts).
+ */
+export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
+
+const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
+
+/**
+ * The engine input of a store: all its quads except the validation report. A store that keeps the input (IndexedStore) gives its
+ * index, kept in step with each change; another store builds it from all quads.
+ */
 export function storeIndex(g: ModelGraph): TripleIndex {
-    const report = rdf.namedNode(VALIDATION_GRAPH);
-    return new TripleIndex(nquads(g.quads().filter(q => !q.graph.equals(report))));
+    if (g.store instanceof IndexedStore) return g.store.index();
+    return new TripleIndex(nquads(g.quads().filter(q => !isReport(q))));
+}
+
+/**
+ * A quad store that keeps the engine input of its quads (`storeIndex`) in step with each `add` and `delete`: a change does not build
+ * it again from all quads, so the cost of a view does not grow with the store. The index is built at the first read.
+ */
+export class IndexedStore implements QuadStore {
+    protected live?: TripleIndex;
+    /** Changes with each add and delete, except of the validation report and of LAYOUT_PREDICATES: the figures and the other reads of a view key on it. */
+    dataVersion = 0;
+
+    constructor(protected readonly inner: QuadStore) {}
+
+    get size(): number { return this.inner.size; }
+    has(q: Quad): boolean { return this.inner.has(q); }
+    match(s?: Term | null, p?: Term | null, o?: Term | null, g?: Term | null): Quad[] { return this.inner.match(s, p, o, g); }
+    select(query: string): Bindings[] { return this.inner.select(query); }
+    construct(query: string): Quad[] { return this.inner.construct(query); }
+
+    add(q: Quad): void {
+        this.count(q);
+        if (!this.live || isReport(q) || this.inner.has(q)) return this.inner.add(q);
+        this.inner.add(q);
+        for (const x of nquads([q])) this.live.add(x);
+    }
+
+    delete(q: Quad): void {
+        this.count(q);
+        if (!this.live || isReport(q) || !this.inner.has(q)) return this.inner.delete(q);
+        this.inner.delete(q);
+        for (const x of nquads([q])) this.live.delete(x);
+    }
+
+    protected count(q: Quad): void {
+        if (!isReport(q) && !LAYOUT_PREDICATES.has(q.predicate.value)) this.dataVersion++;
+    }
+
+    index(): TripleIndex {
+        return this.live ??= new TripleIndex(nquads(this.inner.match().filter(q => !isReport(q))));
+    }
 }

@@ -71,7 +71,7 @@ describe('validation in a worker thread', () => {
         g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdfs + 'label'), rdf.literal('Product'));
         const run = async () => {
             let r!: ValidationRunner;
-            await new Promise<void>(done => { r = new ValidationRunner(() => ({ graph: g, metamodel }), done); void r.now().then(() => done()); });
+            await new Promise<void>(done => { r = new ValidationRunner(() => ({ graph: g, metamodel }), () => done()); void r.now().then(() => done()); });
             return { violations: r.violations, report: g.match(null, null, null, rdf.namedNode(VALIDATION_GRAPH)).length };
         };
         useValidationWorker(undefined);
