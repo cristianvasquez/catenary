@@ -698,6 +698,10 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
   assert.equal(await filter.inputValue(), 'albe');
   await filter.fill('zzzz-no-such-element');
   await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor({ state: 'hidden' });
+  // The filtered tree updates in steps: wait for its last row to go, then check. Rows left after the wait are an explorer defect.
+  const reopenedId = 'catenary-file-explorer:' + path.join(workspace, 'data.ttl');
+  await page.waitForFunction(id => document.getElementById(id)?.querySelectorAll('.catenary-tree-name').length === 0, reopenedId, { timeout: 5000 })
+    .catch(() => undefined);
   assert.equal(await reopened.locator('.catenary-tree-name').count(), 0);
   await page.keyboard.press('Escape');
   await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
