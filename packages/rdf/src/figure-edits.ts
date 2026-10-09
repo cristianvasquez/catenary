@@ -184,9 +184,13 @@ export function syncFigures(g: ModelGraph, arrivals: boolean): void {
             for (const k of left) for (const x of removal(vf.derivation.figures, before, termOf(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
         }
         const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
-        if (arrivals) for (const k of added.get(view.value)?.keys ?? []) {
+        for (const k of added.get(view.value)?.keys ?? []) {
             if (!now.has(k)) continue;
-            for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x)) add.add(x);
+            // With arrivals off, an added box still draws its own part lines (the alternatives of a "one of" box) to the shown cards:
+            // they are the content of the box, as its rows are (ui-manifest §6.5).
+            const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
+            const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
+            for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
         }
         if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
         if (lists) {

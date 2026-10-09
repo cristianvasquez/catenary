@@ -173,6 +173,18 @@ describe('SHACL elements from the notation engine', () => {
         expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:concept'))!.children!.map(r => r.id)).toEqual([iriId('urn:refs')]);
     });
 
+    it('a range that becomes "one of" while the alternative cards are shown: the box draws a line to each, no rows', async () => {
+        const { g, view } = await setup(`
+            <urn:a> a sh:NodeShape ; sh:property <urn:p> . <urn:p> sh:path <urn:path> ; sh:node <urn:b> .
+            <urn:b> a sh:NodeShape . <urn:c> a sh:NodeShape .`, '', ['urn:a', 'urn:b', 'urn:c']);
+        run(g, meta, { kind: 'setPropertyShape', id: iriId('urn:p'), view, at: { x: 600, y: 300 },
+            patch: { range: { kind: 'or', alternatives: [{ kind: 'node', shape: iriId('urn:b') }, { kind: 'node', shape: iriId('urn:c') }] } } });
+        const box = of(g, view, TYPES.ONE_OF)[0];
+        expect(box.members).toEqual([]);
+        expect(of(g, view, TYPES.ALTERNATIVE).map(e => [e.sourceId, element(g, view, e.targetId)]).sort()).toEqual([[box.id, iriId('urn:b')], [box.id, iriId('urn:c')]]);
+        expect(of(g, view, TYPES.PROPERTY).map(e => e.targetId)).toEqual([box.id]);
+    });
+
     it('draws a value set with its concepts; a concept with its own card is no row', async () => {
         const { g, view } = await setup(`
             <urn:a> a sh:NodeShape ; sh:property <urn:p> . <urn:p> sh:path <urn:path> ; sh:node <urn:inKeys> .
