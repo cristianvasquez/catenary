@@ -1,6 +1,7 @@
 // Files on disk as the source of truth: one file operation at a time, a watch of a folder, the changes that another program made,
 // and writes of several files that succeed or fail together.
 
+import { createHash } from 'crypto';
 import { FSWatcher, promises as fs, statSync, watch } from 'fs';
 import * as path from 'path';
 
@@ -30,13 +31,18 @@ export interface WatchOptions {
     ignore?: (name: string) => boolean;
 }
 
-/** A recursive watch of one folder. `onSettled` runs after `debounce` ms without events. The watch does not keep the process alive. */
+/**
+ * A recursive watch of one folder. `onSettled` runs after `debounce` ms without events, with the absolute paths of the events since the
+ * last call. `changed` is undefined when an event had no file name (the platform did not give one). The watch does not keep the process alive.
+ */
 export class FolderWatcher {
     protected watcher?: FSWatcher;
     protected timer?: ReturnType<typeof setTimeout>;
     protected watched?: string;
+    /** Paths of the events since the last `onSettled`. Undefined: an event without a name. */
+    protected changed?: Set<string> = new Set();
 
-    constructor(protected readonly onSettled: () => void, protected readonly options: WatchOptions = {}) {}
+    constructor(protected readonly onSettled: (changed?: string[]) => void, protected readonly options: WatchOptions = {}) {}
 
     /** The watched folder. */
     get folder(): string | undefined {
@@ -50,8 +56,14 @@ export class FolderWatcher {
         const ignore = this.options.ignore ?? isHidden;
         const onEvent = (_event: string, name: string | Buffer | null) => {
             if (name && ignore(String(name))) return;
+            if (!name) this.changed = undefined;
+            else this.changed?.add(path.join(folder, String(name)));
             clearTimeout(this.timer);
-            this.timer = setTimeout(this.onSettled, this.options.debounce ?? 150);
+            this.timer = setTimeout(() => {
+                const changed = this.changed && [...this.changed];
+                this.changed = new Set();
+                this.onSettled(changed);
+            }, this.options.debounce ?? 150);
             this.timer.unref?.();
         };
         // A recursive watch of a missing folder does not throw on every platform: check first.
@@ -71,9 +83,36 @@ export class FolderWatcher {
         this.watcher?.close();
         this.watcher = undefined;
         this.watched = undefined;
+        this.changed = new Set();
         clearTimeout(this.timer);
     }
 }
+
+/**
+ * The files that this program wrote or removed, with the text that it wrote (a hash). A watch event of such a file is the program's own
+ * write while the file has that text: the program need not read the file again. The content is compared, not the size and the time:
+ * another program can write other text with the same size and time (a coarse file system clock, a tool that keeps the time).
+ */
+export class OwnWrites {
+    protected readonly files = new Map<string, string>();
+
+    /** Record what this program wrote to `file`: its text, or undefined for a removal. */
+    note(file: string, text: string | undefined): void {
+        this.files.set(path.resolve(file), digest(text));
+    }
+
+    /** `file` has the text that `note` recorded (or is still absent after a noted removal). Reads only this file. */
+    async isOwn(file: string): Promise<boolean> {
+        const own = this.files.get(path.resolve(file));
+        return own !== undefined && own === digest(await readText(file));
+    }
+
+    clear(): void {
+        this.files.clear();
+    }
+}
+
+const digest = (text: string | undefined): string => text === undefined ? 'absent' : createHash('sha256').update(text).digest('hex');
 
 /** The text of a file, or undefined when it cannot be read (not on disk). */
 export const readText = (file: string): Promise<string | undefined> => fs.readFile(file, 'utf8').catch(() => undefined);

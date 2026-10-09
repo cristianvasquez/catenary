@@ -4,12 +4,12 @@
 // the other statements to the model graph; `origin` gives the files of each statement of the model graph. A new statement goes to the
 // file of its subject, else of a statement that refers to it, else by the placement of its kind (placement.ts).
 
-import { CommandResult, DEFAULT_PREFIXES, FileKind, NS, PREFIXES, WorkspaceFiles, setPrefixes } from '@catenary/model';
+import { CommandResult, DEFAULT_PREFIXES, FileKind, NS, PREFIXES, WorkspaceFiles, setPrefixes, VALIDATION_MODES, ValidationMode } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import {
-    OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
+    OwnWrites, OxigraphStore, absolutePath, diskChanges, gitChanges, hasAnnotation, isInside, knownPath, pathKey, patchTurtle, portableRelative, readUnchanged,
     writeAll
 } from 'rdf-files';
 import {
@@ -23,6 +23,7 @@ import { shapesIndexOf } from './shapes-read';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
 import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
+import { TracedStore } from './trace';
 import { canonical, parseTrig, writeTrig } from './trig';
 
 const PLACE_KINDS = ['shapes', 'concepts', 'instances'] as const;
@@ -35,7 +36,7 @@ export interface WorkspaceOptions {
 }
 
 export class Workspace {
-    readonly graph = new ModelGraph(new OxigraphStore());
+    readonly graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     /** The workspace file: the manifest. */
     readonly workspace: WorkspaceFile;
     /** View graph IRI -> its view file. The entry of a deleted view stays until a save removes the file (an undo brings it back). */
@@ -60,10 +61,14 @@ export class Workspace {
     protected exclude: string[];
     /** Globs of the protected files (manifest ws:protect): Catenary reads them and refuses each change of their statements. */
     protected imported: string[];
+    /** What SHACL validation checks (manifest ws:validation). */
+    validation: ValidationMode;
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
     prefixes?: Record<string, string>;
     /** Written or removed paths awaiting a successful commit. */
     written: string[] = [];
+    /** The text of each write and each removal of this workspace: their watch events are not changes on disk. */
+    readonly ownWrites = new OwnWrites();
     /** pathKey of each file with changes in git that Catenary did not write. */
     protected uncommitted = new Set<string>();
     /** The workspace file was removed or moved on disk: no watch, no reads, no writes until the next open. */
@@ -85,6 +90,7 @@ export class Workspace {
         this.placement = manifest.placement;
         this.exclude = manifest.exclude;
         this.imported = manifest.imported;
+        this.validation = manifest.validation ?? 'all';
         this.prefixes = manifest.prefixes;
     }
 
@@ -162,6 +168,7 @@ export class Workspace {
             placement: { ...this.placement },
             exclude: [...this.exclude],
             imported: [...this.imported],
+            validation: this.validation,
             files: [...this.modelFiles.values()].sort((a, b) => cmp(a.path, b.path))
                 .map(f => ({
                     path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), ...(this.isImported(f.path) ? { imported: true } : {}),
@@ -213,7 +220,8 @@ export class Workspace {
         return {
             ...(this.defaultFileSetting ? { defaultFile: this.defaultFileSetting } : {}), placement: { ...this.placement }, exclude: [...this.exclude],
             imported: [...this.imported],
-            ...(this.prefixes ? { prefixes: this.prefixes } : {})
+            ...(this.prefixes ? { prefixes: this.prefixes } : {}),
+            ...(this.validation !== 'all' ? { validation: this.validation } : {})
         };
     }
 
@@ -393,12 +401,16 @@ export class Workspace {
      * The statements of the model graph that SHACL validation reads (spec/manifest.hs §9). Imported files are read only, and they can
      * be large: their statements are not validated, except the ones that own statements need. So: the statements of own files, all
      * statements of their subjects (also from imported files), and the rdf:type statements of the IRIs that they refer to.
-     * Undefined: no imported globs, so validation reads the whole model graph.
+     * `focus` (the validation mode "views"): only the statements of own files whose subject is in it (by termKey), then as above.
+     * Undefined: no imported globs and no focus, so validation reads the whole model graph.
      */
-    validationTriples(): Quad[] | undefined {
-        if (!this.imported.length) return undefined;
+    validationTriples(focus?: Set<string>): Quad[] | undefined {
+        if (!this.imported.length && !focus) return undefined;
         const out = new Map<string, Quad>();
-        for (const [file, quads] of this.byFile) if (!this.isImported(file)) for (const [k, q] of quads) out.set(k, q);
+        for (const [file, quads] of this.byFile) {
+            if (this.isImported(file)) continue;
+            for (const [k, q] of quads) if (!focus || focus.has(termKey(q.subject))) out.set(k, q);
+        }
         const subjects = new Map<string, Quad['subject']>(), objects = new Map<string, Quad['object']>();
         for (const q of out.values()) {
             subjects.set(termKey(q.subject), q.subject);
@@ -637,7 +649,8 @@ export class Workspace {
      * workspace folder; a kind: also "near"), the exclude globs, the imported globs (§2.6). `reread`: the exclude globs changed, so the
      * files must be read again.
      */
-    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): { error: string } | { reread: boolean } {
+    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): { error: string } | { reread: boolean } {
+        if (settings.validation !== undefined && !VALIDATION_MODES.includes(settings.validation)) return { error: `Validation: "${settings.validation}" (use off, views or all).` };
         // Imported globs first: the files of new subjects are checked against the new globs. An error keeps the old globs.
         const was = this.imported;
         if (settings.imported) {
@@ -648,6 +661,7 @@ export class Workspace {
         }
         const r = this.applyPlaces(settings);
         if ('error' in r) this.imported = was;
+        else if (settings.validation) this.validation = settings.validation;
         return r;
     }
 
@@ -737,7 +751,8 @@ export class Workspace {
         }
         if (this.retired) return { ok: false, error: 'Another workspace was opened during the save.' };
         // All files or none: temporary files first, then a rename of each.
-        const error = await writeAll(writes, ({ file, done }) => {
+        const error = await writeAll(writes, ({ file, text, done }) => {
+            this.ownWrites.note(file, text);
             this.written.push(file);
             done();
         }, '.catenary-tmp');
@@ -746,6 +761,7 @@ export class Workspace {
             const f = this.viewFiles.get(v)!;
             try {
                 await fs.rm(f.path, { force: true });
+                this.ownWrites.note(f.path, undefined);
             } catch (e) {
                 return { ok: false, error: `Cannot remove ${f.path}: ${(e as Error).message}` };
             }
