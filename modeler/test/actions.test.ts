@@ -111,15 +111,17 @@ it('does not wait for a migration notification response before returning the edi
 
 it.each([['/w/project', '/w/project'], ['/w/project.trig', '/w/project']])('New Workspace %s asks the placement, then creates %s.trig with it', async (typed, base) => {
     const create = vi.fn(async () => ({ ok: true }));
+    const showSaveDialog = vi.fn(async () => ({ path: { fsPath: () => typed } }));
     const actions = Object.assign(new ModelActions(), {
         model: { snapshot: { dirty: false }, service: { create }, report: async (p: Promise<unknown>) => (await p, false) },
-        fileDialog: { showSaveDialog: async () => ({ path: { fsPath: () => typed } }) },
+        fileDialog: { showSaveDialog },
         workspaceService: { roots: Promise.resolve([]) }
     });
     vi.spyOn(actions as unknown as { workspaceRoot: () => Promise<undefined> }, 'workspaceRoot').mockResolvedValue(undefined);
     const placement = { shapes: 'project.shapes.ttl', concepts: 'near', instances: 'near' };
     const ask = vi.spyOn(actions as unknown as { askPlacement: (name: string) => Promise<unknown> }, 'askPlacement').mockResolvedValueOnce(placement).mockResolvedValueOnce(undefined);
     await actions.newModel();
+    expect(showSaveDialog).toHaveBeenCalledWith({ title: 'New workspace', filters: { 'Workspace (TriG)': ['trig'] }, inputValue: 'workspace.catenary.trig' }, undefined);
     expect(ask.mock.calls).toEqual([['project']]);
     expect(create.mock.calls).toEqual([[`${base}.trig`, placement]]);
     // Cancel in the dialog: nothing is created.

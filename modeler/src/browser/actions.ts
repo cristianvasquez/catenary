@@ -54,8 +54,8 @@ export class ModelActions {
         return target?.path.fsPath();
     }
 
-    protected async saveFile(title: string, filters: Record<string, string[]>): Promise<string | undefined> {
-        return (await this.fileDialog.showSaveDialog({ title, filters }, await this.workspaceRoot()))?.path.fsPath();
+    protected async saveFile(title: string, filters: Record<string, string[]>, inputValue?: string): Promise<string | undefined> {
+        return (await this.fileDialog.showSaveDialog({ title, filters, inputValue }, await this.workspaceRoot()))?.path.fsPath();
     }
 
     /**
@@ -118,7 +118,7 @@ export class ModelActions {
      */
     async newModel(): Promise<void> {
         if (!await this.canReplaceModel()) return;
-        const picked = await this.saveFile('New workspace', WORKSPACE_FILTER);
+        const picked = await this.saveFile('New workspace', WORKSPACE_FILTER, 'workspace.catenary.trig');
         // The save dialog does not add the extension of the filter.
         const file = picked?.replace(/(\.trig)?$/, '.trig');
         if (!file) return;

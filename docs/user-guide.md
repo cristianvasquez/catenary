@@ -13,7 +13,7 @@ The first `pnpm start` or `pnpm desktop` copies `examples/bookshop` to `~/.local
 
 A file in the navigator opens what it holds, not what its name says, when you select it. A view file of the open workspace shows the view. The workspace file shows the Workspace settings. Selecting a file of another workspace shows its text: double-click it or press Enter to open that workspace and its view. A file that mixes workspace settings and a view opens as text with a message: move the view into its own file. Other files open as text. Use Open With to open any file as text.
 
-If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace creates `workspace.trig`, the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
+If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. File → New Workspace proposes `workspace.catenary.trig` as the filename. You can change it. Catenary creates the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
 
 In the desktop app, each workspace runs in its own process with its own window. File → New Window and a workspace opened in a new window start a new process. If the workspace is already open, its window comes to the front. `bash scripts/desktop.sh <folder>` does the same from the command line.
 
