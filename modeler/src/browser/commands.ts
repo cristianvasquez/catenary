@@ -136,9 +136,10 @@ export class CatenaryFileOpenHandler implements OpenHandler {
         return node && !node.fileStat.isDirectory ? node.uri.path.fsPath() : undefined;
     }
 
+    /** Menus test this synchronously: a TriG file outside the index can hold another workspace or view, and choose() inspects it. */
     hasPresentations(target?: unknown): boolean {
         const file = this.fileOf(target), s = this.model.snapshot;
-        return !!file && (file === s.file || [...s.files.files, ...s.files.views].some(f => f.path === file));
+        return !!file && (file === s.file || [...s.files.files, ...s.files.views].some(f => f.path === file) || file.toLowerCase().endsWith('.trig'));
     }
 
     /** Use the loaded file index; inspect content only for TriG files outside it. */
@@ -204,10 +205,13 @@ export class CatenaryFileOpenHandler implements OpenHandler {
     protected async present(uri: URI, c: FileContent, presentation: Presentation, options?: WidgetOpenerOptions): Promise<Widget | undefined> {
         let w: Widget | undefined;
         if (presentation === 'Source') return this.openSource(uri, options);
-        if (presentation === 'Model') w = await this.widgets.getOrCreateWidget<ModelExplorerWidget>(FILE_EXPLORER_ID, { file: uri.path.fsPath() });
-        else if (presentation === 'Settings') {
-            if (this.model.snapshot.file !== uri.path.fsPath()) await this.actions.openModel(uri);
-            if (this.model.snapshot.file !== uri.path.fsPath()) return undefined;
+        if (presentation === 'Model') {
+            // The explorer queries the open workspace: first open the workspace that owns the file, as Settings and Canvas do.
+            const owner = c.workspace ? uri.path.fsPath() : c.workspaceFile;
+            if (owner && !await this.actions.openWorkspace(owner)) return undefined;
+            w = await this.widgets.getOrCreateWidget<ModelExplorerWidget>(FILE_EXPLORER_ID, { file: uri.path.fsPath() });
+        } else if (presentation === 'Settings') {
+            if (!await this.actions.openWorkspace(uri.path.fsPath())) return undefined;
             w = await this.widgets.getOrCreateWidget<WorkspaceSettingsWidget>(WORKSPACE_SETTINGS_ID);
         } else {
             const view = c.views.length === 1 ? c.views[0] : await this.quick.showQuickPick(c.views, { placeholder: 'Open canvas' });
