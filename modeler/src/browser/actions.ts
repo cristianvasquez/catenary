@@ -83,6 +83,17 @@ export class ModelActions {
     }
 
     /**
+     * Make `file` the open workspace for a document that the caller then opens: no default canvas. False: the user kept the
+     * current workspace, or the open failed.
+     */
+    async openWorkspace(file: string): Promise<boolean> {
+        if (this.model.snapshot.file === file) return true;
+        if (!await this.canReplaceModel() || !await this.model.report(this.model.service.open(file))) return false;
+        this.reportWarnings();
+        return true;
+    }
+
+    /**
      * Open the view `id`. When the open workspace does not have it, first open `workspaceFile`: the workspace that reads the file of
      * the view (FileContent). A view without a workspace: a message.
      */
@@ -93,10 +104,7 @@ export class ModelActions {
                 this.messages.warn('This view is in no workspace. Move its file into the folder of a workspace, then open the workspace.');
                 return;
             }
-            if (this.model.snapshot.file !== workspaceFile) {
-                if (!await this.canReplaceModel()) return;
-                if (!await this.model.report(this.model.service.open(workspaceFile))) return;
-            }
+            if (!await this.openWorkspace(workspaceFile)) return;
             if (!await has()) {
                 this.messages.warn(`The workspace ${baseName(workspaceFile)} does not read this view. See the warnings of the workspace.`);
                 return;
@@ -150,6 +158,10 @@ export class ModelActions {
     protected async afterOpen(): Promise<void> {
         const first = (await this.model.viewsSorted())[0];
         if (first) this.editors.open(first.id);
+        this.reportWarnings();
+    }
+
+    protected reportWarnings(): void {
         if (this.model.snapshot.warnings.length) this.messages.warn(`${this.model.snapshot.warnings.length} warnings: ${this.model.snapshot.warnings.join(' ')}`);
     }
 

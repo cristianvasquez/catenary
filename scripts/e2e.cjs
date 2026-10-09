@@ -656,7 +656,7 @@ async function withFixtureApp(t, name, run) {
   }
 }
 
-test('browser: file presentations use document panes, focus existing panes and restore splits', { timeout: 90000 }, t => withFixtureApp(t, 'presentations', async ({ page, cli, workspace }) => {
+test('browser: file presentations use document panes, focus existing panes and restore splits', { timeout: 90000 }, t => withFixtureApp(t, 'presentations', async ({ page, cli, dir, workspace }) => {
   const data = path.join(workspace, 'data.ttl'), settings = path.join(workspace, 'workspace.trig');
   const main = '#theia-main-content-panel';
   const modelId = file => 'catenary-file-explorer:' + file;
@@ -744,6 +744,16 @@ test('browser: file presentations use document panes, focus existing panes and r
   await pane(modelId(data)).waitFor({ state: 'attached' });
   assert.deepEqual(widgets().sort(), ids, 'all presentations restore through their existing widget factories');
   assert.equal(cli('eval', 'Array.from(ctx.shell.mainPanel.tabBars()).length'), splits);
+  // Files of another workspace offer their presentations. Model first opens the workspace that reads the file.
+  assert.equal(cli('eval', 'return (await ctx.model.service.save()).ok'), true, 'save before the workspace switch');
+  const other = path.join(dir, 'other');
+  fs.cpSync(workspace, other, { recursive: true });
+  const otherSettings = path.join(other, 'workspace.trig'), otherView = path.join(other, path.relative(workspace, viewFile));
+  for (const file of [otherSettings, otherView]) {
+    assert.equal(cli('eval', `return ctx.commands.isVisible('catenary.openAs', ${JSON.stringify(file)})`), true, `Open as is available for ${file}`);
+  }
+  assert.equal(open(otherView, 'Model', true), modelId(otherView));
+  assert.equal(cli('eval', 'return ctx.model.snapshot.file'), otherSettings, 'Model opens the workspace that reads the view file');
 }));
 
 test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
