@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { queryKey, type TraceSpan } from '@catenary/model';
-import { OxigraphStore } from 'rdf-files';
+import { OxigraphStore, parseRdfSync } from 'rdf-files';
+import { ModelGraph } from '../src/graph';
+import { shapeTargetMatches } from '../src/shacl-targets';
 import { ModelStore } from '../src/model-store';
 import { TracedStore, Tracer, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
@@ -109,6 +111,19 @@ describe('tracer', () => {
 });
 
 describe('traced store', () => {
+    it('attributes the SHACL walk and uncached reference reads to their caller', () => {
+        const quads = parseRdfSync('<urn:name:model> { <urn:S> <http://www.w3.org/ns/shacl#targetNode> <urn:a> . }', 'application/trig');
+        const graph = new ModelGraph(new TracedStore(new OxigraphStore(quads)));
+        tracer.setClient(true);
+        for (let i = 0; i < 2; i++) expect(shapeTargetMatches(graph, { nodes: [{ termType: 'NamedNode', value: 'urn:a' }] })).toHaveLength(1);
+        const { spans } = tracer.take();
+        const matches = spans.filter(s => s.kind === 'shacl' && s.name === 'target matches');
+        expect(matches).toHaveLength(2);
+        expect(matches[0].detail).toContain('references uncacheable;');
+        expect(spans.filter(s => s.name === 'read node references')).toHaveLength(2);
+        expect(causes(spans, spans.find(s => s.name === 'walk')!)).toEqual(['shacl:target matches']);
+    });
+
     it('reports select, construct and match, and passes the results through', () => {
         const inner = new OxigraphStore([rdf.quad(rdf.namedNode('urn:s'), rdf.namedNode('http://ex.org/p'), rdf.literal('o'))]);
         const store = new TracedStore(inner);

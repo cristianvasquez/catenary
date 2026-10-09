@@ -110,12 +110,16 @@ export class ModelGraph {
      * or a patch (a read of a file) must call `shapesChanged`.
      */
     shapesRevision = 0;
+    /** Source-model and shapes changes. View and report graph edits do not change SHACL target data. */
+    queryRevision = 0;
 
     shapesChanged(): void {
         this.shapesRevision++;
+        this.queryRevision++;
     }
 
     protected count(q: Quad): void {
+        if (q.graph.equals(this.model) || this.shapes.has(q.graph as NamedNode) || (q.predicate.equals(P.type) && q.object.equals(V.View))) this.queryRevision++;
         if (this.shapes.has(q.graph as NamedNode)) this.shapesRevision++;
         else if (q.graph.equals(this.model) && (isVocabularyQuad(q) || SKOS_TYPES.some(t => this.store.match(q.subject, P.type, t, this.model).length > 0))) this.shapesRevision++;
     }
@@ -125,6 +129,7 @@ export class ModelGraph {
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
         this.shapes = rdf.termSet([...graphs]);
         this.shapesRevision++;
+        this.queryRevision++;
     }
 
     isShapesGraph(t: Term | undefined): boolean {

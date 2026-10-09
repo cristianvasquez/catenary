@@ -1,6 +1,6 @@
 import type { FocusNode, TargetMatch, TargetReason } from '../common';
 import { focus, iri, term, targetMatches } from './targets';
-import type { TargetQueryPort, TargetScope, TargetSelection } from './targets';
+import type { QueryTerm, TargetQueryPort, TargetScope, TargetSelection } from './targets';
 
 const SH = 'http://www.w3.org/ns/shacl#', RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 
@@ -16,7 +16,15 @@ export interface NodeReference {
 export function readNodeReferences(port: TargetQueryPort, graphs: readonly string[]): NodeReference[] {
     if (!graphs.length) return [];
     const rows = port.select(`SELECT ?s ?p ?o ${graphs.map(g => `FROM ${iri(g)}`).join(' ')} WHERE { ?s ?p ?o }`);
-    const values = (s: string, p: string) => rows.filter(r => r.s.value === s && r.p.value === p).map(r => r.o);
+    const index = new Map<string, QueryTerm[]>(), byProperty = new Map<string, string[]>();
+    for (const r of rows) {
+        if (r.p.value === SH + 'property') byProperty.set(r.o.value, [...byProperty.get(r.o.value) ?? [], r.s.value]);
+        const key = JSON.stringify([r.s.value, r.p.value]);
+        const values = index.get(key) ?? [];
+        values.push(r.o);
+        index.set(key, values);
+    }
+    const values = (s: string, p: string) => index.get(JSON.stringify([s, p])) ?? [];
     const path = (id: string, seen = new Set<string>()): string => {
         if (seen.has(id)) throw new Error('Cyclic SHACL property path.');
         const next = new Set([...seen, id]);
@@ -43,7 +51,7 @@ export function readNodeReferences(port: TargetQueryPort, graphs: readonly strin
     for (const r of rows.filter(r => r.p.value === SH + 'node' && r.o.termType === 'NamedNode')) {
         const p = values(r.s.value, SH + 'path')[0];
         if (!p) { refs.push({ source: r.s.value, target: r.o.value }); continue; }
-        const owners = rows.filter(o => o.p.value === SH + 'property' && o.o.value === r.s.value).map(o => o.s.value);
+        const owners = byProperty.get(r.s.value) ?? [];
         for (const source of new Set([r.s.value, ...owners])) refs.push({ source, target: r.o.value, property: r.s.value, path: path(p.value) });
     }
     return refs.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
@@ -55,12 +63,30 @@ export function applicableMatches(port: TargetQueryPort, scope: TargetScope, ref
     const dataset = scope.data.map(g => `FROM ${iri(g)}`).join(' ');
     // Each walk below goes one level at a time. A level asks one query per path and one target query, never one query per node.
     const paths = new Map<string, FocusNode[]>();
+    // The host materializes direct edges in one RDF/JS dataset. Compound paths still use SPARQL's path evaluator.
     const fetch = (wanted: readonly { ref: NodeReference; node: FocusNode }[], reverse: boolean) => {
         const byPath = new Map<string, Map<string, FocusNode>>();
         for (const { ref, node } of wanted) {
             if (!ref.path || paths.has(JSON.stringify([ref.path, node, reverse]))) continue;
             const nodes = byPath.get(ref.path) ?? byPath.set(ref.path, new Map()).get(ref.path)!;
             nodes.set(JSON.stringify(node), node);
+        }
+        if (port.traverse) {
+            const simple = [...byPath].filter(([path]) => /^<[^<>]*>$|^\(<[^<>]*>(?:\|<[^<>]*>)+\)$/.test(path));
+            const nodes = [...new Map(simple.flatMap(([, group]) => [...group].map(([key, node]) => [key, node] as const))).values()];
+            const predicates = new Map<string, string[]>();
+            for (const [path, group] of simple) {
+                for (const predicate of path.replace(/^\(|\)$/g, '').split('|').map(p => p.slice(1, -1)))
+                    predicates.set(predicate, [...predicates.get(predicate) ?? [], path]);
+                for (const node of group.values()) paths.set(JSON.stringify([path, node, reverse]), []);
+            }
+            if (nodes.length) for (const row of port.traverse(nodes, [...predicates.keys()], reverse, scope.data)) {
+                for (const path of predicates.get(row.predicate) ?? []) {
+                    const key = JSON.stringify([path, row.node, reverse]), values = paths.get(key);
+                    if (values && !values.some(v => JSON.stringify(v) === JSON.stringify(row.value))) values.push(row.value);
+                }
+            }
+            for (const [path] of simple) byPath.delete(path);
         }
         for (const [path, nodes] of byPath) {
             for (const node of nodes.values()) paths.set(JSON.stringify([path, node, reverse]), []);

@@ -13,6 +13,8 @@ export type TraceKind =
     | 'snapshot'
     /** A diagram session sends its view again. */
     | 'refresh'
+    /** A SHACL target read: scope, references, and checked-node walk. */
+    | 'shacl'
     /** A SHACL validation: scheduled, run, discarded. */
     | 'validation'
     /** A SPARQL query (select, construct) on the quad store. */
@@ -22,7 +24,7 @@ export type TraceKind =
     /** A request as the browser measured it: the round trip, with the size of the answer. */
     | 'roundtrip';
 
-export const TRACE_KINDS: readonly TraceKind[] = ['rpc', 'command', 'change', 'snapshot', 'refresh', 'validation', 'sparql', 'file', 'roundtrip'];
+export const TRACE_KINDS: readonly TraceKind[] = ['rpc', 'command', 'change', 'snapshot', 'refresh', 'shacl', 'validation', 'sparql', 'file', 'roundtrip'];
 
 /** One measured operation. `parent`: the span that caused it (its id), which can end after this span. */
 export interface TraceSpan {

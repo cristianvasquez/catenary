@@ -1,4 +1,4 @@
-import { shapeQueryScope, shapeTargetMatches } from './shacl-targets';
+import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
 
 import {
@@ -30,7 +30,9 @@ export function formData(g: ModelGraph, instance: NamedNode): string {
 /** Statements of a thing across data graphs. Undefined: not a thing. */
 export function formStatements(g: ModelGraph, instance: NamedNode): Quad[] | undefined {
     const head = thingHead(g, instance);
-    return head && statements(g, [instance.value]);
+    if (!head) return undefined;
+    const materialized = materializedSubject(g, instance.value);
+    return materialized ? [...materialized] : statements(g, [instance.value]);
 }
 
 /**

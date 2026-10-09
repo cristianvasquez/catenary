@@ -31,7 +31,9 @@ describe('shared SHACL behavior in the application', () => {
         expect(view.ok).toBe(true); if (!view.ok || !view.id) throw new Error('No view.');
         expect(store.execute({ kind: 'addToView', view: view.id, ids: [iriId('urn:b')], at: { x: 0, y: 0 } }).ok).toBe(true);
         const current = store.view(view.id)!, card = boxes(current, 'card')[0];
+        const formBefore = store.formData(iriId('urn:b'));
         const props = store.properties(iriId('urn:b')) as InstanceProperties;
+        expect(store.formData(iriId('urn:b'))).toBe(formBefore);
         expect(props.shapes.map(s => s.uri).sort()).toEqual(['urn:Objects', 'urn:Value']);
         expect(props.shapes.every(s => s.predicates?.includes('urn:title'))).toBe(true);
         expect(store.hiddenNeighborCounts(current).get(iriId('urn:b'))?.targets).toBe(2);

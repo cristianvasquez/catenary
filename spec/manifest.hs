@@ -468,6 +468,16 @@ originIn b q = fst (runTx b (origin q))
 
 -- 3.3 Read models -----------------------------------------------------------------
 
+-- | A view placement does not change SHACL target data. Cache focus-node RDF datasets under a source-data revision, not the figure input revision.
+-- A model or shapes statement changes that revision. A view declaration changes graph classification and must also invalidate the graph scope.
+-- Reason: a layout or membership edit must not repeat the checked-node walk for an unchanged instance.
+targetDataRevision :: GraphName -> Bool
+targetDataRevision ModelGraph = True
+targetDataRevision (FileGraph _) = True
+targetDataRevision _ = False
+law_viewPlacementKeepsTargetData :: Iri -> Bool
+law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
+
 -- | Read models (ADR 0012). There is no Doc of the whole dataset. Panels and editors build request-local display models.
 -- A request-scoped Doc holds the elements of one request, their neighbors when asked, and the views that can show them.
 -- The other views of a scoped Doc have their label only. A scoped Doc is not kept after its request.

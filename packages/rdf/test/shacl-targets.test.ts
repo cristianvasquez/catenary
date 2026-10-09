@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { applicableMatches, readNodeReferences, targetMatches } from '@catenary/shacl/backend';
 import { reasonText, targetText } from '@catenary/shacl/common';
 import { OxigraphStore, parseRdfSync } from 'rdf-files';
+import { ModelGraph } from '../src/graph';
+import { shapeTargetMatches } from '../src/shacl-targets';
+import { TracedStore, tracer } from '../src/trace';
+import { IndexedStore } from '../src/notations';
+import { rdf } from '../src/terms';
 
 const prefix = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .`;
 const node = (value: string) => ({ termType: 'NamedNode' as const, value });
@@ -134,6 +139,10 @@ describe('sh:node applicability', () => {
         } <urn:data> { <urn:a> <urn:p> <urn:b> ; <urn:q> <urn:c> . <urn:c> <urn:r> <urn:d> . }`);
         expect(checked(g, { shapes: ['urn:T'] }).map(m => m.node.value)).toEqual(['urn:c', 'urn:d']);
         expect(checked(g, { nodes: [node('urn:d')] }).map(m => m.shape)).toEqual(['urn:T']);
+        const port = { select: (q: string) => g.select(q), construct: (q: string) => g.construct(q) };
+        const refs = readNodeReferences(port, scope.shapes);
+        for (const selection of [{ shapes: ['urn:T'] }, { nodes: [node('urn:d')] }])
+            expect(applicableMatches(port, scope, refs, selection)).toEqual(checked(g, selection));
     });
 
     it('keeps references under sh:or and sh:not out of unconditional applicability', () => {
@@ -143,6 +152,70 @@ describe('sh:node applicability', () => {
 });
 
 describe('query cost of node constraints', () => {
+    it('law_viewPlacementKeepsTargetData: reuses the focus dataset after a view edit and invalidates it for data', () => {
+        const quads = parseRdfSync(prefix + `<urn:shapes> {
+            <urn:S> sh:targetNode <urn:parent> ; sh:property <urn:ps> . <urn:ps> sh:path <urn:p> ; sh:node <urn:T> .
+        } <urn:name:model> { <urn:parent> <urn:p> <urn:child> . }`, 'application/trig');
+        const g = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore(quads))));
+        g.setShapesGraphs([rdf.namedNode('urn:shapes')]);
+        const selection = { nodes: [node('urn:child')] };
+        tracer.setClient(true);
+        try {
+            g.add(rdf.namedNode('urn:view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('osg://vocab/view#View'), rdf.namedNode('urn:view'));
+            const before = shapeTargetMatches(g, selection);
+            expect(before.map(m => m.shape)).toEqual(['urn:T']);
+            tracer.clear();
+            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('osg://vocab/view#element'), rdf.namedNode('urn:child'), rdf.namedNode('urn:view'));
+            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('osg://vocab/view#width'), rdf.literal('300'), rdf.namedNode('urn:view'));
+            expect(shapeTargetMatches(g, selection)).toEqual(before);
+            const unchanged = tracer.take().spans;
+            expect(unchanged.filter(s => s.kind === 'sparql' && (s.name.startsWith('construct:') || s.name.includes('SELECT DISTINCT ?g') || s.name.includes('SELECT ?node ?value')))).toHaveLength(0);
+            expect(unchanged.filter(s => s.name === 'read node references')).toHaveLength(0);
+            g.add(rdf.namedNode('urn:parent'), rdf.namedNode('urn:p'), rdf.namedNode('urn:other'));
+            tracer.clear();
+            expect(shapeTargetMatches(g, { nodes: [node('urn:other')] }).map(m => m.shape)).toEqual(['urn:T']);
+            expect(tracer.take().spans.some(s => s.kind === 'sparql' && s.name.startsWith('construct:'))).toBe(true);
+        } finally { tracer.setClient(false); }
+    });
+
+    it('materializes all direct paths of a focus node with one CONSTRUCT', () => {
+        const g = store(`<urn:shapes> {
+            <urn:A> sh:targetNode <urn:parent> ; sh:property <urn:pa>, <urn:pb> .
+            <urn:pa> sh:path <urn:a> ; sh:node <urn:X> .
+            <urn:pb> sh:path <urn:b> ; sh:node <urn:Y> .
+        } <urn:data> { <urn:parent> <urn:a> <urn:child> ; <urn:b> <urn:child> . }`);
+        const refs = readNodeReferences(g, scope.shapes), selected = { nodes: [node('urn:child')] };
+        const expected = applicableMatches(g, scope, refs, selected);
+        const graph = new ModelGraph(new TracedStore(g));
+        tracer.setClient(true);
+        try {
+            expect(shapeTargetMatches(graph, selected)).toEqual(expected);
+            const spans = tracer.take().spans;
+            expect(spans.filter(s => s.kind === 'sparql' && s.name.startsWith('construct:'))).toHaveLength(1);
+            expect(spans.filter(s => s.name.startsWith('select: SELECT ?node ?value'))).toHaveLength(0);
+        } finally { tracer.setClient(false); }
+    });
+
+    it('reads direct alternative paths from the same constructed dataset', () => {
+        const rdfList = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+        const g = store(`<urn:shapes> {
+            <urn:S> sh:targetNode <urn:parent> ; sh:property <urn:ps> .
+            <urn:ps> sh:path <urn:alt> ; sh:node <urn:T> . <urn:alt> sh:alternativePath <urn:l1> .
+            <urn:l1> <${rdfList}first> <urn:p> ; <${rdfList}rest> <urn:l2> .
+            <urn:l2> <${rdfList}first> <urn:q> ; <${rdfList}rest> <${rdfList}nil> .
+        } <urn:data> { <urn:parent> <urn:q> <urn:child> . }`);
+        const selection = { nodes: [node('urn:child')] };
+        const expected = applicableMatches(g, scope, readNodeReferences(g, scope.shapes), selection);
+        const graph = new ModelGraph(new TracedStore(g));
+        tracer.setClient(true);
+        try {
+            expect(shapeTargetMatches(graph, selection)).toEqual(expected);
+            const spans = tracer.take().spans;
+            expect(spans.filter(s => s.kind === 'sparql' && s.name.startsWith('construct:'))).toHaveLength(1);
+            expect(spans.filter(s => s.name.startsWith('select: SELECT ?node ?value'))).toHaveLength(0);
+        } finally { tracer.setClient(false); }
+    });
+
     it('asks one query per walk level, not one per card', () => {
         let shapes = '', data = '';
         for (let i = 0; i < 6; i++) shapes += `<urn:S${i}> sh:targetClass <urn:C${i}> ; sh:property <urn:S${i}p> . <urn:S${i}p> sh:path <urn:p${i}> ; sh:node <urn:S${(i + 1) % 6}> .`;

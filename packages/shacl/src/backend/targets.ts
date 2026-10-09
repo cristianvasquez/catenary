@@ -10,6 +10,8 @@ export interface QueryTerm {
 /** The host owns the RDF store and graph identities. This package owns the query. */
 export interface TargetQueryPort {
     select(query: string): readonly Record<string, QueryTerm>[];
+    /** Materialize a bounded frontier once and traverse its direct predicates in an RDF/JS dataset. */
+    traverse?(nodes: readonly FocusNode[], predicates: readonly string[], reverse: boolean, graphs: readonly string[]): readonly { node: FocusNode; predicate: string; value: FocusNode }[];
 }
 
 export interface TargetScope {
