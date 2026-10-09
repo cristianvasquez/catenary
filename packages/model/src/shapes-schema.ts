@@ -114,10 +114,10 @@ const ALTERNATIVE_KIND: Record<SimpleRange['kind'], string> = {
     node: 'node shape', class: 'class', datatype: 'datatype', nodeKind: 'node kind', in: 'values', scheme: 'concept scheme', collection: 'collection'
 };
 
-/** Rows of the "one of" box of `p`: its alternatives without a card in the view (`target`). */
-export function alternativeRows(shapes: ShapesModel, p: PropertyShape, target: (r: Range) => string | undefined, label: (iri: string) => string = localName): AlternativeRow[] {
+/** Rows of the "one of" box of `p`: the alternatives (in list order) that `isRow` keeps (the member-list rule, `partIsRow`). */
+export function alternativeRows(shapes: ShapesModel, p: PropertyShape, isRow: (index: number) => boolean, label: (iri: string) => string = localName): AlternativeRow[] {
     if (p.range.kind !== 'or') return [];
-    return p.range.alternatives.filter(a => !target(a)).map(a => {
+    return p.range.alternatives.filter((_, i) => isRow(i)).map(a => {
         const card = alternativeCard(shapes, a);
         return {
             key: rangeKey(a), label: rangeText(shapes, a, label), sub: ALTERNATIVE_KIND[a.kind], style: leafStyle(a), takeOut: card ?? '',

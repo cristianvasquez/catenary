@@ -989,20 +989,23 @@ logicDrop _ _ _ = Nothing
 data LogicalOperatorDrop = JoinIntoOr | AddToConstraint deriving Eq
 oneOfBoxLists :: [(Iri, Bool)] -> ([Iri], [Iri])   -- each target and whether it has a card: listed, edges
 oneOfBoxLists ts = ([t | (t, False) <- ts], [t | (t, True) <- ts])
--- | Member-list boxes: an instance collection, a value set and a one-of target box. Reason: one container behavior for all members.
--- All three select, move, resize with eight handles, take Del and hover the same way, with the same member rows.
--- A member without its own box in the view is a row. The kinds differ only in their rows and in the effects of ➟, × and the add row.
--- Value set and one-of box: ➟ shows the member in its own box beside the container, with a line from the container.
--- Removing that box returns the row. Collection: ➟ takes the member out of the collection (a view grouping), so no row returns.
+-- | Containers: a node shape card, an entity group, a value set and a one-of target box. Reason: one behavior for every container.
+-- All four select, move, resize with eight handles, take Del and hover the same way.
+-- One rule gives the rows of each: a part is a row unless the view draws it, as its own box or as a line from the container.
+-- Each kind declares only its row buttons and their effects: ➟ (take out), × (remove) and the add row.
+-- ➟ shows the member in its own box beside its row, with a line from the container. Removing that box or line returns the row.
+-- Entity group: ➟ takes the member out of the group (a view grouping), so no line is drawn and no row returns.
 -- A one-of alternative with sh:node and no own property shapes is a line of its box, never a node shape card of its own.
-data MemberBox = CollectionBox | ValueSetBox | OneOfBox deriving (Eq, Enum, Bounded)
-memberBoxHandles :: MemberBox -> Int
-memberBoxHandles _ = resizeHandles
-memberShownAs :: MemberBox -> Bool -> String       -- the member has its own box in the view
+data Container = ShapeCardBox | CollectionBox | ValueSetBox | OneOfBox deriving (Eq, Enum, Bounded)
+containerHandles :: Container -> Int
+containerHandles _ = resizeHandles
+partIsRow :: Bool -> Bool                           -- the view draws the part (its own box or a line from the container)
+partIsRow drawn = not drawn
+memberShownAs :: Container -> Bool -> String        -- the member has its own box or line in the view
 memberShownAs CollectionBox ownBox = if ownBox then "card outside the collection" else "row"
 memberShownAs _ ownBox = if ownBox then "line from the container" else "row"
-law_memberRowOrLine :: MemberBox -> Bool -> Bool
-law_memberRowOrLine k ownBox = (memberShownAs k ownBox == "row") == not ownBox
+law_memberRowOrLine :: Container -> Bool -> Bool
+law_memberRowOrLine k drawn = (memberShownAs k drawn == "row") == partIsRow drawn
 
 -- 6.6 Value sets --------------------------------------------------------------------
 
@@ -1060,7 +1063,7 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 -- The context menu of a canvas or Outline selection has Appearance: Show Details, then Color. Cards have no display control.
 -- Show Details acts on the selected cards and the cards in selected frames. It is checked when all are detailed.
 -- A click makes all simple when checked, else all detailed.
--- Resize: eight handles on one selected box. Content sets the minimum heights of shape cards and member-list boxes (§6.5).
+-- Resize: eight handles on one selected box. Content sets the minimum heights of containers (§6.5).
 -- Frames have their own minimum size. A frame move updates its cards after release, without live feedback.
 data AppearanceSection = StyleSection | ViewSettingsSection | PreferencesSection deriving (Eq, Enum, Bounded)
 mixed :: Eq a => [a] -> Maybe a                   -- the shown value: Nothing when the values differ

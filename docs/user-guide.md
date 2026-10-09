@@ -75,7 +75,7 @@ Notes save automatically after a short pause in typing. Close the editor when yo
 - Double-click a path or line label to edit the path. Double-click a pill to edit the target.
 - Drag the logic handle of a property onto another property of the same shape to make an Or constraint.
 - Value sets: `+ concept` and `+ member` add concepts to a SKOS scheme or collection. Drag a concept onto another to add a broader parent.
-- Member lists: an entity group, a value set and a "one of" box show their members as rows. These boxes move, resize and take Del in the same way. In a value set or a "one of" box, ➟ on a row shows the member as its own card beside the box, with a line from the box. Remove that card to get the row back. In an entity group, ➟ takes the member out of the group.
+- Containers: a node shape card, an entity group, a value set and a "one of" box show their parts as rows. They move, resize and take Del in the same way. A part that the view draws, as its own card or as a line from the container, is not a row. ➟ on a row shows the part beside its row, with a line from the container. Remove that card or line to get the row back. In an entity group, ➟ takes the member out of the group.
 - Propose Node Shapes from Data (on a class or instance) and Model → Propose Missing Shapes create shapes from the existing data. The result opens in a new view "proposed shapes". Review it: it describes the data, it is not a rule.
 - A change of a path or a target class can propose a data migration. Apply it with "Apply to data", or dismiss it.
 - In Properties, enter one predicate per line in Target subjects of or Target objects of. Each field selects the union of its predicates.

@@ -17,9 +17,9 @@ import { ElementSchema, GraphOptions, LATENT_SUFFIX, LEAF_SUFFIX, TYPES, edgeLan
 import { iriId, escapeId } from './ids';
 import { Figure, listHolder } from './notation';
 import { nkey } from './notation-graph';
-import { ViewFigures } from './notation-join';
-import { ONE_OF_WIDTH, SHAPE_CARD, ShapeRow, alternativeCard, alternativeRows, leafStyle, pillSize, shapeCardHeight } from './shapes-schema';
-import { PropertyShape, SimpleRange, alternativesOf, cardinalityText, formatPath, pathParts, rangeText, shortIri } from './shapes-doc';
+import { ViewFigures, partIsRow } from './notation-join';
+import { ONE_OF_WIDTH, SHAPE_CARD, ShapeRow, alternativeRows, leafStyle, pillSize, shapeCardHeight } from './shapes-schema';
+import { PropertyShape, alternativesOf, cardinalityText, formatPath, pathParts, rangeText, shortIri } from './shapes-doc';
 import { NS, localName } from './terms';
 
 const SHN = 'osg://vocab/notation/shapes#', VSN = 'osg://vocab/notation/skos#';
@@ -146,9 +146,9 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             const v = shapes.valueSets[iriId(f.focus.value)];
             if (!v) continue;
             ids.add(v.id);
-            const visible = new Set(b.rows.filter(r => r.part).map(r => r.part!.focus.value));
+            const isRow = partIsRow(b);
             const instanceOf = new Map(Object.values(doc.instances).map(i => [i.uri, i.id]));
-            const members = v.members.filter(m => visible.has(m.uri)).map(m => ({ ...m, instance: instanceOf.get(m.uri) ?? '' }));
+            const members = v.members.filter(m => isRow(m.uri)).map(m => ({ ...m, instance: instanceOf.get(m.uri) ?? '' }));
             sets.push({
                 type: TYPES.VALUESET, id: boxId(f), element: v.id, ...geometry,
                 size: { width: pl?.width ?? 320, height: Math.max(pl?.height ?? 0, memberListHeight(members.length, scale)) },
@@ -161,8 +161,9 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             const id = listBoxId(f);
             ids.add(iriId(holder.subject.value));
             if (p.range.kind === 'or') {
-                const drawnTo = new Set(alternatives.filter(a => a.source === id).map(a => a.target));
-                const rows = alternativeRows(shapes, p, a => { const card = alternativeCard(shapes, a as SimpleRange); return card && [...shown.values()].some(x => iriId(x.figure.focus.value) === card && drawnTo.has(boxId(x.figure))) ? card : undefined; }, label);
+                // The alternatives are the list members, in list order (shapes-read.ts).
+                const isRow = partIsRow(b), members = D.list(f.focus);
+                const rows = alternativeRows(shapes, p, i => isRow(members[i]?.value ?? ''), label);
                 lists.push({
                     type: TYPES.ONE_OF, id, ...geometry, size: { width: pl?.width ?? ONE_OF_WIDTH * scale, height: Math.max(pl?.height ?? 0, memberListHeight(rows.length, scale)) },
                     name: `${p.name ?? formatPath(p.path)}: one of`, members: rows

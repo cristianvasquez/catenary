@@ -140,6 +140,19 @@ export function join(d: Derivation, placed: Placements): Join {
     return { boxes, hubs, lines, parts, links, problems };
 }
 
+/**
+ * The member-list rule (ui-manifest §6.5), one for every container box: a node shape card, a value set, a "one of" box, an entity group.
+ * A part of the box is a row unless the view draws it, as its own box or as a line from the box. `box`: the join box of the container;
+ * absent (the view does not draw it with the notation engine): nothing is drawn from it, every part is a row. The test takes the focus
+ * IRI of a part.
+ */
+export function partIsRow(box: JoinBox | undefined): (focus: string) => boolean {
+    if (!box) return () => true;
+    const focusOf = (rows: { part?: Figure; sub?: { part?: Figure }[] }[]) => new Set(rows.flatMap(r => [r, ...(r.sub ?? [])]).flatMap(r => r.part ? [r.part.focus.value] : []));
+    const parts = focusOf(box.figure.rows), rows = focusOf(box.rows);
+    return focus => !parts.has(focus) || rows.has(focus);
+}
+
 /** The join as text lines (test fixtures: packages/rdf/test/fixtures/notation/expected/*.join.txt). */
 export function joinText(d: Derivation, j: Join): string[] {
     const shape = (f: Figure) => localName(f.fs.node.value);

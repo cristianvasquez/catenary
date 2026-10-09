@@ -68,10 +68,11 @@ export class ViewReferenceNode extends GNode {
 }
 
 /**
- * A member-list box: an instance collection, a SKOS scheme or collection, the "one of" box of a property. One behavior for all: select,
- * move, resize (eight handles), Del, hover; the halo of the only selected box. The kinds differ in their rows and row gestures.
+ * A container: a box whose parts are rows (ui-manifest §6.5): a node shape card, an instance collection, a SKOS scheme or collection, the
+ * "one of" box of a property. One behavior for all: select, move, resize (eight handles), Del, hover; the halo of the only selected box.
+ * The kinds differ in their rows and in the effects of their row buttons (CanvasInteractions.containers).
  */
-export abstract class MemberBoxNode extends GNode {
+export abstract class ContainerNode extends GNode {
     static override readonly DEFAULT_FEATURES = [
         selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
     ];
@@ -79,7 +80,7 @@ export abstract class MemberBoxNode extends GNode {
     color = '';
 }
 
-export class CollectionNode extends MemberBoxNode {
+export class CollectionNode extends ContainerNode {
     members: CollectionMember[] = [];
 }
 
@@ -122,16 +123,11 @@ export class BundleEdge extends GEdge {
 
 // ------------------------------------------------------------------ shapes views
 
-/** Node shape card. Its children: the name label and the attribute rows (ShapeRow). */
-export class ShapeNode extends GNode {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
-    ];
-    readonly resizeLocations = ResizeHandleLocation.ALL;
+/** Node shape card: a container whose rows are its property shapes (ShapeRow children). */
+export class ShapeNode extends ContainerNode {
     className = '';
     name = '';
     subtitle = '';
-    color = '';
     closed = false;
     violations = 0;
     display = 'detailed';
@@ -156,7 +152,7 @@ export class ShapeRow extends GChildElement {
 }
 
 /** SKOS concept scheme or collection: its concepts without a card are rows. */
-export class ValueSetNode extends MemberBoxNode {
+export class ValueSetNode extends ContainerNode {
     name = '';
     kind: 'scheme' | 'collection' = 'scheme';
     uri = '';
@@ -164,7 +160,7 @@ export class ValueSetNode extends MemberBoxNode {
 }
 
 /** "One of" box of a property (sh:or of ranges): its alternatives without a line are rows. Its id: `<property id>_leaf`. */
-export class OneOfNode extends MemberBoxNode {
+export class OneOfNode extends ContainerNode {
     name = '';
     members: AlternativeRow[] = [];
 }
@@ -239,12 +235,12 @@ export class ShapeCardView extends ShapeView {
 @injectable()
 export class ShapeRowView implements IView {
     render(row: Readonly<ShapeRow>, _context: RenderingContext): VNode {
-        return renderShapeRow({ parts: row.parts, range: row.range, style: row.style, card: row.card, violations: row.violations, selected: row.selected, relation: row.relation, group: row.group });
+        return renderShapeRow({ id: row.id, parts: row.parts, range: row.range, style: row.style, card: row.card, violations: row.violations, selected: row.selected, relation: row.relation, group: row.group });
     }
 }
 
-/** The box props of a member-list box. */
-const memberBox = (node: Readonly<MemberBoxNode>) => ({ width: node.size.width, height: node.size.height, color: node.color, selected: node.selected, hover: node.hoverFeedback });
+/** The box props of a member-list container. */
+const memberBox = (node: Readonly<ContainerNode>) => ({ width: node.size.width, height: node.size.height, color: node.color, selected: node.selected, hover: node.hoverFeedback });
 
 @injectable()
 export class ValueSetView extends ShapeView {
@@ -392,7 +388,7 @@ export class CardView extends ShapeView {
 }
 
 const isBox = (e: GModelElement) => e instanceof CardNode || e instanceof GroupNode || e instanceof NoteNode || e instanceof ViewReferenceNode
-    || e instanceof MemberBoxNode || e instanceof ShapeNode;
+    || e instanceof ContainerNode;
 
 /**
  * Diagram: as GLSP, then the halo of the only selected box (card, group, note, view reference, collection) or of several, after all

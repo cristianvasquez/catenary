@@ -8,7 +8,8 @@ import { Doc, View, boxes, cardOf, edgeLayout, elementOfId, relationsInView } fr
 import { Classes, predicateName, primaryClass } from './metamodel';
 import { localName } from './terms';
 import type { Violation } from './validation';
-import type { ViewFigures } from './notation-join';
+import { type ViewFigures, partIsRow } from './notation-join';
+import { idIri } from './ids';
 
 export const TYPES = {
     GRAPH: 'graph',
@@ -178,14 +179,20 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
         }))
     ];
 
-    const collections: ElementSchema[] = boxes(view, 'collection').map(c => ({
-        type: TYPES.COLLECTION, id: c.id, position: { x: c.x, y: c.y }, size: { width: c.width, height: Math.max(c.height, memberListHeight(c.members.filter(m => doc.instances[m]).length, opts.cardScale)) },
-        color: c.color ?? '',
-        members: c.members.filter(m => doc.instances[m]).map(m => {
-            const inst = doc.instances[m];
-            return { id: m, label: inst.label, className: className(inst.types), classColor: primaryClass(meta, inst.types)?.color ?? '' };
-        }).sort((a, b) => a.label.localeCompare(b.label))
-    }));
+    // An entity group lists its members by the member-list rule (`partIsRow`), as the other containers.
+    const groupBox = (id: string) => opts.notation?.join.boxes.find(b => b.figure.focus.value === idIri(id));
+    const collections: ElementSchema[] = boxes(view, 'collection').map(c => {
+        const isRow = partIsRow(groupBox(c.id));
+        const members = c.members.filter(m => doc.instances[m] && isRow(doc.instances[m].uri));
+        return {
+            type: TYPES.COLLECTION, id: c.id, position: { x: c.x, y: c.y }, size: { width: c.width, height: Math.max(c.height, memberListHeight(members.length, opts.cardScale)) },
+            color: c.color ?? '',
+            members: members.map(m => {
+                const inst = doc.instances[m];
+                return { id: m, label: inst.label, className: className(inst.types), classColor: primaryClass(meta, inst.types)?.color ?? '' };
+            }).sort((a, b) => a.label.localeCompare(b.label))
+        };
+    });
 
     return { edges, cards, collections };
 }

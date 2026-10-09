@@ -310,6 +310,8 @@ export function renderShapeCard(p: ShapeCardProps, rows: VNode[], handles: VNode
 }
 
 export interface RowProps {
+    /** The property shape id, or the constraint id of a row group head (`data-member`, as a member row). */
+    id: string;
     parts: { text: string; color?: string }[];
     range: string;
     style: string;
@@ -326,12 +328,12 @@ export interface RowProps {
  * another), cardinality (`data-card`: click cycles it), and ⇥ (show as an edge; or drag the row out of the card).
  */
 export function renderShapeRow(p: RowProps): VNode {
-    if (p.group === 'head') return h('div', { class: { 'shape-row': true, 'row-group-head': true, selected: p.selected } }, [
+    if (p.group === 'head') return h('div', { class: { 'shape-row': true, 'row-group-head': true, selected: p.selected }, attrs: { 'data-member': p.id } }, [
         h('span', { class: { 'row-group-name': true }, attrs: { title: 'Logical constraint: its members follow' } }, p.parts.map(x => x.text).join('')),
         h('span', {}, ''), h('span', {}, ''),
         h('span', { class: { 'row-out': true }, attrs: { title: 'Show the constraint as a hub with its member lines' } }, [arrowButton('out')])
     ]);
-    return h('div', { class: { 'shape-row': true, 'row-group-member': p.group === 'member', relation: p.relation, selected: p.selected, invalid: p.violations > 0 } }, [
+    return h('div', { class: { 'shape-row': true, 'row-group-member': p.group === 'member', relation: p.relation, selected: p.selected, invalid: p.violations > 0 }, attrs: { 'data-member': p.id } }, [
         h('span', { class: { 'row-path': true }, attrs: { title: 'Path. Double-click or F2: edit' } }, p.parts.map(x => h('span', { style: x.color ? { color: x.color } : {}, class: { muted: !x.color } }, x.text))),
         h('span', { class: { 'row-range': true, [`leaf-${p.style}`]: true }, attrs: { title: 'Value. Click: change' } }, p.range),
         h('span', { class: { 'row-card': true }, attrs: { 'data-card': '1', title: 'Cardinality: click for the next one (0..* → 0..1 → 1 → 1..*)' } }, p.card),

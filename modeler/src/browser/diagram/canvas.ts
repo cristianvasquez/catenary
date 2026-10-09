@@ -7,8 +7,8 @@
 // path (row or edge label) edits it; ⇥ or a drag of the row out of the card shows the property as an edge, its pill where it is dropped.
 // The link button draws a property "unnamed property N" (to a card or a value set: that target; to empty canvas: a picker with "+ New node
 // shape", "+ New concept scheme", …, the pill or the new target at the release point). No path is asked.
-// Member-list boxes (collection, value set, "one of"): ➟ shows a member in its own box beside the container, × removes it, the add row
-// adds one (memberPress). Value sets: double click on a concept renames it. The logic handle of a selected edge drags a
+// Containers (node shape card, collection, value set, "one of"): ➟ shows a member in its own box beside the container, × removes it, the
+// add row adds one (the `containers` table). Value sets: double click on a concept renames it. The logic handle of a selected edge drags a
 // logical constraint to another edge; a dragged edge end retargets the property.
 
 import { SelectAction } from '@eclipse-glsp/client';
@@ -65,6 +65,14 @@ interface ConnectGesture {
     click?: (e: MouseEvent, info: GestureInfo) => void;
     /** Release on empty canvas. */
     empty?: (e: MouseEvent, info: GestureInfo) => void;
+}
+
+/** A press on a row button of a container. `at`: beside the row, right of the drawn container (model point). */
+interface RowPress { w: GLSPDiagramWidget; view: string; id: string; member: string; shown: string; button: Element; at: Point }
+/** A container kind: its box, its row button selectors and their effects (CanvasInteractions.containers). */
+interface ContainerKind {
+    box: string; takeOut: string; remove?: string; add: string;
+    onTakeOut: (p: RowPress) => void; onRemove?: (p: RowPress) => void; onAdd: (p: RowPress) => void;
 }
 
 /** Why a candidate of a gesture is not a target (GestureInfo); undefined: it is one. */
@@ -129,7 +137,7 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             }
             const reference = idOf(target, '.catenary-view-reference');
             referencePress = reference ? { id: reference, x: e.clientX, y: e.clientY } : undefined;
-            if (this.memberPress(w, target, e) || this.shapesPress(w, target, e)) return;
+            if (this.containerPress(w, target, e) || this.shapesPress(w, target, e)) return;
             const halo = target.closest?.('.halo-action');
             const cardinality = target.closest?.('[data-card]');
             const property = cardinality ? idOf(target, '.catenary-edge') ?? idOf(target, '.shape-row') : undefined;
@@ -658,11 +666,6 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         const view = viewIdOf(w);
         if (!this.editors.diagram(w) || !target.closest) return false;
         const stop = () => { e.preventDefault(); e.stopPropagation(); return true; };
-        if (target.closest('.shape-add-row')) {
-            const shape = this.idOf(w, target, '.shape-card');
-            if (shape) this.addAttribute(w, shape);
-            return stop();
-        }
         if (target.closest('.row-in')) {
             const property = this.idOf(w, target, '.catenary-edge');
             if (property) void this.actions.putBack(view, property);
@@ -674,10 +677,6 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             return stop();
         }
         const row = this.idOf(w, target, '.shape-row');
-        if (row && target.closest('.row-out')) {
-            void this.actions.takeOut(view, row);
-            return stop();
-        }
         // The head of a row group (a logical constraint without a hub placement): only ⇥.
         if (row?.startsWith('c-')) return stop();
         if (row && !target.closest('[data-card]') && e.detail === 1) {
@@ -698,40 +697,60 @@ export class CanvasInteractions implements FrontendApplicationContribution {
     }
 
     /**
-     * The buttons of a member-list box (a collection, a value set, a "one of" box): ➟ shows the member in its own box beside the container
-     * (the row becomes a line from the container), × removes the member, the add row adds one. The kinds differ only in these three
-     * effects. True: handled.
+     * The container kinds (ui-manifest §6.5): a node shape card, an entity group, a value set, a "one of" box. Each declares its row
+     * buttons and their effects; containerPress reads this table, so a container kind is one entry and has no other gesture code for
+     * these buttons. ➟ shows the member in its own box beside the row (the row becomes a line from the container; an entity group: the
+     * member leaves the group), × removes the member, the add row adds one.
      */
-    protected memberPress(w: GLSPDiagramWidget, target: Element, e: MouseEvent): boolean {
-        const button = target.closest?.('.member-take-out, .member-remove, .member-add');
-        const box = button?.closest('.catenary-member-box');
-        const id = box && this.idOf(w, box, '.catenary-member-box');
-        if (!button || !box || !id) return false;
-        e.preventDefault();
-        e.stopPropagation();
-        const view = viewIdOf(w), member = button.closest('.member-row')?.getAttribute('data-member') ?? '';
-        const kind = box.matches('.catenary-collection') ? 'collection' : box.matches('.catenary-one-of') ? 'oneOf' : 'valueSet';
-        if (button.matches('.member-add')) {
-            const r = button.getBoundingClientRect();
-            if (kind === 'collection') this.addMember(w, id, button);
-            else if (kind === 'oneOf') void this.actions.addAlternative(ownerOfLabel(id), view, { x: r.left, y: r.bottom + 4 });
-            else this.addConcept(w, id, button);
-        } else if (button.matches('.member-remove')) {
-            if (!member) return true;
-            if (kind === 'collection') void this.actions.removeFromView(view, member);
-            else if (kind === 'oneOf') void this.actions.removeAlternative(ownerOfLabel(id), member, view);
-            else void this.actions.removeConcept(id, member);
-        } else {
-            // ➟ of a member that cannot have its own box is disabled (no data-instance).
-            const shown = button.getAttribute('data-instance');
-            if (!shown || !member) return true;
-            if (kind === 'collection') void this.actions.uncollect(view, [id], [member]);
-            else void this.actions.showMembers(view, [shown], this.besideMember(w, id, button));
+    protected readonly containers: ContainerKind[] = [
+        {
+            box: '.shape-card', takeOut: '.row-out', add: '.shape-add-row',
+            onTakeOut: p => void this.actions.takeOut(p.view, p.member, p.at),
+            onAdd: p => this.addAttribute(p.w, p.id)
+        }, {
+            box: '.catenary-collection', takeOut: '.member-take-out', remove: '.member-remove', add: '.member-add',
+            onTakeOut: p => void this.actions.uncollect(p.view, [p.id], [p.member]),
+            onRemove: p => void this.actions.removeFromView(p.view, p.member),
+            onAdd: p => this.addMember(p.w, p.id, p.button)
+        }, {
+            box: '.valueset-card', takeOut: '.member-take-out', remove: '.member-remove', add: '.member-add',
+            onTakeOut: p => void this.actions.showMembers(p.view, [p.shown], p.at),
+            onRemove: p => void this.actions.removeConcept(p.id, p.member),
+            onAdd: p => this.addConcept(p.w, p.id, p.button)
+        }, {
+            box: '.catenary-one-of', takeOut: '.member-take-out', remove: '.member-remove', add: '.member-add',
+            onTakeOut: p => void this.actions.showMembers(p.view, [p.shown], p.at),
+            onRemove: p => void this.actions.removeAlternative(ownerOfLabel(p.id), p.member, p.view),
+            onAdd: p => {
+                const r = p.button.getBoundingClientRect();
+                void this.actions.addAlternative(ownerOfLabel(p.id), p.view, { x: r.left, y: r.bottom + 4 });
+            }
         }
-        return true;
+    ];
+
+    /** A press on a row button of a container (the `containers` table). True: handled. */
+    protected containerPress(w: GLSPDiagramWidget, target: Element, e: MouseEvent): boolean {
+        if (!target.closest) return false;
+        for (const kind of this.containers) {
+            const buttons = [kind.takeOut, kind.remove, kind.add].filter((x): x is string => !!x).join(', ');
+            const button = target.closest(buttons), box = button?.closest(kind.box);
+            const id = box && this.idOf(w, box, kind.box);
+            if (!button || !box || !id) continue;
+            e.preventDefault();
+            e.stopPropagation();
+            // `member`: the row (data-member). `shown`: what ➟ shows (data-instance; empty: ➟ is disabled; absent: the member itself).
+            const member = button.closest('[data-member]')?.getAttribute('data-member') ?? '';
+            const press: RowPress = { w, view: viewIdOf(w), id, member, shown: button.getAttribute('data-instance') ?? member, button, at: this.besideMember(w, id, button) };
+            if (button.matches(kind.add)) kind.onAdd(press);
+            else if (!member) return true;
+            else if (kind.remove && button.matches(kind.remove)) kind.onRemove?.(press);
+            else if (press.shown) kind.onTakeOut(press);
+            return true;
+        }
+        return false;
     }
 
-    /** Model point (center) of a member card taken out of the box `id`: right of the drawn box, level with the row of `button`. */
+    /** Model point of a member taken out of the container `id`: right of the drawn box, level with the row of `button`. */
     protected besideMember(w: GLSPDiagramWidget, id: string, button: Element): Point {
         const drawn = this.shown(w, id) as { position?: Point; size?: { width: number } } | undefined;
         const b = button.getBoundingClientRect(), row = this.editors.toModel(w, b.right, b.top + b.height / 2);
