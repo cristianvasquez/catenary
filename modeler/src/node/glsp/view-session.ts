@@ -56,6 +56,8 @@ export class ViewSession {
 
     start(viewId: string): void {
         this.state.viewId = viewId;
+        // The validation mode "views" checks the elements on the open views.
+        this.store.setOpenView(this.clientId, viewId);
         if (this.started) return;
         this.started = true;
         const listener = this.store.onDidChange(e => {
@@ -69,6 +71,7 @@ export class ViewSession {
         const sessionListener = {
             sessionDisposed: () => {
                 listener.dispose();
+                this.store.setOpenView(this.clientId, undefined);
                 this.sessions.removeListener(sessionListener);
             }
         };

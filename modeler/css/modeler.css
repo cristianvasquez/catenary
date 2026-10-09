@@ -538,6 +538,12 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 
 /* File of new subjects, one box per kind: Auto or File (PlaceBox, workspace-placement.tsx). Settings view and New Workspace dialog. */
 .catenary-new-workspace { max-width: 680px; }
+/* Segmented control: one of a few modes (Workspace settings → Validation). */
+.catenary-segmented { display: inline-flex; margin-top: 8px; border: 1px solid var(--catenary-border); border-radius: 4px; overflow: hidden; }
+.catenary-segmented button { padding: 3px 12px; border: 0; border-left: 1px solid var(--catenary-border); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.catenary-segmented button:first-child { border-left: 0; }
+.catenary-segmented button:hover { background: var(--theia-list-hoverBackground); }
+.catenary-segmented button.on { background: var(--theia-button-background); color: var(--theia-button-foreground); }
 .catenary-places { display: grid; gap: 8px; margin-top: 8px; }
 .catenary-place { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 6px 10px 8px; border: 1px solid var(--catenary-border); border-radius: 4px; }
 .catenary-place legend { padding: 0 4px; font-weight: 600; }

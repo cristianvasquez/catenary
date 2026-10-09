@@ -163,6 +163,7 @@ data WorkspaceSettings = WorkspaceSettings
   , placement :: Placement
   , exclude :: [String]                          -- ws:exclude globs
   , imported :: [String]                         -- ws:imported globs (§2.6)
+  , validation :: ValidationMode                 -- ws:validation (§9)
   }
 workspaceGraph, workspaceNamespace :: Iri
 workspaceGraph = "urn:name:workspace"
@@ -1183,6 +1184,30 @@ rdfType :: Iri
 rdfType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 law_ownStatementsValidated :: [Quad] -> [Quad] -> Bool
 law_ownStatementsValidated own model = all (`elem` validationData own model) own
+-- | ws:validation chooses what validation checks: Off, OpenViews ("views") or All. All is the default, and writers do not store it.
+-- Reason: a full run after each edit is slow on a large model. The author chooses speed or completeness for the workspace.
+-- Off: no run, an empty report graph, no violations. OpenViews: the own statements whose subject is on an open view (an editor
+-- shows the view), then the statements of these subjects and the types of their targets, as validationData does.
+-- A shape that reads an element outside the open views can report too much or too little (spec/open.md VALIDATION2).
+-- In OpenViews, a change of the open views and a change of a placement on an open view (not the layout) start a run.
+data ValidationMode = ValidationOff | ValidationOpenViews | ValidationAll deriving Eq
+validationValue :: ValidationMode -> Maybe String   -- the literal of ws:validation; Nothing: not written
+validationValue ValidationOff = Just "off"
+validationValue ValidationOpenViews = Just "views"
+validationValue ValidationAll = Nothing
+-- | The elements on the open views: the elements and group members of placements, and the subjects of placed relations.
+validationFocus :: [Iri] -> [Quad] -> [Term]        -- the open views, the statements of the view graphs
+validationFocus views qs = nub (
+  [o | Quad _ p o@(NamedNode _) g <- qs, g `elem` views, p `elem` ["view:element", "view:member"]] ++
+  [s | Quad _ "rdf:reifies" (TripleTerm s@(NamedNode _) _ _) g <- qs, g `elem` views])
+validationInput :: ValidationMode -> [Term] -> [Quad] -> [Quad] -> [Quad]   -- the mode, the focus, own statements, the model graph
+validationInput ValidationOff _ _ _ = []
+validationInput ValidationAll _ own model = validationData own model
+validationInput ValidationOpenViews focus own model = validationData [q | q <- own, subjectOf q `elem` focus] model
+law_validationOffEmpty :: [Term] -> [Quad] -> [Quad] -> Bool
+law_validationOffEmpty focus own model = null (validationInput ValidationOff focus own model)
+law_openViewsWithinAll :: [Term] -> [Quad] -> [Quad] -> Bool
+law_openViewsWithinAll focus own model = all (`elem` validationInput ValidationAll focus own model) (validationInput ValidationOpenViews focus own model)
 law_reportNotInPatch :: Backend -> EditCommand -> Bool
 law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
   where

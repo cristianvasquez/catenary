@@ -1575,7 +1575,8 @@ law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now ==
 
 -- 10. Settings ---------------------------------------------------------------
 
--- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files.
+-- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files,
+-- the validation mode.
 -- Person settings stay outside the workspace: fonts, theme, visible right-area sections.
 -- Workspace settings open as a main-area document, independent of the element selection (open.md D6).
 -- Each kind of new subject (Shapes, SKOS / Collections, Everything else) is Auto or a file. Auto stores "near".
@@ -1584,9 +1585,12 @@ law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now ==
 -- An imported file is not a file of new subjects: the change is rejected with its message.
 -- Imported lists the ws:imported globs, with Add and Remove, and Import Files. Import Files is also in the File menu.
 -- Import Files asks for one or more RDF files, then shows the paths of the copies and the prefixes that the import added.
+-- Validation is a segmented control: Off, Open views, All (spec/manifest.hs §9 ValidationMode). One click writes the mode.
+-- Reason: three named buttons show the choices and the current mode; a slider suggests values between them.
+-- The status bar shows the mode: Off shows "validation off", not "valid"; Open views shows how many instances it checked.
 -- A rejected change shows its message below its row, not as a notification.
 data SettingOwner = ProjectSetting | PersonSetting deriving Eq
-data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | Fonts | Theme | VisibleSections
+data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | ValidationSetting | Fonts | Theme | VisibleSections
   deriving (Eq, Enum, Bounded)
 ownerOfSetting :: Setting -> SettingOwner
 ownerOfSetting s = if s `elem` [Fonts, Theme, VisibleSections] then PersonSetting else ProjectSetting

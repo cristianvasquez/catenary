@@ -73,6 +73,10 @@ export interface PlacementInfo { shapes: string; concepts: string; instances: st
 export const NEAR_KIND = 'near';
 
 /** The files of the open workspace (ADR 0004: the RDF files of the folder of the workspace file). Absolute paths. */
+/** What SHACL validation checks: nothing, the elements on the open views (spec/manifest.hs §9 `validationFocus`), or the model. */
+export type ValidationMode = 'off' | 'views' | 'all';
+export const VALIDATION_MODES: readonly ValidationMode[] = ['off', 'views', 'all'];
+
 export interface WorkspaceFiles {
     /** The workspace file: the manifest (prefixes, default file, placement, exclude, export list). */
     /** `onDisk` false: the folder was opened without a workspace file; the first change of a setting writes it. */
@@ -84,6 +88,8 @@ export interface WorkspaceFiles {
     exclude?: string[];
     /** Globs of the manifest: imported (read-only) files. */
     imported?: string[];
+    /** What SHACL validation checks (manifest ws:validation). Undefined: no workspace. */
+    validation?: ValidationMode;
     files: ModelFileInfo[];
     views: ViewFileInfo[];
 }
@@ -125,8 +131,11 @@ export interface ModelSnapshot {
     /** Changes each time the shapes are read. The frontend then reads them again with `shapesText`. */
     shapesVersion: number;
     meta: MetamodelInfo;
-    /** Counts of the store: instances, and the results of the SHACL report (all, and with severity sh:Violation). */
-    counts: { instances: number; results: number; violations: number };
+    /**
+     * Counts of the store: instances, and the results of the SHACL report (all, and with severity sh:Violation). `validated`: in the
+     * validation mode "views", the instances that the last run checked.
+     */
+    counts: { instances: number; results: number; violations: number; validated?: number };
     warnings: string[];
     /** The patch queue: data changes that shape edits ask for, to apply or dismiss. Not saved. */
     migrations: Migration[];

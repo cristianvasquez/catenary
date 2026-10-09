@@ -143,9 +143,12 @@ export class ModelProblems implements FrontendApplicationContribution {
             return;
         }
         const name = baseName(s.file);
+        // The validation mode (ws:validation): off shows no verdict; open views says how much it checked.
+        const mode = s.files.validation ?? 'all';
+        const verdict = mode === 'off' ? '$(circle-slash) validation off'
+            : (errors ? `$(error) ${errors} violations` : '$(check) valid') + (mode === 'views' ? ` (${s.counts.validated ?? 0} of ${s.counts.instances} on open views)` : '');
         this.statusBar.setElement('catenary-model', {
-            text: `$(type-hierarchy) ${name}${s.dirty ? ' ●' : ''} · ${s.files.files.length} files · ${s.counts.instances} instances · `
-                + (errors ? `$(error) ${errors} violations` : '$(check) valid'),
+            text: `$(type-hierarchy) ${name}${s.dirty ? ' ●' : ''} · ${s.files.files.length} files · ${s.counts.instances} instances · ${verdict}`,
             alignment: StatusBarAlignment.LEFT, priority: 100,
             tooltip: [`Workspace: ${s.files.workspace?.path ?? '(none)'}${s.files.workspace && !s.files.workspace.onDisk ? ' (not on disk: a change of a setting writes it)' : ''}`, `Default file: ${s.files.defaultFile?.path ?? '(none)'}`,
                 ...s.files.files.map(f => `${f.path}${f.kinds.length ? ` (${f.kinds.join(', ')})` : ''}`), s.dirty ? 'Not written yet' : 'Written'].join('\n'),

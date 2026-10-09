@@ -11,7 +11,7 @@ import React from '@theia/core/shared/react';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { DEFAULT_PREFIXES, NEAR_KIND, baseName, dirName, relativePath } from '@catenary/model';
+import { DEFAULT_PREFIXES, NEAR_KIND, ValidationMode, baseName, dirName, relativePath } from '@catenary/model';
 import { WorkspaceSettings } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
 import { Button, Section, Warning } from '../properties/controls';
@@ -27,6 +27,13 @@ const RDF_FILTER = { 'RDF files': ['ttl', 'turtle', 'trig', 'nt', 'nq', 'jsonld'
 
 /** From this number of prefixes, a filter field shows above the list. */
 const FILTER_FROM = 12;
+
+/** The modes of the validation control, from no checks to all. */
+const VALIDATION_ROWS: { mode: ValidationMode; label: string; title: string }[] = [
+    { mode: 'off', label: 'Off', title: 'No validation: no problems, no badges' },
+    { mode: 'views', label: 'Open views', title: 'Validate the elements on the open views' },
+    { mode: 'all', label: 'All', title: 'Validate the whole model' }
+];
 
 @injectable()
 export class WorkspaceSettingsWidget extends ReactWidget {
@@ -107,6 +114,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.head()}
                 {this.status()}
                 {this.placesSection()}
+                {this.validationSection()}
                 {this.prefixSection()}
                 {this.excludeSection()}
                 {this.importedSection()}
@@ -172,6 +180,21 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                     problem={this.problems[r.kind]} onChange={v => this.setSettings(r.kind, settings(r.kind, v))}
                     onBrowse={() => this.browse(`File for ${r.label}`)} />)}
             </div>
+        </Section>;
+    }
+
+    /** What SHACL validation checks (ws:validation): a segmented control of three modes, written at once. */
+    protected validationSection(): React.ReactNode {
+        const s = this.model.snapshot, mode = s.files.validation ?? 'all';
+        const scope = mode === 'off' ? 'no checks' : mode === 'views' && s.counts.validated !== undefined
+            ? `${s.counts.validated} of ${s.counts.instances} instances` : `${s.counts.instances} instances`;
+        return <Section title='Validation' scope={scope}
+            help='What SHACL validation checks after each change. Open views checks the elements on the open views only: it is faster on large models, and a shape that reads elements outside the open views can report too much or too little.'>
+            <div className='catenary-segmented' role='radiogroup' aria-label='Validation'>
+                {VALIDATION_ROWS.map(r => <button key={r.mode} role='radio' aria-checked={mode === r.mode} title={r.title}
+                    className={mode === r.mode ? 'on' : undefined} onClick={() => mode !== r.mode && this.setSettings('validation', { validation: r.mode })}>{r.label}</button>)}
+            </div>
+            {this.problems.validation ? <div className='catenary-problem'>{this.problems.validation}</div> : undefined}
         </Section>;
     }
 

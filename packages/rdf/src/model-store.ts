@@ -8,7 +8,7 @@ import { shapeTargetMatches } from './shacl-targets';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, WorkspaceFiles, prefixesProblem,
+    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, ValidationMode, WorkspaceFiles, prefixesProblem,
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
@@ -26,7 +26,7 @@ import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
-import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
+import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, cmp, isVocabularyQuad } from './graph';
 import { History, OriginChange } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
@@ -93,7 +93,12 @@ export class ModelStore implements ModelQueries {
     protected ws?: Workspace;
     protected readonly history = new History();
     protected readonly validation = new ValidationRunner(
-        () => ({ graph: this.graph, metamodel: this.metamodel, data: () => this.ws?.validationTriples() }), () => this.changed('validation'));
+        () => ({ graph: this.graph, metamodel: this.metamodel, off: this.ws?.validation === 'off', data: () => this.validationData(),
+            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), () => this.changed('validation'));
+    /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
+    protected readonly openViews = new Map<string, string>();
+    /** In the validation mode "views": the instances that the last run checked. */
+    protected validated?: number;
     shapesVersion = 0;
     revision = 0;
 
@@ -609,6 +614,48 @@ export class ModelStore implements ModelQueries {
     /** Validate the model now, without the delay after a change. */
     validate(): Promise<void> { return this.validation.now(); }
 
+    /**
+     * An editor (`client`) shows `viewId`, or (undefined) closed. In the validation mode "views", a change of the set of open views
+     * starts a validation.
+     */
+    setOpenView(client: string, viewId: string | undefined): void {
+        const before = this.openViewIris().join('\n');
+        if (viewId) this.openViews.set(client, viewId); else this.openViews.delete(client);
+        if (this.ws?.validation === 'views' && this.openViewIris().join('\n') !== before) this.validation.invalidate();
+    }
+
+    /** The IRIs of the open views, sorted, without duplicates. */
+    protected openViewIris(): string[] {
+        return [...new Set([...this.openViews.values()].map(v => elementTerm(v)?.value).filter((v): v is string => !!v))].sort();
+    }
+
+    /**
+     * The elements on the open views (spec/manifest.hs §9 `validationFocus`), by termKey: the elements of placements, the subjects of
+     * placed relations, and the members of groups.
+     */
+    protected validationFocus(): Map<string, Term> {
+        const focus = new Map<string, Term>();
+        const add = (t: Term) => { if (t.termType === 'NamedNode') focus.set(termKey(t), t); };
+        for (const iri of this.openViewIris()) {
+            const g = rdf.namedNode(iri);
+            for (const q of this.graph.store.match(null, V.element, null, g)) add(q.object);
+            for (const q of this.graph.store.match(null, V.member, null, g)) add(q.object);
+            for (const q of this.graph.store.match(null, P.reifies, null, g)) if (q.object.termType === 'Quad') add(q.object.subject);
+        }
+        return focus;
+    }
+
+    /** The statements of the model graph that validation reads, by the validation mode (undefined: all). */
+    protected validationData(): Quad[] | undefined {
+        if (this.ws?.validation !== 'views') {
+            this.validated = undefined;
+            return this.ws?.validationTriples();
+        }
+        const focus = this.validationFocus();
+        this.validated = [...focus.values()].filter(t => this.graph.isInstance(t)).length;
+        return this.ws.validationTriples(new Set(focus.keys()));
+    }
+
     /** The last change (ModelSnapshot.change). */
     protected lastChange?: SnapshotChange;
 
@@ -623,7 +670,8 @@ export class ModelStore implements ModelQueries {
             counts: {
                 instances: this.cached('instances', () => instanceCount(this.graph)),
                 results: this.violations.length,
-                violations: this.violations.filter(v => v.severity === 'Violation').length
+                violations: this.violations.filter(v => v.severity === 'Violation').length,
+                ...(this.ws?.validation === 'views' && this.validated !== undefined ? { validated: this.validated } : {})
             },
             warnings: this.warnings,
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
@@ -752,6 +800,11 @@ export class ModelStore implements ModelQueries {
         for (const [from, to] of Object.entries(this.movedIds)) this.ws?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
         this.ws?.assignViewFiles();
         if (shapes || patch.some(c => c.quad.graph.equals(this.graph.model))) this.validation.invalidate();
+        // The validation mode "views": a placement on an open view changes what validation checks.
+        else if (this.ws?.validation === 'views') {
+            const open = new Set(this.openViewIris());
+            if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
+        }
     }
 
     protected changed(reason: ChangeReason, patch?: Patch): void {
@@ -990,11 +1043,11 @@ export class ModelStore implements ModelQueries {
      * Change the settings of the manifest (ADR 0004): the default file and the file of each kind (a model file, or a new RDF file in
      * the workspace folder; a kind: also "near"), the exclude globs. Written at once. A new exclude glob reads the files again. No undo step.
      */
-    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): Promise<CommandResult> {
+    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): Promise<CommandResult> {
         return this.serial(() => this.applySettings(settings));
     }
 
-    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[] }): Promise<CommandResult> {
+    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): Promise<CommandResult> {
         const ws = this.ws;
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
@@ -1002,8 +1055,10 @@ export class ModelStore implements ModelQueries {
             this.commitNotes.push('before import mark');
             await this.write();
         }
+        const validation = ws.validation;
         const r = ws.applySettings(settings);
         if ('error' in r) return { ok: false, error: r.error };
+        if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
             this.content++;
             await this.write();
