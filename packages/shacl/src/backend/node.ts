@@ -53,15 +53,29 @@ export function readNodeReferences(port: TargetQueryPort, graphs: readonly strin
 export function applicableMatches(port: TargetQueryPort, scope: TargetScope, refs: readonly NodeReference[], selection: TargetSelection): TargetMatch[] {
     if (selection.nodes?.length === 0 || selection.shapes?.length === 0) return [];
     const dataset = scope.data.map(g => `FROM ${iri(g)}`).join(' ');
+    // Each walk below goes one level at a time. A level asks one query per path and one target query, never one query per node.
     const paths = new Map<string, FocusNode[]>();
-    const values = (ref: NodeReference, node: FocusNode, reverse: boolean): FocusNode[] => {
-        if (!ref.path) return [node];
-        const key = JSON.stringify([ref.path, node, reverse]);
-        if (!paths.has(key)) paths.set(key, port.select(`SELECT DISTINCT ?value ${dataset} WHERE {
-            ${reverse ? `?value ${ref.path} ${term(node)}` : `${term(node)} ${ref.path} ?value`}
-        }`).map(r => focus(r.value)));
-        return paths.get(key)!;
+    const fetch = (wanted: readonly { ref: NodeReference; node: FocusNode }[], reverse: boolean) => {
+        const byPath = new Map<string, Map<string, FocusNode>>();
+        for (const { ref, node } of wanted) {
+            if (!ref.path || paths.has(JSON.stringify([ref.path, node, reverse]))) continue;
+            const nodes = byPath.get(ref.path) ?? byPath.set(ref.path, new Map()).get(ref.path)!;
+            nodes.set(JSON.stringify(node), node);
+        }
+        for (const [path, nodes] of byPath) {
+            for (const node of nodes.values()) paths.set(JSON.stringify([path, node, reverse]), []);
+            const seen = new Set<string>();
+            for (const r of port.select(`SELECT ?node ?value ${dataset} WHERE { VALUES ?node { ${[...nodes.values()].map(term).join(' ')} }
+                ${reverse ? `?value ${path} ?node` : `?node ${path} ?value`} }`)) {
+                const node = focus(r.node), value = focus(r.value), key = JSON.stringify([path, node, reverse]);
+                if (seen.has(key + JSON.stringify(value))) continue;
+                seen.add(key + JSON.stringify(value));
+                paths.get(key)!.push(value);
+            }
+        }
     };
+    const values = (ref: NodeReference, node: FocusNode, reverse: boolean): FocusNode[] =>
+        ref.path ? paths.get(JSON.stringify([ref.path, node, reverse]))! : [node];
     const reason = (ref: NodeReference, sourceNode: FocusNode): TargetReason => ({
         kind: 'node', target: { termType: 'NamedNode', value: ref.target }, sourceShape: ref.source, sourceNode,
         ...(ref.property ? { property: ref.property } : {})
@@ -76,20 +90,23 @@ export function applicableMatches(port: TargetQueryPort, scope: TargetScope, ref
         // Walk toward root targets for each requested node. Never read all instances for an instance request.
         for (const direct of targetMatches(port, scope, selection)) add(direct.shape, direct.node, direct.reasons);
         const targets = [...new Set(refs.map(r => r.target))].filter(s => !selection.shapes || selection.shapes.includes(s));
-        const directCache = new Map<string, boolean>();
-        for (const node of selection.nodes) for (const target of targets) {
-            const queue: { shape: string; node: FocusNode; first?: TargetReason }[] = [{ shape: target, node }];
-            const seen = new Set<string>();
-            for (let i = 0; i < queue.length; i++) {
-                const state = queue[i], key = JSON.stringify(state);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                const pair = JSON.stringify([state.shape, state.node]);
-                if (!directCache.has(pair)) directCache.set(pair, targetMatches(port, scope, { nodes: [state.node], shapes: [state.shape] }).length > 0);
-                if (state.first && directCache.get(pair)) add(target, node, [state.first]);
-                for (const ref of refs.filter(r => r.target === state.shape)) for (const parent of values(ref, state.node, true))
-                    queue.push({ shape: ref.source, node: parent, first: state.first ?? reason(ref, parent) });
+        const direct = new Map<string, boolean>();
+        type State = { origin: FocusNode; target: string; shape: string; node: FocusNode; first?: TargetReason };
+        let level: State[] = selection.nodes.flatMap(origin => targets.map(target => ({ origin, target, shape: target, node: origin })));
+        const seen = new Set<string>();
+        while (level.length) {
+            level = level.filter(state => { const key = JSON.stringify(state); return !seen.has(key) && !!seen.add(key); });
+            const open = level.filter(s => s.first && !direct.has(JSON.stringify([s.shape, s.node])));
+            if (open.length) {
+                const shapes = [...new Set(open.map(s => s.shape))], nodes = [...new Map(open.map(s => [JSON.stringify(s.node), s.node])).values()];
+                for (const s of open) direct.set(JSON.stringify([s.shape, s.node]), false);
+                for (const m of targetMatches(port, scope, { nodes, shapes })) direct.set(JSON.stringify([m.shape, m.node]), true);
             }
+            for (const s of level) if (s.first && direct.get(JSON.stringify([s.shape, s.node]))) add(s.target, s.origin, [s.first]);
+            const steps = level.flatMap(state => refs.filter(r => r.target === state.shape).map(ref => ({ state, ref, node: state.node })));
+            fetch(steps, true);
+            level = steps.flatMap(({ state, ref }) => values(ref, state.node, true).map(parent =>
+                ({ origin: state.origin, target: state.target, shape: ref.source, node: parent, first: state.first ?? reason(ref, parent) })));
         }
     } else if (selection.shapes) {
         const ancestors = new Set(selection.shapes);
@@ -97,16 +114,14 @@ export function applicableMatches(port: TargetQueryPort, scope: TargetScope, ref
             changed = false;
             for (const ref of refs) if (ancestors.has(ref.target) && !ancestors.has(ref.source)) { ancestors.add(ref.source); changed = true; }
         }
-        const queue = targetMatches(port, scope, { shapes: [...ancestors] });
+        let level = targetMatches(port, scope, { shapes: [...ancestors] });
         const seen = new Set<string>();
-        for (let i = 0; i < queue.length; i++) {
-            const state = queue[i];
-            add(state.shape, state.node, state.reasons);
-            const key = JSON.stringify([state.shape, state.node]);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            for (const ref of refs.filter(r => r.source === state.shape && ancestors.has(r.target))) for (const node of values(ref, state.node, false))
-                queue.push({ shape: ref.target, node, reasons: [reason(ref, state.node)] });
+        while (level.length) {
+            for (const state of level) add(state.shape, state.node, state.reasons);
+            level = level.filter(state => { const key = JSON.stringify([state.shape, state.node]); return !seen.has(key) && !!seen.add(key); });
+            const steps = level.flatMap(state => refs.filter(r => r.source === state.shape && ancestors.has(r.target)).map(ref => ({ state, ref, node: state.node })));
+            fetch(steps, false);
+            level = steps.flatMap(({ state, ref }) => values(ref, state.node, false).map(node => ({ shape: ref.target, node, reasons: [reason(ref, state.node)] })));
         }
     }
     return [...found.values()].filter(m => !selection.shapes || selection.shapes.includes(m.shape))

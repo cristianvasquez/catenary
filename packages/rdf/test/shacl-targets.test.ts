@@ -141,3 +141,23 @@ describe('sh:node applicability', () => {
         expect(checked(g, { nodes: [node('urn:a')] }).map(m => m.shape)).toEqual(['urn:S']);
     });
 });
+
+describe('query cost of node constraints', () => {
+    it('asks one query per walk level, not one per card', () => {
+        let shapes = '', data = '';
+        for (let i = 0; i < 6; i++) shapes += `<urn:S${i}> sh:targetClass <urn:C${i}> ; sh:property <urn:S${i}p> . <urn:S${i}p> sh:path <urn:p${i}> ; sh:node <urn:S${(i + 1) % 6}> .`;
+        for (let k = 0; k < 40; k++) data += `<urn:x${k}> a <urn:C${k % 6}> ; <urn:p${k % 6}> <urn:x${k + 1}> .`;
+        const g = store(`<urn:shapes> { ${shapes} } <urn:data> { ${data} }`);
+        const cost = (count: number) => {
+            let queries = 0;
+            const port = { select: (q: string) => { queries++; return g.select(q); } };
+            const refs = readNodeReferences(port, scope.shapes);
+            queries = 0;
+            const matches = applicableMatches(port, scope, refs, { nodes: Array.from({ length: count }, (_, k) => node(`urn:x${k}`)) });
+            return { queries, matches };
+        };
+        const few = cost(3), many = cost(30);
+        expect(many.queries).toBe(few.queries);
+        for (const m of few.matches) expect(many.matches).toContainEqual(m);
+    });
+});

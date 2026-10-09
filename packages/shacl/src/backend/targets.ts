@@ -50,7 +50,7 @@ export function targetMatches(port: TargetQueryPort, scope: TargetScope, selecti
     const named = [...new Set(scope.shapes)].map(g => `FROM NAMED ${iri(g)}`).join(' ');
     const declaration = (predicate: string) => `GRAPH ?sg { ?shape sh:${predicate} ?target }`;
     const rows = port.select(`PREFIX sh: <${SH}> PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}>
-        SELECT DISTINCT ?shape ?node ?kind ?target ${dataset} ${named} WHERE {
+        SELECT ?shape ?node ?kind ?target ${dataset} ${named} WHERE {
             ${selection.nodes ? `VALUES ?node { ${selection.nodes.map(term).join(' ')} }` : ''}
             ${selection.shapes ? `VALUES ?shape { ${selection.shapes.map(iri).join(' ')} }` : ''}
             {
@@ -68,7 +68,8 @@ export function targetMatches(port: TargetQueryPort, scope: TargetScope, selecti
         const node = focus(row.node), target = focus(row.target);
         const key = JSON.stringify([row.shape.value, node]);
         const match = result.get(key) ?? { shape: row.shape.value, node, reasons: [] };
-        match.reasons.push({ kind: row.kind.value as TargetKind, target });
+        // No DISTINCT in the query: duplicate rows (several shapes graphs, subclass paths) collapse here.
+        if (!match.reasons.some(r => r.kind === row.kind.value && JSON.stringify(r.target) === JSON.stringify(target))) match.reasons.push({ kind: row.kind.value as TargetKind, target });
         result.set(key, match);
     }
     for (const match of result.values()) match.reasons.sort((a, b) => a.kind.localeCompare(b.kind) || JSON.stringify(a.target).localeCompare(JSON.stringify(b.target)));
