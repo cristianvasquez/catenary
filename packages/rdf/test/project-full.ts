@@ -2,7 +2,7 @@
 // build Doc fixtures for the pure functions of @catenary/model. Production code builds request-scoped Docs (scoped-doc.ts).
 
 import {
-    Doc, NS, emptyDoc
+    Doc, NS, PREFIXES as PREFIX_TABLE, emptyDoc
 } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, cmp, fileOfGraph, labelFromIri } from '../src/graph';
@@ -17,13 +17,14 @@ const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view:
 const TYPE = P.type.value, LABEL = P.label.value, CONFORMS_TO = P.conformsTo.value;
 
 /**
- * The shapes read model of the shapes and vocabulary quads, read again only when these quads change. The key is the content, not
- * ModelGraph.shapesRevision: the oracle stays independent of the cache of the store (shapesIndexOf).
+ * The shapes read model of the shapes and vocabulary quads, read again only when these quads or the prefix table change (readShapes
+ * compacts IRIs with it). The key is the content, not ModelGraph.shapesRevision: the oracle stays independent of the cache of the
+ * store (shapesIndexOf).
  */
 const shapesRead = new WeakMap<ModelGraph, { key: string; shapes: Doc['shapes'] }>();
 function shapesOf(g: ModelGraph): Doc['shapes'] {
     const quads = g.shapesAndVocabulary();
-    const key = quads.map(q => `${key4(q.subject)} ${q.predicate.value} ${key4(q.object)} ${q.graph.value}`).join('\n');
+    const key = JSON.stringify(PREFIX_TABLE) + '\n' + quads.map(q => `${key4(q.subject)} ${q.predicate.value} ${key4(q.object)} ${q.graph.value}`).join('\n');
     const cached = shapesRead.get(g);
     if (cached?.key === key) return cached.shapes;
     const shapes = readShapes(quads).model;
