@@ -11,6 +11,7 @@ import { elementId, elementTerm } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
 import { shapesIndexOf } from './shapes-read';
 import { rdf } from './terms';
+import { tracer } from './trace';
 
 export interface ViewReadContext {
     g: ModelGraph;
@@ -58,7 +59,13 @@ function resources(rows: Record<string, Plain>[], vars: readonly string[]): Reso
 export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, warnings: string[] = []): Doc {
     const view = elementTerm(viewId);
     if (!view || view.termType !== 'NamedNode' || !g.isView(view)) return emptyDoc();
-    return viewRead({ g, shapes: shapes ?? shapesIndexOf(g).model }, view, warnings);
+    return tracer.span('refresh', 'read full view', () => {
+        tracer.note(`view ${viewId}; IRI ${view.value}`);
+        const doc = viewRead({ g, shapes: shapes ?? shapesIndexOf(g).model }, view, warnings);
+        const v = doc.views[viewId];
+        tracer.note(`view ${viewId}; IRI ${view.value}; instances ${Object.keys(doc.instances).length}; placements ${(v?.boxes.length ?? 0) + (v?.edges.length ?? 0)}`);
+        return doc;
+    });
 }
 
 /** The Doc of view `view`: the view, the instances it places (and the SKOS vocabulary when it shows shapes), their relations. */

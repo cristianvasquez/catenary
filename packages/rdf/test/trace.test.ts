@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { queryKey, type TraceSpan } from '@catenary/model';
+import * as model from '@catenary/model';
 import { OxigraphStore, parseRdfSync } from 'rdf-files';
 import { ModelGraph } from '../src/graph';
 import { shapeTargetMatches } from '../src/shacl-targets';
@@ -12,6 +13,7 @@ import { rdf } from '../src/terms';
 import { emptyMetamodel } from '../src/shapes';
 import * as validation from '../src/validate';
 import { ValidationRunner } from '../src/validation-runner';
+import { syncFigures } from '../src/figure-edits';
 import { DATA, SHAPES, emptyGraph, writeWorkspace } from './helpers';
 
 const dirs: string[] = [];
@@ -30,6 +32,14 @@ const causes = (spans: TraceSpan[], s: TraceSpan): string[] => {
 };
 
 describe('tracer', () => {
+    it('records figure synchronization when no notation changes need processing', () => {
+        const g = emptyGraph();
+        tracer.setClient(true);
+        syncFigures(g, true);
+        const { spans } = tracer.take();
+        expect(spans.some(s => s.kind === 'command' && s.name === 'sync figures' && s.detail?.includes('arrivals true'))).toBe(true);
+    });
+
     it('records nothing while no client reads, and clears all data when the last client stops', () => {
         const t = new Tracer();
         expect(t.span('rpc', 'a', () => 1)).toBe(1);
@@ -156,6 +166,84 @@ describe('traced store', () => {
         expect(spans.find(s => s.kind === 'change' && s.name === 'edit')?.detail).toMatch(/^1 listeners; views 1/);
         expect(causes(spans, spans.find(s => s.kind === 'file' && s.name === 'write')!)).toContain('command:createView');
         store.close();
+    });
+
+    it('a one-element Links request reads file origins for unrelated cards of the active view', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'catenary-links-trace-'));
+        dirs.push(dir);
+        const uris = Array.from({ length: 20 }, (_, i) => `urn:trace:instance:${i}`);
+        writeFileSync(join(dir, 'data.ttl'), uris.map(uri => `<${uri}> <http://www.w3.org/2000/01/rdf-schema#label> "Card" .`).join('\n'));
+        const store = new ModelStore();
+        store.watching = false;
+        try {
+            expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
+            expect(store.execute({ kind: 'createView', label: 'Connections trace' }).ok).toBe(true);
+            const view = Object.keys(store.viewLabels()).find(id => store.viewLabels()[id] === 'Connections trace')!;
+            expect(store.execute({ kind: 'addToView', view, ids: uris.map(model.iriId), at: { x: 0, y: 0 } }).ok).toBe(true);
+            const matched: string[] = [];
+            const original = ModelGraph.prototype.match;
+            vi.spyOn(ModelGraph.prototype, 'match').mockImplementation(function (this: ModelGraph, ...args) {
+                if (args[0] && !args[1] && !args[2] && !args[3] && new Error().stack?.includes('filesOfSubject')) matched.push(args[0].value);
+                return original.apply(this, args);
+            });
+            tracer.setClient(true);
+            store.links([model.iriId(uris[0])], view);
+            const spans = tracer.take().spans;
+            const full = spans.find(s => s.name === 'read full view')!;
+            expect(full.detail).toContain(`view ${view};`);
+            expect(full.detail).toContain('instances 20');
+            expect(causes(spans, full)).toEqual(['refresh:scoped read']);
+            const origins = spans.find(s => s.name === 'instance file origins')!;
+            expect(origins.detail).toContain('instances 20');
+            expect(origins.queries).toBe(20);
+            expect(causes(spans, origins)).toEqual(['refresh:scoped read']);
+            // Reproduction: a selection of one card decorates every card, including all 19 unrelated cards.
+            expect([...matched].sort()).toEqual([...uris].sort());
+            matched.length = 0;
+            store.links(uris.slice(0, 3).map(model.iriId), view);
+            expect([...matched].sort()).toEqual([...uris].sort());
+            matched.length = 0;
+            store.links([model.iriId(uris[0])]);
+            expect(matched).toEqual([uris[0]]);
+            matched.length = 0;
+            store.selectionActions({ ids: [model.iriId(uris[0])], view });
+            // Action facts read the view again through viewOf after scopedDoc already read it.
+            expect([...matched].sort()).toEqual([...uris, ...uris].sort());
+        } finally {
+            await store.idle();
+            store.close();
+        }
+    });
+
+    it('derives separately during edge removal and the following canvas refresh', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'catenary-edge-trace-'));
+        dirs.push(dir);
+        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
+        writeFileSync(join(dir, 'data.ttl'), DATA);
+        const store = new ModelStore();
+        store.watching = false;
+        try {
+            expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
+            const view = Object.keys(store.viewLabels()).find(id => store.view(id)?.edges.length);
+            expect(view).toBeDefined();
+            const edge = store.view(view!)!.edges[0];
+            expect(edge.id).toBeDefined();
+            store.viewFigures(view!);
+            const figures = vi.spyOn(model, 'viewFigures');
+            tracer.setClient(true);
+            expect(store.execute({ kind: 'removeFromView', view: view!, ids: [edge.id!] }).ok).toBe(true);
+            const refreshed = store.viewFigures(view!);
+            expect(figures).toHaveBeenCalledTimes(2);
+            expect(refreshed!.derivation).not.toBe(figures.mock.results[0].value.derivation);
+            await store.idle();
+            const { spans } = tracer.take();
+            const derives = spans.filter(s => s.name === 'derive and join figures');
+            expect(derives).toHaveLength(1);
+            expect(causes(spans, derives[0])).toEqual(['command:sync figures', 'command:removeFromView']);
+            expect(store.view(view!)!.edges.some(e => e.id === edge.id)).toBe(false);
+        } finally {
+            store.close();
+        }
     });
 
     it('validation: each change schedules a run; a run says what it validated, and a stale run says that it was discarded', async () => {

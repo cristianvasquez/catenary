@@ -1149,6 +1149,13 @@ labelSegment segs = case sortOn (negate . len) [s | s@((_, y1), (_, y2)) <- segs
 edgeLabelFraction :: Double
 edgeLabelFraction = 0.5
 
+-- | Visible edge strokes scale with canvas zoom. Keep invisible hit strokes fixed on screen for selection.
+edgeStrokeScreenWidth :: Double -> Double -> Double
+edgeStrokeScreenWidth zoom width = zoom * width
+
+law_edgeStrokeScales :: Double -> Double -> Bool
+law_edgeStrokeScales zoom width = edgeStrokeScreenWidth zoom width == zoom * width
+
 -- | Direct parallel edges reserve screen-space lanes so zoom does not collapse labels and badges.
 -- Vertical lanes also reserve estimated label width. Clamp attachment points inside each card side.
 directLanePitch :: Double -> Double -> Double

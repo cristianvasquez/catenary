@@ -19,6 +19,32 @@ const { iriId } = require('../packages/model/lib/ids.js');
 
 const root = path.resolve(__dirname, '..');
 
+test('browser: law_edgeStrokeScales: visible edge strokes scale, hit strokes stay fixed', { timeout: 45000 }, async t => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.setContent('<svg width="400" height="200"><g class="catenary-edge" style="--c: black"><path class="hit" d="M20 100 H300"/><path class="line" d="M20 100 H300"/></g></svg>');
+  await page.addStyleTag({ path: path.join(root, 'modeler/css/modeler.css') });
+  for (const state of ['', 'mouseover', 'selected']) {
+    for (const zoom of [1, 0.25, 2]) {
+      const strokes = await page.evaluate(({ state, zoom }) => {
+        const edge = document.querySelector('.catenary-edge');
+        edge.setAttribute('class', `catenary-edge ${state}`);
+        edge.setAttribute('transform', `scale(${zoom})`);
+        return ['line', 'hit'].map(name => {
+          const path = edge.querySelector(`.${name}`), style = getComputedStyle(path);
+          return { effect: style.vectorEffect, width: parseFloat(style.strokeWidth), scale: path.getScreenCTM().a };
+        });
+      }, { state, zoom });
+      const width = state ? 2.5 : 1.5;
+      assert.equal(strokes[0].effect, 'none', `${state}: visible stroke uses the canvas transform`);
+      assert.equal(strokes[0].width * strokes[0].scale, width * zoom, `${state}: screen width follows zoom`);
+      assert.equal(strokes[1].effect, 'non-scaling-stroke', 'hit area stays fixed on screen');
+      assert.equal(strokes[1].width, 16);
+    }
+  }
+});
+
 // 45 s: the first browser start of a CI runner takes about 15 s (launch and first page, Chromium 154 on ubuntu-latest).
 test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 45000 }, async t => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });

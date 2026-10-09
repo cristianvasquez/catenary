@@ -157,7 +157,10 @@ export class ModelStore implements ModelQueries {
 
     /** A read model of the elements and views that one request needs (scoped-doc.ts). */
     protected scoped(scope: DocScope): Doc {
-        return this.decorate(scopedDoc({ g: this.graph, shapes: this.shapesIndex().model }, scope));
+        return tracer.span('refresh', 'scoped read', () => {
+            tracer.note(`elements ${scope.elements?.length ?? 0}; views ${(scope.views ?? []).filter(Boolean).join(', ') || 'none'}; neighbors ${!!scope.neighbors}; showing ${!!scope.showing}`);
+            return this.decorate(scopedDoc({ g: this.graph, shapes: this.shapesIndex().model }, scope));
+        });
     }
 
     /** The metamodel as JSON (without the shapes dataset). */
@@ -637,10 +640,14 @@ export class ModelStore implements ModelQueries {
     /** What the read of a view does not know: the file of each instance, and the path and state of each file reference. */
     protected decorate(doc: Doc): Doc {
         // The file of each instance: the file with most of its statements.
-        for (const i of Object.values(doc.instances)) {
-            const f = this.ws?.filesOfSubject(rdf.namedNode(i.uri))[0];
-            if (f) i.file = f; else delete i.file;
-        }
+        tracer.span('refresh', 'instance file origins', () => {
+            const instances = Object.values(doc.instances);
+            tracer.note(`instances ${instances.length}; populated views ${Object.values(doc.views).filter(v => v.boxes.length || v.edges.length || v.arrows.length).map(v => v.id).join(', ') || 'none'}`);
+            for (const i of instances) {
+                const f = this.ws?.filesOfSubject(rdf.namedNode(i.uri))[0];
+                if (f) i.file = f; else delete i.file;
+            }
+        });
         // File references: the absolute path (from the folder of the view file), and whether the file is on disk.
         for (const v of Object.values(doc.views)) {
             const dir = path.dirname(this.ws?.viewFile(v.uri)?.path ?? path.join(this.folder, 'views', 'x'));

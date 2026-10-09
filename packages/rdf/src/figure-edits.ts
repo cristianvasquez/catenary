@@ -7,6 +7,7 @@
 import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
+import { tracer } from './trace';
 import { elementId } from './ids';
 import * as ops from './ops';
 import { readNotations, storeIndex } from './notations';
@@ -145,6 +146,15 @@ const iriOfKey = (k: string) => /^<([^<>]*)>$/.exec(k)?.[1];
  * created. `arrivals` false: the command placed a target from a property (Show as Line, a property edit): no arrival.
  */
 export function syncFigures(g: ModelGraph, arrivals: boolean): void {
+    if (!tracer.on) return syncFiguresNow(g, arrivals);
+    const changes = g.changes();
+    return tracer.span('command', 'sync figures', () => {
+        tracer.note(`${changes.length} transaction changes; arrivals ${arrivals}`);
+        syncFiguresNow(g, arrivals);
+    });
+}
+
+function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
     // A placement whose element changes (a new IRI) is not an arrival and not a removal: pair by placement subject.
     const placed = { add: new Map<string, { view: NamedNode; element: Term }>(), remove: new Map<string, { view: NamedNode; element: Term }>() };
     // A new IRI of a property shape, or a path edit, removes a sh:path: pair by subject and by path.
@@ -171,45 +181,52 @@ export function syncFigures(g: ModelGraph, arrivals: boolean): void {
     if (!added.size && !removed.size && !created.size && !lists) return;
     if (lists) rekeyLists(g);
 
-    const D = storeIndex(g), notes = readNotations();
+    const D = tracer.span('refresh', 'notation input', () => storeIndex(g)), notes = readNotations();
     const views = created.size || lists ? g.views() : [...new Set([...added.keys(), ...removed.keys()])].map(v => rdf.namedNode(v));
+    tracer.note(`added ${added.size} views; removed ${removed.size} views; created ${created.size}; lists ${lists}; scanned ${views.length} views`);
     for (const view of views) {
-        const vf = viewFigures(D, notes, view.value);
-        const gone = new Set<string>(), add = new Set<string>();
-        // Removal: the state before the command is the state after it, with the removed placements.
-        const left = removed.get(view.value)?.keys ?? [];
-        if (left.length) {
-            const before: Placements = new Map(vf.placed);
-            for (const k of left) before.set(k, { iri: '', simple: false, keptByLines: false } as NotationPlacement);
-            for (const k of left) for (const x of removal(vf.derivation.figures, before, termOf(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
-        }
-        const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
-        for (const k of added.get(view.value)?.keys ?? []) {
-            if (!now.has(k)) continue;
-            // With arrivals off, an added box still draws its own lines to the shown cards: the part lines without nt:from (they start at
-            // the box because they are its parts, as the alternatives of a "one of" box). They are the content of the box, as its rows are
-            // (ui-manifest §6.5). A line with nt:from (a property of a card) is not: only the requested property becomes a line.
-            const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
-            const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && !r.part.startValues.length
-                && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
-            for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
-        }
-        if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
-        if (lists) {
-            const figures = new Set(vf.derivation.figures.map(f => nkey(f.placedAs)));
-            // A list placement without a figure (an ungrouped constraint, a removed range list) goes.
-            for (const k of now.keys()) if (k.startsWith(`<${ops.LIST_PREFIX}`) && !figures.has(k)) gone.add(k);
-            // A new constraint over lines that the view places: its hub, and the members lose their own placements (rule 7).
-            for (const h of vf.derivation.figures) {
-                if (h.fs.kind !== 'Hub' || now.has(nkey(h.placedAs))) continue;
-                const lines = h.memberFigs.filter(m => m.fs.kind === 'Line' && now.has(nkey(m.placedAs)));
-                if (!lines.length) continue;
-                add.add(nkey(h.placedAs));
-                for (const m of lines) gone.add(nkey(m.placedAs));
+        const vf = tracer.span('refresh', 'derive and join figures', () => {
+            tracer.note(`view ${view.value}; indexed input ready`);
+            return viewFigures(D, notes, view.value);
+        });
+        tracer.span('refresh', 'apply figure placement rules', () => {
+            const gone = new Set<string>(), add = new Set<string>();
+            // Removal: the state before the command is the state after it, with the removed placements.
+            const left = removed.get(view.value)?.keys ?? [];
+            if (left.length) {
+                const before: Placements = new Map(vf.placed);
+                for (const k of left) before.set(k, { iri: '', simple: false, keptByLines: false } as NotationPlacement);
+                for (const k of left) for (const x of removal(vf.derivation.figures, before, termOf(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
             }
-        }
-        for (const k of gone) { const iri = iriOfKey(k); if (iri) ops.dropFromView(g, view, rdf.namedNode(iri)); else removeStatementPlacement(g, view, vf, k); }
-        for (const k of add) if (!g.nodeOf(view, rdf.namedNode(iriOfKey(k)!))) ops.addPlacement(g, view, rdf.namedNode(iriOfKey(k)!));
+            const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
+            for (const k of added.get(view.value)?.keys ?? []) {
+                if (!now.has(k)) continue;
+                // With arrivals off, an added box still draws its own lines to the shown cards: the part lines without nt:from (they start at
+                // the box because they are its parts, as the alternatives of a "one of" box). They are the content of the box, as its rows are
+                // (ui-manifest §6.5). A line with nt:from (a property of a card) is not: only the requested property becomes a line.
+                const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
+                const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && !r.part.startValues.length
+                    && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
+                for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
+            }
+            if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
+            if (lists) {
+                const figures = new Set(vf.derivation.figures.map(f => nkey(f.placedAs)));
+                // A list placement without a figure (an ungrouped constraint, a removed range list) goes.
+                for (const k of now.keys()) if (k.startsWith(`<${ops.LIST_PREFIX}`) && !figures.has(k)) gone.add(k);
+                // A new constraint over lines that the view places: its hub, and the members lose their own placements (rule 7).
+                for (const h of vf.derivation.figures) {
+                    if (h.fs.kind !== 'Hub' || now.has(nkey(h.placedAs))) continue;
+                    const lines = h.memberFigs.filter(m => m.fs.kind === 'Line' && now.has(nkey(m.placedAs)));
+                    if (!lines.length) continue;
+                    add.add(nkey(h.placedAs));
+                    for (const m of lines) gone.add(nkey(m.placedAs));
+                }
+            }
+            for (const k of gone) { const iri = iriOfKey(k); if (iri) ops.dropFromView(g, view, rdf.namedNode(iri)); else removeStatementPlacement(g, view, vf, k); }
+            for (const k of add) if (!g.nodeOf(view, rdf.namedNode(iriOfKey(k)!))) ops.addPlacement(g, view, rdf.namedNode(iriOfKey(k)!));
+            tracer.note(`figures ${vf.derivation.figures.length}; placements ${vf.placed.size}; removed ${gone.size}; added ${add.size}`);
+        });
     }
 }
 
