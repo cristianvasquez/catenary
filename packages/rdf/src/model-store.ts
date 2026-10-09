@@ -215,7 +215,10 @@ export class ModelStore implements ModelQueries {
         const nodes: string[] = [], shapes: string[] = [];
         for (const id of shown) {
             const t = elementTerm(id);
-            if (t?.termType === 'NamedNode') (this.graph.isInstance(t) ? nodes : shapes).push(t.value);
+            if (t?.termType !== 'NamedNode') continue;
+            // A card can be both: a class used as its own node shape. Non-shape IRIs never match, so each card is a shape candidate.
+            shapes.push(t.value);
+            if (this.graph.isInstance(t)) nodes.push(t.value);
         }
         // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
         if (!nodes.length || !shapes.length) return [];
