@@ -185,6 +185,15 @@ describe('SHACL elements from the notation engine', () => {
         expect(of(g, view, TYPES.PROPERTY).map(e => e.targetId)).toEqual([box.id]);
     });
 
+    it('Show as Edge to a node shape card: only that property is a line, not the properties of the arriving card', async () => {
+        const { g, view } = await setup(`
+            <urn:a> a sh:NodeShape ; sh:property <urn:p> . <urn:p> sh:path <urn:path> ; sh:node <urn:b> .
+            <urn:b> a sh:NodeShape ; sh:property <urn:q> . <urn:q> sh:path <urn:back> ; sh:node <urn:a> .`, '', ['urn:a']);
+        run(g, meta, { kind: 'showAsEdge', view, id: iriId('urn:p'), at: { x: 600, y: 0 } });
+        expect(of(g, view, TYPES.PROPERTY).map(e => e.id)).toEqual([iriId('urn:p')]);
+        expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:b'))!.children!.map(r => r.id)).toEqual([iriId('urn:q')]);
+    });
+
     it('draws a value set with its concepts; a concept with its own card is no row', async () => {
         const { g, view } = await setup(`
             <urn:a> a sh:NodeShape ; sh:property <urn:p> . <urn:p> sh:path <urn:path> ; sh:node <urn:inKeys> .

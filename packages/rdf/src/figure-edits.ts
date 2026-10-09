@@ -186,10 +186,12 @@ export function syncFigures(g: ModelGraph, arrivals: boolean): void {
         const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
         for (const k of added.get(view.value)?.keys ?? []) {
             if (!now.has(k)) continue;
-            // With arrivals off, an added box still draws its own part lines (the alternatives of a "one of" box) to the shown cards:
-            // they are the content of the box, as its rows are (ui-manifest §6.5).
+            // With arrivals off, an added box still draws its own lines to the shown cards: the part lines without nt:from (they start at
+            // the box because they are its parts, as the alternatives of a "one of" box). They are the content of the box, as its rows are
+            // (ui-manifest §6.5). A line with nt:from (a property of a card) is not: only the requested property becomes a line.
             const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
-            const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
+            const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && !r.part.startValues.length
+                && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
             for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
         }
         if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
