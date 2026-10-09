@@ -85,13 +85,6 @@ export function thingHead(g: ModelGraph, t: NamedNode): { label: string; types: 
 /** The property shapes (binds ?s ?type ?g): the subjects of sh:path (SHACL 2.3), type sh:PropertyShape. */
 export const PROPERTY_SHAPES = `{ GRAPH ?g { ?s sh:path ?anyPath } BIND (sh:PropertyShape AS ?type) }`;
 
-/** The predicates in use (binds ?s ?type ?g), type rdf:Property: not HIDDEN_PREDICATES, not of HIDDEN_NAMESPACES. */
-export const PREDICATES = `{
-            { SELECT DISTINCT ?g ?s WHERE { GRAPH ?g { ?anyS ?s ?anyO } } }
-            FILTER (?s NOT IN (${HIDDEN_PREDICATES.join(', ')}) ${HIDDEN_NAMESPACES.map(ns => `&& !STRSTARTS(STR(?s), STR(${ns}))`).join(' ')})
-            BIND (rdf:Property AS ?type)
-        }`;
-
 /** Every thing with its type (`things`, without the shapes), and the broader class of the type. */
 export function thingTypes(g: ModelGraph): Quad[] {
     return construct(g, `CONSTRUCT {

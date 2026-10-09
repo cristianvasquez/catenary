@@ -8,7 +8,7 @@ import { shapeTargetMatches } from './shacl-targets';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
+    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, WorkspaceFiles, prefixesProblem,
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
@@ -295,10 +295,10 @@ export class ModelStore implements ModelQueries {
         return reportProblems(this.graph, this.metamodel, t => idx.byTerm.get(termKey(t)));
     }
 
-    /** The Search panel and Find Element: the faceted search (search.ts, SPARQL). */
-    search(facets: SearchFacets, limit: number): SearchResult {
-        if (!this.file) return { hits: [], more: false, types: [] };
-        return search({ g: this.graph, shapes: this.shapesIndex() }, facets, limit);
+    /** Find Element: all things (search.ts, SPARQL). */
+    search(): SearchHit[] {
+        if (!this.file) return [];
+        return search({ g: this.graph, shapes: this.shapesIndex() });
     }
 
     /**

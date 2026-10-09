@@ -1,5 +1,5 @@
 // Problems panel (ADR 0007 step 6): the query of the store compared with the violation list of the validation, on the fixtures.
-// The Search panel: search-facets.test.ts.
+// Find Element: search.test.ts.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

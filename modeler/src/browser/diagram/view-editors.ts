@@ -235,8 +235,8 @@ export class ViewEditors implements FrontendApplicationContribution {
     protected readonly fitted = new Set<string>();
 
     /** Open (or show) a view, select elements in it and center them. */
-    async reveal(viewId: string, elements: string[]): Promise<void> {
-        const w = await this.open(viewId);
+    async reveal(viewId: string, elements: string[], mode: WidgetOpenMode = 'activate'): Promise<void> {
+        const w = await this.open(viewId, mode);
         // A view opened now has no model yet: the diagram ids (the placement of a card or an edge) and a CenterAction need it.
         await w.actionDispatcher.onceModelInitialized();
         const ids = elements.map(id => this.placementOf(w, id));
@@ -369,6 +369,12 @@ export class ViewEditors implements FrontendApplicationContribution {
         const r = svg?.getBoundingClientRect() ?? widget.node.getBoundingClientRect();
         const zoom = root.zoom ?? 1, scroll = root.scroll ?? { x: 0, y: 0 };
         return { x: (clientX - r.left) / zoom + scroll.x, y: (clientY - r.top) / zoom + scroll.y };
+    }
+
+    /** Model point where a new card goes: the pointer when it is on the canvas, else the center of the visible canvas. */
+    dropPoint(widget: GLSPDiagramWidget): { x: number; y: number } {
+        const p = this.pointerAt.get(widget);
+        return p ? this.toModel(widget, p.x, p.y) : this.center(widget);
     }
 
     /** Model point at the center of the visible canvas. */

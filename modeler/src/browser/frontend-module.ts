@@ -60,7 +60,6 @@ import { ProblemTree, ProblemTreeModel } from '@theia/markers/lib/browser/proble
 import { MarkerOptions } from '@theia/markers/lib/browser/marker-tree';
 import { APPEARANCE_ID, AppearanceContribution, AppearanceWidget } from './properties/appearance-widget';
 import { LINKS_CONTEXT_MENU, LINKS_ID, LinksContribution, LinksFocusContext, LinksWidget } from './properties/links-widget';
-import { SEARCH_ID, SearchContribution, SearchWidget } from './search/search-widget';
 import { WORKSPACE_SETTINGS_ID, WorkspaceSettingsWidget } from './prefixes/workspace-settings';
 import { WorkspaceFileQuestion } from './prefixes/workspace-placement';
 import { ModelPropertiesProvider, ModelPropertiesWidget } from './properties/properties-widget';
@@ -181,11 +180,6 @@ export class ModelerFrontendModule extends GLSPTheiaFrontendModule {
         // ADR 0004: no Run and Debug, no Testing.
         bind(FilterContribution).to(HiddenContributions).inSingletonScope();
         single(FileKindsDecorator, NavigatorTreeDecorator);
-
-        // Search panel
-        transient(SearchWidget);
-        widgetFactory(SEARCH_ID, SearchWidget);
-        bindViewContribution(bind, SearchContribution);
 
         // Prefixes of the workspace
         transient(WorkspaceSettingsWidget);
