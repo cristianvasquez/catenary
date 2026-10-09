@@ -2,19 +2,19 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ExplorerRow, NS, VIEW_CLASS, boxes, cardOf, classKey } from '@catenary/model';
+import { EXPLORER_PAGE, ExplorerRow, NS, VIEW_CLASS, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 
-const SKOS_DATA = `@prefix skos: <${NS.skos}> .
-<urn:k:S> a skos:ConceptScheme ; skos:prefLabel "Scheme" .
-<urn:k:a> a skos:Concept ; skos:prefLabel "A" ; skos:topConceptOf <urn:k:S> .
-<urn:k:b> a skos:Concept ; skos:prefLabel "B" ; skos:broader <urn:k:a> ; skos:inScheme <urn:k:S> .
-<urn:k:c> a skos:Concept ; skos:prefLabel "C" .
-<urn:k:K> a skos:Collection ; skos:prefLabel "Keys" ; skos:member <urn:k:a>, <urn:k:c> .
-<urn:x:untyped> <http://www.w3.org/2000/01/rdf-schema#label> "Untyped" .
-<urn:x:two> a <http://www.w3.org/ns/prov#Agent>, <urn:x:Robot> ; <http://www.w3.org/2000/01/rdf-schema#label> "Two types" .
-<urn:x:task> a <osg://vocab/data-product-draft#Task> ; <http://www.w3.org/2000/01/rdf-schema#label> "Task without action" .
+const AGENT = 'http://www.w3.org/ns/prov#Agent';
+const MORE = `@prefix rdfs: <${NS.rdfs}> .
+<urn:x:Robot> rdfs:subClassOf <${AGENT}> .
+<urn:x:untyped> rdfs:label "Untyped" .
+<urn:x:task> a <osg://vocab/data-product-draft#Task> ; rdfs:label "Task without action" .
+<urn:x:two> a <${AGENT}>, <urn:x:Robot> ; rdfs:label "Two types" .
+<urn:x:A> rdfs:subClassOf <urn:x:B> . <urn:x:B> rdfs:subClassOf <urn:x:A> .
+<urn:x:a> a <urn:x:A> ; rdfs:label "In a cycle" .
+${Array.from({ length: EXPLORER_PAGE + 5 }, (_, i) => `<urn:x:m${i}> a <urn:x:Many> .`).join('\n')}
 `;
 
 let dir: string, store: ModelStore;
@@ -22,7 +22,7 @@ beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'catenary-explorer-'));
     writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
     writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'more.ttl'), SKOS_DATA);
+    writeFileSync(join(dir, 'more.ttl'), MORE);
     store = new ModelStore();
     store.watching = false;
     expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
@@ -33,95 +33,68 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
-const names = (rows: ExplorerRow[]) => rows.map(r => r.name);
-const row = (rows: ExplorerRow[], key: string) => rows.find(r => r.key === key)!;
+const rows = (key?: string, file?: string) => store.explorerChildren(key, file).rows;
+const names = (rs: ExplorerRow[]) => rs.map(r => r.name);
+const cls = (iri: string) => 'rdfs/class:' + iri;
 
-describe('Model explorer rules (ADR 0006)', () => {
-    it('root: thing and shape types, with configured internals hidden, then Relations and Concepts', () => {
-        const root = store.explorerChildren();
-        for (const c of [NS.sh + 'NodeShape', NS.sh + 'PropertyShape', VIEW_CLASS, 'urn:x:Robot', NS.skos + 'Concept', NS.rdfs + 'Resource']) expect(root.some(r => r.key === classKey(c))).toBe(true);
-        for (const c of ['Placement', 'Frame', 'Note', 'FileRef', 'EntityGroup']) expect(root.some(r => r.key === classKey(NS.view + c))).toBe(false);
-        expect(root.slice(-2).map(r => r.key)).toEqual(['relations', 'concepts']);
-        expect(root.some(r => r.key === 'no-class')).toBe(false);
-        // New Instance: classes of the shapes, classes with members in the model graph, view:View; not sh:NodeShape.
-        expect(row(root, classKey('urn:x:Robot')).classIri).toBe('urn:x:Robot');
-        expect(row(root, classKey(VIEW_CLASS)).classIri).toBe(VIEW_CLASS);
-        expect(row(root, classKey(NS.sh + 'NodeShape')).classIri).toBeUndefined();
+describe('Model explorer plugins (ADR 0006)', () => {
+    it('the sections of the plugins: Classes (rdfs), then Shapes (shacl)', () => {
+        expect(rows().map(r => [r.key, r.name])).toEqual([['rdfs/classes', 'Classes'], ['shacl/shapes', 'Shapes']]);
     });
 
-    it('a class folder: its written members, not its target shapes; two types give two folders', () => {
-        const agent = store.explorerChildren(classKey('http://www.w3.org/ns/prov#Agent'));
-        expect(agent.some(r => r.kind === 'shape')).toBe(false);
-        const typed = Object.values(docOf(store).instances).filter(i => i.types.includes('http://www.w3.org/ns/prov#Agent')).map(i => i.id).sort();
-        expect(agent.filter(r => r.kind === 'instance').map(r => r.element).sort()).toEqual(typed);
-        expect(names(store.explorerChildren(classKey('urn:x:Robot')))).toEqual(['Two types']);
-        const two = Object.values(docOf(store).instances).find(i => i.uri === 'urn:x:two')!.id;
-        expect(store.explorerPaths(two).map(p => p.keys[0]).sort()).toEqual([classKey('http://www.w3.org/ns/prov#Agent'), classKey('urn:x:Robot')]);
+    it('classes as written: each rdf:type object, a class row is the class element; no class for untyped subjects', () => {
+        const all = store.explorerElements('rdfs/classes');
+        for (const c of [NS.sh + 'NodeShape', VIEW_CLASS, NS.view + 'Placement', AGENT, 'urn:x:Robot']) expect(all).toContain(iriId(c));
+        expect(all).not.toContain(iriId(NS.rdfs + 'Resource'));
+        expect(all).not.toContain(iriId('urn:x:untyped'));
+        expect(rows('rdfs/classes').find(r => r.key === cls(AGENT))).toMatchObject({ element: iriId(AGENT), folder: true });
     });
 
-    it('views are members of view:View; a node shape expands to its property shapes', () => {
-        const views = store.explorerChildren(classKey(VIEW_CLASS));
-        expect(views.map(r => r.element).sort()).toEqual(Object.keys(docOf(store).views).sort());
-        expect(views.every(r => r.kind === 'view')).toBe(true);
-        const shape = store.explorerChildren(classKey(NS.sh + 'NodeShape')).find(r => r.kind === 'shape' && r.folder)!;
-        const id = shape.key.slice('shape:'.length);
-        expect(store.explorerChildren(shape.key).map(r => r.element)).toEqual(docOf(store).shapes.nodeShapes[id].properties);
+    it('subclasses nest under their superclass; an instance shows under each of its classes', () => {
+        const agent = rows(cls(AGENT));
+        expect(agent[0]).toMatchObject({ key: cls('urn:x:Robot'), name: 'Robot' });
+        const typed = Object.values(docOf(store).instances).filter(i => i.types.includes(AGENT)).map(i => i.id).sort();
+        expect(agent.filter(r => !r.folder).map(r => r.element).sort()).toEqual(typed);
+        expect(names(rows(cls('urn:x:Robot')))).toEqual(['Two types']);
+        expect(rows('rdfs/classes').some(r => r.key === cls('urn:x:Robot'))).toBe(false);
+        expect(store.explorerPaths(iriId('urn:x:two')).map(p => p.keys)).toEqual([
+            ['rdfs/classes', cls(AGENT), 'rdfs/instance:urn:x:two'],
+            ['rdfs/classes', cls(AGENT), cls('urn:x:Robot'), 'rdfs/instance:urn:x:two']
+        ]);
     });
 
-    it('relations: the same as the read model, by predicate', () => {
-        const predicates = store.explorerChildren('relations');
-        const ids = predicates.flatMap(p => store.explorerChildren(p.key).map(r => r.element));
-        expect(ids.sort()).toEqual(Object.keys(docOf(store).relations).sort());
-        expect(predicates.reduce((n, p) => n + Number(p.badge), 0)).toBe(Object.keys(docOf(store).relations).length);
+    it('a subclass cycle keeps a top row', () => {
+        const top = rows('rdfs/classes').filter(r => [cls('urn:x:A'), cls('urn:x:B')].includes(r.key));
+        expect(top).toHaveLength(1);
+        expect(store.explorerElements(top[0].key)).toContain(iriId('urn:x:a'));
     });
 
-    it('rdfs:Resource: labeled subjects without a type', () => {
-        expect(names(store.explorerChildren(classKey(NS.rdfs + 'Resource')))).toEqual(['Untyped']);
+    it('pages of EXPLORER_PAGE rows with the total', () => {
+        const first = store.explorerChildren(cls('urn:x:Many'));
+        expect(first.total).toBe(EXPLORER_PAGE + 5);
+        expect(first.rows).toHaveLength(EXPLORER_PAGE);
+        expect(store.explorerChildren(cls('urn:x:Many'), undefined, EXPLORER_PAGE).rows).toHaveLength(5);
     });
 
-    it('concepts: schemes, No scheme, collections; scheme -> top concepts -> narrower; a collection is flat', () => {
-        const concepts = store.explorerChildren('concepts');
-        expect(names(concepts)).toEqual(['Scheme', 'No scheme', 'Keys']);
-        const top = store.explorerChildren('scheme:urn:k:S');
-        expect(names(top)).toEqual(['A']);
-        expect(top[0].folder).toBe(true);
-        expect(names(store.explorerChildren('concept:urn:k:a'))).toEqual(['B']);
-        expect(names(store.explorerChildren('no-scheme'))).toEqual(['C']);
-        const keys = store.explorerChildren('collection:urn:k:K');
-        expect(names(keys)).toEqual(['A', 'C']);
-        expect(keys.every(r => !r.folder)).toBe(true);
-        expect(store.explorerPaths(store.explorerChildren('concept:urn:k:a')[0].element!).find(p => p.name === 'Concepts')?.keys)
-            .toEqual(['concepts', 'scheme:urn:k:S', 'concept:urn:k:a', 'concept:urn:k:b']);
+    it('a node shape expands to its property shapes', () => {
+        const shapes = docOf(store).shapes;
+        const shape = Object.values(shapes.nodeShapes).find(s => s.properties.length)!;
+        expect(rows('shacl/shapes').map(r => r.element)).toContain(shape.id);
+        const props = rows('shacl/shape:' + shape.uri);
+        expect(props.map(r => r.element).sort()).toEqual([...shape.properties].sort());
+        expect(store.explorerPaths(shape.properties[0]).map(p => p.keys)).toContainEqual(['shacl/shapes', 'shacl/shape:' + shape.uri, props.find(r => r.element === shape.properties[0])!.key]);
     });
 
-    it('row state: badge = views with a card, grey = none, the current view', () => {
-        const view = Object.values(docOf(store).views)[0];
-        const placed = boxes(view, 'card').map(c => c.element).find(e => docOf(store).instances[e])!;
-        const inst = docOf(store).instances[placed];
-        const cls = inst.types.find(t => store.meta.classes.some(c => c.iri === t))!;
-        const r = store.explorerChildren(classKey(cls), view.id).find(x => x.element === placed)!;
-        const views = Object.values(docOf(store).views).filter(v => cardOf(v, placed)).length;
-        expect(r).toMatchObject({ badge: String(views), muted: false, inView: true });
-        expect(store.explorerChildren('no-class')[0]).toMatchObject({ badge: '0', muted: true, inView: false });
+    it('search: a flat ranked list of element rows, with where each row is', () => {
+        const found = store.explorerSearch('two types');
+        expect(found[0]).toMatchObject({ name: 'Two types', element: iriId('urn:x:two'), folder: false });
+        expect(found[0].description?.split(', ').sort()).toEqual(['Agent', 'Robot']);
+        expect(store.explorerSearch('zzzz')).toEqual([]);
     });
 
-    it('violations: the SHACL report is a graph of the store; rows count its results; not data, not saved, not undone', async () => {
-        const s = store;
-        await s.validate();
-        const byFocus = new Map<string, number>();
-        for (const v of s.violations) if (v.severity === 'Violation') byFocus.set(v.focus, (byFocus.get(v.focus) ?? 0) + 1);
-        expect(byFocus.size).toBeGreaterThan(0);
-        const rows = store.explorerChildren().filter(r => r.classIri).flatMap(c => store.explorerChildren(c.key)).filter(r => r.kind === 'instance');
-        for (const r of rows) expect(r.problems ?? 0).toBe(byFocus.get(docOf(store).instances[r.element!].uri) ?? 0);
-        expect(rows.some(r => (r.problems ?? 0) > 0)).toBe(true);
-        // Derived data: no class folder, no read model warning, no undo step, nothing to save.
-        expect(store.explorerChildren().some(r => r.key === classKey(NS.sh + 'ValidationResult'))).toBe(false);
-        expect(store.snapshot().warnings.some(w => w.includes('urn:trellis:validation'))).toBe(false);
-        expect(store.snapshot()).toMatchObject({ canUndo: false, dirty: false });
-    });
-
-    it('elements under a folder, at any depth (the delete of elements not placed)', () => {
-        const ids = store.explorerElements('concepts');
-        for (const c of ['urn:k:a', 'urn:k:b', 'urn:k:c']) expect(ids).toContain(Object.values(docOf(store).instances).find(i => i.uri === c)!.id);
+    it('the SHACL report is not data: no class, no row', async () => {
+        await store.validate();
+        expect(store.violations.length).toBeGreaterThan(0);
+        expect(store.explorerElements('rdfs/classes')).not.toContain(iriId(NS.sh + 'ValidationResult'));
     });
 });

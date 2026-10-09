@@ -16,6 +16,12 @@
       "rdf-files": [
         "packages/rdf-files/src/index.ts"
       ],
+      "@catenary/explorer": [
+        "packages/explorer/src/index.ts"
+      ],
+      "@catenary/rdfs": [
+        "packages/rdfs/src/index.ts"
+      ],
       "@catenary/shacl/*": [
         "packages/shacl/src/*/index.ts"
       ]

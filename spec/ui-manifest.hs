@@ -1302,27 +1302,27 @@ editorFor f Nothing = AsText f
 
 -- 8.5 Model explorer ----------------------------------------------------------------
 
--- | Model explorer (ADR 0006): each folder is a SPARQL query, run when the user opens it.
--- A closed folder shows a count. An open folder sorts rows by label and reads pages of 100. A last "N more" row reads the next page.
--- Roots: the shared thing and shape types, then Relations and Concepts. Configured hidden types have no folder.
--- Class folders show direct subclasses and written members. An element with several types has a row under each.
--- Labeled subjects without a type go under rdfs:Resource. Target shapes go under sh:NodeShape, not under their target class.
--- Relation folders show data statements between things, without the shared excluded predicates.
--- Concepts follow schemes and broader/narrower links. Reveal opens a chosen path. Ordinary selection opens no folder.
--- Delete Elements Not Placed in a View walks the instances and relations of a folder at all depths.
--- It tests own placements, not parts. It confirms before deletion.
--- Limit: logical constraints have no rows. A repeated ancestor key stops expansion.
+-- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/explorer). The core has no section rules.
+-- Reason: a new vocabulary (SKOS) adds a plugin, not a special case in the explorer.
+-- A plugin query runs only when a folder opens. A folder shows its child count and reads pages of 100. A last "Show more" row reads the next page.
+-- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in scope is not shown.
+-- Classes: each object of rdf:type in scope, nested by written rdfs:subClassOf, then its direct instances. No inference, no hidden types.
+-- Shapes: each node shape (typed sh:NodeShape, or a subject of sh:property), then its property shapes in sh:order, then by name.
+-- An IRI has a row in each section that has it (a node shape is also an instance of sh:NodeShape). Reason: the data shows as written.
+-- A class row and a node shape row are also elements: their selection is the class or the shape.
+-- Rows have no view state and no violation counts. Properties shows the violations of the selected element.
+-- Reveal opens a chosen path. Ordinary selection opens no folder. A repeated ancestor key stops expansion.
+-- Delete Elements Not Placed in a View walks the elements of a folder at all depths. It tests own placements and confirms first.
 pageSize :: Int
 pageSize = 100
-folderPage :: Int -> [String] -> ([String], Maybe Int)   -- pages read, row labels: shown rows and the "N more" count
+folderPage :: Int -> [String] -> ([String], Maybe Int)   -- pages read, row labels: shown rows and the "more" count
 folderPage pages rows =
   let sorted = sortOn id rows
       shown = take (pages * pageSize) sorted
       rest = length sorted - length shown
   in (shown, if rest > 0 then Just rest else Nothing)
-folderOf :: [Iri] -> Bool -> [Iri]                  -- types of a subject, it has a label: the class folders with a row for it
-folderOf [] True = ["rdfs:Resource"]
-folderOf ts _ = ts
+folderOf :: [Iri] -> [Iri]                          -- written types of a subject: the class folders with a row for it
+folderOf ts = ts
 notPlaced :: Element -> Bool                        -- Delete Elements Not Placed in a View: own placements only
 notPlaced e = null (placements e)
 
@@ -1333,9 +1333,11 @@ notPlaced e = null (placements e)
 -- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
 -- Reason: presentation navigation must not change storage or explorer contents in this phase.
 -- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
--- Fuzzy filtering matches characters in order, ranks word starts and consecutive matches, and highlights matching characters.
--- Ancestors remain visible. Clearing the filter restores expansion state. The filter does not change drag membership.
--- Typing on a focused row uses the same filter input. Nonmatching branches disappear. Escape clears the input and restores the tree.
+-- The filter shows one flat list of the element rows in scope whose name matches, best first, at most one page.
+-- Each row says where it is (its classes, its node shape). Reason: a filtered tree must read every folder of the file.
+-- Fuzzy matching takes characters in order, ranks word starts and consecutive matches, and highlights matching characters.
+-- Clearing the filter restores the tree and its expansion state. The filter does not change drag membership.
+-- Typing on a focused row uses the same filter input. Escape clears the input and restores the tree.
 -- Reason: a second highlight-only search leaves nonmatching rows visible and gives conflicting results.
 data ExplorerFilterInput = RowTyping String | FilterTyping String
 explorerFilterText :: ExplorerFilterInput -> String

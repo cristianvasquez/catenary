@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { conceptPath, conceptRoots, predicateName, primaryClass, type Classes, type ConceptDef } from '../src/metamodel';
+import { predicateName, primaryClass, type Classes } from '../src/metamodel';
 import { formatPath } from '../src/shapes-doc';
 import { localName } from '../src/terms';
 
@@ -38,29 +38,5 @@ describe('SKOS terms', () => {
 
     it('a concept of no class of the shapes has no primary class', () => {
         expect(primaryClass(meta, ['http://www.w3.org/2004/02/skos/core#Concept'])).toBeUndefined();
-    });
-});
-
-describe('concept tree', () => {
-    const c = (iri: string, schemes: string[] = [], broader: string[] = [], top = false): ConceptDef => ({ iri, label: iri, schemes, broader, top });
-    const keys = (roots: Map<string, ConceptDef[]>) => Object.fromEntries([...roots].map(([k, v]) => [k, v.map(x => x.iri)]));
-
-    it('top rows: concepts with no broader concept in their scheme; loose concepts under No scheme', () => {
-        const concepts = [c('a', ['S']), c('b', ['S'], ['a']), c('x', ['S'], ['other']), c('loose')];
-        expect(keys(conceptRoots(concepts))).toEqual({ 'scheme:S': ['a', 'x'], 'no-scheme': ['loose'] });
-        expect(conceptPath(concepts, 'b')).toEqual({ folder: 'scheme:S', broader: ['a'] });
-    });
-
-    it('a broader cycle without scheme has a row, and a path to each concept of it', () => {
-        const concepts = [c('animal', [], ['person']), c('person', [], ['animal'])];
-        expect(keys(conceptRoots(concepts))).toEqual({ 'no-scheme': ['animal'] });
-        expect(conceptPath(concepts, 'animal')).toEqual({ folder: 'no-scheme', broader: [] });
-        expect(conceptPath(concepts, 'person')).toEqual({ folder: 'no-scheme', broader: ['animal'] });
-        expect(conceptPath(concepts, 'nothing')).toBeUndefined();
-    });
-
-    it('a broader cycle inside a scheme goes to that scheme', () => {
-        const concepts = [c('p', ['S'], ['q']), c('q', ['S'], ['p'])];
-        expect(keys(conceptRoots(concepts))).toEqual({ 'scheme:S': ['p'] });
     });
 });

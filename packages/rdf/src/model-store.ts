@@ -8,19 +8,20 @@ import { shapeTargetMatches } from './shacl-targets';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
+    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchFacets, SearchResult, Violation, WorkspaceFiles, prefixesProblem,
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri
+    TripleIndex, ViewFigures, boxes, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
 } from '@catenary/model';
-import type { NamedNode, Quad } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { FolderWatcher, OxigraphStore, SerialQueue, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored } from 'rdf-files';
-import { ActionContext, selectionActions } from './actions';
+import { ActionContext, Placements, placements, selectionActions } from './actions';
 import { executeCommand } from './commands';
-import { ExplorerContent, ExplorerContext, Placements, explorerChildren, explorerElements, explorerPaths, placements, filteredExplorerChildren } from './explorer';
+import type { ExplorerPort } from '@catenary/explorer';
+import { explorerChildren, explorerElements, explorerPaths, explorerSearch } from './explorer';
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
@@ -47,6 +48,9 @@ import { selected } from './selection';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
 
 export type { ChangeReason };
+
+/** The explorer reads of one file scope (no file: the workspace), kept until the dataset changes. */
+interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
 
 export interface ModelChange {
     reason: ChangeReason;
@@ -95,7 +99,7 @@ export class ModelStore implements ModelQueries {
 
     /** Changes each time the dataset changes. Keys the caches below. */
     protected content = 0;
-    protected cache: { content: number; placements?: Placements; instances?: number; explorer?: ExplorerContent } = { content: -1 };
+    protected cache: { content: number; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = { content: -1 };
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -168,21 +172,47 @@ export class ModelStore implements ModelQueries {
         return t?.termType === 'NamedNode' ? formData(this.graph, t) : '';
     }
 
-    /** The Model explorer (ADR 0006): the rules of explorer.ts on this store; `currentView`: the view of the asking window. */
-    protected explorerContext(currentView?: string): ExplorerContext {
-        const idx = this.shapesIndex();
-        const placed = this.cached('placements', () => placements(this.graph, idx.byTerm));
+    /** The port of the explorer plugins (explorer.ts) on this store. `file`: the scope, its subjects found once per dataset. */
+    protected explorerPort(file?: string): ExplorerPort {
+        const scopes = this.cached('explorer', () => new Map<string, ExplorerScope>());
+        let scope = scopes.get(file ?? '');
+        if (!scope) scopes.set(file ?? '', scope = { subjects: file ? this.subjectsOfFile(file) : undefined, memo: new Map() });
+        const { subjects, memo } = scope;
+        const byTerm = this.shapesIndex().byTerm;
         return {
-            g: this.graph, shapes: idx.model, meta: this.metamodel, byTerm: idx.byTerm, placements: placed, currentView, fileOf: t => this.ws?.filesOfSubject(t)[0],
-            content: this.cached('explorer', () => ({}))
+            select: query => this.graph.store.select(query) as unknown as Record<string, Term>[],
+            graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`,
+            labels: iris => labels(this.graph, [...iris]),
+            compact: shortIri,
+            id: iri => byTerm.get(termKey(rdf.namedNode(iri))) ?? iriId(iri),
+            inScope: iri => !subjects || subjects.has(iri),
+            memo: <T>(key: string, compute: () => T) => (memo.has(key) ? memo.get(key) : memo.set(key, compute()).get(key)) as T
         };
     }
 
-    /** Rows of a node key of the Model explorer; no key: the top folders. Nothing when no model is open. */
-    explorerChildren(key?: string, currentView?: string, file?: string, filter?: string): ExplorerRow[] {
-        if (!this.file) return [];
-        const ctx = this.explorerContext(currentView);
-        return file || filter ? filteredExplorerChildren(ctx, key, id => !file || this.elementInFile(id, file), filter) : explorerChildren(ctx, key);
+    /** The IRI subjects of the statements of a file. */
+    protected subjectsOfFile(file: string): Set<string> {
+        const ws = this.ws, subjects = new Set<string>();
+        const known = ws?.knownFile(path.resolve(this.folder, file));
+        if (!ws || !known) return subjects;
+        for (const q of this.graph.quads()) if (q.subject.termType === 'NamedNode' && !subjects.has(q.subject.value) && ws.filesOfQuad(q).includes(known)) subjects.add(q.subject.value);
+        return subjects;
+    }
+
+    /** The IRI of an element id: a property shape by the shapes index, else the IRI of the id. */
+    protected iriOf(id: string): string | undefined {
+        const t = this.shapesIndex().property.get(id)?.term ?? elementTerm(id);
+        return t?.termType === 'NamedNode' ? t.value : undefined;
+    }
+
+    /** One page of the rows of a key of the Model explorer; no key: the sections. Nothing when no model is open. */
+    explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage {
+        return this.file ? explorerChildren(this.explorerPort(file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
+    }
+
+    /** The element rows whose name matches `text`, best first. */
+    explorerSearch(text: string, file?: string): ExplorerRow[] {
+        return this.file ? explorerSearch(this.explorerPort(file), text) : [];
     }
 
     protected elementInFile(id: string, file: string): boolean {
@@ -196,8 +226,9 @@ export class ModelStore implements ModelQueries {
     }
 
     /** Paths to the rows of an element in the Model explorer (Reveal). */
-    explorerPaths(id: string): ExplorerPath[] {
-        return this.file ? explorerPaths(this.explorerContext(), id) : [];
+    explorerPaths(id: string, file?: string): ExplorerPath[] {
+        const iri = this.iriOf(id);
+        return this.file && iri ? explorerPaths(this.explorerPort(file), iri) : [];
     }
 
     /** Labels of all views (view id → label), by SPARQL: the titles of the view editors (ADR 0007 step 5). */
@@ -236,7 +267,7 @@ export class ModelStore implements ModelQueries {
 
     /** Element ids of the rows under a node key of the Model explorer, at any depth. */
     explorerElements(key: string, file?: string): string[] {
-        return this.file ? explorerElements(this.explorerContext(), key).filter(id => !file || this.elementInFile(id, file)) : [];
+        return this.file ? explorerElements(this.explorerPort(file), key).filter(id => !file || this.elementInFile(id, file)) : [];
     }
 
     explorerDrag(selection: ExplorerDrag): string[] {
@@ -283,7 +314,9 @@ export class ModelStore implements ModelQueries {
     selectionActions(target: ActionTarget): SelectionActions {
         if (!this.file) return { actions: [], items: [], cards: [] };
         const ctx: ActionContext = {
-            ...this.explorerContext(target.activeView),
+            g: this.graph, shapes: this.shapesIndex().model,
+            placements: this.cached('placements', () => placements(this.graph, this.shapesIndex().byTerm)),
+            revealable: id => this.explorerPaths(id).length > 0,
             doc: this.scoped({ elements: target.ids, views: [target.view] }),
             viewOf: v => this.viewDoc(v).views[v],
             filesOf: id => this.filesOfElement(id)

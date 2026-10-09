@@ -4,15 +4,23 @@
 
 import type { NamedNode, Term } from '@rdfjs/types';
 import {
-    ActionTarget, Doc, ElementKind, ItemFacts, NS, SelectionActions, SelectionFacts, View, applicableActions, boxOf, displayCards, elementOfId, lineProblem,
-    isTakenOut
+    ActionTarget, Doc, ElementKind, ItemFacts, NS, SelectionActions, SelectionFacts, ShapesModel, View, applicableActions, boxOf, displayCards, elementOfId,
+    lineProblem, isTakenOut
 } from '@catenary/model';
-import { ExplorerContext, explorerPaths } from './explorer';
-import { VALIDATION_GRAPH } from './graph';
-import { elementTerm } from './ids';
+import { ModelGraph, VALIDATION_GRAPH } from './graph';
+import { elementId, elementTerm, relationId } from './ids';
 import { shapeable, unshapedClasses } from './shape-proposal';
+import { termKey } from './terms';
 
-export interface ActionContext extends ExplorerContext {
+/** Element id -> ids of the views with a placement of it (a card: view:element; a relation: rdf:reifies of its triple). */
+export type Placements = Map<string, Set<string>>;
+
+export interface ActionContext {
+    g: ModelGraph;
+    shapes: ShapesModel;
+    placements: Placements;
+    /** True when the Model explorer has a row of the element. */
+    revealable: (id: string) => boolean;
     /** The read model of the target: its elements and its view (scoped-doc.ts). */
     doc: Doc;
     /** The read model of one view (with its placement ids). */
@@ -23,8 +31,26 @@ export interface ActionContext extends ExplorerContext {
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX sh: <${NS.sh}>`;
 
-function select(ctx: ActionContext, query: string): Record<string, Term>[] {
+function select(ctx: Pick<ActionContext, 'g'>, query: string): Record<string, Term>[] {
     return ctx.g.store.select(`${PREFIXES} ${query}`) as unknown as Record<string, Term>[];
+}
+
+/** The placements of all elements (views by element id). */
+export function placements(g: ModelGraph, byTerm: Map<string, string>): Placements {
+    const result: Placements = new Map();
+    const add = (id: string, view: Term) => {
+        let s = result.get(id);
+        if (!s) result.set(id, s = new Set());
+        s.add(elementId(view as NamedNode));
+    };
+    for (const r of select({ g }, 'PREFIX view: <' + NS.view + '> SELECT ?v ?e WHERE { GRAPH ?v { ?pl view:element ?e } FILTER (isIRI(?e)) }')) {
+        add(byTerm.get(termKey(r.e as NamedNode)) ?? elementId(r.e as NamedNode), r.v);
+    }
+    for (const r of select({ g }, `SELECT ?v ?s ?p ?o WHERE { GRAPH ?v { ?pl rdf:reifies ?t } FILTER (isTRIPLE(?t))
+            BIND (SUBJECT(?t) AS ?s) BIND (PREDICATE(?t) AS ?p) BIND (OBJECT(?t) AS ?o) FILTER (isIRI(?s) && isIRI(?o)) }`)) {
+        add(relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode), r.v);
+    }
+    return result;
 }
 
 /** All kinds of an element: the records of the read model that have it, and the mark kind of its box in `view`. */
@@ -79,7 +105,7 @@ export function selectionFacts(ctx: ActionContext, target: ActionTarget): Select
             placed: !!scope && (views.has(scope) || element !== id || !!boxOf(view, id) || !!view?.arrows.some(a => a.id === id)),
             placedInActive: !!target.activeView && views.has(target.activeView),
             views: views.size,
-            revealable: kinds.includes('view') || explorerPaths(ctx, element).length > 0,
+            revealable: kinds.includes('view') || ctx.revealable(element),
             files: ctx.filesOf(element).length,
             property: p ? { owner: p.owner, fixed: lineProblem(p), takenOut: view ? isTakenOut(view, p) : undefined } : undefined,
             classShapes, unshaped

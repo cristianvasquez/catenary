@@ -327,7 +327,7 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
     await row('Catalogue', 'dataset').locator('.row-path').click();
     await row('Catalogue', 'dataset').locator('.row-path').click({ button: 'right' });
     await menuItem('Reveal in Explorer').click();
-    // The node shape is under sh:NodeShape only (spec/ui-manifest.hs: target shapes are not under their target class): one path, no picker.
+    // The property shape has one row: under its node shape in Shapes (it has no rdf:type). One path, no picker.
     await treeRow('dcat:dataset').and(page.locator('.theia-mod-selected')).waitFor();
     await canvasTab.click();
     await card('Software agent').locator('.shape-name').click();
@@ -765,13 +765,16 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
     return panel;
   };
   const tree = await openTree('data.ttl');
-  await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
-  await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
-  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).count(), 0);
-  assert.equal(await tree.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).locator('mark').count(), 4);
-  const key = 'class:urn:test:Transfer';
-  const folderName = cli('rpc', 'explorerChildren', 'null', 'null', JSON.stringify(source)).result.find(r => r.key === key).name;
-  const folder = tree.locator('.theia-TreeNode').filter({ has: page.locator('.catenary-tree-name', { hasText: new RegExp('^' + folderName + '$') }) }).first();
+  const filterOf = panel => panel.getByRole('textbox', { name: 'Filter model elements', exact: true });
+  const name = text => page.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + text + '$') });
+  const row = (panel, text) => panel.locator('.catenary-tree-name').filter({ hasText: new RegExp('^' + text + '$') });
+  const nodeOf = (panel, text) => panel.locator('.theia-TreeNode').filter({ has: name(text) }).first();
+  // The sections of the plugins: the class folder is in Classes. A folder drag places all its instances.
+  await nodeOf(tree, 'Classes').locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
+  const key = 'rdfs/class:urn:test:Transfer';
+  const folderName = cli('rpc', 'explorerChildren', JSON.stringify('rdfs/classes'), JSON.stringify(source)).result.rows.find(r => r.key === key).name;
+  const folder = nodeOf(tree, folderName);
+  await folder.waitFor();
   const transfer = await page.evaluateHandle(() => new DataTransfer());
   await folder.dispatchEvent('dragstart', { dataTransfer: transfer });
   const payload = await transfer.evaluate(d => JSON.parse(d.getData('application/x-catenary-explorer')));
@@ -780,34 +783,35 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
   await page.locator('svg.sprotty-graph:visible').dispatchEvent('drop', { dataTransfer: transfer, clientX: 650, clientY: 350 });
   await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Hidden member' }).waitFor();
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result.sort(), [first, second].sort());
+  // The filter: one flat list of the matching elements of the file.
+  await filterOf(tree).fill('albe');
+  await row(tree, 'Alpha Beta').waitFor();
+  assert.equal(await row(tree, 'Hidden member').count(), 0);
+  assert.equal(await row(tree, 'Alpha Beta').locator('mark').count(), 4);
   // Reopening uses the existing widget and retains its filter.
   const reopened = await openTree('data.ttl');
-  assert.equal(await reopened.getByRole('textbox', { name: 'Filter model elements', exact: true }).inputValue(), 'albe');
-  // Typing while a row has focus must use the same filter, not Theia's highlight-only search.
-  const filter = reopened.getByRole('textbox', { name: 'Filter model elements', exact: true });
+  const filter = filterOf(reopened);
+  assert.equal(await filter.inputValue(), 'albe');
+  // Without the filter the tree has its folders again. Typing while a row has focus uses the same filter.
   await filter.fill('');
-  await folder.locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).click();
+  await nodeOf(reopened, folderName).locator('.theia-ExpansionToggle.theia-mod-collapsed').click();
+  await row(reopened, 'Hidden member').waitFor();
+  await row(reopened, 'Alpha Beta').click();
   await page.keyboard.type('albe');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor({ state: 'hidden', timeout: 3000 });
+  await row(reopened, 'Hidden member').waitFor({ state: 'hidden', timeout: 3000 });
   assert.equal(await filter.inputValue(), 'albe');
   await filter.fill('zzzz-no-such-element');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor({ state: 'hidden' });
-  // The filtered tree updates in steps: wait for its last row to go, then check. Rows left after the wait are an explorer defect.
-  const reopenedId = 'catenary-file-explorer:' + path.join(workspace, 'data.ttl');
-  await page.waitForFunction(id => document.getElementById(id)?.querySelectorAll('.catenary-tree-name').length === 0, reopenedId, { timeout: 5000 })
-    .catch(() => undefined);
+  await row(reopened, 'Alpha Beta').waitFor({ state: 'hidden' });
   assert.equal(await reopened.locator('.catenary-tree-name').count(), 0);
   await page.keyboard.press('Escape');
-  await reopened.locator('.catenary-tree-name').filter({ hasText: /^Hidden member$/ }).waitFor();
+  await row(reopened, 'Hidden member').waitFor();
   assert.equal(await filter.inputValue(), '');
   const target = await openTree('shapes.ttl');
   await target.locator('.catenary-file-tree').dispatchEvent('drop', { dataTransfer: transfer });
   await page.getByText(`Move 2 elements from ${source} to ${destination}? Only statements from the source file move.`, { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Move', exact: true }).click();
-  await target.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('albe');
-  await target.locator('.catenary-tree-name').filter({ hasText: /^Alpha Beta$/ }).waitFor();
+  await filterOf(target).fill('albe');
+  await row(target, 'Alpha Beta').waitFor();
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(source)).result, []);
   assert.deepEqual(cli('rpc', 'explorerElements', JSON.stringify(key), JSON.stringify(destination)).result.sort(), [first, second].sort());
   assert.equal(cli('rpc', 'undo').result.ok, true);

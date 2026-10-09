@@ -320,7 +320,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
     /** Folders selected in the Model Explorer: the class of New Instance and Delete Elements Not Placed in a View. Not model elements. */
     protected explorerFolders(): CatenaryNode[] {
         const sel = this.selection.selection;
-        return Array.isArray(sel) ? sel.filter(CatenaryNode.is).filter(n => n.kind === 'folder') : [];
+        return Array.isArray(sel) ? sel.filter(CatenaryNode.isFolder) : [];
     }
 
     // ------------------------------------------------------------ commands
