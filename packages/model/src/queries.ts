@@ -33,6 +33,8 @@ export interface ModelQueries {
     explorerDrag(selection: ExplorerDrag): string[];
     /** Properties panel (ADR 0007): the data of an instance, relation, property shape or view; no id: the counts of the store. */
     properties(id?: string): ElementProperties | undefined;
+    /** View Markdown only. Undefined when the view does not exist. */
+    viewDescription(view: string): string | undefined;
     /** Outline of a view (ADR 0007): groups, cards and shown relations; nodes of `selection` (ids, the view of the selection) are selected. */
     outline(viewId: string, selection?: { view?: string; ids: string[] }): OutlineNode[];
     /** Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
@@ -107,6 +109,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     explorerElements: ['key', 'file'],
     explorerDrag: ['selection'],
     properties: ['id'],
+    viewDescription: ['view'],
     outline: ['viewId', 'selection'],
     problems: [],
     search: [],

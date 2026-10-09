@@ -17,7 +17,7 @@ import {
     ACTIONS, ClassDef, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
     ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formPredicates, formatPath, inside,
     parseCardinality, parsePath, permittedRelations, predicateName, primaryClass, rangeText, verbalizeConstraint, verbalizeProperty, verbalizeShape, alternativesOf,
-    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey
+    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged
 } from '@catenary/model';
 import { ViewEditors } from '../diagram/view-editors';
 import { ViewNotesEditors, ViewNotesField } from '../notes/view-notes';
@@ -100,6 +100,8 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         document.addEventListener('pointerdown', close, true);
         this.toDispose.push({ dispose: () => document.removeEventListener('pointerdown', close, true) });
     }
+
+    protected override modelChanged(change?: SnapshotChange): boolean { return !panelsUnchanged(change, true); }
 
     protected override contentVisible(): boolean {
         return this.isVisible && !!this.shell.getWidgetById(PropertyViewWidget.ID)?.isVisible;

@@ -4,7 +4,7 @@
 //   data arrival  a new property shape is placed in each view that shows its start and its end
 // Relations and arrows of instances: placeConnectors. The ids of the diagram: notation-schema.ts (@catenary/model).
 
-import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
+import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, deriveFigures, iriId, nkey, placementsOf, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
 import { tracer } from './trace';
@@ -187,7 +187,8 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
     for (const view of views) {
         const vf = tracer.span('refresh', 'derive and join figures', () => {
             tracer.note(`view ${view.value}; indexed input ready`);
-            return viewFigures(D, notes, view.value);
+            const scope = [...placementsOf(D, view.value).keys(), ...(removed.get(view.value)?.keys ?? [])].map(termOf);
+            return viewFigures(D, notes, view.value, deriveFigures(D, notes, view.value, scope));
         });
         tracer.span('refresh', 'apply figure placement rules', () => {
             const gone = new Set<string>(), add = new Set<string>();

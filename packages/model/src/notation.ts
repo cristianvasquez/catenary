@@ -223,7 +223,7 @@ export interface Derivation {
 }
 
 /** The figures of a view. `data`: the triples of the workspace (data, shapes, SKOS, all view files). */
-export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: string): Derivation {
+export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: string, scope?: readonly NTerm[]): Derivation {
     const D = data, N = notes.index, view = iri(viewIri), viewName = localName(viewIri);
     const shapes = figureShapes(N, D, view);
     const warnings: string[] = [];
@@ -248,6 +248,23 @@ export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: stri
             id, focus, placedAs: listTerm(D, focus) ?? focus, fs, hasOwnTitle: false, tags: [], mult: '', rows: [], connectors: [],
             startValues: [], endPrivate: false, members: [], starts: [], ends: [], memberFigs: [], carriers: []
         });
+    }
+    if (scope) {
+        // Keep lines and hubs conservatively: removal and data-arrival rules can inspect unplaced figures.
+        // Box content is needed only for the placed boxes and their transitive role dependencies.
+        const roots = new Set(scope.map(nkey));
+        const needed = new Set<string>();
+        const queue: Figure[] = [];
+        const include = (f: Figure) => { const k = nkey(f.focus); if (!needed.has(k)) { needed.add(k); queue.push(f); } };
+        for (const f of figOf.values()) if (f.fs.kind !== 'Box' || roots.has(nkey(f.placedAs))) include(f);
+        for (let i = 0; i < queue.length; i++) {
+            const f = queue[i];
+            for (const p of f.fs.props.filter(p => ['part', 'from', 'to', 'anchor', 'link'].includes(p.role) && holds(p.when, f.focus))) {
+                const values = (p.value ? [p.value] : evalPath(D, p.path, f.focus)).filter(v => !p.select || p.select.some(s => nkey(s) === nkey(v)));
+                for (const v of values) { const dependency = figOf.get(nkey(v)); if (dependency) include(dependency); }
+            }
+        }
+        for (const [k] of figOf) if (!needed.has(k)) figOf.delete(k);
     }
     const fig = (t: NTerm | undefined) => t && figOf.get(nkey(t));
     const roleValues = (f: Figure, role: Role) => f.fs.props.filter(p => p.role === role && holds(p.when, f.focus))

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Emitter } from '@theia/core';
-import { EditCommand, ModelSnapshot } from '@catenary/model';
+import { EditCommand, ModelSnapshot, SnapshotChange } from '@catenary/model';
 import { ModelFrontend } from '../src/browser/model-client';
 import { notesTarget, notesUri, ViewNotesResource } from '../src/browser/notes/view-notes-resource';
 
@@ -8,7 +8,7 @@ function fixture() {
     let text = 'Original';
     const changed = new Emitter<ModelSnapshot>();
     const service = {
-        properties: vi.fn(async () => ({ kind: 'view', description: text })),
+        viewDescription: vi.fn(async () => text),
         execute: vi.fn(async (command: EditCommand) => {
             if (command.kind !== 'setViewDescription') throw new Error('Unexpected command');
             if (command.expectedText !== text) return { ok: false, error: 'These notes changed elsewhere.' };
@@ -19,7 +19,7 @@ function fixture() {
     const model = Object.assign(new ModelFrontend(), { service, messages: { warn: vi.fn() }, onDidChange: changed.event });
     model.snapshot.file = '/workspace.trig';
     const resource = new ViewNotesResource(notesUri(model.snapshot.file, 'view'), model);
-    return { model, service, resource, remote: (value: string) => { text = value; changed.fire(model.snapshot); }, text: () => text };
+    return { model, service, resource, remote: (value: string, change?: SnapshotChange) => { text = value; changed.fire({ ...model.snapshot, change }); }, text: () => text };
 }
 
 describe('view notes resources', () => {
@@ -62,6 +62,20 @@ describe('view notes resources', () => {
         f.resource.dispose();
     });
 
+    it('law_notesReadScope: skips save, layout and edits outside its view', async () => {
+        const f = fixture();
+        await f.resource.readContents();
+        f.service.viewDescription.mockClear();
+        for (const change of [
+            { reason: 'save' }, { reason: 'edit', layout: true, views: ['view'] },
+            { reason: 'edit', views: ['other'] }, { reason: 'validation' }
+        ] as SnapshotChange[]) f.remote('Original', change);
+        expect(f.service.viewDescription).not.toHaveBeenCalled();
+        f.remote('New notes', { reason: 'edit', views: ['view'] });
+        await vi.waitFor(() => expect(f.service.viewDescription).toHaveBeenCalledExactlyOnceWith('view'));
+        f.resource.dispose();
+    });
+
     it('notifies native editors of external edits, not unrelated changes, and stops after disposal', async () => {
         const f = fixture();
         await f.resource.readContents();
@@ -75,8 +89,8 @@ describe('view notes resources', () => {
         await vi.waitFor(() => expect(notified).toHaveBeenCalledTimes(1));
         expect(await f.resource.readContents()).toBe('External edit');
         f.resource.dispose();
-        f.service.properties.mockClear();
+        f.service.viewDescription.mockClear();
         f.remote('After disposal');
-        expect(f.service.properties).not.toHaveBeenCalled();
+        expect(f.service.viewDescription).not.toHaveBeenCalled();
     });
 });

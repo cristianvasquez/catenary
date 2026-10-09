@@ -39,7 +39,7 @@ function selectionModel() {
         snapshots.fire(snap);
         await vi.waitFor(() => expect(s.resolved.ids).toEqual(s.selection.ids));
     };
-    return { s, push };
+    return { s, push, model, snapshots };
 }
 
 describe('selection model', () => {
@@ -86,6 +86,45 @@ describe('selection model', () => {
         delete d.views.A;
         await push(d, snapshot(2));
         expect(s.selection).toEqual({ view: undefined, ids: ['a2'] });
+    });
+
+    it('law_selectionNoReadForUnchangedPanels: save and layout keep selection facts without a request', async () => {
+        const { s, model, snapshots } = selectionModel();
+        const selected = vi.spyOn(model.service, 'selected');
+        s.set({ view: 'A', ids: ['a'] });
+        await s.resolve();
+        selected.mockClear();
+        const resolved = vi.fn();
+        s.onDidResolve(resolved);
+        for (const change of [{ reason: 'save' }, { reason: 'edit', layout: true }, { reason: 'validation' }] as ModelSnapshot['change'][]) {
+            model.snapshot = { ...snapshot(model.snapshot.revision + 1), change };
+            snapshots.fire(model.snapshot);
+            await s.resolve();
+        }
+        expect(selected).not.toHaveBeenCalled();
+        expect(resolved).not.toHaveBeenCalled();
+        expect(s.resolved.instances).toEqual(['a']);
+    });
+
+    it('law_selectionRejectsOldRevision: an older snapshot response cannot replace newer facts', async () => {
+        const { s, model, snapshots } = selectionModel();
+        s.set({ ids: ['a'] });
+        await s.resolve();
+        const pending: ((value: ReturnType<typeof resolveSelection>) => void)[] = [];
+        model.service.selected = () => new Promise(resolve => pending.push(resolve));
+        model.snapshot = snapshot(1);
+        snapshots.fire(model.snapshot);
+        model.snapshot = snapshot(2);
+        snapshots.fire(model.snapshot);
+        const changed = vi.fn();
+        s.onDidResolve(changed);
+        pending[1](resolveSelection(doc(), { ids: ['a'] }));
+        await Promise.resolve();
+        pending[0](resolveSelection(doc(), { ids: [] }));
+        await Promise.resolve();
+        expect(s.resolved.instances).toEqual(['a']);
+        expect(s.selection.ids).toEqual(['a']);
+        expect(changed).toHaveBeenCalledTimes(1);
     });
 
     it('an answer for an older selection does not replace the resolved selection', async () => {

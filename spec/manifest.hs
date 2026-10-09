@@ -485,6 +485,12 @@ law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
 -- Reason: unrelated card statements block selection requests on the backend event loop.
 law_selectedReadScope :: [Id] -> [Id] -> Bool       -- required elements, read elements
 law_selectedReadScope required readElements = all (`elem` required) readElements
+
+-- | Placement synchronization builds box content for placed boxes and transitive role dependencies.
+-- Keep lines and hubs until a narrower scope proves their removal and arrival rules equivalent.
+-- Reason: unrelated instance content blocks the edit transaction.
+law_scopedFiguresPreservePlacementRules :: [Id] -> [Id] -> Bool
+law_scopedFiguresPreservePlacementRules full scoped = sameSet full scoped
 -- Unmapped RDF statements stay in the store and the files.
 -- ViewCard.id is the placement. ViewCard.element is its element. EdgeLayout.id is a connector placement when present.
 -- Marks, references and arrows use placement IDs. Arrow ends are box IDs, not element IDs.

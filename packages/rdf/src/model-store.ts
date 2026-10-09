@@ -353,6 +353,13 @@ export class ModelStore implements ModelQueries {
         }, id);
     }
 
+    viewDescription(viewId: string): string | undefined {
+        if (!this.file) return undefined;
+        const view = elementTerm(viewId);
+        return view && this.graph.isView(view)
+            ? this.graph.match(view, rdf.namedNode(NS.view + 'description'), null, view)[0]?.object.value ?? '' : undefined;
+    }
+
     /** The Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
     problems(): Problem[] {
         if (!this.file) return [];

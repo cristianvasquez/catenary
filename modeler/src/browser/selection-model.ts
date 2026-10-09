@@ -4,7 +4,7 @@
 
 import { Emitter } from '@theia/core';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { ModelSelection, ModelSnapshot, Selected, emptySelected } from '@catenary/model';
+import { ModelSelection, ModelSnapshot, Selected, emptySelected, panelsUnchanged } from '@catenary/model';
 import { ModelFrontend } from './model-client';
 
 export type { ModelSelection, Selected } from '@catenary/model';
@@ -14,6 +14,8 @@ export class SelectionModel {
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
 
     protected current: ModelSelection = { ids: [] };
+    /** Changes only when a snapshot can change selection facts. */
+    protected resolutionEpoch = 0;
     protected readonly onDidChangeEmitter = new Emitter<ModelSelection>();
     readonly onDidChange = this.onDidChangeEmitter.event;
 
@@ -50,11 +52,11 @@ export class SelectionModel {
 
     /** The current selection by kind, for the current model revision. */
     resolve(): Promise<Selected> {
-        const selection = this.current, revision = this.model.snapshot.revision;
+        const selection = this.current, revision = this.model.snapshot.revision, epoch = this.resolutionEpoch;
         if (this.answer.selection === selection && this.answer.revision === revision) return Promise.resolve(this.answer.value);
         return this.model.service.selected(selection).then(value => {
-            if (this.current === selection && this.model.snapshot.revision === revision) {
-                this.answer = { selection, revision, value };
+            if (this.current === selection && this.resolutionEpoch === epoch) {
+                this.answer = { selection, revision: this.model.snapshot.revision, value };
                 this.onDidResolveEmitter.fire(value);
             }
             return value;
@@ -62,14 +64,19 @@ export class SelectionModel {
     }
 
     /** After a model change: ids whose IRI changed follow; ids of deleted elements go. */
-    protected async follow({ movedIds }: ModelSnapshot): Promise<void> {
+    protected async follow({ movedIds, change, revision }: ModelSnapshot): Promise<void> {
+        if (this.model.isOpen && panelsUnchanged(change) && !Object.keys(movedIds).length) {
+            if (this.answer.selection === this.current && this.answer.revision >= 0) this.answer.revision = revision;
+            return;
+        }
+        const epoch = ++this.resolutionEpoch;
         const moved = (id: string) => movedIds[id] ?? id;
         const before = this.current;
         const next = { view: before.view && moved(before.view), ids: before.ids.map(moved) };
         if (!this.model.isOpen) return this.set({ ids: [] });
         const r = await this.model.service.selected(next);
         // Another gesture changed the selection meanwhile: it wins.
-        if (this.current !== before) return;
+        if (this.current !== before || epoch !== this.resolutionEpoch) return;
         const sameView = r.view === before.view;
         if (sameView && sameIds(r.ids, before.ids)) {
             this.answer = { selection: before, revision: this.model.snapshot.revision, value: r };

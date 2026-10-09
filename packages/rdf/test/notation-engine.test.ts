@@ -6,7 +6,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Join, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
+import { Join, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
 import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
@@ -74,6 +74,37 @@ describe('figures and join of the example views', () => {
         });
         expect(placedLists).toHaveLength(5);
         expect(placedLists).toEqual(expect.arrayContaining(['0f1d7b1cb919', '1c24175aa2b9', '8c7eb551ddb4', 'ed292fa4d715'].map(h => `urn:trellis:list:${h}`)));
+    });
+});
+
+describe('scoped placement synchronization', () => {
+    for (const v of ['model', 'shapes', 'people']) it(`law_scopedFiguresPreservePlacementRules: ${v}`, () => {
+        const full = view(v);
+        const seeds = full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs))).map(f => f.focus);
+        const scoped = viewFigures(data, notes, `urn:view:${v}`, deriveFigures(data, notes, `urn:view:${v}`, seeds));
+        // The first line is the diagnostic figure count, not displayed content.
+        expect(joinText(scoped.derivation, scoped.join).slice(1)).toEqual(joinText(full.derivation, full.join).slice(1));
+        expect(scoped.join.problems).toEqual(full.join.problems);
+        for (const f of full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs)))) {
+            expect(removal(scoped.derivation.figures, full.placed, f.placedAs).sort()).toEqual(removal(full.derivation.figures, full.placed, f.placedAs).sort());
+            const before = without(full.placed, nkey(f.placedAs));
+            expect(arrival(scoped.derivation.figures, before, f.placedAs).sort()).toEqual(arrival(full.derivation.figures, before, f.placedAs).sort());
+            expect(dataArrival(scoped.derivation.figures, before, new Set([nkey(f.placedAs)])).sort()).toEqual(dataArrival(full.derivation.figures, before, new Set([nkey(f.placedAs)])).sort());
+        }
+    });
+
+    it.each([20, 200])('does not build content for %i unrelated instance boxes', count => {
+        const extra = Array.from({ length: count }, (_, i) => [
+            rdf.quad(rdf.namedNode(`urn:unrelated:${i}`), rdf.namedNode('http://www.w3.org/2000/01/rdf-schema#label'), rdf.literal('Unrelated')),
+            rdf.quad(rdf.namedNode(`urn:unrelated:${i}`), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode(EX + 'Person'))
+        ]).flat();
+        const D = new TripleIndex([...base, ...nquads(extra)]);
+        const full = view('people', D);
+        const seeds = full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs))).map(f => f.focus);
+        const scoped = deriveFigures(D, notes, 'urn:view:people', seeds);
+        expect(full.derivation.figures.filter(f => f.focus.value.startsWith('urn:unrelated:'))).toHaveLength(count);
+        expect(scoped.figures.filter(f => f.focus.value.startsWith('urn:unrelated:'))).toHaveLength(0);
+        expect(joinText(scoped, joinFigures(scoped, full.placed)).slice(1)).toEqual(joinText(full.derivation, full.join).slice(1));
     });
 });
 

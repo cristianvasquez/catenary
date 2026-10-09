@@ -2,6 +2,7 @@
 import { Emitter, Resource, ResourceResolver, ResourceSaveOptions } from '@theia/core';
 import URI from '@theia/core/lib/common/uri';
 import { inject, injectable } from '@theia/core/shared/inversify';
+import { panelsUnchanged } from '@catenary/model';
 import { ModelFrontend } from '../model-client';
 
 export const VIEW_NOTES_SCHEME = 'catenary-view-notes';
@@ -24,14 +25,20 @@ export class ViewNotesResource implements Resource {
 
     constructor(readonly uri: URI, private readonly model: ModelFrontend) {
         this.target = notesTarget(uri);
-        this.subscription = model.onDidChange(() => { if (!this.writing) void this.refresh(); });
+        this.subscription = model.onDidChange(snapshot => {
+            if (this.writing) return;
+            const change = snapshot.change;
+            if (snapshot.file === this.target.file && (panelsUnchanged(change)
+                || change && ['edit', 'undo', 'redo'].includes(change.reason) && change.views && !change.views.includes(this.target.view))) return;
+            void this.refresh();
+        });
     }
 
     private async read(): Promise<string> {
         if (this.model.snapshot.file !== this.target.file) throw new Error('The workspace changed. Your notes remain in the editor.');
-        const data = await this.model.service.properties(this.target.view);
-        if (data?.kind !== 'view') throw new Error('The view no longer exists. Your notes remain in the editor.');
-        return data.description;
+        const text = await this.model.service.viewDescription(this.target.view);
+        if (text === undefined) throw new Error('The view no longer exists. Your notes remain in the editor.');
+        return text;
     }
 
     async readContents(): Promise<string> {

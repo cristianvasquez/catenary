@@ -4,7 +4,7 @@ import { ReactWidget } from '@theia/core/lib/browser';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
 import { Message } from '@theia/core/shared/@lumino/messaging';
-import { EditCommand, iriText, parseIri } from '@catenary/model';
+import { EditCommand, SnapshotChange, iriText, parseIri } from '@catenary/model';
 import { ModelActions } from '../actions';
 import { COLOR_NAMES, COLOR_ORDER, PRESETS } from '../diagram/views';
 import { ModelFrontend } from '../model-client';
@@ -20,7 +20,7 @@ export abstract class ElementPanel extends ReactWidget {
     @postConstruct()
     protected init(): void {
         this.addClass('catenary-properties');
-        this.toDispose.push(this.model.onDidChange(s => { if (s.change?.reason !== 'save') this.update(); }));
+        this.toDispose.push(this.model.onDidChange(s => { if (this.modelChanged(s.change)) this.update(); }));
         this.toDispose.push(this.elements.onDidChange(() => this.update()));
         this.toDispose.push(this.elements.onDidResolve(() => this.update()));
         this.update();
@@ -31,6 +31,8 @@ export abstract class ElementPanel extends ReactWidget {
     }
 
     protected contentVisible(): boolean { return this.isVisible; }
+
+    protected modelChanged(change?: SnapshotChange): boolean { return change?.reason !== 'save'; }
 
     protected override onAfterShow(msg: Message): void {
         super.onAfterShow(msg);

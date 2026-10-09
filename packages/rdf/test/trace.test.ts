@@ -203,6 +203,13 @@ describe('traced store', () => {
             assertScoped(() => store.occurrence([cards[0].id], view), 1);
             assertScoped(() => store.view(view, [cards[0].id]), 1);
             assertScoped(() => store.properties(view), 0);
+            tracer.clear();
+            tracer.span('rpc', 'properties', () => store.properties(view));
+            const counts = tracer.take().spans.find(s => s.kind === 'rpc' && s.name === 'properties')!;
+            expect(counts.queries).toBeLessThan(30);
+            tracer.clear();
+            expect(store.viewDescription(view)).toBe('');
+            expect(tracer.take().spans.some(s => s.name === 'read full view')).toBe(false);
             const before = store.snapshot().revision;
             expect(await store.save()).toEqual({ ok: true });
             expect(store.snapshot().revision).toBe(before);

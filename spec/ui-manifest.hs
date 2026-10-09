@@ -425,6 +425,14 @@ startupDocument Nothing _ restored = restored
 
 -- 3.3 Selection and highlights ------------------------------------------------------
 
+-- | Save, validation and layout-only snapshots retain selection facts without a read or a resolved-selection event.
+-- A moved identity or model change requires a read. Ignore responses from an older selection or model-facts epoch.
+-- Reason: unchanged facts must not trigger panel reads, and old responses must not replace current facts.
+law_selectionNoReadForUnchangedPanels :: Bool -> Bool -> Bool -> Bool
+law_selectionNoReadForUnchangedPanels unchanged moved readRequested = (unchanged && not moved) ==> not readRequested
+law_selectionRejectsOldRevision :: Int -> Int -> Bool -> Bool
+law_selectionRejectsOldRevision responseEpoch currentEpoch accepted = (responseEpoch /= currentEpoch) ==> not accepted
+
 -- | Click replaces the selection. Ctrl+click adds, also from another canvas. Selected canvas items are placements or parts.
 -- Listings select their row elements. Other panes show highlights, not their own selections.
 data UiSelection = UiSelection { items :: [Selected], source :: Pane } deriving Eq
@@ -1304,6 +1312,11 @@ law_notesGuarded :: Id -> String -> String -> Bool
 law_notesGuarded v original text = case viewNotesEdit v original text of
   SetViewDescription v' text' expected -> v' == v && text' == text && expected == Just original
   _ -> False
+
+-- | Native notes read only the view description. Save, validation, layout and edits outside that view require no read.
+-- Reason: editing Markdown must not compute diagram counts.
+law_notesReadScope :: Bool -> Bool -> Bool
+law_notesReadScope descriptionCanChange readRequested = not descriptionCanChange ==> not readRequested
 
 -- 8.4 Files navigator ---------------------------------------------------------------
 
