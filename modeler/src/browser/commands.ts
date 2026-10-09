@@ -33,7 +33,6 @@ import { ModelFrontend } from './model-client';
 import { SelectionModel } from './selection-model';
 import { AppearanceContribution } from './properties/appearance-widget';
 import { LinksContribution } from './properties/links-widget';
-import { SearchContribution, SearchWidget } from './search/search-widget';
 import { addMenuItems } from './menus';
 
 const category = 'Model';
@@ -101,8 +100,8 @@ const MODEL_MENU_CREATE = [...MODEL_MENU, '3_create'];
 const EXPLORER_SURFACE = [...EXPLORER_CONTEXT_MENU, '4_surface'];
 const DIAGRAM_SURFACE = [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_4_surface'];
 
-/** Discard layouts with the removed global Model sidebar once. */
-const LAYOUT_VERSION = 6;
+/** Discard layouts with removed panels (the global Model sidebar, Search) once. */
+const LAYOUT_VERSION = 7;
 const LAYOUT_VERSION_KEY = 'catenary.layoutVersion';
 
 export type Presentation = 'Source' | 'Model' | 'Canvas' | 'Settings';
@@ -239,7 +238,6 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
     @inject(AppearanceContribution) protected readonly appearance: AppearanceContribution;
     @inject(LinksContribution) protected readonly links: LinksContribution;
     @inject(OutlineViewContribution) protected readonly outline: OutlineViewContribution;
-    @inject(SearchContribution) protected readonly search: SearchContribution;
     @inject(SelectionModel) protected readonly elements: SelectionModel;
     @inject(ViewHistory) protected readonly history: ViewHistory;
     @inject(FileNavigatorContribution) protected readonly navigator: FileNavigatorContribution;
@@ -266,7 +264,6 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
 
     async initializeLayout(): Promise<void> {
         await this.navigator.openView({ activate: true, reveal: true });
-        await this.search.openView({ activate: false, reveal: false });
         // Right side panel, in this order: Properties, Appearance, Links, Outline.
         await this.propertyView.openView({ activate: false, reveal: true, area: 'right', rank: 100 });
         await this.appearance.openView({ activate: false, reveal: false });
@@ -391,10 +388,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         registry.registerCommand(ModelCommands.BACK, { execute: () => this.history.back(), isEnabled: () => this.history.canGoBack() });
         registry.registerCommand(ModelCommands.FORWARD, { execute: () => this.history.forward(), isEnabled: () => this.history.canGoForward() });
         registry.registerCommand(ModelCommands.FIND_ELEMENT, {
-            execute: async () => {
-                const id = await a.findElement();
-                if (id) await this.editors.show(id);
-            },
+            execute: () => a.findElement(),
             isEnabled: open
         });
         registry.registerCommand(ModelCommands.NEW_VIEW, { execute: () => a.newView(), isEnabled: open });
@@ -519,6 +513,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         keybindings.registerKeybinding({ command: OpenModelCommands.REDO.id, keybinding: 'ctrlcmd+y', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: ModelCommands.RENAME.id, keybinding: 'f2', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: ModelCommands.FIND_ELEMENT.id, keybinding: 'ctrlcmd+t' });
+        keybindings.registerKeybinding({ command: ModelCommands.FIND_ELEMENT.id, keybinding: 'f8', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.BACK.id, keybinding: 'alt+left', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.FORWARD.id, keybinding: 'alt+right', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.NEXT_OCCURRENCE.id, keybinding: 'f3', when: '!editorTextFocus' });
@@ -542,14 +537,14 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
 
 }
 
-/** True when a listing of elements has the focus: the Model explorer or Search. Keys: F2, Ctrl+Del (spec 0.4: no Del). */
+/** True when a listing of elements has the focus: the Model explorer. Keys: F2, Ctrl+Del (spec 0.4: no Del). */
 @injectable()
 export class ExplorerFocusContext implements KeybindingContext {
     static readonly ID = 'catenary.explorerFocus';
     readonly id = ExplorerFocusContext.ID;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
     isEnabled(): boolean {
-        return this.shell.activeWidget instanceof ModelExplorerWidget || this.shell.activeWidget instanceof SearchWidget;
+        return this.shell.activeWidget instanceof ModelExplorerWidget;
     }
 }
 

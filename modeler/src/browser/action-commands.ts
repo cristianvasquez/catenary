@@ -1,5 +1,5 @@
 // The actions as commands (spec/ui-manifest.hs §4, packages/model/src/actions.ts): one command per action, the same in every menu
-// (view editor, halo "…", Model explorer, Links, Search, Outline) and on every key. The backend says which actions apply to a target
+// (view editor, halo "…", Model explorer, Links, Outline) and on every key. The backend says which actions apply to a target
 // (ActionService); this file only runs them. A command argument `{ ids, view? }` is an explicit target (a Links row, a class
 // folder); without it the command acts on the window selection.
 
@@ -20,7 +20,6 @@ import { ModelFrontend } from './model-client';
 import { NoteEditor } from './notes/note-editor';
 import { LINKS_CONTEXT_MENU } from './properties/links-widget';
 import { OUTLINE_CONTEXT_MENU } from './outline';
-import { SEARCH_CONTEXT_MENU } from './search/search-widget';
 import { PROBLEMS_CONTEXT_MENU } from './problems';
 import { sameIds } from './selection-model';
 
@@ -44,7 +43,7 @@ const KEY_COLUMN = ['catenary.nextOccurrence', 'catenary.previousOccurrence', 'c
 /** Context menus that show the actions, the prefix of their groups, and their "Go to" submenu. The canvas keeps the GLSP group names. */
 const MENUS: [MenuPath, string, MenuPath][] = [
     [TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_', [...TheiaGLSPContextMenu.CONTEXT_MENU, 'navigate']],
-    ...[EXPLORER_CONTEXT_MENU, LINKS_CONTEXT_MENU, SEARCH_CONTEXT_MENU, OUTLINE_CONTEXT_MENU, PROBLEMS_CONTEXT_MENU]
+    ...[EXPLORER_CONTEXT_MENU, LINKS_CONTEXT_MENU, OUTLINE_CONTEXT_MENU, PROBLEMS_CONTEXT_MENU]
         .map((root): [MenuPath, string, MenuPath] => [root, '', [...root, '1_open', 'go_to']])
 ];
 
@@ -228,7 +227,7 @@ export class ActionContribution implements CommandContribution, MenuContribution
         const cards = itemsOfKind(missing, 'instance', 'shape', 'valueSet');
         const relations = itemsOfKind(missing, 'relation').filter(id => !cards.includes(id));
         if (cards.length) await this.actions.addToView(view, cards);
-        if (relations.length) await this.actions.showRelations(view, relations, this.editors.center(await this.editors.open(view)));
+        if (relations.length) await this.actions.showRelations(view, relations, this.editors.dropPoint(await this.editors.open(view)));
     }
 
     /** Elements: deleted with their own statements (one confirmation). Marks selected on a canvas: deleted with their placement. */

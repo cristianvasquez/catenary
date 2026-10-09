@@ -952,6 +952,48 @@ test('browser: Links lists instances of a selected shape outside the current vie
   assert.equal(await panel.getByText('Unplaced list instance', { exact: true }).count(), 1);
 }));
 
+test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and stays open, no duplicate (ui-manifest §8.6)', { timeout: 60000 }, t => withFixtureApp(t, 'find-element', async ({ page, cli }) => {
+  const view = cli('exec', JSON.stringify({ kind: 'createView', label: 'Find view' })).result.id;
+  for (const label of ['Picked first', 'Picked second']) {
+    assert.equal(cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Picked', label })).result.ok, true);
+  }
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+  const canvas = page.locator('svg.sprotty-graph:visible');
+  await canvas.waitFor();
+  await canvas.click({ position: { x: 200, y: 200 } });
+  const picker = page.locator('.quick-input-widget');
+  const idOf = label => cli('rpc', 'search').result.find(h => h.label === label).id;
+  const cards = label => { const id = idOf(label); return cli('rpc', 'view', JSON.stringify(view)).result.boxes.filter(b => b.kind === 'card' && b.element === id).length; };
+  const until = async (check, what) => {
+    for (let i = 0; i < 50 && !check(); i++) await page.waitForTimeout(100);
+    assert.ok(check(), what);
+  };
+  await page.keyboard.press('F8');
+  await picker.waitFor();
+  await page.keyboard.type('Picked first');
+  await page.getByRole('option', { name: /Picked first/ }).first().waitFor();
+  await page.keyboard.press('Control+Enter');
+  await until(() => cards('Picked first') === 1, 'Ctrl+Enter adds the element to the view');
+  assert.equal(await picker.isVisible(), true, 'Ctrl+Enter keeps the picker open');
+  await page.locator('.quick-input-box input').fill('Picked second');
+  await page.getByRole('option', { name: /Picked second/ }).first().waitFor();
+  await page.keyboard.press('Enter');
+  await until(() => cards('Picked second') === 1, 'Enter adds the element to the view');
+  await picker.waitFor({ state: 'hidden' });
+  // The selection holds placements: compare the elements that the backend resolved for it.
+  const selected = label => { const id = idOf(label); return cli('eval', `return ctx.selection.resolved.elements.includes(${JSON.stringify(id)})`) === true; };
+  await until(() => selected('Picked second'), 'the added card is selected');
+  await page.keyboard.press('F8');
+  await picker.waitFor();
+  await page.keyboard.type('Picked first');
+  await page.getByRole('option', { name: /Picked first/ }).first().waitFor();
+  await page.keyboard.press('Enter');
+  await picker.waitFor({ state: 'hidden' });
+  await page.waitForTimeout(500);
+  assert.equal(cards('Picked first'), 1, 'Enter on an element of the view adds no second card');
+  await until(() => selected('Picked first'), 'Enter on an element of the view selects it there');
+}));
+
 test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async ({ page, cli }) => {
   const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Linked view' }));
   assert.equal(created.result.ok, true);
@@ -1011,7 +1053,7 @@ test('browser: Apply Layout fits the viewport to the new layout; no zoom-out lim
 
 test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 45000 }, t => withFixtureApp(t, 'properties-stable', async ({ page, cli }) => {
   // An instance with a SHACL form.
-  const hits = cli('rpc', 'search', '{}', '50').result.hits.filter(h => h.kind === 'instance');
+  const hits = cli('rpc', 'search').result.filter(h => h.kind === 'instance');
   let target;
   for (const h of hits) {
     cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(h.id)}] }); return true`);

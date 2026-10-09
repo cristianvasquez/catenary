@@ -14,8 +14,7 @@
 module Catenary.UiManifest where
 
 import Control.Applicative ((<|>))
-import Data.Char (toLower)
-import Data.List (isInfixOf, nub, sortOn)
+import Data.List (nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
@@ -519,9 +518,9 @@ law_controlIgnoresSelection c s1 s2 = isJust (controlCommand c s1) == isJust (co
 -- A box row is not a key target. Its own control changes it (exception for property rows: open.md G10).
 -- Ctrl+Del deletes elements after confirmation.
 -- Ctrl+Z and Ctrl+Shift+Z undo and redo graph edits. A focused text input keeps its own text keys.
--- F2 renames, or edits a note. Ctrl+T finds an element. F3 and Shift+F3 go to the next and previous occurrence.
+-- F2 renames, or edits a note. Ctrl+T and F8 find an element (§8.6). F3 and Shift+F3 go to the next and previous occurrence.
 -- F12 is Go to Source.
-data Key = Del | CtrlDel | CtrlZ | CtrlShiftZ | F2 | CtrlT | F3 | ShiftF3 | F12 | CtrlC | CtrlX | CtrlV deriving Eq
+data Key = Del | CtrlDel | CtrlZ | CtrlShiftZ | F2 | CtrlT | F8 | F3 | ShiftF3 | F12 | CtrlC | CtrlX | CtrlV deriving Eq
 data KeyEffect
   = RemovePlacements | DeleteAfterConfirmation | UndoGraphEdit | RedoGraphEdit | RenameOrEditNote | FindElement
   | NextOccurrence | PreviousOccurrence | GoToSource | CopyClip | CutClip | PasteClip
@@ -534,6 +533,7 @@ keyEffect k = case k of
   CtrlShiftZ -> RedoGraphEdit
   F2 -> RenameOrEditNote
   CtrlT -> FindElement
+  F8 -> FindElement
   F3 -> NextOccurrence
   ShiftF3 -> PreviousOccurrence
   F12 -> GoToSource
@@ -1327,7 +1327,7 @@ notPlaced :: Element -> Bool                        -- Delete Elements Not Place
 notPlaced e = null (placements e)
 
 -- | Model opens a document tree for a file. Reopening that presentation focuses the same tree.
--- No global Model explorer appears in the default layout. Search remains workspace-wide.
+-- No global Model explorer appears in the default layout. Find Element (§8.6) remains workspace-wide.
 -- Reveal in Explorer selects a source file, opens its Model document, then reveals the resource.
 -- Show in View instead navigates the resource to a canvas that contains it.
 -- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
@@ -1355,33 +1355,27 @@ law_folderDragAll selected descendants hidden =
   sameSet (folderDrag selected descendants) (nub (selected ++ concat descendants))
   && all (\i -> i `notElem` concat descendants || i `elem` folderDrag selected descendants) hidden
 
--- 8.6 Search ------------------------------------------------------------------------
+-- 8.6 Find Element ------------------------------------------------------------------
 
--- | Search: a faceted search on the store. Things: subjects with a type, subjects with a label and no type (rdfs:Resource),
--- property shapes (subjects of sh:path) and predicates in use. View internals, RDF structure and the report graph are not things.
--- Facets: text, type, Linked to. All set facets must match. Text matches every word in the local name or in a literal.
--- Linked to gives the other ends of the statements of an element, optionally by predicate and direction. Statements are not results.
--- Each facet value shows its count with the other facets applied. At most 200 results, sorted by label.
--- Double-click shows the element. A drag of a property result places its owner shape. Find Element (Ctrl+T) uses the same search.
-data Thing = Thing { thingLabel :: String, thingTexts :: [String], thingTypes :: [Iri], thingLinked :: [Iri] }
-data Facets = Facets { textFacet :: Maybe String, typeFacet :: Maybe Iri, linkedFacet :: Maybe Iri }
-matches :: Facets -> Thing -> Bool
-matches f t =
-  maybe True (\q -> all (\w -> any (containsWord w) (thingTexts t)) (words q)) (textFacet f)
-    && maybe True (`elem` thingTypes t) (typeFacet f)
-    && maybe True (`elem` thingLinked t) (linkedFacet f)
-  where containsWord w s = lowerCase w `isInfixOf` lowerCase s
-lowerCase :: String -> String
-lowerCase = map toLower
-searchLimit :: Int
-searchLimit = 200
-search :: Facets -> [Thing] -> [Thing]
-search f ts = take searchLimit (sortOn thingLabel (filter (matches f) ts))
-law_facetsConjoin :: Facets -> Thing -> Bool
-law_facetsConjoin f t =
-  matches f t == and [ matches f { typeFacet = Nothing, linkedFacet = Nothing } t
-                     , matches f { textFacet = Nothing, linkedFacet = Nothing } t
-                     , matches f { textFacet = Nothing, typeFacet = Nothing } t ]
+-- | Find Element (F8, Ctrl+T): a picker of all things. Things: subjects with a type, subjects with a label and no type
+-- (rdfs:Resource) and property shapes. Predicates, view internals, RDF structure and the report graph are not things.
+-- The picker groups the things by kind, sorted by label. It filters them by label, type and IRI.
+-- Reason: one picker replaces the Search panel. Adding to the current view is the main use, so Enter adds.
+-- Enter adds the thing to the current view. A thing that the view shows already is selected there.
+-- Ctrl+Enter does the same and keeps the picker open. Alt+Enter shows the thing (§8.7). With no current view, Enter shows it.
+-- Row buttons: Show, Reveal in Explorer, Go to Source. A property shape adds its node shape. A view adds a view reference.
+-- The new card goes to the pointer when the pointer is on the canvas, else to the canvas center.
+data FindKey = Enter | CtrlEnter | AltEnter deriving Eq
+data FindEffect = AddCard | SelectInView | ShowThing deriving Eq
+findEffect :: Bool -> Bool -> FindKey -> FindEffect  -- a current view, the view shows the thing
+findEffect hasView shown k
+  | not hasView || k == AltEnter = ShowThing
+  | shown = SelectInView
+  | otherwise = AddCard
+findKeepsOpen :: Bool -> FindKey -> Bool             -- a current view, the key
+findKeepsOpen hasView k = hasView && k == CtrlEnter
+law_findNeverDuplicates :: FindKey -> Bool
+law_findNeverDuplicates k = findEffect True True k /= AddCard
 
 -- 8.7 Show --------------------------------------------------------------------------
 

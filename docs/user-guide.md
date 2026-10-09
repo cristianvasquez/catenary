@@ -24,7 +24,6 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 | Area | Content |
 |---|---|
 | Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
-| Search (left) | Faceted search on text, type and "Linked to". At most 200 results. |
 | Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
 | Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
 | Outline | Frames, cards and placed relations of the active view. |
@@ -40,7 +39,9 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Duplicate a view: Duplicate View in the view actions. Type the name of the file of the copy (proposed: `<name>-copy` next to the source). The copy opens as "<label> copy", with no other dialog.
 - Open a view: select its file in the navigator, or a view row in the Model explorer. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.
-- Place an existing element: drag it from the Model explorer, Search or Links onto a canvas. Its relations to cards already on the view are placed too.
+- Place an existing element: press F8 (or Ctrl+T), type part of its label, type or IRI, and press Enter. The card goes to the pointer, or to the center of the canvas. Its relations to cards already on the view are placed too.
+- In the F8 picker, press Ctrl+Enter to add an element and keep the picker open. Press Alt+Enter to show the element instead of adding it. The row buttons are Show, Reveal in Explorer and Go to Source. An element that the view shows already is selected, not added again.
+- You can also drag an element from the Model explorer or Links onto a canvas.
 - Open a file tree: open a model RDF file, or select **Open as… → Model** from another presentation.
 - Use **Open beside…** to open another presentation beside the current pane. Reopening a presentation focuses its existing pane.
 - Move or split Model panes with the same tab controls as source editors and canvases.
@@ -95,7 +96,7 @@ Notes save automatically after a short pause in typing. Close the editor when yo
 |---|---|
 | F2 | Rename the selected element, or edit a note |
 | F12 | Go to Source: open the file of the element at its line. With nothing selected on a canvas: the view file |
-| Ctrl+T | Find an element |
+| F8, Ctrl+T | Find an element. Enter adds it to the current view. With no view open, Enter shows it |
 | F3 / Shift+F3 | Next / previous occurrence of the element in views |
 | Del | Remove the placement from the view. The model does not change |
 | Ctrl+Del | Delete the element from the model, after confirmation |

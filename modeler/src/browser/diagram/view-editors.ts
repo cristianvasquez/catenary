@@ -371,6 +371,12 @@ export class ViewEditors implements FrontendApplicationContribution {
         return { x: (clientX - r.left) / zoom + scroll.x, y: (clientY - r.top) / zoom + scroll.y };
     }
 
+    /** Model point where a new card goes: the pointer when it is on the canvas, else the center of the visible canvas. */
+    dropPoint(widget: GLSPDiagramWidget): { x: number; y: number } {
+        const p = this.pointerAt.get(widget);
+        return p ? this.toModel(widget, p.x, p.y) : this.center(widget);
+    }
+
     /** Model point at the center of the visible canvas. */
     center(widget: GLSPDiagramWidget): { x: number; y: number } {
         const r = widget.node.getBoundingClientRect();

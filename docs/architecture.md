@@ -77,7 +77,7 @@ Paths are relative to the directory in the first column.
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
 | | `fuzzy.ts` | Ordered-character matching, match positions and ranking |
-| | `labels.ts`, `search.ts`, `paths.ts`, `selection.ts`, `prompts.ts` | Labels, search criteria, portable paths, selection by kind, dialog and picker content |
+| | `labels.ts`, `search.ts`, `paths.ts`, `selection.ts`, `prompts.ts` | Labels, Find Element hits, portable paths, selection by kind, dialog and picker content |
 | | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
@@ -102,7 +102,7 @@ Paths are relative to the directory in the first column.
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `insert-view.ts` | Insert View in a Markdown editor |
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
-| | `explorer/`, `search/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, fuzzy filter and folder drags. |
+| | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |

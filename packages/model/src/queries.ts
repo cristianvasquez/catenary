@@ -10,7 +10,7 @@ import type { Choices, DeletePlan, ElementRow, LinkSection, NewLabelKind, Relati
 import type { ModelSelection, Selected } from './selection';
 import type { ShapesModel } from './shapes-doc';
 import type { ElementProperties } from './properties';
-import type { SearchFacets, SearchResult } from './search';
+import type { SearchHit } from './search';
 import type { Problem } from './validation';
 import type { FileContent } from './snapshot';
 import type { RdfCopy, RdfPaste } from './commands';
@@ -35,8 +35,8 @@ export interface ModelQueries {
     outline(viewId: string, selection?: { view?: string; ids: string[] }): OutlineNode[];
     /** Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
     problems(): Problem[];
-    /** Search panel and Find Element: the things that match the facets, sorted by label, the first `limit`; the counts of the facet values. */
-    search(facets: SearchFacets, limit: number): SearchResult;
+    /** Find Element: all things, sorted by label. */
+    search(): SearchHit[];
     /** Labels of all views (view id → label): the titles of the view editors. */
     viewLabels(): Record<string, string>;
     /** A gesture of a view editor: why each candidate target is not one, and the facts of its element. */
@@ -106,7 +106,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     properties: ['id'],
     outline: ['viewId', 'selection'],
     problems: [],
-    search: ['facets', 'limit'],
+    search: [],
     viewLabels: [],
     viewGesture: ['viewId', 'gesture'],
     appearance: ['viewId', 'ids'],

@@ -412,23 +412,6 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-new-view:hover { color: var(--theia-tab-activeForeground); background: var(--theia-toolbar-hoverBackground); }
 .catenary-tab-rename { position: fixed; z-index: 1000; box-sizing: border-box; padding: 0 4px; font: inherit; font-size: var(--theia-ui-font-size1); }
 
-/* Search panel (search-widget.tsx). */
-.catenary-search-body { display: flex; flex-direction: column; gap: 6px; height: 100%; box-sizing: border-box; padding: 8px; }
-.catenary-search-body > .theia-input, .catenary-search-body > .theia-select { width: 100%; box-sizing: border-box; }
-.catenary-search-body .linked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 6px; border: 1px solid var(--catenary-border); border-radius: 4px; }
-.catenary-search-body .linked .label { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.catenary-search-body .linked .theia-select { flex: 1; min-width: 0; }
-.catenary-search-body .linked .codicon { cursor: pointer; }
-.catenary-search-body .summary { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--catenary-muted); font-size: 12px; }
-.catenary-search-body .summary .theia-button { margin: 0; min-width: 0; }
-.catenary-search-body .results { flex: 1; overflow-y: auto; min-height: 0; }
-.catenary-search-body .row { display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 3px; cursor: grab; user-select: none; }
-.catenary-search-body .row:hover { background: var(--theia-list-hoverBackground); }
-.catenary-search-body .row.selected { background: var(--theia-list-activeSelectionBackground); color: var(--theia-list-activeSelectionForeground); }
-.catenary-search-body .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.catenary-search-body .row .class { color: var(--catenary-muted); font-size: 11px; white-space: nowrap; }
-.catenary-search-body .row.selected .class { color: inherit; }
-
 /* ---- Shapes views: node shape cards, attribute rows, property edges, pills, logical constraints ---- */
 .catenary-card.shape-card { --c: #3b82f6; }
 .catenary-card.shape-card > .body { fill: color-mix(in srgb, #3b82f6 9%, var(--catenary-bg)); stroke: var(--c); stroke-width: 1.5; }
