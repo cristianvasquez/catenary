@@ -8,7 +8,7 @@ import {
     lineProblem, isTakenOut
 } from '@catenary/model';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
-import { elementId, elementTerm, relationId } from './ids';
+import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { shapeable, unshapedClasses } from './shape-proposal';
 import { termKey } from './terms';
 
@@ -34,18 +34,22 @@ function select(ctx: Pick<ActionContext, 'g'>, query: string): Record<string, Te
 }
 
 /** The placements of all elements (views by element id). */
-export function placements(g: ModelGraph, byTerm: Map<string, string>): Placements {
+export function placements(g: ModelGraph, byTerm: Map<string, string>, ids?: string[]): Placements {
     const result: Placements = new Map();
     const add = (id: string, view: Term) => {
         let s = result.get(id);
         if (!s) result.set(id, s = new Set());
         s.add(elementId(view as NamedNode));
     };
-    for (const r of select({ g }, 'PREFIX view: <' + NS.view + '> SELECT ?v ?e WHERE { GRAPH ?v { ?pl view:element ?e } FILTER (isIRI(?e)) }')) {
+    const terms = ids && [...new Set(ids.flatMap(id => [...byTerm].filter(([, value]) => value === id).map(([key]) => key.slice(1, -1))
+        .concat(elementTerm(id)?.value ?? [])))];
+    const triples = ids?.flatMap(id => { const t = relationTriple(id); return t ? [`(<${t.s.value}> <${t.p.value}> <${t.o.value}>)`] : []; });
+    for (const r of select({ g }, 'PREFIX view: <' + NS.view + '> SELECT ?v ?e WHERE { ' + (terms ? 'VALUES ?e { ' + terms.map(s => '<' + s + '>').join(' ') + ' } ' : '') + 'GRAPH ?v { ?pl view:element ?e } FILTER (isIRI(?e)) }')) {
         add(byTerm.get(termKey(r.e as NamedNode)) ?? elementId(r.e as NamedNode), r.v);
     }
-    for (const r of select({ g }, `SELECT ?v ?s ?p ?o WHERE { GRAPH ?v { ?pl rdf:reifies ?t } FILTER (isTRIPLE(?t))
-            BIND (SUBJECT(?t) AS ?s) BIND (PREDICATE(?t) AS ?p) BIND (OBJECT(?t) AS ?o) FILTER (isIRI(?s) && isIRI(?o)) }`)) {
+    const relationPattern = triples ? `VALUES (?s ?p ?o) { ${triples.join(' ')} } GRAPH ?v { ?pl rdf:reifies <<( ?s ?p ?o )>> }`
+        : `GRAPH ?v { ?pl rdf:reifies ?t } FILTER (isTRIPLE(?t)) BIND (SUBJECT(?t) AS ?s) BIND (PREDICATE(?t) AS ?p) BIND (OBJECT(?t) AS ?o)`;
+    for (const r of select({ g }, `SELECT ?v ?s ?p ?o WHERE { ${relationPattern} FILTER (isIRI(?s) && isIRI(?o)) }`)) {
         add(relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode), r.v);
     }
     return result;

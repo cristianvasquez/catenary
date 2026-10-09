@@ -105,7 +105,8 @@ export class AppearanceWidget extends ElementPanel {
         if (!w) return undefined;
         const viewId = viewIdOf(w);
         const label = this.labels.labels[viewId];
-        const hidden = this.dataOf(viewId, [])?.hidden ?? [];
+        const sel = this.elements.resolved;
+        const hidden = this.dataOf(viewId, sel.view === viewId ? KINDS.flatMap(([k]) => sel[k] as string[]) : [])?.hidden ?? [];
         const shown = this.registry.isToggled(TOGGLE_HIDDEN, w);
         return <Section title={label ? `View · ${label}` : 'View'}>
             <Row label='Layout' inline>

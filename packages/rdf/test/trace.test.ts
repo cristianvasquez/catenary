@@ -168,47 +168,43 @@ describe('traced store', () => {
         store.close();
     });
 
-    it('a one-element Links request reads file origins for unrelated cards of the active view', async () => {
+    it.each([20, 200])('law_selectedReadScope: selections do not load unrelated cards (%i cards)', async count => {
         const dir = mkdtempSync(join(tmpdir(), 'catenary-links-trace-'));
         dirs.push(dir);
-        const uris = Array.from({ length: 20 }, (_, i) => `urn:trace:instance:${i}`);
+        const uris = Array.from({ length: count }, (_, i) => `urn:trace:instance:${i}`);
         writeFileSync(join(dir, 'data.ttl'), uris.map(uri => `<${uri}> <http://www.w3.org/2000/01/rdf-schema#label> "Card" .`).join('\n'));
         const store = new ModelStore();
         store.watching = false;
         try {
             expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
+            expect(await store.setSettings({ validation: 'off' })).toEqual({ ok: true });
             expect(store.execute({ kind: 'createView', label: 'Connections trace' }).ok).toBe(true);
             const view = Object.keys(store.viewLabels()).find(id => store.viewLabels()[id] === 'Connections trace')!;
             expect(store.execute({ kind: 'addToView', view, ids: uris.map(model.iriId), at: { x: 0, y: 0 } }).ok).toBe(true);
-            const matched: string[] = [];
-            const original = ModelGraph.prototype.match;
-            vi.spyOn(ModelGraph.prototype, 'match').mockImplementation(function (this: ModelGraph, ...args) {
-                if (args[0] && !args[1] && !args[2] && !args[3] && new Error().stack?.includes('filesOfSubject')) matched.push(args[0].value);
-                return original.apply(this, args);
-            });
+            const cards = store.view(view)!.boxes.filter(b => b.kind === 'card');
+            const assertScoped = (run: () => unknown, instances: number) => {
+                tracer.clear();
+                run();
+                const { spans } = tracer.take();
+                expect(spans.filter(s => s.name === 'read full view')).toHaveLength(0);
+                const origins = spans.filter(s => s.name === 'instance file origins');
+                expect(origins.length).toBeGreaterThan(0);
+                expect(origins.every(s => s.detail?.startsWith(`instances ${instances};`))).toBe(true);
+                expect(origins.every(s => s.queries === instances)).toBe(true);
+            };
             tracer.setClient(true);
-            store.links([model.iriId(uris[0])], view);
-            const spans = tracer.take().spans;
-            const full = spans.find(s => s.name === 'read full view')!;
-            expect(full.detail).toContain(`view ${view};`);
-            expect(full.detail).toContain('instances 20');
-            expect(causes(spans, full)).toEqual(['refresh:scoped read']);
-            const origins = spans.find(s => s.name === 'instance file origins')!;
-            expect(origins.detail).toContain('instances 20');
-            expect(origins.queries).toBe(20);
-            expect(causes(spans, origins)).toEqual(['refresh:scoped read']);
-            // Reproduction: a selection of one card decorates every card, including all 19 unrelated cards.
-            expect([...matched].sort()).toEqual([...uris].sort());
-            matched.length = 0;
-            store.links(uris.slice(0, 3).map(model.iriId), view);
-            expect([...matched].sort()).toEqual([...uris].sort());
-            matched.length = 0;
-            store.links([model.iriId(uris[0])]);
-            expect(matched).toEqual([uris[0]]);
-            matched.length = 0;
-            store.selectionActions({ ids: [model.iriId(uris[0])], view });
-            // Action facts read the view again through viewOf after scopedDoc already read it.
-            expect([...matched].sort()).toEqual([...uris, ...uris].sort());
+            assertScoped(() => store.links([model.iriId(uris[0])], view), 1);
+            assertScoped(() => store.links(uris.slice(0, 3).map(model.iriId), view), 3);
+            assertScoped(() => store.links([cards[0].id], view), 1);
+            assertScoped(() => store.selectionActions({ ids: [cards[0].id], view }), 1);
+            expect(tracer.take().spans.filter(s => s.name === 'read selected view')).toHaveLength(1);
+            assertScoped(() => store.appearance(view, [model.iriId(uris[0])]), 1);
+            assertScoped(() => store.occurrence([cards[0].id], view), 1);
+            assertScoped(() => store.view(view, [cards[0].id]), 1);
+            assertScoped(() => store.properties(view), 0);
+            const before = store.snapshot().revision;
+            expect(await store.save()).toEqual({ ok: true });
+            expect(store.snapshot().revision).toBe(before);
         } finally {
             await store.idle();
             store.close();

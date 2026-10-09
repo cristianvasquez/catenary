@@ -30,7 +30,7 @@ import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, cmp, isVocabula
 import { History, OriginChange } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
-import { formData, selectionLinks } from './queries';
+import { formData, selectionLinks, hiddenRelations, viewCounts } from './queries';
 import { readView, viewLabels } from './view-read';
 import { IndexedStore, LAYOUT_PREDICATES, readNotations, storeIndex } from './notations';
 import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, instanceLabels, readWarnings, scopedDoc } from './scoped-doc';
@@ -60,6 +60,8 @@ export interface ModelChange {
     reason: ChangeReason;
     /** What the change touched (edit, undo, redo). Undefined: anything can have changed. */
     scope?: ChangeScope;
+    /** Committed store changes, for incremental display updates. */
+    patch?: Patch;
 }
 
 /** What a patch touched, as element ids. */
@@ -301,19 +303,19 @@ export class ModelStore implements ModelQueries {
 
     /** A gesture of a view editor (ADR 0007 step 5): why each candidate target is not one, and the facts of its element. */
     viewGesture(viewId: string, gesture: ViewGesture): GestureInfo {
-        const doc = this.scoped({ elements: gestureElements(gesture), views: [viewId] });
+        const doc = this.scoped({ elements: gestureElements(gesture), selectionViews: [viewId] });
         return viewGesture(doc, this.meta, doc.views[viewId], gesture);
     }
 
     /** The Appearance panel of view `viewId` for the selected `ids`; undefined: no such view. */
     appearance(viewId: string, ids: string[]): AppearanceData | undefined {
-        const doc = this.viewDoc(viewId), view = doc.views[viewId];
-        return view && appearanceData(doc, this.meta, view, ids);
+        const doc = this.scoped({ elements: ids, selectionViews: [viewId] }), view = doc.views[viewId];
+        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta) };
     }
 
     /** The views that show the selected element (one instance or relation) of a selection of `view`. */
     occurrence(ids: string[], view?: string): Occurrence | undefined {
-        return this.file ? occurrence(this.scoped({ elements: ids, views: [view], showing: true }), this.meta, ids, view) : undefined;
+        return this.file ? occurrence(this.scoped({ elements: ids, selectionViews: [view], showing: true }), this.meta, ids, view) : undefined;
     }
 
     /** The views that show an element, and the box of each. */
@@ -341,7 +343,7 @@ export class ModelStore implements ModelQueries {
     /** Model properties panel (ADR 0007): the data of an element (properties.ts); no id: the counts of the store. */
     properties(id?: string): ElementProperties | undefined {
         if (!this.file) return undefined;
-        const view = id === undefined ? undefined : viewProperties(this.viewDoc(id), id);
+        const view = id === undefined ? undefined : viewCounts(this.graph, this.shapesIndex(), id);
         if (view) return view;
         const idx = this.shapesIndex();
         const ws = this.ws!;
@@ -370,17 +372,18 @@ export class ModelStore implements ModelQueries {
      */
     links(ids: string[], view?: string): SelectionLinks {
         const idx = this.shapesIndex();
-        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, views: [view] }), this.metamodel, ids, view);
+        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view);
     }
 
     /** The actions that apply to a target, and the facts to run them (actions.ts, spec/ui-manifest.hs §4). */
     selectionActions(target: ActionTarget): SelectionActions {
         if (!this.file) return { actions: [], items: [], cards: [] };
+        const doc = this.scoped({ elements: target.ids, selectionViews: [target.view] });
         const ctx: ActionContext = {
             g: this.graph, shapes: this.shapesIndex().model,
-            placements: this.cached('placements', () => placements(this.graph, this.shapesIndex().byTerm)),
-            doc: this.scoped({ elements: target.ids, views: [target.view] }),
-            viewOf: v => this.viewDoc(v).views[v],
+            placements: placements(this.graph, this.shapesIndex().byTerm, target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id))),
+            doc,
+            viewOf: v => doc.views[v],
             filesOf: id => this.filesOfElement(id)
         };
         return selectionActions(ctx, target);
@@ -392,8 +395,8 @@ export class ModelStore implements ModelQueries {
     }
 
     /** One stored view, from its view graph (view-read.ts). */
-    view(viewId: string): View | undefined {
-        return this.file ? this.viewDoc(viewId).views[viewId] : undefined;
+    view(viewId: string, ids?: string[]): View | undefined {
+        return this.file ? (ids ? this.scoped({ elements: ids, selectionViews: [viewId] }) : this.viewDoc(viewId)).views[viewId] : undefined;
     }
 
     /** The read model of the shapes graphs. */
@@ -514,7 +517,7 @@ export class ModelStore implements ModelQueries {
     }
 
     elementRows(ids: string[], viewId?: string): ElementRow[] {
-        return elementRows(this.scoped({ elements: ids, views: [viewId] }), this.metamodel, ids, viewId);
+        return elementRows(this.scoped({ elements: ids, selectionViews: [viewId] }), this.metamodel, ids, viewId);
     }
 
     /** The instances of `ids` without a card in any view, and the relations of `ids` without a placed edge in any view. */
@@ -882,15 +885,15 @@ export class ModelStore implements ModelQueries {
     /** `scope`: what a change without a patch touched (a validation run); else the scope of `patch`; neither: anything. */
     protected changed(reason: ChangeReason, patch?: Patch, scope = patch && this.scopeOf(patch)): void {
         if (reason !== 'edit' && reason !== 'undo' && reason !== 'redo') this.movedIds = {};
-        this.revision++;
+        if (reason !== 'save') this.revision++;
         if (this.ws && reason !== 'disk') this.referencedState = this.referencedFiles();
         this.lastChange = { reason, ...scope };
         if (tracer.on) {
             tracer.span('change', reason, () => {
                 tracer.note(`${this.listeners.size} listeners${scope ? `; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
-                for (const l of [...this.listeners]) l({ reason, scope });
+                for (const l of [...this.listeners]) l({ reason, scope, patch });
             });
-        } else for (const l of [...this.listeners]) l({ reason, scope });
+        } else for (const l of [...this.listeners]) l({ reason, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
         if (reason === 'undo' || reason === 'redo' || reason === 'files') this.commitNotes.push(reason);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.queueWrite();
@@ -1303,8 +1306,8 @@ export class ModelStore implements ModelQueries {
 function gestureElements(g: ViewGesture): string[] {
     switch (g.kind) {
         case 'reconnect': return [g.relation, ...g.cards];
-        case 'link': case 'linkIn': case 'shapeLink': case 'shapeLinkIn': return [g.source, ...g.cards];
-        case 'arrow': return [g.source];
+        case 'link': case 'linkIn': case 'shapeLink': case 'shapeLinkIn': return [g.source, ...g.cards, ...g.boxes];
+        case 'arrow': return [g.source, ...g.boxes];
         case 'row': return [g.row, ...g.cards];
         case 'logic': return [g.from, ...g.ids];
         case 'target': return [g.property, ...g.cards];

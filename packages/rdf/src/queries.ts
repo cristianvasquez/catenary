@@ -2,15 +2,17 @@ import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shac
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
 
 import {
-    Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, elementLabel, elementOfId, findRelation, formPredicates, kindOf,
-    predicateName, primaryClass, shortIri
+    AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, elementLabel, elementOfId, findRelation, formPredicates, kindOf,
+    ViewProperties, predicateName, primaryClass, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
-import { ModelGraph } from './graph';
+import { ModelGraph, P, cmp, labelFromIri } from './graph';
 import { NOT_REPORT, compareLabels, construct, iri as iriText, labels, statements, thingHead, things } from './sparql';
-import { elementId, elementTerm, relationTriple } from './ids';
+import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import type { ShapesIndex } from './shapes-read';
 import { rdf, termKey } from './terms';
+import { cardIdsOf } from './records';
+import { viewLabels } from './view-read';
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}>`;
 
@@ -210,3 +212,77 @@ const KIND_NAMES: Record<ElementKind, string> = {
     instance: 'Instance', relation: 'Relation', view: 'View', group: 'Group', note: 'Note', reference: 'View reference', collection: 'Collection',
     arrow: 'Arrow', shape: 'Node shape', property: 'Property shape', constraint: 'Logical constraint', valueSet: 'Value set'
 };
+
+/** Hidden instance links need placement membership and endpoint labels, not card fields or a diagram projection. */
+export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes): AppearanceData['hidden'] {
+    const view = elementTerm(viewId);
+    if (!view) return [];
+    const collected = new Set<string>();
+    const placed = new Set(g.match(null, rdf.namedNode(NS.view + 'element'), null, view).flatMap(q => q.object.termType === 'NamedNode' ? [q.object.value] : []));
+    for (const group of placed) for (const q of g.match(rdf.namedNode(group), rdf.namedNode(NS.view + 'member'))) {
+        if (q.object.termType === 'NamedNode') { placed.add(q.object.value); collected.add(q.object.value); }
+    }
+    const cards = [...placed].filter(s => g.isInstance(rdf.namedNode(s)));
+    if (!cards.length) return [];
+    const values = cards.map(s => `<${s}>`).join(' '), list = cards.map(s => `<${s}>`).join(', ');
+    const graphs = [g.model, ...g.shapesGraphs()].map(iri).join(', ');
+    const rows = g.store.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
+        VALUES ?s { ${values} } GRAPH ?g { ?s ?p ?o }
+        FILTER (?g IN (${graphs}) && ?o IN (${list}) && ?p NOT IN (rdf:type, rdfs:label))
+    }`).filter(r => r.g.value === g.homeOf(rdf.namedNode(r.s.value)).value)
+        .sort((a, b) => cmp(a.s.value, b.s.value) || cmp(a.p.value, b.p.value) || cmp(a.o.value, b.o.value));
+    const label = (s: string) => {
+        const term = rdf.namedNode(s), home = g.homeOf(term);
+        const literals = (p: string) => g.match(term, rdf.namedNode(p), null, home).filter(q => q.object.termType === 'Literal').map(q => q.object.value).sort(cmp);
+        return literals(NS.rdfs + 'label')[0] ?? literals(NS.skos + 'prefLabel')[0] ?? labelFromIri(s);
+    };
+    return rows.filter(r => !collected.has(r.s.value) && !collected.has(r.o.value)
+        && !g.match(null, rdf.namedNode(NS.rdf + 'reifies'), rdf.quad(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode), view).length)
+        .map(r => ({ id: relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode),
+            label: `${label(r.s.value)} — ${predicateName(meta, r.p.value)} → ${label(r.o.value)}` }));
+}
+
+/** View counts read membership, types and relation endpoints. They do not load card fields or build a diagram. */
+export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): ViewProperties | undefined {
+    const view = elementTerm(viewId);
+    if (!view || !g.isView(view)) return undefined;
+    const elements = g.match(null, rdf.namedNode(NS.view + 'element'), null, view)
+        .filter(q => q.object.termType === 'NamedNode' && g.match(q.subject, P.type, rdf.namedNode(NS.view + 'Placement'), view).length);
+    const instances = new Map(elements.filter(q => g.isInstance(q.object as NamedNode)).map(q => [q.object.value, elementId(q.object as NamedNode)]));
+    for (const q of elements) {
+        if (!g.match(q.object as NamedNode, P.type, rdf.namedNode(NS.view + 'EntityGroup')).length) continue;
+        for (const m of g.match(q.object as NamedNode, rdf.namedNode(NS.view + 'member'))) {
+            if (m.object.termType === 'NamedNode' && g.isInstance(m.object)) instances.set(m.object.value, elementId(m.object));
+        }
+    }
+    const known = cardIdsOf(instances, idx.model), cards = new Set<string>(), members = new Set<string>();
+    let notes = 0, references = 0;
+    for (const q of elements) {
+        const term = q.object as NamedNode;
+        const type = (name: string) => !!g.match(term, P.type, rdf.namedNode(NS.view + name)).length;
+        if (type('EntityGroup')) {
+            for (const m of g.match(term, rdf.namedNode(NS.view + 'member'))) if (m.object.termType === 'NamedNode' && known.has(m.object.value)) members.add(m.object.value);
+        } else if (type('FileRef')) {
+            if (g.match(term, rdf.namedNode(NS.view + 'file')).length) references++;
+        } else if (type('Note')) notes++;
+        else if (g.isView(term)) references++;
+        else if (!type('Frame') && known.has(term.value) && !term.value.startsWith('urn:trellis:list:')) cards.add(term.value);
+    }
+    const ends = new Set([...cards, ...members]);
+    let relations = 0, hidden = 0;
+    for (const s of ends) {
+        const term = rdf.namedNode(s);
+        if (!g.isInstance(term)) continue;
+        for (const q of g.match(term, null, null, g.homeOf(term))) {
+            if (q.object.termType !== 'NamedNode' || !ends.has(q.object.value) || !g.isInstance(q.object)
+                || [NS.rdf + 'type', NS.rdfs + 'label'].includes(q.predicate.value)) continue;
+            relations++;
+            if (!members.has(s) && !members.has(q.object.value)
+                && !g.match(null, rdf.namedNode(NS.rdf + 'reifies'), rdf.quad(term, q.predicate, q.object), view).length) hidden++;
+        }
+    }
+    const shapes = [...cards].filter(s => !!idx.model.nodeShapes[known.get(s)!]).length;
+    return { kind: 'view', id: viewId, uri: view.value, label: viewLabels(g)[viewId],
+        description: g.match(view, rdf.namedNode(NS.view + 'description'), null, view)[0]?.object.value ?? '',
+        cards: cards.size - shapes, shapes, notes, references, relations, hidden };
+}

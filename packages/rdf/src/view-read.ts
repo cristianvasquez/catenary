@@ -7,7 +7,7 @@
 import type { NamedNode, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, emptyDoc } from '@catenary/model';
 import { MODEL_GRAPH, ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, VALIDATION_GRAPH, cmp, fileOfGraph, labelFromIri } from './graph';
-import { elementId, elementTerm } from './ids';
+import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
 import { shapesIndexOf } from './shapes-read';
 import { rdf } from './terms';
@@ -56,12 +56,12 @@ function resources(rows: Record<string, Plain>[], vars: readonly string[]): Reso
  * The Doc of the view `viewId` (viewRead); `shapes`: default, read from the store. An empty Doc when `viewId` is not a view.
  * `warnings`: receives what the view cannot show.
  */
-export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, warnings: string[] = []): Doc {
+export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, warnings: string[] = [], elements?: string[]): Doc {
     const view = elementTerm(viewId);
     if (!view || view.termType !== 'NamedNode' || !g.isView(view)) return emptyDoc();
-    return tracer.span('refresh', 'read full view', () => {
+    return tracer.span('refresh', elements ? 'read selected view' : 'read full view', () => {
         tracer.note(`view ${viewId}; IRI ${view.value}`);
-        const doc = viewRead({ g, shapes: shapes ?? shapesIndexOf(g).model }, view, warnings);
+        const doc = viewRead({ g, shapes: shapes ?? shapesIndexOf(g).model }, view, warnings, elements);
         const v = doc.views[viewId];
         tracer.note(`view ${viewId}; IRI ${view.value}; instances ${Object.keys(doc.instances).length}; placements ${(v?.boxes.length ?? 0) + (v?.edges.length ?? 0)}`);
         return doc;
@@ -69,25 +69,74 @@ export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, wa
 }
 
 /** The Doc of view `view`: the view, the instances it places (and the SKOS vocabulary when it shows shapes), their relations. */
-export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string[] = []): Doc {
+export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string[] = [], elements?: string[]): Doc {
     const { g } = ctx;
     const V = `<${view.value}>`, M = `<${g.model.value}>`;
     const doc = emptyDoc();
     doc.shapes = ctx.shapes;
-    const shows = showsShapes(g, view);
-
-    // Statements of the placed elements in the model graph. An IRI object that is an instance outside the view is left out (a relation
-    // to an element not shown). A view with shape elements: also the statements of the SKOS subjects of the data file.
-    // A member of an entity group placed in the view counts as placed: it has no placement of its own (ADR 0014, C1).
-    const member = (x: string, n: string) => `{ GRAPH ${V} { ?${n} a view:Placement ; view:element ?${n}g } GRAPH ?${n}mg { ?${n}g a view:EntityGroup ; view:member ?${x} } }`;
-    const placed = (x: string) => `EXISTS { { GRAPH ${V} { ?n_${x} a view:Placement ; view:element ?${x} } } UNION ${member(x, `m_${x}`)} }`;
-    const rows = select(g, `${PREFIXES}
-        SELECT DISTINCT ?s ?p ?o WHERE {
-            { { GRAPH ${V} { ?n a view:Placement ; view:element ?s } } UNION ${member('s', 'ms')}
-              GRAPH ${M} { ?s ?p ?o }
-              FILTER (!isIRI(?o) || NOT EXISTS { GRAPH ${M} { ?o rdf:type|rdfs:label ?any } } || ${placed('o')}) }
-            ${shows ? `UNION { GRAPH ${M} { ?s a ?skos FILTER (?skos IN (skos:ConceptScheme, skos:Concept, skos:Collection)) ?s ?p ?o } }` : ''}
-        }`);
+    const shows = !elements && showsShapes(g, view);
+    // Resolve only the requested placements. Shape parts also need their owner card.
+    const requested = new Set<string>();
+    const placementIds = new Set<string>();
+    const add = (id: string) => {
+        const part = ctx.shapes.properties[id] ?? ctx.shapes.constraints[id];
+        const owner = part && ctx.shapes.nodeShapes[part.owner];
+        const term = elementTerm(id);
+        if (term) {
+            requested.add(term.value);
+            for (const set of Object.values(ctx.shapes.valueSets)) if (set.members.some(m => m.uri === term.value)) requested.add(set.uri);
+            for (const q of g.match(null, rdf.namedNode(NS.view + 'member'), term)) requested.add(q.subject.value);
+        }
+        if (owner) requested.add(owner.uri);
+        if (part && "uri" in part && part.uri) requested.add(part.uri);
+        const triple = relationTriple(id);
+        if (triple) { requested.add(triple.s.value); requested.add(triple.o.value); }
+    };
+    for (const id of elements ?? []) {
+        add(id);
+        const term = elementTerm(id);
+        if (!term) continue;
+        for (const q of g.match(term, null, null, view)) {
+            placementIds.add(term.value);
+            if (q.predicate.value === NS.view + 'element' && q.object.termType === 'NamedNode') add(elementId(q.object));
+            if (q.predicate.value === NS.rdf + 'reifies' && q.object.termType === 'Quad') {
+                for (const t of [q.object.subject, q.object.object]) if (t.termType === 'NamedNode') requested.add(t.value);
+            }
+        }
+    }
+    const list = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(', ');
+    const values = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(' ');
+    for (const id of placementIds) {
+        const node = rdf.namedNode(id);
+        const target = g.match(node, rdf.namedNode(NS.view + 'element'), null, view)[0]?.object;
+        if (target?.termType !== 'NamedNode' || !g.match(target, P.type, rdf.namedNode(NS.view + 'Frame')).length) continue;
+        const number = (name: string, fallback: number) => Number(g.match(node, rdf.namedNode(NS.view + name), null, view)[0]?.object.value ?? fallback);
+        const x = number('x', 0), y = number('y', 0), width = number('width', 400), height = number('height', 300);
+        for (const r of select(g, `${PREFIXES} SELECT ?e WHERE { GRAPH ${V} {
+            ?pl a view:Placement ; view:element ?e .
+            OPTIONAL { ?pl view:x ?x } OPTIONAL { ?pl view:y ?y }
+            OPTIONAL { ?pl view:width ?w } OPTIONAL { ?pl view:height ?h }
+            FILTER (COALESCE(?x, 0) >= ${x} && COALESCE(?y, 0) >= ${y}
+                && COALESCE(?x, 0) + COALESCE(?w, 640) <= ${x + width}
+                && COALESCE(?y, 0) + COALESCE(?h, 320) <= ${y + height})
+        } }`)) add(elementId(r.e.term as NamedNode));
+    }
+    if (elements) for (const iri of requested) for (const q of g.match(null, rdf.namedNode(NS.view + 'element'), rdf.namedNode(iri), view)) placementIds.add(q.subject.value);
+    // Placements and group members are the bounded subject set. Avoid a correlated placement query for each object.
+    const placed = new Set(select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE {
+        ${elements ? `VALUES ?pl { ${values(placementIds)} }` : ''}
+        GRAPH ${V} { ?pl a view:Placement ; view:element ?e }
+    }`).map(r => r.e.value));
+    const members = placed.size ? select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE {
+        VALUES ?group { ${values(placed)} } GRAPH ?mg { ?group a view:EntityGroup ; view:member ?e }
+    }`).map(r => r.e.value) : [];
+    members.forEach(e => placed.add(e));
+    if (elements) requested.forEach(e => placed.add(e));
+    const rows = select(g, `${PREFIXES} SELECT DISTINCT ?s ?p ?o WHERE {
+        { VALUES ?s { ${values(placed)} } GRAPH ${M} { ?s ?p ?o }
+          ${elements ? '' : `FILTER (!isIRI(?o) || ?o IN (${list(placed) || '<urn:trellis:none>'}) || NOT EXISTS { GRAPH ${M} { ?o rdf:type|rdfs:label ?any } })`} }
+        ${shows ? `UNION { GRAPH ${M} { ?s a ?skos FILTER (?skos IN (skos:ConceptScheme, skos:Concept, skos:Collection)) ?s ?p ?o } }` : ''}
+    }`);
     const statements = new Map<string, Statements>();
     for (const r of rows) {
         let e = statements.get(key(r.s));
@@ -114,16 +163,35 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
             }
         }
     }
+    if (elements) for (const iri of placed) {
+        if (!g.isInstance(rdf.namedNode(iri))) continue;
+        if (subjects.some(s => s.s.value === iri)) continue;
+        const home = g.homeOf(rdf.namedNode(iri));
+        if (home.equals(g.model)) continue;
+        const rows = g.match(rdf.namedNode(iri), null, null, home).map(q => ({ s: { termType: q.subject.termType, value: q.subject.value, term: q.subject } as Plain,
+            p: { termType: q.predicate.termType, value: q.predicate.value, term: q.predicate } as Plain,
+            o: { termType: q.object.termType, value: q.object.value, term: q.object } as Plain }));
+        if (rows.length) { subjects.push({ s: rows[0].s, rows }); files.set(iri, fileOfGraph(home.value)); }
+    }
     const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings);
+
+    if (elements) {
+        for (const iri of placed) for (const q of g.match(null, rdf.namedNode(NS.view + 'element'), rdf.namedNode(iri), view)) placementIds.add(q.subject.value);
+        for (const id of Object.keys(doc.relations)) {
+            const t = relationTriple(id)!;
+            for (const q of g.match(null, rdf.namedNode(NS.rdf + 'reifies'), rdf.quad(t.s, t.p, t.o), view)) placementIds.add(q.subject.value);
+        }
+    }
+    const placementScope = (variable: string) => elements ? `VALUES ?${variable} { ${values(placementIds)} }` : '';
 
     // Views that the part names: this view, the targets of its view references, the graphs of the marks and arrows it places.
     const excluded = [g.model, ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const viewRows = select(g, `${PREFIXES}
         SELECT DISTINCT ?g ?v ?l WHERE {
             { BIND(${V} AS ?g) }
-            UNION { GRAPH ${V} { ?ref a view:Placement ; view:element ?g } }
-            UNION { GRAPH ${V} { ?m a view:Placement ; view:element ?x } GRAPH ?g { ?x a ?mt FILTER (?mt IN (${MARK_TYPES})) } }
-            UNION { GRAPH ${V} { ?ap rdf:reifies <<( ?ax view:arrow ?ay )>> } GRAPH ?g { ?ax view:arrow ?ay } }
+            UNION { ${placementScope("ref")} GRAPH ${V} { ?ref a view:Placement ; view:element ?g } }
+            UNION { ${placementScope("m")} GRAPH ${V} { ?m a view:Placement ; view:element ?x } GRAPH ?g { ?x a ?mt FILTER (?mt IN (${MARK_TYPES})) } }
+            UNION { ${placementScope("ap")} GRAPH ${V} { ?ap rdf:reifies <<( ?ax view:arrow ?ay )>> } GRAPH ?g { ?ax view:arrow ?ay } }
             GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l } }
             FILTER (isIRI(?g) && ?g NOT IN (${excluded}))
         }`);
@@ -144,14 +212,14 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
 
     // Placements of the view graph. A placement of a relation or an arrow reifies its triple.
     const placements = resources(select(g, `${PREFIXES}
-        SELECT ?s ${PLACEMENT_PROPS.map(p => '?' + p).join(' ')} ?subject ?predicate ?object WHERE { GRAPH ${V} { ?s a view:Placement
+        SELECT ?s ${PLACEMENT_PROPS.map(p => '?' + p).join(' ')} ?subject ?predicate ?object WHERE { ${placementScope('s')} GRAPH ${V} { ?s a view:Placement
             ${PLACEMENT_PROPS.map(p => `OPTIONAL { ?s view:${p} ?${p} }`).join(' ')}
             OPTIONAL { ?s rdf:reifies ?triple FILTER (isTRIPLE(?triple)) BIND (SUBJECT(?triple) AS ?subject) BIND (PREDICATE(?triple) AS ?predicate) BIND (OBJECT(?triple) AS ?object) } } }`),
     [...PLACEMENT_PROPS, 'subject', 'predicate', 'object']);
     // The marks that the placements place (any graph), with their content. A subject with two mark types: the last of MARKS.
     const markRows = select(g, `${PREFIXES}
         SELECT ?s ?mt ?label ?text ?file ?member WHERE {
-            { SELECT DISTINCT ?s WHERE { GRAPH ${V} { ?pl a view:Placement ; view:element ?s } } }
+            { SELECT DISTINCT ?s WHERE { ${placementScope("pl")} GRAPH ${V} { ?pl a view:Placement ; view:element ?s } } }
             GRAPH ?mg { ?s a ?mt FILTER (?mt IN (${MARK_TYPES}))
                 OPTIONAL { ?s rdfs:label ?label } OPTIONAL { ?s view:text ?text } OPTIONAL { ?s view:file ?file } OPTIONAL { ?s view:member ?member } } }`);
     const marks = new Map<string, { kind: typeof MARKS[number][1]; r: Resource }>();
@@ -171,7 +239,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     }
     // Arrows: a placement shows a statement `x view:arrow y` of any graph.
     const arrowStatements = new Set(select(g, `${PREFIXES}
-        SELECT DISTINCT ?s ?o WHERE { GRAPH ${V} { ?ap rdf:reifies <<( ?s view:arrow ?o )>> } GRAPH ?ag { ?s view:arrow ?o } }`).map(r => `${key(r.s)} ${key(r.o)}`));
+        SELECT DISTINCT ?s ?o WHERE { ${placementScope("ap")} GRAPH ${V} { ?ap rdf:reifies <<( ?s view:arrow ?o )>> } GRAPH ?ag { ?s view:arrow ?o } }`).map(r => `${key(r.s)} ${key(r.o)}`));
 
     // Cards: instances, node shapes, value sets, and properties drawn out of their cards (by IRI). A shape wins over an instance.
     const cardIds = cardIdsOf(instanceIds, ctx.shapes);

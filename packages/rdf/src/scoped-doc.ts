@@ -16,6 +16,8 @@ export interface DocScope {
     elements?: string[];
     /** Also the instances related to the instances of `elements`, with the relations to them. */
     neighbors?: boolean;
+    /** Views whose selected placements and dependencies are read. */
+    selectionViews?: (string | undefined)[];
     /** Views to read in full. */
     views?: (string | undefined)[];
     /**
@@ -38,20 +40,22 @@ export function scopedDoc(ctx: ViewReadContext, scope: DocScope): Doc {
     doc.shapes = shapes;
     for (const [id, label] of Object.entries(viewLabels(g))) doc.views[id] = labelOnly(id, label);
     const read = new Set<string>();
-    const readFull = (viewId: string) => {
+    const readPart = (viewId: string, elements?: string[]) => {
         if (read.has(viewId) || !doc.views[viewId]) return;
         read.add(viewId);
-        const part = readView(g, viewId, shapes);
+        const part = readView(g, viewId, shapes, [], elements);
         if (part.views[viewId]) doc.views[viewId] = part.views[viewId];
         for (const [id, i] of Object.entries(part.instances)) doc.instances[id] ??= i;
         for (const [id, r] of Object.entries(part.relations)) doc.relations[id] ??= r;
     };
     const views = (scope.views ?? []).filter((v): v is string => !!v);
-    views.forEach(readFull);
+    views.forEach(v => readPart(v));
+    const selectedViews = (scope.selectionViews ?? []).filter((v): v is string => !!v);
+    selectedViews.forEach(v => readPart(v, scope.elements ?? []));
 
     // Elements: a placement id of a read view stands for its element.
     const elements = [...new Set((scope.elements ?? []).map(id => {
-        for (const v of views) {
+        for (const v of [...views, ...selectedViews]) {
             const e = elementOfId(doc.views[v], id);
             if (e !== id) return e;
         }
@@ -64,9 +68,9 @@ export function scopedDoc(ctx: ViewReadContext, scope: DocScope): Doc {
     }
     const own = [...instances];
     if (scope.neighbors && own.length) for (const x of neighbors(g, own)) instances.add(x);
-    if (instances.size) records(g, doc, [...instances]);
+    if (instances.size && (scope.neighbors || [...instances].some(s => !doc.instances[elementId(rdf.namedNode(s))]))) records(g, doc, [...instances]);
 
-    if (scope.showing) for (const v of viewsPlacing(g, showingTerms(doc, elements, own))) readFull(v);
+    if (scope.showing) for (const v of viewsPlacing(g, showingTerms(doc, elements, own))) readPart(v, elements);
     return doc;
 }
 

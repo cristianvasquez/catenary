@@ -5,11 +5,12 @@
 
 import { GlspSelection } from '@eclipse-glsp/theia-integration';
 import URI from '@theia/core/lib/common/uri';
-import { OpenerService, open } from '@theia/core/lib/browser';
+import { ApplicationShell, OpenerService, open } from '@theia/core/lib/browser';
 import { CommandService } from '@theia/core';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
 import { PropertyViewContentWidget } from '@theia/property-view/lib/browser/property-view-content-widget';
+import { PropertyViewWidget } from '@theia/property-view/lib/browser/property-view-widget';
 import { DefaultPropertyViewWidgetProvider } from '@theia/property-view/lib/browser/property-view-widget-provider';
 import type { ShaclForm } from '@ulb-darmstadt/shacl-form';
 import {
@@ -58,6 +59,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(ViewNotesEditors) protected readonly notes: ViewNotesEditors;
     @inject(OpenerService) protected readonly openers: OpenerService;
+    @inject(ApplicationShell) protected readonly shell: ApplicationShell;
 
     /** Edits from the SHACL form that the backend has not yet answered. */
     protected pending = 0;
@@ -80,6 +82,16 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
 
     protected override init(): void {
         super.init();
+        // Theia attaches this content directly to the DOM, without a widget parent.
+        const follow = (widget: import('@theia/core/lib/browser').Widget) => {
+            if (widget instanceof PropertyViewWidget) {
+                this.toDispose.push(widget.onDidChangeVisibility(visible => { if (visible) this.update(); }));
+                if (widget.isVisible) this.update();
+            }
+        };
+        const owner = this.shell.getWidgetById(PropertyViewWidget.ID);
+        if (owner) follow(owner);
+        this.toDispose.push(this.shell.onDidAddWidget(follow));
         this.toDispose.push(this.actionService.onDidChange(() => this.update()));
         this.toDispose.push(this.elements.onDidChange(() => { this.menuOpen = false; }));
         const close = (e: PointerEvent) => {
@@ -87,6 +99,10 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         };
         document.addEventListener('pointerdown', close, true);
         this.toDispose.push({ dispose: () => document.removeEventListener('pointerdown', close, true) });
+    }
+
+    protected override contentVisible(): boolean {
+        return this.isVisible && !!this.shell.getWidgetById(PropertyViewWidget.ID)?.isVisible;
     }
 
     /** The sections. `data-catenary-element`: the follow-up finds the fields. */
@@ -211,7 +227,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
     }
 
     protected storedView(viewId: string): View | undefined {
-        return this.ask(`view ${viewId}`, () => this.model.service.view(viewId));
+        return this.ask(`view ${viewId} ${this.elements.resolved.ids.join(" ")}`, () => this.model.service.view(viewId, this.elements.resolved.ids));
     }
 
     protected rows(ids: string[], viewId?: string): ElementRow[] | undefined {
@@ -722,4 +738,3 @@ export class ModelPropertiesProvider extends DefaultPropertyViewWidgetProvider {
         this.widget.updatePropertyViewContent();
     }
 }
-

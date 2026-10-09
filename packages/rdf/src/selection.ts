@@ -5,7 +5,7 @@ import { ElementKind, ModelSelection, NS, Selected, emptySelected, searchKind } 
 import { ModelGraph } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import type { ShapesIndex } from './shapes-read';
-import { construct, connections, graphStatements, iri, statements, things } from './sparql';
+import { construct, connections, iri, statements, things } from './sparql';
 import { rdf, termKey } from './terms';
 
 const buckets: Record<ElementKind, keyof Pick<Selected, 'instances' | 'relations' | 'views' | 'groups' | 'notes' | 'references' | 'collections' | 'arrows' | 'shapes' | 'properties' | 'constraints' | 'valueSets'>> = {
@@ -20,7 +20,10 @@ const marks: Record<string, ElementKind> = {
 export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSelection): Selected {
     const answer: Selected = { ...emptySelected(), view: undefined };
     const viewTerm = selection.view ? elementTerm(selection.view) : undefined;
-    const viewData = viewTerm ? graphStatements(g, viewTerm.value) : [];
+    const viewData = viewTerm ? [
+        ...g.match(viewTerm, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'View'), viewTerm),
+        ...selection.ids.flatMap(id => { const term = elementTerm(id); return term ? g.match(term, null, null, viewTerm) : []; })
+    ] : [];
     if (viewTerm && viewData.some(q => q.subject.equals(viewTerm) && q.predicate.value === NS.rdf + 'type' && q.object.value === NS.view + 'View')) answer.view = selection.view;
     const scoped = answer.view ? viewData : [];
     const first = (s: string, p: string) => scoped.find(q => q.subject.value === s && q.predicate.value === p)?.object;

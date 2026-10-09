@@ -2,14 +2,16 @@
 // (ModelStore.viewDoc: SPARQL rows of the view graph and the model, view-read.ts) and re-sends its graph when a change touches that part.
 
 import {
-    Action, ActionDispatcher, ClientId, ClientSessionManager, CommandStack, GModelFactory, GModelRoot, GModelSerializer, MessageAction, ModelState,
+    Action, ActionDispatcher, ClientId, ClientSessionManager, CommandStack, GModelFactory, GEdge, GModelRoot, GModelSerializer, MessageAction, ModelState,
     ModelSubmissionHandler, RequestModelAction, SaveModelAction, SetDirtyStateAction, SourceModelStorage
 } from '@eclipse-glsp/server';
 import { Command } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { viewIdOfUri } from '../../common/protocol';
-import { CommandResult, Doc, EditCommand, emptyDoc, hiddenShapeSources, placementOfId, toSchema } from '@catenary/model';
-import { ChangeScope, ModelStore, tracer } from '@catenary/rdf';
+import { CommandResult, Doc, EditCommand, NS, TYPES, edgeLanes, iriId, emptyDoc, hiddenShapeSources, placementOfId, toSchema } from '@catenary/model';
+import { ChangeScope, ModelChange, ModelStore, tracer } from '@catenary/rdf';
+
+const placementId = iriId;
 
 /** Session state: the view shown and the "show hidden edges" toggle. No dependencies on GLSP services (avoids DI cycles). */
 @injectable()
@@ -22,12 +24,34 @@ export class ViewState {
     /** Read model of this view: the view, its instances and the relations between them. */
     part: Doc = emptyDoc();
 
+    /** Edge IDs removed from the displayed graph by a committed placement-only patch. */
+    removedEdges?: Set<string>;
+
+    accept(change: ModelChange): void {
+        const patch = change.patch, view = this.view;
+        const edges = new Set(view?.edges.filter(e => {
+            const r = this.part.relations[e.relation];
+            return e.id && r && !view.boxes.some(b => b.kind === 'collection' && [r.subject, r.object].some(id => b.members.includes(id)));
+        }).map(e => e.id!) ?? []);
+        const removed = new Set(patch?.filter(c => c.op === 'remove' && c.quad.predicate.value === NS.rdf + 'reifies').map(c => placementId(c.quad.subject.value)));
+        // Hubs, lines, arrows, boxes and additions use the full projection and its cascade rules.
+        if (this.showHidden || !view || !patch?.length || patch.some(c => c.op !== 'remove'
+            || c.quad.graph.value !== view.uri || !edges.has(placementId(c.quad.subject.value)) || !removed.has(placementId(c.quad.subject.value)))) {
+            this.removedEdges = undefined;
+            return;
+        }
+        this.removedEdges ??= new Set();
+        for (const c of patch) this.removedEdges.add(placementId(c.quad.subject.value));
+        view.edges = view.edges.map(e => e.id && this.removedEdges!.has(e.id) ? { relation: e.relation, hidden: true } : e);
+    }
+
     get view() {
         return this.part.views[this.viewId];
     }
 
     /** Read the part of the model that this view shows. */
     load(): void {
+        this.removedEdges = undefined;
         this.part = tracer.span('refresh', 'read view', () => this.store.viewDoc(this.viewId));
     }
 
@@ -65,6 +89,7 @@ export class ViewSession {
         if (this.started) return;
         this.started = true;
         const listener = this.store.onDidChange(e => {
+            if (this.state.affectedBy(e.scope)) this.state.accept(e);
             if (this.muted) return;
             if (e.reason === 'save') {
                 this.dispatcher.dispatch(SetDirtyStateAction.create(false, { reason: 'save' }));
@@ -85,6 +110,8 @@ export class ViewSession {
     /** Send the current graph and dirty state to the client. */
     refresh(): Promise<void> {
         return tracer.span('refresh', `view ${this.view?.label ?? this.viewId}`, async () => {
+            // Yield so display work starts after the edit has returned to the RPC caller.
+            await new Promise<void>(resolve => setImmediate(resolve));
             try {
                 const actions = await this.submission.submitModel('operation');
                 await this.dispatcher.dispatchAll(actions);
@@ -148,6 +175,19 @@ export class ViewGModelFactory implements GModelFactory {
 
     createModel(): void {
         const { store } = this.session;
+        if (this.session.removedEdges) {
+            const removed = this.session.removedEdges;
+            this.session.removedEdges = undefined;
+            const root = this.modelState.root;
+            if ([...removed].every(id => root.children.some(e => e.id === id && e.type === TYPES.RELATION))) {
+                root.children = root.children.filter(e => !removed.has(e.id));
+                const edges = root.children.filter(e => e.type === TYPES.RELATION || e.type === TYPES.BUNDLE) as GEdge[];
+                const lane = edgeLanes(edges.map(e => [e.sourceId, e.targetId]));
+                for (const edge of edges) Object.assign(edge, lane(edge.sourceId, edge.targetId));
+                this.modelState.updateRoot(root);
+                return;
+            }
+        }
         this.session.load();
         const schemes = new Map((store.meta.schemes ?? []).map(x => [x.iri, x.label]));
         const { part } = this.session, view = part.views[this.session.viewId];

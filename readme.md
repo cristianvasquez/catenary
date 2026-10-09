@@ -105,6 +105,8 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/do
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window; a headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
+`rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
+
 `rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.
 
 Model RDF files open as file-scoped Model documents. **Open as…** (`catenary.openAs`) and **Open beside…** (`catenary.openBeside`) select a presentation. Both accept a file path and a presentation name: `Source`, `Model`, `Canvas`, or `Settings`. Reopening focuses the existing pane. `explorerChildren(key, file, offset)` returns one page of rows of a source file. `explorerSearch(text, file)` returns the flat filter list. `explorerDrag(selection)` resolves complete folder contents. The `moveElementsToFile` edit moves source statements, and `placeExplorerElements` places a mixed selection in one undo step.

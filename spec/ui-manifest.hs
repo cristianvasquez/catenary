@@ -1483,6 +1483,12 @@ markerPosition = (1, 1)
 -- Links uses the same predicate-label rule.
 -- A model change does not empty a panel. Properties shows its last data and actions until the new answer arrives.
 -- A new SHACL form builds hidden and replaces the shown form when it is ready.
+-- A hidden panel starts no content reads. When shown, it reads the current selection and model state.
+-- Reason: invisible content must not block an edit or selection.
+panelReads :: Bool -> Bool -> Bool                 -- visible, content changed
+panelReads visible changed = visible && changed
+law_hiddenPanelNoRead :: Bool -> Bool
+law_hiddenPanelNoRead changed = not (panelReads False changed)
 linkPickerSectionRows, formCandidatesPerClass :: Int
 linkPickerSectionRows = 50
 formCandidatesPerClass = 200

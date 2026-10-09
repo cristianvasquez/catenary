@@ -38,7 +38,7 @@ async function client(store: ModelStore, viewId: string) {
     sent.length = 0;
     refresh.mockClear();
     return {
-        session, state, sent, refresh,
+        session, state, sent, refresh, modelState,
         // Wait for actual refresh promises, not a time estimate of how long propagation takes.
         flushed: () => Promise.all(refresh.mock.results.map(r => r.value)),
         elements: () => serializer.createSchema(modelState.root).children!,
@@ -137,6 +137,39 @@ describe('model changes reaching view clients', () => {
         edit({ kind: 'removeFromView', view: first, ids: [note] });
         await a.flushed();
         expect(a.elements().map(e => e.id)).toEqual([collection]);
+    });
+
+    it('law_edgeRemovalUpdatesDisplay: removes an instance edge without reading or replacing unrelated cards', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const shape = edit({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:p' }, range: { kind: 'class', class: 'urn:Class' } });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:q' }, range: { kind: 'class', class: 'urn:Class' } });
+        const uri = docOf(store).instances[other].uri;
+        edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [{ termType: 'NamedNode', value: uri }], 'urn:q': [{ termType: 'NamedNode', value: uri }] } });
+        const a = await client(store, first);
+        const edge = a.state.view!.edges.find(e => e.id)!;
+        edit({ kind: 'setEdgeLayout', view: first, relation: edge.relation, patch: { color: '#ff0000' } });
+        await a.flushed();
+        edit({ kind: 'setEdgeLayout', view: first, relation: edge.relation, patch: { color: '' } });
+        await a.flushed();
+        expect(a.elements().some(e => e.id === edge.id)).toBe(true);
+        expect(a.elements().filter(e => e.type === "edge:relation")).toHaveLength(2);
+        const card = a.modelState.root.children.find(e => key(e) === instance);
+        const read = vi.spyOn(store, 'viewDoc');
+        edit({ kind: 'removeFromView', view: first, ids: [edge.id!] });
+        expect(read).not.toHaveBeenCalled(); // Edit completion precedes the display read.
+        await a.flushed();
+        expect(read).not.toHaveBeenCalled();
+        expect(a.elements().some(e => e.id === edge.id)).toBe(false);
+        expect(a.elements().find(e => e.type === "edge:relation")).toMatchObject({ lane: 0, lanes: 1 });
+        expect(a.modelState.root.children.find(e => key(e) === instance)).toBe(card);
+        expect(docOf(store).relations[edge.relation]).toBeDefined();
+        store.undo();
+        await a.flushed();
+        expect(a.elements().some(e => e.id === edge.id)).toBe(true);
+        store.redo();
+        await a.flushed();
+        expect(a.elements().some(e => e.id === edge.id)).toBe(false);
     });
 
     it('keeps layout and removal local to one view; undo restores its card without changing the instance', async () => {

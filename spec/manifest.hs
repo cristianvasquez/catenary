@@ -481,6 +481,10 @@ law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
 -- | Read models (ADR 0012). There is no Doc of the whole dataset. Panels and editors build request-local display models.
 -- A request-scoped Doc holds the elements of one request, their neighbors when asked, and the views that can show them.
 -- The other views of a scoped Doc have their label only. A scoped Doc is not kept after its request.
+-- A selected-element request reads only its selected elements and required dependencies. Placement IDs do not require a full view read.
+-- Reason: unrelated card statements block selection requests on the backend event loop.
+law_selectedReadScope :: [Id] -> [Id] -> Bool       -- required elements, read elements
+law_selectedReadScope required readElements = all (`elem` required) readElements
 -- Unmapped RDF statements stay in the store and the files.
 -- ViewCard.id is the placement. ViewCard.element is its element. EdgeLayout.id is a connector placement when present.
 -- Marks, references and arrows use placement IDs. Arrow ends are box IDs, not element IDs.
@@ -1392,6 +1396,14 @@ panelsUnchanged (Just c) showsViolations = case reason c of
 refreshes :: Doc -> Maybe SnapshotChange -> Bool
 refreshes _ Nothing = True
 refreshes d (Just c) = shapesFlag c || any (`elem` docViews d) (changedViews c) || any (`elem` docElements d) (changedElements c)
+-- | An instance-edge placement removal updates the displayed graph from its committed patch. Other changes use the full projection.
+-- Unrelated cards keep their display objects. Removal cascades and arrival rules still run in the transaction (§7).
+-- Reason: hiding one edge must not reconstruct unrelated cards.
+law_edgeRemovalUpdatesDisplay :: [Id] -> [Id] -> [Id] -> Bool  -- before, removed edge placements, after
+law_edgeRemovalUpdatesDisplay before removed after = sameSet after [i | i <- before, i `notElem` removed]
+-- | Display refresh starts after synchronous edit completion. The backend can then return the edit result before unrelated display work.
+displayRefreshAfterEdit :: Int -> Int -> Bool        -- edit completion, refresh start
+displayRefreshAfterEdit completed started = completed <= started
 -- | A validation run that changes the violations has a scope: the instances and property shapes whose count of violations changed.
 -- A card shows these counts, so a view that shows none of them does not refresh (model-store.ts violationScope).
 -- Reason: a run without a scope rebuilt every open view after each edit.
@@ -1409,6 +1421,9 @@ law_snapshotMirrorsHistory b =
       h = historyOf b
   in canUndo s == not (null (undoStack h)) && canRedo s == not (null (redoStack h)) && migrations s == queue h
      && violations s <= results s
+-- | A save-only notification keeps the model revision. Reason: saving unchanged data must not trigger revision-keyed model reads.
+law_saveKeepsRevision :: Backend -> Bool
+law_saveKeepsRevision b = revision (snapshotOf (snd (step b Save))) == revision (snapshotOf b)
 law_revisionIncreases :: Backend -> Op -> Bool
 law_revisionIncreases b op = revision (snapshotOf (snd (step b op))) >= revision (snapshotOf b)
 law_movedIdsFollowSetUri :: Backend -> Iri -> Iri -> Bool

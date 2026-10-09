@@ -99,9 +99,9 @@ Paths are relative to the directory in the first column.
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
-| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or one request |
+| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or selected placements and their dependencies |
 | | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
-| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
+| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins |

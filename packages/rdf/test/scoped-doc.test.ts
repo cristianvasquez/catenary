@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Doc, boxes, deletePlan, elementRows, knownPredicates, neighborChoices, occurrence, relationChoices, showing } from '@catenary/model';
+import { Doc, boxes, deletePlan, elementRows, knownPredicates, neighborChoices, occurrence, relationChoices, showing, viewProperties } from '@catenary/model';
 import { hiddenNeighborCounts, instancesNamed, knownClasses, memberOptions, unplacedInstances, unplacedRelations } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
 import { project } from './project-full';
@@ -49,6 +49,9 @@ const elements = () => [
 
 // Each test compares every element (and placement, view, pair) with the oracle: give each more than the default 5 s on a busy machine.
 describe('request-scoped read models give the answers of the whole read model', { timeout: 30_000 }, () => {
+    it('view counts preserve cards, collections, references and relations', () => {
+        for (const view of views()) expect(store.properties(view.id), view.label).toEqual(viewProperties(store.viewDoc(view.id), view.id));
+    });
     it('the fixture has instances, relations, several views and shapes', () => {
         expect(Object.keys(doc.instances).length).toBeGreaterThan(5);
         expect(Object.keys(doc.relations).length).toBeGreaterThan(3);

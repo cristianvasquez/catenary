@@ -10,6 +10,7 @@ import {
 } from '@theia/core/lib/browser';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { Message } from '@theia/core/shared/@lumino/messaging';
 import React from '@theia/core/shared/react';
 import { ActionTarget, LinkElement, SelectionLinks, isTypedInstanceRow, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
@@ -95,7 +96,13 @@ export class LinksWidget extends TreeWidget {
     protected request = 0;
 
     /** Query the links of the selection, then build the tree. A result of an older request is dropped. */
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        void this.rebuild();
+    }
+
     protected async rebuild(): Promise<void> {
+        if (!this.isVisible) return;
         const { ids, view } = this.elements.selection;
         const n = ++this.request;
         const links = this.modelFrontend.isOpen && ids.length ? await this.modelFrontend.service.links([...ids], view).catch(() => EMPTY) : EMPTY;
