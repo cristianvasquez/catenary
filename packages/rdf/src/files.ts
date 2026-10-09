@@ -2,7 +2,7 @@
 // Workspace file (TriG): the manifest graph only. Model files: every other RDF file of the folder of the workspace file and its
 // subfolders; a file that declares a view:View (any name; `*.view.trig` by default) is a view. Manifest paths are relative to the workspace file.
 
-import { NS } from '@catenary/model';
+import { NS, VALIDATION_MODES, ValidationMode } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { promises as fs } from 'fs';
 import * as path from 'path';
@@ -25,6 +25,8 @@ export const WS = {
     exclude: rdf.namedNode(NS.ws + 'exclude'),
     /** A glob (relative to the workspace folder) of imported model files: Catenary reads them and does not change them (read only). */
     imported: rdf.namedNode(NS.ws + 'imported'),
+    /** What SHACL validation checks: "off", "views" (the elements on the open views) or "all". Not written for "all". */
+    validation: rdf.namedNode(NS.ws + 'validation'),
     /** Legacy name of ws:imported (read, not written). */
     protect: rdf.namedNode(NS.ws + 'protect')
 };
@@ -76,6 +78,8 @@ export interface Manifest {
     imported: string[];
     /** Prefix table (prefix -> namespace). Undefined: the file declares none; the defaults apply. */
     prefixes?: Record<string, string>;
+    /** What SHACL validation checks. Undefined: "all". */
+    validation?: ValidationMode;
 }
 
 export { VIEW_EXT, isViewFile } from '@catenary/model';
@@ -152,12 +156,14 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         const prefix = one(DECLARE.prefix), ns = one(DECLARE.namespace);
         if (prefix !== undefined && ns) prefixes[prefix] = ns;
     }
+    const validation = literals(WS.validation).find(v => (VALIDATION_MODES as readonly string[]).includes(v)) as ValidationMode | undefined;
     return {
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
         exclude: literals(WS.exclude).sort(),
         imported: [...new Set([...literals(WS.imported), ...literals(WS.protect)])].sort(),
-        ...(Object.keys(prefixes).length ? { prefixes } : {})
+        ...(Object.keys(prefixes).length ? { prefixes } : {}),
+        ...(validation && validation !== 'all' ? { validation } : {})
     };
 }
 
@@ -174,6 +180,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
         ...PLACE_KINDS.map(k => rdf.quad(g, PLACE_PREDICATES[k], m.placement[k] === NEAR ? rdf.literal(NEAR) : rel(m.placement[k]), g)),
         ...m.exclude.map(e => rdf.quad(g, WS.exclude, rdf.literal(e), g)),
         ...m.imported.map(e => rdf.quad(g, WS.imported, rdf.literal(e), g)),
+        ...(m.validation && m.validation !== 'all' ? [rdf.quad(g, WS.validation, rdf.literal(m.validation), g)] : []),
         ...Object.entries(m.prefixes ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([prefix, ns]) => {
             const d = rdf.namedNode(`${MANIFEST_GRAPH}-declare-${prefix}`);
             return [

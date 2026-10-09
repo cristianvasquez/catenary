@@ -2,7 +2,7 @@
 // @catenary/rdf derives it from the quads; edits never change it (they are EditCommands).
 
 import { ShapesModel, emptyShapes } from './shapes-doc';
-import type { TermJSON } from './terms';
+import { RDF_TYPE, TermJSON } from './terms';
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
@@ -309,6 +309,9 @@ export interface LinkRow {
     /** rdfs:label, skos:prefLabel or sh:name of the other end, if any. */
     label?: string;
 }
+
+/** An incoming rdf:type row: the other end is an instance of the selected class. Links puts these rows in a closed folder (UI §8.8). */
+export const isTypedInstanceRow = (r: Pick<LinkRow, 'dir' | 'predicate'>) => r.dir === 'in' && r.predicate === RDF_TYPE;
 
 /** A view that shows a selected element: its card, the card of its node shape, a reference to it, or the element itself (view-owned). */
 export interface ViewLink {

@@ -25,9 +25,10 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 |---|---|
 | Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
 | Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
-| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements, views, source files, and Instances for selected node shapes). |
+| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
+| Trace (View → Trace) | Bottom area, next to the terminal. It shows what the backend runs: requests, edits, change events, view refreshes, validation, SPARQL queries and file writes. Summary sorts totals by time or calls per minute. Timeline shows each operation with its effects below. The trace records only while the panel is visible. |
 
 Catenary resets saved layouts once when you first open this version. Later sessions restore your pane arrangement.
 
@@ -113,6 +114,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **Prefixes**: hover a row to edit or remove it. Add a prefix in the last row. Above 12 prefixes, a filter shows. A warning icon marks a namespace that does not end with `/` or `#`.
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
 - **Imported**: globs of imported (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
+- **Validation**: select what SHACL validation checks after each change. Off shows no problems and no badges. Open views checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. All checks the whole model. The status bar shows the mode.
 
 The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 

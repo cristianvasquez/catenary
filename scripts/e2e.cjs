@@ -964,6 +964,9 @@ test('browser: Links lists instances of a selected shape outside the current vie
   await panel.getByText(/^Instances\s*1$/).waitFor();
   await panel.getByText('Unplaced list instance', { exact: true }).waitFor();
   assert.equal(await panel.getByText('Unplaced list instance', { exact: true }).count(), 1);
+  // law_typeRowsShown: the instance shows its class as an outgoing rdf:type row.
+  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(instance.id)}] }); return true`);
+  await panel.locator('.catenary-tree-description', { hasText: /^rdf:type$/ }).waitFor();
 }));
 
 test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and stays open, no duplicate (ui-manifest §8.6)', { timeout: 60000 }, t => withFixtureApp(t, 'find-element', async ({ page, cli }) => {

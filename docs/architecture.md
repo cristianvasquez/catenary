@@ -80,7 +80,7 @@ Paths are relative to the directory in the first column.
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
 | `packages/rdfs/src` | `index.ts` | Classes section of the Model explorer |
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
-| `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts` | Read-model records, JSON terms, element IDs, snapshot schema |
+| `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, prefixes, form conversion |
@@ -104,6 +104,7 @@ Paths are relative to the directory in the first column.
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
+| | `trace.ts` | Trace of the Trace panel: spans with their causes (AsyncLocalStorage), totals, the quad store that reports its queries |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
@@ -113,6 +114,7 @@ Paths are relative to the directory in the first column.
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `insert-view.ts` | Insert View in a Markdown editor |
 | | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
+| | `trace/` | Trace panel (bottom area) and the round trip of each request |
 | | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, pages, the flat fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
@@ -133,7 +135,7 @@ Paths are relative to the directory in the first column.
 - Other formats, TriG view files and failed patches get a whole-file write: first in the style of the file, then with the canonical writer as fallback.
 - Writes go to temporary files, then rename. Cross-file rollback does not exist (open work STORE2).
 - Catenary refuses to overwrite a file whose disk text differs from its last read or write.
-- The watcher reads changed files 150 ms after the last event. A read from disk clears the undo history.
+- The watcher reads changed files 150 ms after the last event. It does not read when each event is a file that Catenary wrote and that is unchanged since. A read from disk clears the undo history.
 
 ## Testing
 

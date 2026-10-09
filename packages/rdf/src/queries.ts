@@ -69,7 +69,7 @@ export function formCandidates(g: ModelGraph, instance: NamedNode): Quad[] {
 
 /**
  * Links of elements of any kind (ids): the views that show each one, and the statements of the model and shapes graphs from and to it.
- * rdf:type statements and literals are left out; an RDF list (sh:or, sh:in, …) between two terms counts as one step with the predicate
+ * Literals are left out (rdf:type statements are kept, UI §8.8); an RDF list (sh:or, sh:in, …) between two terms counts as one step with the predicate
  * that holds the list; a statement from the element to itself is only 'out'. View graphs count only as views. A property shape or logical constraint is shown by the card of its node shape.
  * Property shapes and logical constraints map to their ids; `isElement` tells which other IRI ids the user interface knows.
  */
@@ -85,7 +85,7 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
         values.push(`(${JSON.stringify(id)} ${iri(term as NamedNode)} ${iri(card)})`);
     }
     const graphs = `FILTER (?g IN (${[g.model, ...g.shapesGraphs()].map(iri).join(', ')}))`;
-    const noStep = `FILTER (?p NOT IN (rdf:type, rdf:first, rdf:rest))`;
+    const noStep = `FILTER (?p NOT IN (rdf:first, rdf:rest))`;
     const views: ViewLink[] = [], rows: LinkRow[] = [];
     if (values.length) {
         const found = g.store.select(`${PREFIXES}
@@ -167,17 +167,20 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
             ...(r ? { ends: { subject: r.subject, object: r.object, subjectLabel: label(r.subject), objectLabel: label(r.object) } } : {})
         });
     }
-    const isElement = (id: string) => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id]);
+    // `doc` reads the selection only: an instance of the store outside it (an instance of a selected class) is an element too.
+    const inStore = (id: string) => g.isInstance(elementTerm(id));
+    const isElement = (id: string) => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id]) || inStore(id);
     const found = links(g, idx, elements.map(e => e.id), isElement);
     const rows = found.rows.map(r => {
-        const target = r.id && kindOf(doc, undefined, r.id) ? r.id : undefined;
+        const known = !!r.id && !!kindOf(doc, undefined, r.id);
+        const target = r.id && (known || inStore(r.id)) ? r.id : undefined;
         const [s, o] = r.dir === 'out' ? [r.element, target] : [target, r.element];
         const relation = s && o && doc.instances[s] && doc.instances[o] ? findRelation(doc, s, r.predicate, o)?.id : undefined;
         const inst = doc.instances[r.element];
         const cls = inst && primaryClass(meta, inst.types);
         const undeclared = r.dir === 'out' && !!relation && !!cls && !formPredicates(cls).includes(r.predicate);
         return {
-            ...r, id: target, name: r.label ?? (target ? label(target) : r.iri ? shortIri(r.iri) : 'blank node'), predicateName: predicateName(meta, r.predicate),
+            ...r, id: target, name: r.label ?? (known ? label(target!) : r.iri ? shortIri(r.iri) : 'blank node'), predicateName: predicateName(meta, r.predicate),
             ...(relation ? { relation } : {}), ...(undeclared ? { undeclared } : {})
         };
     });

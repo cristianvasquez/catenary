@@ -29,6 +29,7 @@ export * from './sha256';
 export * from './shapes-schema';
 export * from './snapshot';
 export * from './terms';
+export * from './trace';
 export * from './validation';
 export * from './view-schema';
 export * from './view-ui';
