@@ -2,10 +2,10 @@
 // validation-runner.ts.
 
 import { Classes, NS, Problem, Violation, localName, predicateName, primaryClass } from '@catenary/model';
-import type { NamedNode, Term } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId } from './ids';
-import { construct, iri, labels, statements, things } from './sparql';
+import { NOT_REPORT, construct, iri, labels, things } from './sparql';
 import { defaultMessage } from './validate';
 
 /**
@@ -24,7 +24,11 @@ export function reportProblems(g: ModelGraph, meta: Classes, shapeId: (shape: Te
     return readResults(g, meta, '?r sh:focusNode ?f .', shapeId);
 }
 
-/** Shared report read for Problems and Properties. Report triples do not enter the data queries. */
+/**
+ * Shared report read for Problems and Properties. Report triples do not enter the data queries. Four queries whatever the number of
+ * results (the report, the typed focus nodes, their types, their labels); the rest indexes each quad once, so the cost is linear in the
+ * size of the report. A per-result scan of the report quads blocked the backend for seconds with some hundred results.
+ */
 export function readResults(g: ModelGraph, meta: Classes, pattern = '?r sh:focusNode ?f .',
     shapeId: (shape: Term) => string | undefined = () => undefined): Problem[] {
     const quads = construct(g, `CONSTRUCT { ?r ?p ?o } WHERE { GRAPH <${VALIDATION_GRAPH}> {
@@ -32,14 +36,19 @@ export function readResults(g: ModelGraph, meta: Classes, pattern = '?r sh:focus
         OPTIONAL { ?r sh:resultPath ?path ${PREDICATE_PATH('?path')} }
         FILTER (?p != sh:resultPath || ?o = ?path)
     } }`);
-    const subjects = [...new Set(quads.map(q => q.subject.value))].sort(cmp);
-    const values = (s: string, p: string) => quads.filter(q => q.subject.value === s && q.predicate.value === NS.sh + p).map(q => q.object).sort((a, b) => cmp(a.value, b.value));
+    const results = indexBySubject(quads);
+    const subjects = [...results.keys()].sort(cmp);
+    const values = (s: string, p: string) => results.get(s)?.get(NS.sh + p) ?? [];
     const focus = [...new Set(subjects.flatMap(s => values(s, 'focusNode').filter(t => t.termType === 'NamedNode').map(t => t.value)))];
     const typed = focus.length ? construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
         VALUES ?s { ${focus.map(iri).join(' ')} } { ${things()} }
     }`) : [];
     const known = new Set(typed.map(q => q.subject.value));
-    const facts = statements(g, focus);
+    // The types of the focus nodes in the data (the class name), as `statements` gives them: one triple per graph that holds it.
+    const facts = indexBySubject(focus.length ? construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
+        VALUES ?s { ${focus.map(iri).join(' ')} }
+        GRAPH ?g { ?s rdf:type ?type } FILTER (?g != ${NOT_REPORT})
+    }`) : []);
     const names = labels(g, focus);
     return subjects.map((s): Problem => {
         const f = values(s, 'focusNode')[0];
@@ -51,7 +60,7 @@ export function readResults(g: ModelGraph, meta: Classes, pattern = '?r sh:focus
         const pathName = path ? predicateName(meta, path) : undefined;
         const messages = values(s, 'resultMessage').map(t => t.value);
         const message = messages.join(' ') || defaultMessage(component, pathName, values(s, 'value')[0]?.value);
-        const types = facts.filter(q => q.subject.value === f.value && q.predicate.value === NS.rdf + 'type').map(q => q.object.value).sort(cmp);
+        const types = (facts.get(f.value)?.get(NS.rdf + 'type') ?? []).map(t => t.value);
         return {
             instance: known.has(f.value) ? elementId(f as NamedNode) : undefined, focus: f.value, path,
             ...(shape ? { shape } : {}), pathName, severity, component, message,
@@ -60,4 +69,19 @@ export function readResults(g: ModelGraph, meta: Classes, pattern = '?r sh:focus
             } : {})
         };
     }).sort((a, b) => cmp(a.focus, b.focus) || cmp(a.path ?? '', b.path ?? '') || cmp(a.message, b.message));
+}
+
+/** The objects of `quads` by subject and predicate, each list sorted by value. Each quad is read once (a term read of a store quad costs). */
+function indexBySubject(quads: Quad[]): Map<string, Map<string, Term[]>> {
+    const out = new Map<string, Map<string, Term[]>>();
+    for (const q of quads) {
+        const s = q.subject.value, p = q.predicate.value;
+        let ps = out.get(s);
+        if (!ps) out.set(s, ps = new Map());
+        let os = ps.get(p);
+        if (!os) ps.set(p, os = []);
+        os.push(q.object);
+    }
+    for (const ps of out.values()) for (const os of ps.values()) os.sort((a, b) => cmp(a.value, b.value));
+    return out;
 }
