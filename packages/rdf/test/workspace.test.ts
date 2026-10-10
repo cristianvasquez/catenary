@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { NS } from '@catenary/model';
+import { MODEL_QUERIES, NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { ModelGraph } from '../src/graph';
 import { openWorkspace } from '../src/loader';
@@ -88,8 +88,24 @@ describe('sync modules', () => {
         expect(await ws.saver.save()).toEqual({ ok: false, error: 'Another workspace was opened during the save.' });
     });
 
+    it('the coordinator has no direct file I/O', () => {
+        const source = readFileSync(join(__dirname, '..', 'src', 'model-store.ts'), 'utf8');
+        expect(source).not.toMatch(/from 'fs'|existsSync|readDisk|readText|commitFiles|FolderWatcher|fs\./);
+    });
+
+    it('PanelReads implements every frontend query; the coordinator has no delegations or SPARQL text', () => {
+        const src = join(__dirname, '..', 'src');
+        const source = readFileSync(join(src, 'model-store.ts'), 'utf8');
+        const reads = readFileSync(join(src, 'panel-reads.ts'), 'utf8');
+        expect(source).not.toMatch(/SELECT|CONSTRUCT|ASK|GRAPH |FILTER|WHERE \{|this\.reads\./);
+        for (const name of Object.keys(MODEL_QUERIES)) {
+            expect(source, name).not.toMatch(new RegExp(`^    (?:async )?${name}\\(`, 'm'));
+            expect(reads, name).toMatch(new RegExp(`^    (?:async )?${name}\\(`, 'm'));
+        }
+    });
+
     it('no sync module imports another; all read the settings (ModelStore wires them)', () => {
-        const modules = ['loader', 'reconciler', 'placement', 'saver', 'validation-data'];
+        const modules = ['loader', 'reconciler', 'placement', 'saver', 'validation-data', 'import'];
         const src = join(__dirname, '..', 'src');
         expect(readdirSync(src)).toEqual(expect.arrayContaining([...modules, 'settings'].map(m => `${m}.ts`)));
         for (const m of [...modules, 'settings']) {

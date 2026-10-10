@@ -139,6 +139,28 @@ it('a failed commit keeps its paths for the next write', async () => {
     expect(f.git('show', 'HEAD:data.ttl')).toContain('"After"');
 });
 
+it('failed commit notes survive a reopen, but do not reach another coordinator', async () => {
+    const f = fixture();
+    f.init();
+    const store = await f.open();
+    f.put('.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n');
+    chmodSync(join(f.dir, '.git/hooks/pre-commit'), 0o755);
+    await rename(store);
+    const failure = store.warnings.find(w => w.startsWith('Not committed:'));
+    expect(failure).toBeDefined();
+    expect(await store.open(join(f.dir, 'workspace.trig'))).toEqual({ ok: true });
+    const other = fixture();
+    other.init();
+    const second = await other.open();
+    rmSync(join(f.dir, '.git/hooks/pre-commit'));
+    expect(store.execute({ kind: 'createView', label: 'New' }).ok).toBe(true);
+    await store.idle();
+    expect(f.git('log', '-1', '--format=%s')).toBe('Catenary: rename, createView');
+    expect(store.warnings).not.toContain(failure);
+    expect(await second.save()).toEqual({ ok: true });
+    expect(other.git('log', '-1', '--format=%s')).toBe('initial');
+});
+
 it('near placement of new shapes skips read-only profiles', async () => {
     const f = fixture({ 'profile.n3': '<urn:Shape> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <urn:Class> .\n' }, '; <osg://vocab/workspace#placeShapes> "near"');
     const store = await f.open();

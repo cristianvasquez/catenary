@@ -1,11 +1,13 @@
 // Resolve window selection IDs from RDF facts. The shapes index only translates existing UI identities.
 
-import type { NamedNode } from '@rdfjs/types';
 import { ElementKind, ModelSelection, NS, Selected, emptySelected, searchKind } from '@catenary/model';
-import { ModelGraph } from './graph';
+import type { NamedNode, Quad } from '@rdfjs/types';
+import type { TextTarget } from 'rdf-files';
+import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
+import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
-import { construct, connections, iri, statements, things } from './sparql';
+import { connections, construct, iri, statements, things } from './sparql';
 import { rdf, termKey } from './terms';
 
 const buckets: Record<ElementKind, keyof Pick<Selected, 'instances' | 'relations' | 'views' | 'groups' | 'notes' | 'references' | 'collections' | 'arrows' | 'shapes' | 'properties' | 'constraints' | 'valueSets'>> = {
@@ -75,4 +77,40 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
         }
     }
     return answer;
+}
+
+/** Subject statements, or object statements when none exist. A relation uses its triple. */
+export function statementsOf(g: ModelGraph, index: () => ShapesIndex, id: string): Quad[] {
+    const triple = relationTriple(id);
+    if (triple) return g.match(triple.s, triple.p, triple.o);
+    const idx = index();
+    const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
+    if (!t) return [];
+    const own = g.match(t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
+    return own.length ? own : g.match(null, null, t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
+}
+
+/** Text positions, best first: own block, property entry, then the containing shape. */
+export function textTargets(idx: ShapesIndex, id: string): TextTarget[] {
+    const rel = relationTriple(id);
+    if (rel) return [{ subject: rel.s.value, predicate: rel.p.value, object: rel.o.value }];
+    const property = idx.property.get(id), constraint = idx.constraint.get(id);
+    if (property) {
+        const path = idx.model.properties[id]?.path, p = NS.sh + 'property', own = property.term.value;
+        return [
+            { subject: own }, { subject: property.owner.value, predicate: p, object: own },
+            ...(path?.kind === 'iri' ? [{ subject: property.owner.value, predicate: p, inside: { predicate: NS.sh + 'path', object: path.iri } }] : []),
+            { subject: property.owner.value }
+        ];
+    }
+    if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
+    const t = elementTerm(id);
+    return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
+}
+
+/** Source files of an element, most statements first. */
+export function filesOfElement(g: ModelGraph, idx: () => ShapesIndex, settings: Settings | undefined, id: string): string[] {
+    const count = new Map<string, number>();
+    for (const q of statementsOf(g, idx, id)) for (const f of settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
+    return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
 }

@@ -178,7 +178,7 @@ ex:loose a skos:Concept ; skos:inScheme ex:colors ; sh:name "Loose" .\n`);
             if (vocab === 'imported') ok(await store.setImported('vocab.ttl', true));
             if (mode === 'views') store.setOpenView('client-1', elementId(rdf.namedNode(VIEW)));
             await store.validate();
-            const input = (store as unknown as { validationInput(): { data: { subject: { value: string } }[] } }).validationInput();
+            const input = store['validationData'].validationInput()!;
             return { store, subjects: new Set(input.data.map(q => q.subject.value)) };
         };
     }

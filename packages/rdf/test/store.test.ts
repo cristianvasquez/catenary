@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NS, boxes, cardOf } from '@catenary/model';
+import { NS, boxes, cardOf, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
@@ -32,31 +32,49 @@ function workspace(): { dir: string; a: string; b: string } {
 const settled = () => vi.runAllTimersAsync();
 
 describe('model store', () => {
+    it('the read host uses the current graph and file after each open', async () => {
+        const { a, b } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        expect(store.reads.search()).toEqual([]);
+        expect(store.reads.explorerChildren()).toEqual({ rows: [], total: 0 });
+        expect((await store.open(a)).ok).toBe(true);
+        expect(store.reads.search().length).toBeGreaterThan(0);
+        expect(store.reads.instancesNamed('Only in B')).toEqual([]);
+        const view = Object.keys(docOf(store).views)[0];
+        expect(store.reads.viewDescription(view)).toBe('');
+        expect((await store.open(b)).ok).toBe(true);
+        expect(store.reads.instancesNamed('Only in B')).toEqual([iriId('urn:b')]);
+        expect(store.reads.knownClasses()).toContainEqual({ iri: 'http://ex.org/B' });
+        expect(store.reads.viewDescription(view)).toBeUndefined();
+        expect(store.reads.viewLabels()).toEqual({});
+    });
+
     it('law_viewDescriptionStorage: saves Markdown in the view file, reads Properties, and undoes one edit', async () => {
         const { a } = workspace();
         const store = new ModelStore();
         await store.open(a);
         const view = Object.keys(docOf(store).views)[0];
         const text = '# Explanation\n\n- **Bold** and _italic_\n\n```text\n<example>\n```\n';
-        expect(store.properties(view)).toMatchObject({ kind: 'view', description: '' });
+        expect(store.reads.properties(view)).toMatchObject({ kind: 'view', description: '' });
         expect(store.execute({ kind: 'setViewDescription', view, text, expectedText: '' }).ok).toBe(true);
-        expect(store.view(view)?.description).toBe(text);
-        expect(store.properties(view)).toMatchObject({ description: text });
+        expect(store.reads.view(view)?.description).toBe(text);
+        expect(store.reads.properties(view)).toMatchObject({ description: text });
         store.undo();
-        expect(store.properties(view)).toMatchObject({ description: '' });
+        expect(store.reads.properties(view)).toMatchObject({ description: '' });
         store.redo();
-        expect(store.properties(view)).toMatchObject({ description: text });
+        expect(store.reads.properties(view)).toMatchObject({ description: text });
         expect((await store.save()).ok).toBe(true);
         expect((await store.open(a)).ok).toBe(true);
-        expect(store.properties(view)).toMatchObject({ description: text });
+        expect(store.reads.properties(view)).toMatchObject({ description: text });
         expect(store.execute({ kind: 'setViewDescription', view, text: '', expectedText: text }).ok).toBe(true);
-        expect(store.view(view)?.description).toBeUndefined();
+        expect(store.reads.view(view)?.description).toBeUndefined();
         store.undo();
-        expect(store.properties(view)).toMatchObject({ description: text });
+        expect(store.reads.properties(view)).toMatchObject({ description: text });
         const copy = store.execute({ kind: 'duplicateView', id: view });
         expect(copy.ok).toBe(true);
         if (!copy.ok) throw new Error(copy.error);
-        expect(store.properties(copy.id!)).toMatchObject({ description: text });
+        expect(store.reads.properties(copy.id!)).toMatchObject({ description: text });
     });
 
     it('reports a view IRI change as a moved view id, for the edit, its undo and its redo', async () => {

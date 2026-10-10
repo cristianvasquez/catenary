@@ -4,14 +4,95 @@
 
 import { CommandResult, PREFIXES } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { OwnWrites, gitChanges, patchTurtle, pathKey, portableRelative, readUnchanged, writeAll } from 'rdf-files';
-import { manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
+import { OwnWrites, SerialQueue, commitFiles, gitChanges, patchTurtle, pathKey, portableRelative, readUnchanged, writeAll } from 'rdf-files';
+import { IMPORT_FOLDER, manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
 import { ModelGraph, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
 import { OnDisk, Saved, Settings } from './settings';
 import { rdf } from './terms';
 import { canonical, writeTrig } from './trig';
+import { skolemize } from './skolem';
+import { tracer } from './trace';
+
+/** The coordinator supplies the current workspace and the shared file queue. */
+export interface WriterPort {
+    saver(): Saver | undefined;
+    writable(): boolean;
+    queue: SerialQueue;
+    warnings: string[];
+    saved(): void;
+}
+
+/** Write batches and retry notes live across workspace opens. */
+export class Writer {
+    protected writeQueued = false;
+    /** What the next commit contains: command kinds, undo, redo, files. */
+    readonly commitNotes: string[] = [];
+    /** The last write error; it shows in the warnings until a write succeeds. */
+    writeError?: string;
+
+    constructor(protected readonly port: WriterPort) {}
+
+    /** Queue one write for all changes that come before it runs. */
+    queueWrite(): void {
+        if (!this.port.writable() || this.writeQueued) return;
+        this.writeQueued = true;
+        void this.port.queue.run(async () => {
+            this.writeQueued = false;
+            await tracer.span('file', 'write', () => this.write());
+        });
+    }
+
+    /** Write the changed files and commit them. Keep a failure visible until success. */
+    async write(): Promise<CommandResult> {
+        const ws = this.port.saver();
+        const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
+        // A write does not change the dataset: the caches stay (only the dirty state changes).
+        if (r.ok) this.port.saved();
+        const notes = [...new Set(this.commitNotes.splice(0))];
+        const warningCount = this.port.warnings.length;
+        const files = ws?.committable() ?? [];
+        const error = r.ok ? await commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`) : `Not written: ${r.error}`;
+        if (r.ok && !error) ws!.written = [];
+        if (error) this.commitNotes.unshift(...notes);
+        if (error !== this.writeError || this.port.warnings.length !== warningCount) {
+            this.port.warnings = [...this.port.warnings.filter(w => w !== this.writeError), ...(error ? [error] : [])];
+            this.writeError = error;
+            this.port.saved();
+        }
+        return r;
+    }
+}
+
+/** Import copies: choose names first, then write them, or remove them on failure. */
+export class ImportCopies<T extends { name: string; quads?: Quad[] }> {
+    readonly targets = new Map<T, string>();
+    protected readonly folder: string;
+
+    constructor(folder: string, copies: T[]) {
+        this.folder = path.join(folder, IMPORT_FOLDER);
+        for (const r of copies) {
+            const base = r.name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
+            let target = path.join(this.folder, `${base}.ttl`);
+            for (let i = 2; existsSync(target) || [...this.targets.values()].includes(target); i++) target = path.join(this.folder, `${base}-${i}.ttl`);
+            this.targets.set(r, target);
+        }
+    }
+
+    async write(): Promise<void> {
+        await fs.mkdir(this.folder, { recursive: true });
+        for (const [r, target] of this.targets) {
+            // The default graph: a model file has no graph names.
+            const triples = skolemize(r.quads!.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
+            await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
+        }
+    }
+
+    async undo(): Promise<void> {
+        for (const t of this.targets.values()) await fs.rm(t, { force: true });
+    }
+}
 
 interface Canonical { workspace: string; files: Map<string, string>; views: Map<string, string> }
 

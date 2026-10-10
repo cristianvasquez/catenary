@@ -49,7 +49,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         const seen = { shapes: 0, fields: 0, targets: 0, form: 0 };
         for (const id of ids) {
             const inst = doc.instances[id];
-            const p = store.properties(id) as InstanceProperties;
+            const p = store.reads.properties(id) as InstanceProperties;
             seen.shapes += +!!p.shapes.length; seen.fields += +!!Object.keys(p.fields).length; seen.targets += +!!Object.keys(p.targets).length;
             expect(p.kind).toBe('instance');
             expect({ id: p.id, uri: p.uri, label: p.label, types: p.types, fields: p.fields, file: p.file }).toEqual({ ...inst, file: inst.file });
@@ -71,13 +71,13 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
         g.add(rdf.namedNode(inst.uri), predicate, rdf.literal('active'), g.model);
 
-        const p = store.properties(inst.id) as InstanceProperties;
+        const p = store.reads.properties(inst.id) as InstanceProperties;
         expect(p.shapes).toContainEqual({ id: expect.any(String), uri: shape.value, label: 'SubjectShape', predicates: [], reasons: [{ kind: 'targetSubjectsOf', target: { termType: 'NamedNode', value: predicate.value } }] });
     });
 
     it('instance: the link candidates of the form are of its sh:class classes and leave out the instance itself', () => {
         const inst = Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!;
-        const p = store.properties(inst.id) as InstanceProperties;
+        const p = store.reads.properties(inst.id) as InstanceProperties;
         expect(p.candidates).not.toContain(`<${inst.uri}>`);
         // dprod:DataProduct names dcat:DataService with sh:class (dprod:inputPort).
         const service = Object.values(docOf(store).instances).find(i => i.types.includes('http://www.w3.org/ns/dcat#DataService'))!;
@@ -92,12 +92,12 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         expect(ids.length).toBeGreaterThan(5);
         for (const id of ids) {
             const r = doc.relations[id];
-            const p = store.properties(id) as RelationProperties;
+            const p = store.reads.properties(id) as RelationProperties;
             expect(p).toMatchObject({ kind: 'relation', predicate: r.predicate });
             expect([p.subject.id, p.subject.label, p.subject.types]).toEqual([r.subject, doc.instances[r.subject].label, doc.instances[r.subject].types]);
             expect([p.object.id, p.object.label, p.object.types]).toEqual([r.object, doc.instances[r.object].label, doc.instances[r.object].types]);
         }
-        expect(store.properties('unknown')).toBeUndefined();
+        expect(store.reads.properties('unknown')).toBeUndefined();
     });
 
     it('violations: the results of the report graph, as the violation list gives them', async () => {
@@ -106,7 +106,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         let n = 0;
         for (const inst of Object.values(doc.instances)) {
             const expected = violations.filter(v => v.instance === inst.id).map(text).sort();
-            const got = (store.properties(inst.id) as InstanceProperties).results.map(text).sort();
+            const got = (store.reads.properties(inst.id) as InstanceProperties).results.map(text).sort();
             expect(got).toEqual(expected);
             n += got.length;
         }
@@ -114,7 +114,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         let m = 0;
         for (const id of Object.keys(doc.shapes.properties)) {
             const expected = violations.filter(v => v.shape === id).map(v => `${doc.instances[v.instance ?? '']?.label ?? v.focus}: ${v.message}`).sort();
-            const p = store.properties(id) as PropertyShapeProperties;
+            const p = store.reads.properties(id) as PropertyShapeProperties;
             expect(p.kind).toBe('propertyShape');
             expect(p.results.map(v => `${v.focusLabel}: ${v.message}`).sort()).toEqual(expected);
             m += expected.length;
@@ -125,7 +125,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
     it('nothing selected: the counts of the read model', async () => {
         const violations = await validate();
         const doc = docOf(store);
-        expect(store.properties()).toEqual({
+        expect(store.reads.properties()).toEqual({
             kind: 'workspace', instances: Object.keys(doc.instances).length, relations: Object.keys(doc.relations).length, views: Object.keys(doc.views).length,
             violations: violations.filter(v => v.severity === 'Violation').length
         } satisfies WorkspaceProperties);

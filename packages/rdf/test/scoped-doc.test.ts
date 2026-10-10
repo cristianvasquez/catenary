@@ -50,7 +50,7 @@ const elements = () => [
 // Each test compares every element (and placement, view, pair) with the oracle: give each more than the default 5 s on a busy machine.
 describe('request-scoped read models give the answers of the whole read model', { timeout: 30_000 }, () => {
     it('view counts preserve cards, collections, references and relations', () => {
-        for (const view of views()) expect(store.properties(view.id), view.label).toEqual(viewProperties(store.viewDoc(view.id), view.id));
+        for (const view of views()) expect(store.reads.properties(view.id), view.label).toEqual(viewProperties(store.viewDoc(view.id), view.id));
     });
     it('the fixture has instances, relations, several views and shapes', () => {
         expect(Object.keys(doc.instances).length).toBeGreaterThan(5);
@@ -64,12 +64,12 @@ describe('request-scoped read models give the answers of the whole read model', 
     it('showing, deletePlan and unplaced of each element', () => {
         const unplaced = new Set([...unplacedInstances(doc), ...unplacedRelations(doc)]);
         for (const id of elements()) {
-            expect(store.showing(id), id).toEqual(showing(doc, id));
-            expect(store.deletePlan([id]), id).toEqual(deletePlan(doc, store.meta, [id]));
-            expect(store.unplaced([id]), id).toEqual(unplaced.has(id) ? [id] : []);
+            expect(store.reads.showing(id), id).toEqual(showing(doc, id));
+            expect(store.reads.deletePlan([id]), id).toEqual(deletePlan(doc, store.meta, [id]));
+            expect(store.reads.unplaced([id]), id).toEqual(unplaced.has(id) ? [id] : []);
         }
         const all = elements();
-        expect(store.deletePlan(all)).toEqual(deletePlan(doc, store.meta, all));
+        expect(store.reads.deletePlan(all)).toEqual(deletePlan(doc, store.meta, all));
     });
 
     // This compares every element against each view; Node 22 can exceed Vitest's default timeout. The test yields after each view: a
@@ -79,11 +79,11 @@ describe('request-scoped read models give the answers of the whole read model', 
             await new Promise(resolve => setImmediate(resolve));
             const ids = [...elements(), ...view.boxes.map(b => b.id), ...view.edges.flatMap(e => e.id ? [e.id] : []), ...view.arrows.map(a => a.id)];
             for (const id of ids) {
-                expect(store.occurrence([id], view.id), `${view.id} ${id}`).toEqual(occurrence(doc, store.meta, [id], view.id));
-                expect(store.elementRows([id], view.id), `${view.id} ${id}`).toEqual(elementRows(doc, store.meta, [id], view.id));
+                expect(store.reads.occurrence([id], view.id), `${view.id} ${id}`).toEqual(occurrence(doc, store.meta, [id], view.id));
+                expect(store.reads.elementRows([id], view.id), `${view.id} ${id}`).toEqual(elementRows(doc, store.meta, [id], view.id));
             }
         }
-        for (const id of elements()) expect(store.elementRows([id]), id).toEqual(elementRows(doc, store.meta, [id]));
+        for (const id of elements()) expect(store.reads.elementRows([id]), id).toEqual(elementRows(doc, store.meta, [id]));
     }, 60_000);
 
     it('neighbor choices and halo counts of each card', () => {
@@ -97,7 +97,7 @@ describe('request-scoped read models give the answers of the whole read model', 
                 expect({ in: actual?.in ?? 0, out: actual?.out ?? 0 }, card.element)
                     .toEqual({ in: expected?.in ?? 0, out: expected?.out ?? 0 });
                 for (const dir of ['in', 'out'] as const) {
-                    expect(store.neighborChoices(view.id, card.id, dir), `${card.id} ${dir}`).toEqual(neighborChoices(doc, store.meta, view.id, card.id, dir));
+                    expect(store.reads.neighborChoices(view.id, card.id, dir), `${card.id} ${dir}`).toEqual(neighborChoices(doc, store.meta, view.id, card.id, dir));
                 }
             }
         }
@@ -105,17 +105,17 @@ describe('request-scoped read models give the answers of the whole read model', 
 
     it('relation choices of each pair of instances', () => {
         const ids = Object.keys(doc.instances);
-        for (const s of ids) for (const t of ids) expect(store.relationChoices(s, t), `${s} ${t}`).toEqual(relationChoices(doc, store.meta, s, t));
+        for (const s of ids) for (const t of ids) expect(store.reads.relationChoices(s, t), `${s} ${t}`).toEqual(relationChoices(doc, store.meta, s, t));
     });
 
     it('known classes, known predicates, member options and instances by name', () => {
         const sorted = <T>(xs: T[], key: (x: T) => string) => [...xs].sort((a, b) => key(a).localeCompare(key(b)));
-        expect(sorted(store.knownClasses(), c => c.iri)).toEqual(sorted(knownClasses(doc, store.meta).filter((c, i, all) => all.findIndex(x => x.iri === c.iri && x.name === c.name) === i), c => c.iri));
-        expect(new Set(store.knownPredicates().map(p => p.iri))).toEqual(new Set(knownPredicates(doc, store.meta).map(p => p.iri)));
-        for (const view of views()) for (const c of boxes(view, 'collection')) expect(store.memberOptions(view.id, c.id)).toEqual(memberOptions(doc, view.id, c.id));
+        expect(sorted(store.reads.knownClasses(), c => c.iri)).toEqual(sorted(knownClasses(doc, store.meta).filter((c, i, all) => all.findIndex(x => x.iri === c.iri && x.name === c.name) === i), c => c.iri));
+        expect(new Set(store.reads.knownPredicates().map(p => p.iri))).toEqual(new Set(knownPredicates(doc, store.meta).map(p => p.iri)));
+        for (const view of views()) for (const c of boxes(view, 'collection')) expect(store.reads.memberOptions(view.id, c.id)).toEqual(memberOptions(doc, view.id, c.id));
         for (const i of Object.values(doc.instances)) {
-            expect(store.instancesNamed(i.label), i.label).toEqual(instancesNamed(doc, i.label));
-            expect(store.instancesNamed(i.uri), i.uri).toEqual(instancesNamed(doc, i.uri));
+            expect(store.reads.instancesNamed(i.label), i.label).toEqual(instancesNamed(doc, i.label));
+            expect(store.reads.instancesNamed(i.uri), i.uri).toEqual(instancesNamed(doc, i.uri));
         }
     });
 

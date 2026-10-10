@@ -1,6 +1,8 @@
-import { labels } from './sparql';
-import { reasonText, TargetMatch } from '@catenary/shacl/common';
-import { shapeTargetMatches } from './shacl-targets';
+import { TargetMatch } from '@catenary/shacl/common';
+import type { ExplorerScope } from './explorer';
+import { PanelReads } from './panel-reads';
+import { applicabilityOf } from './queries';
+import { filesOfElement } from './selection';
 // The model store: one RDF dataset (ModelGraph), shared by all diagram sessions and by the frontend. It coordinates the parts:
 // the files on disk and the dataset read from them (settings.ts, loader.ts, reconciler.ts, placement.ts, saver.ts), undo and the patch queue (history.ts), validation
 // (validation-runner.ts), and the read models of the panels and editors, built for each request (ADR 0012: no shared Doc).
@@ -8,60 +10,42 @@ import { shapeTargetMatches } from './shacl-targets';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Doc, ImportResult, ElementProperties, NS, SnapshotChange, ExplorerPage, ExplorerPath, ExplorerRow, EditCommand, MetamodelInfo, SelectionLinks, ModelSnapshot, OutlineNode, PREFIXES, Problem, SearchHit, Violation, ValidationMode, WorkspaceFiles, prefixesProblem,
-    setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
-    Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
-    elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    Derivation, ViewFigures, boxes, elementOfId, idIri, FileContent, ExplorerDrag, shortIri, iriId
+    ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
+    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
-import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { existsSync, promises as fs } from 'fs';
+import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
-import { ActionContext, Placements, placements, selectionActions } from './actions';
-import { executeCommand } from './commands';
-import type { ExplorerPort } from '@catenary/explorer';
-import { explorerChildren, explorerElements, explorerPaths, explorerSearch } from './explorer';
-import { LinkChoices, linkChoices } from './link-choices';
-import { gone } from './ops';
-import { OutlineSelection, outline } from './outline';
-import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
-import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, GraphChange, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
-import { History } from './history';
-import { elementId, elementTerm, relationTriple } from './ids';
-import { properties } from './properties';
-import { formData, selectionLinks, hiddenRelations, viewCounts } from './queries';
-import { readView, viewLabels } from './view-read';
-import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
-import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, instanceLabels, readWarnings, scopedDoc } from './scoped-doc';
-import { movedIds } from './moved-ids';
+import { OxigraphStore, SerialQueue, isInside, portableRelative } from 'rdf-files';
+import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
-import { Metamodel, buildVocabulary, emptyMetamodel, formShapes } from './shapes';
-import { withCount } from './shape-ops';
-import { ShapesIndex, shapesIndexOf } from './shapes-read';
-import { skolemize } from './skolem';
-import { rdf, termKey } from './terms';
-import { reportProblems } from './report-read';
-import { ShaclResult, violationsOf } from './validate';
-import { TracedStore, tracer } from './trace';
-import { ValidationRunner } from './validation-runner';
-import { Loader, fileContent, openWorkspace } from './loader';
-import { placeChanges, transfer, filesOfSubject } from './placement';
-import { readChanges } from './reconciler';
-import { Saver } from './saver';
+import { executeCommand } from './commands';
+import { Placement, decorateFileReferences, referencedFiles } from './files';
+import { GraphChange, ModelGraph, Patch, VALIDATION_GRAPH, isRdfsQuad, isVocabularyQuad } from './graph';
+import { History } from './history';
+import { elementId, elementTerm } from './ids';
+import { importFiles } from './import';
+import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
+import { movedIds } from './moved-ids';
+import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
+import { gone } from './ops';
+import { filesOfSubject, placeChanges, transfer } from './placement';
+import { Reconciler } from './reconciler';
+import { ImportCopies, Saver, Writer } from './saver';
+import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, readWarnings, scopedDoc } from './scoped-doc';
 import { Settings, createWorkspace } from './settings';
-import { validationInput, validationTriples } from './validation-data';
-import { search } from './search';
-import { selected } from './selection';
-import { copyAsRdf, prepareRdfPaste } from './clipboard';
+import { withCount } from './shape-ops';
+import { Metamodel, buildVocabulary, emptyMetamodel } from './shapes';
+import { ShapesIndex, shapesIndexOf } from './shapes-read';
+import { rdf } from './terms';
+import { TracedStore, tracer } from './trace';
+import { ValidationData } from './validation-data';
+import { ValidationRunner } from './validation-runner';
+import { readView } from './view-read';
 
 export type { ChangeReason };
 
 /** The reads of one view for its diagram that do not depend on the geometry of its placements. */
 interface ViewReads { figures?: Derivation; neighbors?: Map<string, { in: number; out: number; targets?: number }>; applicability?: TargetMatch[] }
-
-/** The explorer reads of one file scope (no file: the workspace), kept until the dataset changes. */
-interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
 
 export interface ModelChange {
     reason: ChangeReason;
@@ -115,7 +99,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
-export class ModelStore implements ModelQueries {
+export class ModelStore {
     protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
@@ -124,13 +108,16 @@ export class ModelStore implements ModelQueries {
     protected loader?: Loader;
     protected saver?: Saver;
     protected readonly history = new History();
+    protected readonly validationData = (() => {
+        const store = this;
+        return new ValidationData({
+            get graph() { return store.graph; }, get settings() { return store.settings; },
+            get metamodel() { return store.metamodel; }, shapesIndex: () => this.shapesIndex()
+        }, () => this.validation.invalidate());
+    })();
     protected readonly validation = new ValidationRunner(
-        () => ({ graph: this.graph, input: () => this.validationInput(), violations: r => this.violationsOf(r),
-            stamp: () => `${this.settings?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
-    /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
-    protected readonly openViews = new Map<string, string>();
-    /** In the validation mode "views": the instances that the last run checked. */
-    protected validated?: number;
+        () => ({ graph: this.graph, input: () => this.validationData.validationInput(), violations: r => this.validationData.violationsOf(r),
+            stamp: () => this.validationData.stamp() }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
     /** Numeric projections of the shared events for existing snapshot clients. */
     get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
     get revision(): number { return this.graph.change.sequence; }
@@ -141,6 +128,33 @@ export class ModelStore implements ModelQueries {
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
     protected readonly fileQueue = new SerialQueue();
+
+    protected readonly writer = (() => {
+        const store = this;
+        return new Writer({
+            saver: () => this.saver,
+            writable: () => !!this.settings && !this.settings.gone,
+            queue: this.fileQueue,
+            get warnings() { return store.warnings; },
+            set warnings(warnings: string[]) { store.warnings = warnings; },
+            saved: () => this.changed('save')
+        });
+    })();
+
+    protected readonly reconciler = new Reconciler({
+        settings: () => this.settings,
+        graph: () => this.graph,
+        files: () => this.loader!,
+        saved: () => this.saver!.savedState(),
+        ownWrites: () => this.saver?.ownWrites,
+        queue: this.fileQueue,
+        syncFromDisk: () => this.syncFromDisk(),
+        gone: ws => this.workspaceGone(ws),
+        reopen: file => this.reopenFromDisk(file),
+        forget: () => this.saver!.forget(),
+        filesRead: (read, notes, unmounted, ws) => this.readFromDisk(read, notes, unmounted, ws),
+        nothingRead: () => this.nothingReadFromDisk()
+    });
 
     protected readonly listeners = new Set<Listener>();
 
@@ -155,6 +169,17 @@ export class ModelStore implements ModelQueries {
         if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
     }
+
+    /** Read host with live state. Shared caches stay keyed by the coordinator's graph events. */
+    readonly reads = (() => {
+        const store = this;
+        return new PanelReads({
+            get graph() { return store.graph; }, get metamodel() { return store.metamodel; },
+            get settings() { return store.settings; }, get folder() { return store.folder; }, get file() { return store.file; },
+            shapesIndex: () => this.shapesIndex(), scoped: scope => this.scoped(scope), viewDoc: view => this.viewDoc(view),
+            explorerScopes: () => this.cached('explorer', () => new Map())
+        });
+    })();
 
     /** The shapes index of the shapes graphs and the SKOS vocabulary of the data file (cached per ModelGraph.keys.shapes). */
     protected shapesIndex(): ShapesIndex {
@@ -221,414 +246,14 @@ export class ModelStore implements ModelQueries {
         return this.viewReads(view.id).applicability ??= this.applicabilityOf(view);
     }
 
-    protected applicabilityOf(view: View): TargetMatch[] {
-        const shown = new Set(boxes(view, 'card').map(b => b.element));
-        const nodes: string[] = [], shapes: string[] = [];
-        for (const id of shown) {
-            const t = elementTerm(id);
-            if (t?.termType !== 'NamedNode') continue;
-            // A card can be both: a class used as its own node shape. Non-shape IRIs never match, so each card is a shape candidate.
-            shapes.push(t.value);
-            if (this.graph.isInstance(t)) nodes.push(t.value);
-        }
-        // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
-        if (!nodes.length || !shapes.length) return [];
-        return shapeTargetMatches(this.graph, { nodes: nodes.map(value => ({ termType: 'NamedNode', value })), shapes })
-            .filter(m => shown.has(elementId(rdf.namedNode(m.shape))));
-    }
-
-    /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
-    formData(instanceId: string): string {
-        const t = elementTerm(instanceId);
-        return t?.termType === 'NamedNode' ? formData(this.graph, t, this.metamodel) : '';
-    }
-
-    /** The port of the explorer plugins (explorer.ts) on this store. `file`: the scope, its subjects found once per dataset. */
-    protected explorerPort(file?: string): ExplorerPort {
-        const scopes = this.cached('explorer', () => new Map<string, ExplorerScope>());
-        let scope = scopes.get(file ?? '');
-        if (!scope) scopes.set(file ?? '', scope = { subjects: file ? this.subjectsOfFile(file) : undefined, memo: new Map() });
-        const { subjects, memo } = scope;
-        const byTerm = this.shapesIndex().byTerm;
-        return {
-            select: query => this.graph.select(query) as unknown as Record<string, Term>[],
-            graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`,
-            labels: iris => labels(this.graph, [...iris]),
-            compact: shortIri,
-            id: iri => byTerm.get(termKey(rdf.namedNode(iri))) ?? iriId(iri),
-            inScope: iri => !subjects || subjects.has(iri),
-            memo: <T>(key: string, compute: () => T) => (memo.has(key) ? memo.get(key) : memo.set(key, compute()).get(key)) as T
-        };
-    }
-
-    /** The IRI subjects of the statements of a file. */
-    protected subjectsOfFile(file: string): Set<string> {
-        const ws = this.settings, subjects = new Set<string>();
-        const known = ws?.knownFile(path.resolve(this.folder, file));
-        if (!ws || !known) return subjects;
-        for (const q of this.graph.quads()) if (q.subject.termType === 'NamedNode' && !subjects.has(q.subject.value) && ws.filesOfQuad(q).includes(known)) subjects.add(q.subject.value);
-        return subjects;
-    }
-
-    /** The IRI of an element id: a property shape by the shapes index, else the IRI of the id. */
-    protected iriOf(id: string): string | undefined {
-        const t = this.shapesIndex().property.get(id)?.term ?? elementTerm(id);
-        return t?.termType === 'NamedNode' ? t.value : undefined;
-    }
-
-    /** One page of the rows of a key of the Model explorer; no key: the sections. Nothing when no model is open. */
-    explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage {
-        return this.file ? explorerChildren(this.explorerPort(file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
-    }
-
-    /** The element rows whose name matches `text`, best first. */
-    explorerSearch(text: string, file?: string): ExplorerRow[] {
-        return this.file ? explorerSearch(this.explorerPort(file), text) : [];
-    }
-
-    protected elementInFile(id: string, file: string): boolean {
-        const ws = this.settings;
-        const known = ws?.knownFile(path.resolve(this.folder, file));
-        if (!ws || !known) return false;
-        const rel = relationTriple(id);
-        const term = this.shapesIndex().property.get(id)?.term ?? elementTerm(id);
-        const quads = rel ? this.graph.match(rel.s, rel.p, rel.o) : term ? this.graph.match(term) : [];
-        return quads.some(q => ws.filesOfQuad(q).includes(known));
-    }
-
-    /** Paths to the rows of an element in the Model explorer (Reveal). */
-    explorerPaths(id: string, file?: string): ExplorerPath[] {
-        const iri = this.iriOf(id);
-        return this.file && iri ? explorerPaths(this.explorerPort(file), iri) : [];
-    }
-
-    /** Labels of all views (view id → label), by SPARQL: the titles of the view editors (ADR 0007 step 5). */
-    viewLabels(): Record<string, string> {
-        return this.file ? viewLabels(this.graph) : {};
-    }
-
-    /** A gesture of a view editor (ADR 0007 step 5): why each candidate target is not one, and the facts of its element. */
-    viewGesture(viewId: string, gesture: ViewGesture): GestureInfo {
-        const doc = this.scoped({ elements: gestureElements(gesture), selectionViews: [viewId] });
-        return viewGesture(doc, this.meta, doc.views[viewId], gesture);
-    }
-
-    /** The Appearance panel of view `viewId` for the selected `ids`; undefined: no such view. */
-    appearance(viewId: string, ids: string[]): AppearanceData | undefined {
-        const doc = this.scoped({ elements: ids, selectionViews: [viewId] }), view = doc.views[viewId];
-        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta) };
-    }
-
-    /** The views that show the selected element (one instance or relation) of a selection of `view`. */
-    occurrence(ids: string[], view?: string): Occurrence | undefined {
-        return this.file ? occurrence(this.scoped({ elements: ids, selectionViews: [view], showing: true }), this.meta, ids, view) : undefined;
-    }
-
-    /** The views that show an element, and the box of each. */
-    showing(id: string): Showing {
-        return showing(this.scoped({ elements: [id], showing: true }), id);
-    }
-
-    /** The Outline of a view (ADR 0007): groups, cards and shown relations by SPARQL on the view graph; `selection` marks nodes. */
-    outline(viewId: string, selection?: OutlineSelection): OutlineNode[] {
-        if (!this.file) return [];
-        const shapes = this.shapesIndex().model;
-        return outline({ g: this.graph, meta: this.metamodel, shapes }, viewId, selection);
-    }
-
-    /** Element ids of the rows under a node key of the Model explorer, at any depth. */
-    explorerElements(key: string, file?: string): string[] {
-        return this.file ? explorerElements(this.explorerPort(file), key).filter(id => !file || this.elementInFile(id, file)) : [];
-    }
-
-    explorerDrag(selection: ExplorerDrag): string[] {
-        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])]
-            .filter(id => !selection.file || this.elementInFile(id, selection.file));
-    }
-
-    /** Model properties panel (ADR 0007): the data of an element (properties.ts); no id: the counts of the store. */
-    properties(id?: string): ElementProperties | undefined {
-        if (!this.file) return undefined;
-        const view = id === undefined ? undefined : viewCounts(this.graph, this.shapesIndex(), id);
-        if (view) return view;
-        const idx = this.shapesIndex();
-        const ws = this.settings!;
-        return properties({
-            g: this.graph, meta: this.metamodel, idx, fileOf: t => filesOfSubject(this.graph, t)[0],
-            importedFiles: q => ws.filesOfQuad(q).filter(f => ws.isImported(f))
-        }, id);
-    }
-
-    viewDescription(viewId: string): string | undefined {
-        if (!this.file) return undefined;
-        const view = elementTerm(viewId);
-        return view && this.graph.isView(view)
-            ? this.graph.match(view, rdf.namedNode(NS.view + 'description'), null, view)[0]?.object.value ?? '' : undefined;
-    }
-
-    /** The Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
-    problems(): Problem[] {
-        if (!this.file) return [];
-        const idx = this.shapesIndex();
-        return reportProblems(this.graph, this.metamodel, t => idx.byTerm.get(termKey(t)));
-    }
-
-    /** Find Element: all things (search.ts, SPARQL). */
-    search(): SearchHit[] {
-        if (!this.file) return [];
-        return search({ g: this.graph, shapes: this.shapesIndex() });
-    }
-
-    /**
-     * The Links panel data of the selected ids of `view` (SPARQL, see `selectionLinks` in queries.ts): the elements, their views and
-     * statements. Unknown ids give nothing.
-     */
-    links(ids: string[], view?: string): SelectionLinks {
-        const idx = this.shapesIndex();
-        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view);
-    }
-
-    /** The actions that apply to a target, and the facts to run them (actions.ts, spec/ui-manifest.hs §4). */
-    selectionActions(target: ActionTarget): SelectionActions {
-        if (!this.file) return { actions: [], items: [], cards: [] };
-        const doc = this.scoped({ elements: target.ids, selectionViews: [target.view] });
-        const ctx: ActionContext = {
-            g: this.graph, shapes: this.shapesIndex().model,
-            placements: placements(this.graph, this.shapesIndex().byTerm, target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id))),
-            doc,
-            viewOf: v => doc.views[v],
-            filesOf: id => this.filesOfElement(id)
-        };
-        return selectionActions(ctx, target);
-    }
-
-    /** Resolve selection from shared RDF queries, without the Doc. */
-    selected(selection: ModelSelection): Selected {
-        return this.file ? selected(this.graph, this.shapesIndex(), selection) : emptySelected();
-    }
-
-    /** One stored view, from its view graph (view-read.ts). */
-    view(viewId: string, ids?: string[]): View | undefined {
-        return this.file ? (ids ? this.scoped({ elements: ids, selectionViews: [viewId] }) : this.viewDoc(viewId)).views[viewId] : undefined;
-    }
-
-    /** The read model of the shapes graphs. */
-    shapes(): ShapesModel {
-        return this.shapesIndex().model;
-    }
-
-    // The dialogs and pickers of the user actions (prompts.ts): the same rules for every caller.
-
-    deletePlan(ids: string[]): DeletePlan {
-        return deletePlan(this.scoped({ elements: ids, neighbors: true, showing: true }), this.metamodel, ids);
-    }
-
-    relationChoices(source: string, target: string): RelationChoices | undefined {
-        return relationChoices(this.scoped({ elements: [source, target] }), this.metamodel, source, target);
-    }
-
-    neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined {
-        return neighborChoices(this.scoped({ elements: [from], neighbors: true, views: [viewId] }), this.metamodel, viewId, from, dir);
-    }
-
-    shapeSourceChoices(viewId: string, from: string): Choices | undefined {
-        return shapeSourceChoices(this.viewDoc(viewId), viewId, from);
-    }
-
-    shapeTargetChoices(viewId: string, from: string): Choices | undefined {
-        const doc = this.viewDoc(viewId), view = doc.views[viewId];
-        if (!view) return undefined;
-        const element = elementOfId(view, from);
-        const shown = new Set(boxes(view, 'card').map(card => card.element));
-        const shape = doc.shapes.nodeShapes[element];
-        if (shape) {
-            const matches = shapeTargetMatches(this.graph, { shapes: [shape.uri] }).filter(m => m.node.termType === 'NamedNode'
-                && this.graph.isInstance(rdf.namedNode(m.node.value)) && !shown.has(elementId(rdf.namedNode(m.node.value))));
-            if (!matches.length) return undefined;
-            const names = labels(this.graph, matches.map(m => m.node.value));
-            return {
-                title: `${shape.label}: instances (${matches.length} not in the view)`,
-                items: matches.map(m => ({ label: names.get(m.node.value) ?? shortIri(m.node.value),
-                    description: reasonText(m.reasons, shortIri), ids: [elementId(rdf.namedNode(m.node.value))] }))
-                    .sort((a, b) => a.label.localeCompare(b.label) || a.ids[0].localeCompare(b.ids[0]))
-            };
-        }
-        const instance = doc.instances[element];
-        if (!instance) return undefined;
-        const matches = shapeTargetMatches(this.graph, { nodes: [{ termType: 'NamedNode', value: instance.uri }] });
-        const shapes = matches.flatMap(match => {
-            const shape = Object.values(doc.shapes.nodeShapes).find(s => s.uri === match.shape);
-            return shape && !shown.has(shape.id) ? [{ ...shape, reasons: match.reasons }] : [];
-        });
-        if (!shapes.length) return undefined;
-        return {
-            title: `${instance.label}: applicable node shapes (${shapes.length} not in the view)`,
-            items: shapes.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
-                .map(shape => ({ label: shape.label, description: reasonText(shape.reasons, shortIri), ids: [shape.id] }))
-        };
-    }
-
-    /** The link picker (link-choices.ts): SPARQL scoped to the instance, its relation types, the view and the typed text. */
-    linkChoices(dir: 'out' | 'in', from: string, viewId: string, text?: string): LinkChoices {
-        if (!this.file) return undefined;
-        return linkChoices({ g: this.graph, meta: this.metamodel, shapes: this.shapesIndex().model }, dir, from, viewId, text);
-    }
-
-    /** `newLabel` counts the labels of the elements of a kind: only the instances with an "unnamed" label can take a new one. */
-    newLabel(kind: NewLabelKind, opts?: { classIri?: string; view?: string; base?: string }): string {
-        const doc = this.scoped({ views: [opts?.view] });
-        if (kind === 'instance' || kind === 'concept') {
-            for (const [iri, label] of instanceLabels(this.graph)) {
-                if (!label.startsWith('unnamed ')) continue;
-                const id = elementId(rdf.namedNode(iri));
-                doc.instances[id] = { id, label, uri: iri, types: [], fields: {} };
-            }
-        }
-        return newLabel(doc, this.metamodel, kind, opts);
-    }
-
-    /** Predicates in use: the shapes, the metamodel, and the predicates of the statements of the instances (`knownPredicates`). */
-    knownPredicates(): { iri: string; where: string }[] {
-        const doc = this.scoped({});
-        const id = 'data';
-        doc.instances[id] = { id, label: '', uri: '', types: [], fields: Object.fromEntries(this.dataPredicates().map(p => [p, []])) };
-        return knownPredicates(doc, this.metamodel);
-    }
-
-    /** The predicates of the instance statements, except rdf:type and rdfs:label, in order. */
-    protected dataPredicates(): string[] {
-        const labels = instanceLabels(this.graph);
-        const found = new Set<string>();
-        for (const r of this.graph.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${this.graph.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
-            if (labels.has(r.s.value) && r.p.value !== P.type.value && r.p.value !== P.label.value) found.add(r.p.value);
-        }
-        for (const [s, graph] of this.graph.vocabularySubjects()) {
-            for (const q of this.graph.match(rdf.namedNode(s), null, null, graph)) if (!q.predicate.equals(P.type) && !q.predicate.equals(P.label)) found.add(q.predicate.value);
-        }
-        return [...found].sort(cmp);
-    }
-
-    /** The classes of the shapes and the types of the instances: what a typed class name resolves to (`classIri`). */
-    knownClasses(): { iri: string; name?: string }[] {
-        const types = new Set<string>();
-        for (const r of this.graph.select(`SELECT DISTINCT ?t WHERE { GRAPH <${this.graph.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
-        for (const [s, graph] of this.graph.vocabularySubjects()) for (const t of this.graph.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
-        return [...this.metamodel.classes.map(c => ({ iri: c.iri, name: c.name })), ...[...types].sort(cmp).map(iri => ({ iri }))];
-    }
-
-    /** Labels of the instances that are not members of the collection box `collection` of `view` (for "+ member"). */
-    memberOptions(viewId: string, collection: string): string[] {
-        const view = this.viewDoc(viewId).views[viewId];
-        const members = new Set(view?.boxes.find(b => b.kind === 'collection' && b.id === collection)?.kind === 'collection'
-            ? (view.boxes.find(b => b.id === collection) as { members: string[] }).members : []);
-        return [...new Set([...instanceLabels(this.graph)].filter(([iri]) => !members.has(elementId(rdf.namedNode(iri)))).map(([, label]) => label))].sort();
-    }
-
-    /** The instances with the label or IRI `text`. */
-    instancesNamed(text: string): string[] {
-        return [...instanceLabels(this.graph)].filter(([iri, label]) => label === text || iri === text).map(([iri]) => elementId(rdf.namedNode(iri)));
-    }
-
-    elementRows(ids: string[], viewId?: string): ElementRow[] {
-        return elementRows(this.scoped({ elements: ids, selectionViews: [viewId] }), this.metamodel, ids, viewId);
-    }
-
-    /** The instances of `ids` without a card in any view, and the relations of `ids` without a placed edge in any view. */
-    unplaced(ids: string[]): string[] {
-        const doc = this.scoped({ elements: ids, showing: true });
-        const views = Object.values(doc.views);
-        return ids.filter(id => doc.instances[id] ? !views.some(v => v.boxes.some(b => b.kind === 'card' && b.element === id))
-            : !!doc.relations[id] && !views.some(v => v.edges.some(e => e.id && e.relation === id)));
-    }
-
-    /**
-     * What a file holds that Catenary edits, from its content. With views: the workspace that reads it, the open one when it has the
-     * file as a view file, else the nearest folder above with one workspace file.
-     */
-    async fileContent(file: string): Promise<FileContent> {
-        const p = absolutePath(file);
-        const c = await fileContent(p);
-        const views = c.views.map(v => ({ id: elementId(rdf.namedNode(v.iri)), label: v.label }));
-        const own = c.views.some(v => { const f = this.settings?.viewFile(v.iri); return !!f && pathKey(f.path) === pathKey(p); });
-        const workspaceFile = views.length ? (own && this.settings ? this.settings.path : await enclosingWorkspace(p)) : undefined;
-        return { workspace: c.workspace, views, ...(workspaceFile ? { workspaceFile } : {}), ...(c.error ? { error: c.error } : {}) };
-    }
-
-    /** The subject term of an element id (a property shape: its term; a logical constraint: its node shape), or the triple of a relation. */
-    protected statementsOf(id: string): Quad[] {
-        const triple = relationTriple(id);
-        if (triple) return this.graph.match(triple.s, triple.p, triple.o);
-        const idx = this.shapesIndex();
-        const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
-        if (!t) return [];
-        const own = this.graph.match(t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
-        return own.length ? own : this.graph.match(null, null, t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
-    }
+    protected applicabilityOf(view: View): TargetMatch[] { return applicabilityOf(this.graph, view); }
 
     /**
      * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
      * triple; no such triples: the triples with it as object. Most statements first.
      */
     filesOfElement(id: string): string[] {
-        const count = new Map<string, number>();
-        for (const q of this.statementsOf(id)) for (const f of this.settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
-        return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
-    }
-
-    /**
-     * Open in…: the presentations that show an element. Source: each file with statements of it, at its position in the file on disk
-     * (unsaved changes are not in it). Model: each of those files whose Model pane has a row of it. Canvas: each view that places it.
-     */
-    async openTargets(id: string): Promise<OpenTarget[]> {
-        if (!this.file) return [];
-        const files = this.filesOfElement(id);
-        const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await this.positionIn(path, id) })));
-        const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
-        const shown = this.showing(id);
-        const canvases = shown.isView
-            ? [{ presentation: 'Canvas' as const, view: id, label: this.viewLabels()[id] ?? id }]
-            : shown.views.map(v => ({ presentation: 'Canvas' as const, view: v.id, label: v.label, box: v.box }));
-        return [...sources, ...models, ...canvases];
-    }
-
-    /**
-     * What shows an element in a text, best first: a relation is its statement; a property shape is its own block, else its entry in
-     * its node shape (by IRI, else a `[ … ]` node with its path); a logical constraint is its list in its node shape.
-     */
-    protected textTargets(id: string): TextTarget[] {
-        const idx = this.shapesIndex();
-        const rel = relationTriple(id);
-        if (rel) return [{ subject: rel.s.value, predicate: rel.p.value, object: rel.o.value }];
-        const property = idx.property.get(id), constraint = idx.constraint.get(id);
-        if (property) {
-            const path = idx.model.properties[id]?.path, p = NS.sh + 'property', own = property.term.value;
-            return [
-                { subject: own }, { subject: property.owner.value, predicate: p, object: own },
-                ...(path?.kind === 'iri' ? [{ subject: property.owner.value, predicate: p, inside: { predicate: NS.sh + 'path', object: path.iri } }] : []),
-                { subject: property.owner.value }
-            ];
-        }
-        if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
-        const t = elementTerm(id);
-        return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
-    }
-
-    /** The position of an element in a file on disk: by its Turtle syntax tree, else the line of a text search (other formats). */
-    protected async positionIn(file: string, id: string): Promise<{ line?: number; column?: number }> {
-        let text: string;
-        try { text = await fs.readFile(file, 'utf8'); } catch { return {}; }
-        const targets = this.textTargets(id);
-        if (/\.ttl$/i.test(file)) {
-            for (const target of targets) {
-                const at = await turtlePosition(text, file, target).catch(() => undefined);
-                if (at) return at;
-            }
-        }
-        for (const { subject } of targets) {
-            const line = sourceLine(text, subject);
-            if (line) return { line };
-        }
-        return {};
+        return filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
     }
 
     protected scopeOf(patch: Patch): ChangeScope {
@@ -667,23 +292,17 @@ export class ModelStore implements ModelQueries {
             }
         });
         // File references: the absolute path (from the folder of the view file), and whether the file is on disk.
-        for (const v of Object.values(doc.views)) {
-            const dir = path.dirname(this.settings?.viewFile(v.uri)?.path ?? path.join(this.folder, 'views', 'x'));
-            for (const b of v.boxes) {
-                if (b.kind !== 'reference' || !b.file) continue;
-                b.path = resolveStored(dir, b.file);
-                b.broken = !existsSync(b.path);
-            }
-        }
+        decorateFileReferences(doc, view => this.referenceViewFile(view));
         return doc;
     }
 
     /** The files that file references name, with their state on disk (for the watcher). */
     protected referencedFiles(): string {
-        return fileReferences(this.graph).map(({ view, file }) => {
-            const p = resolveStored(path.dirname(this.settings?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x')), file);
-            return `${p}:${existsSync(p)}`;
-        }).sort().join('\n');
+        return referencedFiles(fileReferences(this.graph), view => this.referenceViewFile(view));
+    }
+
+    protected referenceViewFile(view: string): string {
+        return this.settings?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x');
     }
 
     get canUndo(): boolean { return this.history.canUndo; }
@@ -694,64 +313,8 @@ export class ModelStore implements ModelQueries {
     /** Validate the model now, without the delay after a change. */
     validate(): Promise<void> { return this.validation.now(); }
 
-    /**
-     * An editor (`client`) shows `viewId`, or (undefined) closed. In the validation mode "views", a change of the set of open views
-     * starts a validation.
-     */
     setOpenView(client: string, viewId: string | undefined): void {
-        const before = this.openViewIris().join('\n');
-        if (viewId) this.openViews.set(client, viewId); else this.openViews.delete(client);
-        if (this.settings?.validation === 'views' && this.openViewIris().join('\n') !== before) this.validation.invalidate();
-    }
-
-    /** The IRIs of the open views, sorted, without duplicates. */
-    protected openViewIris(): string[] {
-        return [...new Set([...this.openViews.values()].map(v => elementTerm(v)?.value).filter((v): v is string => !!v))].sort();
-    }
-
-    /**
-     * The elements on the open views (spec/manifest.hs §9 `validationFocus`), by termKey: the elements of placements, the subjects of
-     * placed relations, and the members of groups.
-     */
-    protected validationFocus(): Map<string, Term> {
-        const focus = new Map<string, Term>();
-        const add = (t: Term) => { if (t.termType === 'NamedNode') focus.set(termKey(t), t); };
-        for (const iri of this.openViewIris()) {
-            const g = rdf.namedNode(iri);
-            for (const q of this.graph.store.match(null, V.element, null, g)) add(q.object);
-            for (const q of this.graph.store.match(null, V.member, null, g)) add(q.object);
-            for (const q of this.graph.store.match(null, P.reifies, null, g)) if (q.object.termType === 'Quad') add(q.object.subject);
-        }
-        return focus;
-    }
-
-    /**
-     * The input of the validator by the validation mode (§9 validationInput; undefined: off): the data (validation-data.ts) with the SKOS
-     * projection, and all shapes graphs, own and imported. The validator gets plain quads; it reads nothing from the store.
-     */
-    protected validationInput(): { data: Quad[]; shapes: Quad[] } | undefined {
-        const mode = this.settings?.validation;
-        if (mode === 'off') return undefined;
-        const shapes = this.graph.shapesTriples();
-        if (mode !== 'views') {
-            this.validated = undefined;
-            return { data: validationInput((this.settings && validationTriples(this.graph, this.settings)) ?? this.graph.modelTriples(), shapes), shapes };
-        }
-        const focus = this.validationFocus(), keys = new Set(focus.keys());
-        const data = validationTriples(this.graph, this.settings!, keys) ?? [];
-        // Checked: an instance on an open view with statements in the data (not one that only imported files describe).
-        const subjects = new Set(data.map(q => termKey(q.subject)));
-        this.validated = [...focus].filter(([k, t]) => subjects.has(k) && this.graph.isInstance(t)).length;
-        return { data: validationInput(data, shapes, keys), shapes };
-    }
-
-    /** The violations of a run, with the element ids of the dataset after the run (a change during the run made it stale). */
-    protected violationsOf(results: ShaclResult[]): Violation[] {
-        const idx = this.shapesIndex();
-        return violationsOf(results, this.metamodel, iri => {
-            const t = rdf.namedNode(iri);
-            return this.graph.isInstance(t) ? elementId(t) : undefined;
-        }, t => idx.byTerm.get(termKey(t)));
+        this.validationData.setOpenView(client, viewId);
     }
 
     /** The last change (ModelSnapshot.change). */
@@ -769,7 +332,7 @@ export class ModelStore implements ModelQueries {
                 instances: this.cached('instances', () => instanceCount(this.graph)),
                 results: this.violations.length,
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
-                ...(this.settings?.validation === 'views' && this.validated !== undefined ? { validated: this.validated } : {})
+                ...(this.settings?.validation === 'views' && this.validationData.validated !== undefined ? { validated: this.validationData.validated } : {})
             },
             warnings: this.warnings,
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
@@ -832,7 +395,7 @@ export class ModelStore implements ModelQueries {
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
-            this.commitNotes.push(command.kind);
+            this.writer.commitNotes.push(command.kind);
             this.track(patch);
         }
         this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed,
@@ -848,8 +411,6 @@ export class ModelStore implements ModelQueries {
         return { ok: true, id: typeof v === 'string' ? v : undefined };
     }
 
-    prepareRdfPaste(text: string, mediaType?: string) { return prepareRdfPaste(text, mediaType); }
-    copyAsRdf(viewId: string, ids: string[]) { return copyAsRdf(this.graph, viewId, ids); }
 
     undo(): CommandResult { return tracer.span('command', 'undo', () => this.replay('undo')); }
     redo(): CommandResult { return tracer.span('command', 'redo', () => this.replay('redo')); }
@@ -900,7 +461,7 @@ export class ModelStore implements ModelQueries {
         if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
         // The validation mode "views": a placement on an open view changes what validation checks.
         else if (this.settings?.validation === 'views') {
-            const open = new Set(this.openViewIris());
+            const open = new Set(this.validationData.openViewIris());
             if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
         }
     }
@@ -922,45 +483,9 @@ export class ModelStore implements ModelQueries {
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
-        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.commitNotes.push(reason);
-        if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.queueWrite();
+        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.commitNotes.push(reason);
+        if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
-    }
-
-    protected writeQueued = false;
-    /** What the next commit contains: command kinds, undo, redo, files. */
-    protected commitNotes: string[] = [];
-    /** The last write error; it shows in the warnings until a write succeeds. */
-    protected writeError?: string;
-
-    /** Queue a write of the changed files: one write for all changes that come before it runs. */
-    protected queueWrite(): void {
-        if (!this.settings || this.writeQueued || this.settings.gone) return;
-        this.writeQueued = true;
-        void this.serial(async () => {
-            this.writeQueued = false;
-            await tracer.span('file', 'write', () => this.write());
-        });
-    }
-
-    /** Write the changed files and commit them. A failure shows in the warnings until a write succeeds. */
-    protected async write(): Promise<CommandResult> {
-        const ws = this.saver;
-        const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
-        // A write does not change the dataset: the caches stay (only the dirty state changes).
-        if (r.ok) this.changed('save');
-        const notes = [...new Set(this.commitNotes.splice(0))];
-        const warningCount = this.warnings.length;
-        const files = ws?.committable() ?? [];
-        const error = r.ok ? await commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`) : `Not written: ${r.error}`;
-        if (r.ok && !error) ws!.written = [];
-        if (error) this.commitNotes.unshift(...notes);
-        if (error !== this.writeError || this.warnings.length !== warningCount) {
-            this.warnings = [...this.warnings.filter(w => w !== this.writeError), ...(error ? [error] : [])];
-            this.writeError = error;
-            this.changed('save');
-        }
-        return r;
     }
 
     /** Resolves when the queued writes are done. */
@@ -974,22 +499,6 @@ export class ModelStore implements ModelQueries {
     watching = true;
     /** `referencedFiles()` at the last change: a difference is a file reference that changed state on disk. */
     protected referencedState = '';
-    protected readonly watcher = new FolderWatcher(changed => void this.serial(() => this.syncFromWatch(changed)));
-
-    /**
-     * After watch events: read the changes on disk, unless each event is a file that Catenary wrote and that still has the text of
-     * that write (a save renames its temporary files over the files, and the watch reports each rename). `changed`: undefined when an
-     * event had no file name. Runs in the file queue, after the write that caused the events.
-     */
-    protected async syncFromWatch(changed?: string[]): Promise<void> {
-        const own = this.saver?.ownWrites;
-        if (own && changed?.length && (await Promise.all(changed.map(f => own.isOwn(f)))).every(Boolean)) {
-            tracer.root('file', 'own write: not read again', () => tracer.note(changed.map(f => path.basename(f)).join(', ')));
-            return;
-        }
-        await tracer.root('file', 'read changed files', () => this.syncFromDisk());
-    }
-
     /**
      * Watch the folder of the workspace file and its subfolders. An event starts `syncFromDisk` after 150 ms without events (an editor
      * writes a file in more than one step). Hidden files and folders (.git) and Catenary's own temporary files are ignored; its own writes
@@ -997,12 +506,12 @@ export class ModelStore implements ModelQueries {
      */
     protected watch(): void {
         if (!this.settings || !this.watching || this.settings.gone) return this.close();
-        this.watcher.watch(this.folder);
+        this.reconciler.watch(this.folder);
     }
 
     /** Stop watching the files. */
     close(): void {
-        this.watcher.close();
+        this.reconciler.close();
     }
 
     /**
@@ -1010,48 +519,45 @@ export class ModelStore implements ModelQueries {
      * files that are new or removed in the folder. A changed workspace file opens the workspace again. The disk wins over a write that
      * is pending. No undo across it. Returns the names of the files read.
      */
-    async syncFromDisk(): Promise<string[]> {
-        const ws = this.settings;
-        if (!ws) return [];
-        const text = await readDisk(ws.path);
-        if (text === undefined && ws.workspace.text !== undefined) {
-            // The workspace file (or its folder) is gone: keep the model as it is, stop watching, say it once.
-            const note = `${path.basename(ws.path)} was removed or moved on disk: the files are not read or written until the workspace is opened again.`;
-            this.close();
-            ws.gone = true;
-            if (!this.warnings.includes(note)) {
-                this.warnings = [...this.warnings, note];
-                this.changed('files');
-            }
-            return [];
-        }
-        // Also a workspace file that another program made (the folder was opened without one).
-        if (text !== undefined && text !== ws.workspace.text) {
-            const name = path.basename(ws.path);
-            const r = await this.doOpen(ws.path);
-            this.warnings = [...this.warnings, r.ok ? `${name} changed on disk: the workspace was opened again.` : `${name} changed on disk and cannot be opened: ${r.error}`];
+    syncFromDisk(): Promise<string[]> {
+        return this.reconciler.syncFromDisk();
+    }
+
+    protected workspaceGone(ws: Settings): void {
+        // Keep the model as it is, stop watching, say it once.
+        const note = `${path.basename(ws.path)} was removed or moved on disk: the files are not read or written until the workspace is opened again.`;
+        this.close();
+        ws.gone = true;
+        if (!this.warnings.includes(note)) {
+            this.warnings = [...this.warnings, note];
             this.changed('files');
-            return [name];
         }
-        const { read, notes, unmounted } = await readChanges(this.graph, ws, this.loader!, this.saver!.savedState());
-        this.saver!.forget();
-        if (!read.length && !notes.length) {
-            // Only a referenced file appeared or disappeared: new doc, no write.
-            if (this.referencedFiles() !== this.referencedState) {
-                this.graph.invalidate({ data: true });
-                this.referencedState = this.referencedFiles();
-                this.changed('disk');
-            }
-            return [];
+    }
+
+    protected async reopenFromDisk(file: string): Promise<void> {
+        const name = path.basename(file);
+        const r = await this.doOpen(file);
+        this.warnings = [...this.warnings, r.ok ? `${name} changed on disk: the workspace was opened again.` : `${name} changed on disk and cannot be opened: ${r.error}`];
+        this.changed('files');
+    }
+
+    protected nothingReadFromDisk(): void {
+        // Only a referenced file appeared or disappeared: new doc, no write.
+        if (this.referencedFiles() !== this.referencedState) {
+            this.graph.invalidate({ data: true });
+            this.referencedState = this.referencedFiles();
+            this.changed('disk');
         }
+    }
+
+    protected async readFromDisk(read: string[], notes: string[], unmounted: Set<string>, ws: Settings): Promise<void> {
         // The failed write of a file that was read again is not pending any more; a new failure shows again.
         const notRead = (w: string) => [...unmounted].some(n => w.startsWith(`${n}: not read: `));
-        this.warnings = [...this.warnings.filter(w => w !== this.writeError && !notRead(w) && !/ changed on disk: read again| was removed on disk| is new on disk/.test(w)), ...notes];
-        this.writeError = undefined;
+        this.warnings = [...this.warnings.filter(w => w !== this.writer.writeError && !notRead(w) && !/ changed on disk: read again| was removed on disk| is new on disk/.test(w)), ...notes];
+        this.writer.writeError = undefined;
         await this.saver!.recordUncommitted(read.map(f => path.resolve(this.folder, f)));
         ws.syncShapesTarget();
         this.filesChanged('files');
-        return read;
     }
 
     // ------------------------------------------------------------ files
@@ -1085,19 +591,14 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Open a workspace file, or a folder (`workspaceFileOf`). A folder without a workspace file opens with the default settings; its
+     * Open a workspace file, or a folder (`resolveOpenTarget`). A folder without a workspace file opens with the default settings; its
      * `workspace.trig` is written at the first change of a setting. That path while it is not on disk (a recent entry) is its folder.
      */
     open(workspacePath: string): Promise<CommandResult> {
         return this.serial(async () => {
-            let given = absolutePath(workspacePath);
-            if (path.basename(given) === WORKSPACE_FILE && !existsSync(given) && existsSync(path.dirname(given))) given = path.dirname(given);
-            const target = await workspaceFileOf(given);
+            const target = await resolveOpenTarget(workspacePath);
             if ('error' in target) return { ok: false, error: target.error };
-            // The content decides, not the name: a view file is part of a workspace, not one.
-            const content = existsSync(target.file) ? await fileContent(target.file) : undefined;
-            if (content?.viewFile && !content.workspace) return { ok: false, error: `${path.basename(target.file)} is a view file. Open its workspace, then open the view.` };
-            return this.doOpen(target.file, target.file !== given);
+            return this.doOpen(target.file, target.ofFolder);
         });
     }
 
@@ -1177,15 +678,15 @@ export class ModelStore implements ModelQueries {
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
         if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && this.saver!.dirty) {
-            this.commitNotes.push('before import mark');
-            await this.write();
+            this.writer.commitNotes.push('before import mark');
+            await this.writer.write();
         }
         const validation = ws.validation;
         const r = ws.applySettings(settings, this.saver!.savedState());
         if ('error' in r) return { ok: false, error: r.error };
         if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
-            await this.write();
+            await this.writer.write();
             return this.doOpen(ws.path);
         }
         ws.syncShapesTarget();
@@ -1220,100 +721,20 @@ export class ModelStore implements ModelQueries {
      * (a note). All files or none. With copies, the workspace is read again once: no undo across it.
      */
     importFiles(sources: string[]): Promise<ImportResult> {
-        return this.serial(async (): Promise<ImportResult> => {
-            const ws = this.settings;
-            if (!ws) return { ok: false, error: 'No workspace is open.' };
-            if (!sources.length) return { ok: false, error: 'No file to import.' };
-            // Read all files first: a file that cannot be read imports nothing.
-            const reads: { name: string; text: string; quads?: Quad[]; source: string; inPlace?: string }[] = [];
-            for (const source of sources) {
-                const name = path.basename(source);
-                const inPlace = ws.knownFile(path.resolve(source));
-                try {
-                    const text = await fs.readFile(source, 'utf8');
-                    const quads = inPlace ? undefined : await parseRdf(text, source);
-                    if (quads && !quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
-                    reads.push({ name, text, quads, source, inPlace });
-                } catch (e) {
-                    return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
-                }
-            }
-            const table = { ...PREFIXES }, added: string[] = [], skipped = new Set<string>();
-            for (const r of reads) {
-                for (const [prefix, ns] of Object.entries(declaredPrefixes(r.text, r.source))) {
-                    if (table[prefix] === ns) continue;
-                    if (!prefix || table[prefix] !== undefined || Object.values(table).includes(ns)) { skipped.add(prefix); continue; }
-                    table[prefix] = ns;
-                    added.push(prefix);
-                }
-            }
-            const names = reads.map(r => r.name).join(', ');
-            if (added.length && prefixesProblem(table)) return { ok: false, error: `${names}: not imported: ${prefixesProblem(table)}` };
-            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, imported: ws.importedGlobs };
-            // Files of the workspace: marked where they are. The write gives their blank nodes IRIs first (as Mark as Imported).
-            const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
-            if (own.length) {
-                if (this.saver!.dirty) {
-                    this.commitNotes.push('before import mark');
-                    await this.write();
-                }
-                const marked = ws.applySettings({ imported: [...before.imported, ...own] }, this.saver!.savedState());
-                if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
-            }
-            const note = () => {
-                if (skipped.size) this.note(`${names}: prefixes not added (the workspace has the name or the namespace with another value): ${[...skipped].map(p => `${p}:`).join(' ')}`);
-            };
-            if (added.length) { ws.prefixes = table; setPrefixes(table); }
-            const copies = reads.filter(r => !r.inPlace);
-            if (!copies.length) {
-                // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
-                if (added.length) { this.graph.invalidate(); this.rebuildMetamodel(); }
-                ws.syncShapesTarget();
-                this.commitNotes.push(`import ${names}`);
-                this.changed('files');
-                note();
-                return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
-            }
-            const folder = path.join(this.folder, IMPORT_FOLDER);
-            const targets = new Map<typeof reads[number], string>();
-            for (const r of copies) {
-                const base = r.name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
-                let target = path.join(folder, `${base}.ttl`);
-                for (let i = 2; existsSync(target) || [...targets.values()].includes(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
-                targets.set(r, target);
-            }
-            const undo = async (error: string): Promise<ImportResult> => {
-                for (const t of targets.values()) await fs.rm(t, { force: true });
-                ws.prefixes = before.prefixes;
-                setPrefixes(before.table);
-                ws.applySettings({ imported: before.imported }, this.saver!.savedState());
-                return { ok: false, error: `${names}: not imported: ${error}` };
-            };
-            try {
-                await fs.mkdir(folder, { recursive: true });
-                for (const [r, target] of targets) {
-                    // The default graph: a model file has no graph names (open.md STORE1).
-                    const triples = skolemize(r.quads!.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
-                    await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
-                }
-            } catch (e) {
-                return undo((e as Error).message);
-            }
-            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] }, this.saver!.savedState());
-            this.saver!.written.push(...targets.values());
-            this.commitNotes.push(`import ${names}`);
-            const w = await this.write();
-            if (!w.ok) return undo(w.error);
-            const opened = await this.doOpen(ws.path);
-            if (!opened.ok) return opened;
-            note();
-            return { ok: true, files: reads.map(r => r.inPlace ?? targets.get(r)!), prefixes: added };
-        });
+        return this.serial(() => importFiles(sources, {
+            settings: () => this.settings, readSources: readImportSources,
+            copies: (folder, reads) => new ImportCopies(folder, reads),
+            dirty: () => this.saver!.dirty, savedState: () => this.saver!.savedState(),
+            commitNote: note => this.writer.commitNotes.push(note), write: () => this.writer.write(),
+            written: files => this.saver!.written.push(...files), reopen: file => this.doOpen(file),
+            prefixesChanged: () => { this.graph.invalidate(); this.rebuildMetamodel(); },
+            note: text => this.note(text), changed: () => this.changed('files')
+        }));
     }
 
     /** Write the files that are not written yet (after a failed write), and commit them. Normally there is nothing to write. */
     save(): Promise<CommandResult> {
-        return this.serial(() => this.write());
+        return this.serial(() => this.writer.write());
     }
 
     protected note(text: string): void {
@@ -1325,22 +746,4 @@ export class ModelStore implements ModelQueries {
     /** Notes of the writes, for the tests and the log. */
     readonly notes: string[] = [];
 
-    /** The shapes for the instance form (see `formShapes`), as N-Triples. */
-    shapesText(): string {
-        return formShapes(this.metamodel).toString();
-    }
-}
-
-/** The elements of a gesture whose records `viewGesture` reads: its source, relation, row or property, and its candidate cards. */
-function gestureElements(g: ViewGesture): string[] {
-    switch (g.kind) {
-        case 'reconnect': return [g.relation, ...g.cards];
-        case 'link': case 'linkIn': case 'shapeLink': case 'shapeLinkIn': return [g.source, ...g.cards, ...g.boxes];
-        case 'arrow': return [g.source, ...g.boxes];
-        case 'row': return [g.row, ...g.cards];
-        case 'logic': return [g.from, ...g.ids];
-        case 'target': return [g.property, ...g.cards];
-        case 'element': return [g.id];
-        case 'broader': return [];
-    }
 }

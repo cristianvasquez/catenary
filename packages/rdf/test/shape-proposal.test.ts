@@ -35,7 +35,7 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
-const state = (t: ActionTarget) => store.selectionActions(t).actions.find(a => a.id === 'catenary.proposeShapes');
+const state = (t: ActionTarget) => store.reads.selectionActions(t).actions.find(a => a.id === 'catenary.proposeShapes');
 const shapeOf = (cls: string) => Object.values(docOf(store).shapes.nodeShapes).find(s => s.targetClass === cls);
 const propertiesOf = (shape: string) => Object.fromEntries(Object.values(docOf(store).shapes.properties).filter(p => p.owner === shape)
     .map(p => [p.path.kind === 'iri' ? p.path.iri : JSON.stringify(p.path), { range: p.range, min: p.minCount, max: p.maxCount }]));
@@ -43,9 +43,9 @@ const propertiesOf = (shape: string) => Object.fromEntries(Object.values(docOf(s
 describe('Propose Node Shapes from Data (SHACLxtract)', () => {
     it('applies to an instance whose class has no node shape, and to that class; not to rdfs:Class', () => {
         expect(state({ ids: [iriId(X + 'a')] })).toEqual({ id: 'catenary.proposeShapes', enabled: true });
-        expect(store.selectionActions({ ids: [iriId(X + 'a')] }).items[0].unshaped).toEqual([X + 'Book']);
-        expect(store.selectionActions({ ids: [iriId(X + 'Book')] }).items[0].unshaped).toEqual([X + 'Book']);
-        expect(store.selectionActions({ ids: [iriId(RDFS + 'Class')] }).items[0].unshaped).toEqual([]);
+        expect(store.reads.selectionActions({ ids: [iriId(X + 'a')] }).items[0].unshaped).toEqual([X + 'Book']);
+        expect(store.reads.selectionActions({ ids: [iriId(X + 'Book')] }).items[0].unshaped).toEqual([X + 'Book']);
+        expect(store.reads.selectionActions({ ids: [iriId(RDFS + 'Class')] }).items[0].unshaped).toEqual([]);
         // An instance of a class with a node shape: the action does not apply.
         const targeted = Object.values(docOf(store).shapes.nodeShapes).find(s => s.targetClass)!;
         const instance = Object.values(docOf(store).instances).find(i => i.types.includes(targeted.targetClass!))!;

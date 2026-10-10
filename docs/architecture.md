@@ -109,7 +109,7 @@ Validation never reads the plugins: it reads the shapes.
 ### Add a read query for the frontend
 
 1. Declare it in `ModelQueries` and `MODEL_QUERIES` (`packages/model/src/queries.ts`).
-2. Implement it in `ModelStore`.
+2. Implement it in `PanelReads` (`packages/rdf/src/panel-reads.ts`). Use a read module for its queries and rules.
 3. Call it as `service.<name>(…)` in the frontend.
 
 The RPC service and `catenary rpc` take the query from `MODEL_QUERIES`. The compiler rejects a missing step. Do not edit `protocol.ts` or `model-service.ts` for a query.
@@ -143,18 +143,20 @@ Paths are relative to the directory in the first column.
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
-| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. Cache keys retain the last relevant event. History records final file graphs, including transfers. |
-| | `settings.ts`, `files.ts`, `trig.ts` | Workspace settings: manifest, file membership, imported globs, file of each statement |
-| | `loader.ts`, `reconciler.ts`, `placement.ts`, `saver.ts`, `validation-data.ts` | Sync modules: read files into their graphs, read again after a watch event, file of new statements and moves between files, dirty state, write and commit paths, validation input (data and the SKOS projection of the shapes graphs). None imports another; `model-store.ts` wires them |
+| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore exposes PanelReads for query dispatch and wires file operations through ports. History records final file graphs, including transfers. |
+| | `panel-reads.ts` | Frontend query host: request-scoped reads, panel rules and prompt data. RPC and CLI dispatch queries here. ModelStore retains event-keyed caches. |
+| | `settings.ts`, `files.ts`, `trig.ts` | Workspace settings, file membership, imported globs, statement positions, file reference paths and disk state, RDF serialization |
+| | `loader.ts`, `reconciler.ts`, `placement.ts`, `saver.ts`, `validation-data.ts` | Sync modules. Loader resolves open targets and reads workspace, model and import files. Reconciler owns the watcher, own-write filtering and disk reads. Placement assigns file graphs. Saver holds dirty state and import copies. Writer queues writes and commits, retaining retry notes across opens. Validation-data owns open editors, validation input, result IDs and the checked-instance count. None imports another. ModelStore wires them through ports. |
+| | `import.ts` | Import orchestration: prefix merge, marks, copies and rollback through ports. ModelStore supplies the file queue. No sync module imports another. |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
-| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or selected placements and their dependencies |
-| | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
-| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
+| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
+| | `explorer.ts` | Model explorer host: plugins, query port, file scopes, keys, pages, search and paths |
+| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
-| | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts`, `report-read.ts` | The pure validator (data and shape quads in, a report out); debounced runs in a worker thread that write the report graph; the report read of Problems and Properties |
+| | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts`, `report-read.ts` | The pure validator (data and shape quads in, a report out); ValidationRunner debounces runs, rejects stale results and writes the report graph through the shared patch path; the report read of Problems and Properties |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |

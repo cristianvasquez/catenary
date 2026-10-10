@@ -109,13 +109,13 @@ describe('RDFS rules in the store', () => {
     });
 
     it('the link picker offers RDFS relations; connect accepts them, also to a subclass instance', () => {
-        const choices = store.linkChoices('out', id('bob'), '');
+        const choices = store.reads.linkChoices('out', id('bob'), '');
         if (!choices || 'error' in choices) throw new Error('no choices');
         const member = choices.sections.find(s => s.predicate === EX + 'memberOf')!;
         expect(member.candidates.map(c => c.label)).toEqual(['Core team']);
         // No range: a field and a relation to any resource.
         expect(classDef(store.meta, EX + 'Team')!.fields.map(f => f.path)).toContain(EX + 'anything');
-        const team = store.linkChoices('out', id('core'), '');
+        const team = store.reads.linkChoices('out', id('core'), '');
         if (!team || 'error' in team) throw new Error('no choices');
         expect(team.sections.find(s => s.predicate === EX + 'anything')!.candidates.map(c => c.label)).toEqual(expect.arrayContaining(['Ann', 'Bob']));
         expect(store.execute({ kind: 'createRelation', subject: id('core'), predicate: EX + 'anything', object: id('bob') })).toMatchObject({ ok: true });
@@ -126,13 +126,13 @@ describe('RDFS rules in the store', () => {
     });
 
     it('Properties: a plugin form for the RDFS rules, its shape in the form shapes only, and its link candidates', () => {
-        const props = store.properties(id('bob')) as InstanceProperties;
+        const props = store.reads.properties(id('bob')) as InstanceProperties;
         const shape = pluginFormShape('rdfs', EX + 'Person');
         expect(props.pluginForms).toEqual([{ id: shape, uri: shape, label: 'Person (RDFS)', predicates: [EX + 'age', EX + 'knows', EX + 'memberOf', EX + 'note'] }]);
         expect(props.candidates).toContain(`<${EX}core>`);
-        expect(store.shapesText()).toContain(`<${shape}>`);
+        expect(store.reads.shapesText()).toContain(`<${shape}>`);
         // One form property for each predicate: the two class ranges of ex:knows are alternatives.
-        const text = store.shapesText().split('\n');
+        const text = store.reads.shapesText().split('\n');
         expect(text.filter(l => l.startsWith(`<${shape}/`) && l.includes(`<${NS.sh}path> <${EX}knows>`))).toHaveLength(1);
         expect(text.filter(l => l.startsWith(`<${shape}/`) && l.includes(`<${NS.sh}or>`))).toHaveLength(1);
         // Validation reads the shapes dataset: no RDFS rule is in it.

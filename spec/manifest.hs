@@ -1269,8 +1269,8 @@ data Severity = Violation | Warning | Info deriving Eq
 data ValidationResult = ValidationResult
   { focusNode :: Iri, sourceShape :: Iri, resultPath :: Maybe Iri, severity :: Severity, component :: Iri, message :: String }
 -- | The validator is a pure function: data quads and shape quads in, the results out. It reads nothing from the store or the files.
--- The coordinator builds the input (validationInput), writes the report graph and sends the change event. The worker thread gets a
--- full copy of the input for each run.
+-- ValidationData builds the input (validationInput) and maps result IDs. ValidationRunner writes the report graph. The coordinator sends the change event.
+-- ValidationData owns open editors and the checked-instance count. The worker thread gets a full copy of the input for each run.
 -- Reason: one input, one report. The validator can run in any thread and in tests without a store.
 -- The shapes are all shapes graphs, own and imported. Without shapes, the report is empty.
 validator :: [Quad] -> [Quad] -> [ValidationResult]   -- the data, the shapes
@@ -1370,7 +1370,8 @@ law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . change
 
 -- 10.1 Write queue and dirty state ------------------------------------------------------
 
--- | Code (packages/rdf/src): saver.ts holds the dirty state, the write and the commit paths; reconciler.ts reads what the watcher reports.
+-- | Code (packages/rdf/src): saver.ts holds Saver (dirty state and file writes) and Writer (queued writes, commits and retry notes).
+-- Writer lives across workspace opens. Reconciler in reconciler.ts owns the watcher and the disk reads.
 -- | File operations run one at a time. Each edit, undo and redo queues a write of the pending changes.
 -- Dirty: a write is pending or failed. It compares current canonical content with saved content.
 -- Touched file graphs invalidate their canonical cache entries. They do not define dirty state.
@@ -1497,6 +1498,8 @@ modelQueries = concatMap queries [minBound .. maxBound]
 law_queryNamesUnique :: Bool
 law_queryNamesUnique = unique modelQueries
 -- | A query changes no store content and no history.
+-- PanelReads (packages/rdf/src/panel-reads.ts) runs the read modules. RPC and CLI dispatch queries to it.
+-- ModelStore supplies the live read context and retains the event-keyed caches (§11.2).
 runQuery :: Backend -> String -> (String, Backend)  -- query name with JSON arguments; JSON answer
 law_queriesRead :: Backend -> String -> Bool
 law_queriesRead b q = let b' = snd (runQuery b q) in storeQuads b' == storeQuads b && historyOf b' == historyOf b
