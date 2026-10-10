@@ -70,11 +70,11 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 ### Stage 2: one graph per file and role
 
 - **Needs:** stage 1.
-- **Goal:** store each file in its own graphs (decisions 1 to 3). Remove `origin`, `byFile` and `lastOrigin`. Placement runs inside the transaction, so the patch has the final graphs. Undo then needs no origin changes (`OriginChange` in `history.ts`). The dirty set is the set of graphs that patches touched since the last write.
+- **Goal:** store each file in its own graphs (decisions 1 to 3). Remove `origin`, `byFile` and `lastOrigin`. Placement runs inside the transaction, so the patch has the final graphs. Undo then needs no origin changes (`OriginChange` in `history.ts`). Touched graphs invalidate the canonical content cache of their files. Dirty state compares current canonical file content with the last read or successful write, as §10.1 requires.
 - **Files:** `graph.ts` (`model` becomes a scope over the data graphs, with duplicates removed on read), `workspace.ts`, `placement.ts`, `history.ts`, `sparql.ts`, and each query that names `urn:name:model` (`queries.ts`, `scoped-doc.ts`, `view-read.ts`, `properties.ts`, `link-choices.ts`, `outline.ts`, `search.ts`).
-- **Open first:** pick the graph names. A proposal is `urn:data:<path>` and `urn:shapes:<path>`. Saved view files use `urn:trellis:list:*`, so keep those IRIs.
-- **Done when:** a statement in two files is in two data graphs. Undo and redo keep it there (`law_originKept`, `law_undoKeepsOrigin`). A transfer between files is a graph change in the patch. `file-explorer.test.ts`, `placement.test.ts`, `workspace-files.test.ts`, `imported-files.test.ts`, `review-save.test.ts` and `scoped-doc.test.ts` pass.
-- **Manifest:** §3.1 (graphs), §3.2 (statement origin), §10.1 (dirty state: replace the canonical compare with touched graphs, and keep `law_saveCleans` and `law_failedWriteStaysDirty`).
+- **Open first:** resolve SYNC1 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
+- **Done when:** a statement in two files is in two data graphs. Undo and redo keep it there (`law_originKept`, `law_undoKeepsOrigin`). A transfer between files is a graph change in the patch. Undo before a queued write clears dirty state when the file returns to its saved content. Reversing an edit after a failed write also clears dirty state when the saved content is restored. Neither case causes a needless write, retry or commit. `file-explorer.test.ts`, `placement.test.ts`, `workspace-files.test.ts`, `imported-files.test.ts`, `review-save.test.ts` and `scoped-doc.test.ts` pass with these dirty-state regressions covered.
+- **Manifest:** §3.1 (graphs), §3.2 (statement origin), §10.1 (preserve canonical comparison, `law_saveCleans` and `law_failedWriteStaysDirty`; use touched graphs for cache invalidation).
 
 ### Stage 3: split Workspace
 
@@ -87,10 +87,12 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 ### Stage 4: pure validator
 
 - **Needs:** stage 2.
-- **Goal:** the validator takes lists of graphs and returns a report. Data: the data graphs of own files, plus the context that `Workspace.validationTriples` adds today. Shapes: all shapes graphs, own and imported. The coordinator writes the report graph and acts on the change event. The worker keeps getting a full copy for each run.
+- **Goal:** the validator takes data quads and shape quads and returns a report. The coordinator writes the report graph and acts on the change event. The worker keeps getting a full copy for each run.
+- **Validation data:** include the data graphs of own files and the context that `Workspace.validationTriples` adds today. Also include the SKOS projection of all shapes graphs, own and imported. This projection selects SKOS predicates and `rdf:type` statements whose object is in the SKOS namespace, as `ValidationRunner.validateNow` does today. All mode includes the whole projection. OpenViews mode includes only projection statements about focused elements and IRIs named by the selected data, as §9 requires. Off mode runs no validation.
+- **Shapes:** include all shapes graphs, own and imported.
 - **Files:** `validation-runner.ts`, `validate.ts`, `model-store.ts`, `workspace.ts` (`validationTriples`).
-- **Open first:** keep or remove the Metamodel copy of the shapes (`shapes.ts`, `metamodelFromQuads`). It feeds both the validator and the panels. Since PR #34 it also holds RDFS rules read from the data (`isRdfsQuad` in `graph.ts`).
-- **Done when:** the validator imports nothing from the store or the workspace. `validation-runner.test.ts` and `validation-mode.test.ts` pass.
+- **Open first:** resolve SYNC2 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
+- **Done when:** the validator imports nothing from the store or the workspace. `validation-runner.test.ts` and `validation-mode.test.ts` pass. Tests cover scheme membership supplied only by shapes-file SKOS statements in both All and OpenViews modes. OpenViews tests also cover exclusion of unrelated shapes-file vocabulary. Cover own and imported shapes files.
 - **Manifest:** §9 (validation).
 
 ### Stage 5: view slices, no notation index
@@ -123,16 +125,5 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 - Read `AGENTS.md` first. Run `git status --short`, and do not revert changes of other agents.
 - Keep each stage small. Do not start the next stage in the same pull request.
 - When a stage changes a contract, change the manifest section and its law first. Then change the code.
-- Put new open items in `spec/open.md`. When a stage is done, mark it done in this readme with the pull request link.
+- Put new open items in `spec/open.md`. Remove completed work from this handoff. Git history records completed stages.
 - When all stages are done, delete this folder.
-
-## Status
-
-| Stage | State |
-|---|---|
-| 1. One change event | Not started |
-| 2. One graph per file and role | Not started |
-| 3. Split Workspace | Not started |
-| 4. Pure validator | Not started |
-| 5. View slices | Not started |
-| 6. Coordinator | Not started |
