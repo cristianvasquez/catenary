@@ -1,7 +1,8 @@
-// The schema providers (@catenary/explorer SchemaProvider) on this store: their rules join the metamodel of the shapes (mergeSchema).
+// The schema providers (@catenary/schema SchemaProvider) on this store: their rules join the metamodel of the shapes (mergeSchema).
 // The rules come from all graphs of the files, not from the validation report. Validation never uses them.
 
-import type { QueryPort, SchemaProvider } from '@catenary/explorer';
+import type { QueryPort } from '@catenary/query';
+import type { SchemaProvider } from '@catenary/schema';
 import { Classes, mergeSchema } from '@catenary/model';
 import { rdfsSchema } from '@catenary/rdfs';
 import type { Term } from '@rdfjs/types';

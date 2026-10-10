@@ -19,6 +19,12 @@
       "@catenary/explorer": [
         "packages/explorer/src/index.ts"
       ],
+      "@catenary/query": [
+        "packages/query/src/index.ts"
+      ],
+      "@catenary/schema": [
+        "packages/schema/src/index.ts"
+      ],
       "@catenary/rdfs": [
         "packages/rdfs/src/index.ts"
       ],

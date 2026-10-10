@@ -2,7 +2,7 @@
 // The host merges the rules of all providers into the metamodel (@catenary/model mergeSchema). A rule says what a predicate takes
 // on an instance of a class. It is a suggestion for the editor, not a constraint: validation does not use it.
 
-import type { QueryPort } from './query';
+import type { QueryPort } from '@catenary/query';
 
 /**
  * What the objects of a predicate are: instances of a class (a relation), literals of a datatype (a field; no datatype: any literal),

@@ -1,7 +1,7 @@
 // Metamodel: palette classes, fields and relation types, as JSON. Built from SHACL shapes by @catenary/rdf, with the schema rules of
 // the schema providers (RDFS) merged in (mergeSchema).
 
-import type { Schema } from '@catenary/explorer';
+import type { Schema } from '@catenary/schema';
 import { NS, TermJSON, localName } from './terms';
 import { compactParts, shortIri } from './shapes-doc';
 

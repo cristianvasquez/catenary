@@ -4,7 +4,8 @@
 // rdfs:Resource and owl:Thing: any value, a literal or a resource. rdfs:Literal: any literal. No inference of types, no
 // rdfs:subPropertyOf, no validation.
 
-import { OWL, QueryPort, RDF, RDFS, SH, Schema, SchemaProvider, SchemaRange, SchemaRule, XSD, iri } from '@catenary/explorer';
+import { OWL, QueryPort, RDF, RDFS, SH, XSD, iri } from '@catenary/query';
+import type { Schema, SchemaProvider, SchemaRange, SchemaRule } from '@catenary/schema';
 
 const SKOS = 'http://www.w3.org/2004/02/skos/core#';
 const PREFIXES = `PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}> PREFIX skos: <${SKOS}>`;

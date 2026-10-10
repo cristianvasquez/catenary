@@ -1,7 +1,8 @@
 // The Classes section of the Model explorer: each class of an rdf:type statement with its direct instances, nested by the
 // rdfs:subClassOf statements of the data. No inference: an instance shows only under the classes that it states.
 
-import { ExplorerPath, ExplorerPlugin, ExplorerPort, ExplorerRow, RDF, RDFS, byName } from '@catenary/explorer';
+import { ExplorerPath, ExplorerPlugin, ExplorerPort, ExplorerRow, byName } from '@catenary/explorer';
+import { RDF, RDFS } from '@catenary/query';
 
 const PREFIXES = `PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}>`;
 

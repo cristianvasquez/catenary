@@ -1,0 +1,15 @@
+{
+  "name": "@catenary/query",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The query port that a host gives to a vocabulary package, the namespaces and the IRI escaper of its SPARQL.",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

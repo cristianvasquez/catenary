@@ -30,7 +30,8 @@
     "notations"
   ],
   "dependencies": {
-    "@catenary/explorer": "workspace:*"
+    "@catenary/explorer": "workspace:*",
+    "@catenary/query": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b",

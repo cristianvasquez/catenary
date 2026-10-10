@@ -24,6 +24,9 @@
       "path": "../explorer"
     },
     {
+      "path": "../schema"
+    },
+    {
       "path": "../shacl"
     }
   ]

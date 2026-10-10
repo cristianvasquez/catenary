@@ -1,4 +1,4 @@
-import { RDF, SH } from '@catenary/explorer';
+import { RDF, SH } from '@catenary/query';
 import type { FocusNode, TargetMatch, TargetReason } from '../common';
 import { focus, iri, term, targetMatches } from './targets';
 import type { QueryTerm, TargetQueryPort, TargetScope, TargetSelection } from './targets';

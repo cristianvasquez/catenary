@@ -25,6 +25,8 @@
     "shaclxtract": "^0.1.0",
     "@catenary/shacl": "workspace:*",
     "@catenary/explorer": "workspace:*",
+    "@catenary/query": "workspace:*",
+    "@catenary/schema": "workspace:*",
     "@catenary/rdfs": "workspace:*"
   },
   "devDependencies": {

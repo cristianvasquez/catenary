@@ -16,6 +16,8 @@ export default defineConfig({
             '@catenary/shacl/common': fileURLToPath(new URL('./packages/shacl/src/common/index.ts', import.meta.url)),
             '@catenary/shacl/backend': fileURLToPath(new URL('./packages/shacl/src/backend/index.ts', import.meta.url)),
             '@catenary/explorer': fileURLToPath(new URL('./packages/explorer/src/index.ts', import.meta.url)),
+            '@catenary/query': fileURLToPath(new URL('./packages/query/src/index.ts', import.meta.url)),
+            '@catenary/schema': fileURLToPath(new URL('./packages/schema/src/index.ts', import.meta.url)),
             '@catenary/rdfs': fileURLToPath(new URL('./packages/rdfs/src/index.ts', import.meta.url)),
             '@catenary/model': fileURLToPath(new URL('./packages/model/src/index.ts', import.meta.url)),
             '@catenary/rdf': fileURLToPath(new URL('./packages/rdf/src/index.ts', import.meta.url)),

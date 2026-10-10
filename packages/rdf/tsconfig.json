@@ -27,6 +27,12 @@
       "path": "../explorer"
     },
     {
+      "path": "../query"
+    },
+    {
+      "path": "../schema"
+    },
+    {
       "path": "../shacl"
     },
     {

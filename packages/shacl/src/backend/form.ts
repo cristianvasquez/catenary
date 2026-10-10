@@ -1,4 +1,4 @@
-import { RDF, SH } from '@catenary/explorer';
+import { RDF, SH } from '@catenary/query';
 import { iri } from './targets';
 import type { TargetQueryPort } from './targets';
 

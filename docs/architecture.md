@@ -42,17 +42,19 @@ The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in works
 
 ## Packages
 
-Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/explorer` and `@catenary/shacl/common`. `@catenary/shacl` and `@catenary/rdfs` import only `@catenary/explorer`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/rdfs`, `@catenary/explorer`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
+Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/explorer`, `@catenary/schema` and `@catenary/shacl/common`. `@catenary/shacl` imports only `@catenary/query` and `@catenary/explorer`. `@catenary/rdfs` imports only `@catenary/query`, `@catenary/explorer` and `@catenary/schema`. `@catenary/explorer` and `@catenary/schema` import only `@catenary/query`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/rdfs`, `@catenary/query`, `@catenary/explorer`, `@catenary/schema`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
-| `packages/explorer` (`@catenary/explorer`) | The contracts of the vocabulary packages: the query port and its helpers, the Model explorer plugin (rows, paths) and the schema provider (rules). | None. |
-| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules, notation assets and the Shapes section of the Model explorer. | `@catenary/explorer`. Hosts supply query ports and graph identities. |
-| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. The domain and range providers: schema rules from `rdfs:domain` and `rdfs:range`. | `@catenary/explorer`. |
-| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
+| `packages/query` (`@catenary/query`) | The query port that a host gives to a vocabulary package: SPARQL SELECT, graph patterns, labels. The namespaces and the IRI escaper of the queries. | None. |
+| `packages/explorer` (`@catenary/explorer`) | The Model explorer plugin contract: rows, paths, the explorer port. | `@catenary/query`. |
+| `packages/schema` (`@catenary/schema`) | The schema provider contract: schema rules (domain, predicate, range) that join the metamodel. | `@catenary/query`. |
+| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules, notation assets and the Shapes section of the Model explorer. | `@catenary/query`, `@catenary/explorer`. Hosts supply query ports and graph identities. |
+| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. The domain and range providers: schema rules from `rdfs:domain` and `rdfs:range`. | `@catenary/query`, `@catenary/explorer`, `@catenary/schema`. |
+| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/explorer`, `@catenary/schema`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
 | `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
-| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Node only. | `@catenary/shacl`, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
+| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Node only. | `@catenary/shacl`, `@catenary/rdfs`, `@catenary/query`, `@catenary/explorer`, `@catenary/schema`, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
 | `modeler` | Theia extension: RPC service, GLSP adapters, panels, canvas. | `@catenary/model`. Only `src/node` imports `@catenary/rdf`. |
 | `app`, `electron-app` | Browser host and desktop host. | Theia packages and `modeler`. |
 
@@ -65,7 +67,7 @@ Values that cross a package boundary are JSON, including RDF terms and IDs.
 
 ### Add a schema provider
 
-1. Implement `SchemaProvider` (`packages/explorer/src/schema.ts`) in the package of the vocabulary. Query only through the `QueryPort`.
+1. Implement `SchemaProvider` (`packages/schema/src/index.ts`) in the package of the vocabulary. Query only through the `QueryPort`.
 2. Add the provider to `SCHEMA_PROVIDERS` (`packages/rdf/src/schema.ts`).
 
 `mergeSchema` (`packages/model/src/metamodel.ts`) adds the rules to the metamodel. The shapes win for a predicate that they describe on the same class. Validation never reads the rules.
@@ -84,7 +86,9 @@ Paths are relative to the directory in the first column.
 
 | Directory | Files | Purpose |
 |---|---|---|
-| `packages/explorer/src` | `index.ts`, `query.ts`, `schema.ts` | Model explorer plugin contract, query port and helpers, schema provider contract |
+| `packages/query/src` | `index.ts` | Query port, namespaces and the IRI escaper |
+| `packages/explorer/src` | `index.ts` | Model explorer plugin contract |
+| `packages/schema/src` | `index.ts` | Schema provider contract |
 | `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
 | `packages/rdfs/src` | `explorer.ts` | Classes section of the Model explorer |

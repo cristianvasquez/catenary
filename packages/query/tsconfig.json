@@ -5,6 +5,5 @@
     "declaration": true, "sourceMap": true, "rootDir": "src", "outDir": "lib",
     "types": [], "composite": true
   },
-  "include": ["src"],
-  "references": [{ "path": "../explorer" }, { "path": "../query" }]
+  "include": ["src"]
 }

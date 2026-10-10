@@ -6,5 +6,5 @@
     "types": [], "composite": true
   },
   "include": ["src"],
-  "references": [{ "path": "../explorer" }]
+  "references": [{ "path": "../explorer" }, { "path": "../query" }, { "path": "../schema" }]
 }

@@ -1,11 +1,8 @@
 // The Model explorer plugin contract. A plugin gives its top sections and the children of its own keys. The host owns the store,
 // the graph identities, the label rule, the element ids and the file scope. The plugin owns its queries. All values are JSON.
-// This package has no dependencies. Other contracts of the vocabulary packages: query.ts (the query port), schema.ts (schema rules).
+// The query port comes from @catenary/query.
 
-import type { QueryPort, QueryTerm } from './query';
-
-export * from './query';
-export * from './schema';
+import type { QueryPort, QueryTerm } from '@catenary/query';
 
 /** One row of the Model explorer. */
 export interface ExplorerRow {
