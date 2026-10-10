@@ -54,7 +54,7 @@ const count = (nodes: OutlineNode[], kind: OutlineNode['kind']): number => nodes
 const flat = (nodes: OutlineNode[]): OutlineNode[] => nodes.flatMap(n => [n, ...flat(n.children)]);
 const sameAsReadModel = () => {
     const doc = docOf(store);
-    for (const view of Object.values(doc.views)) expect(store.outline(view.id)).toEqual(fromReadModel(doc, store.meta, view));
+    for (const view of Object.values(doc.views)) expect(store.reads.outline(view.id)).toEqual(fromReadModel(doc, store.meta, view));
 };
 
 describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
@@ -62,7 +62,7 @@ describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
         const views = Object.values(docOf(store).views);
         expect(views.length).toBeGreaterThan(0);
         sameAsReadModel();
-        const tree = store.outline(views[0].id);
+        const tree = store.reads.outline(views[0].id);
         // The fixture view has frames, cards and placed relations.
         expect([count(tree, 'group'), count(tree, 'card'), count(tree, 'out'), count(tree, 'in')]).toEqual([
             boxes(views[0], 'group').length, boxes(views[0], 'card').length,
@@ -71,7 +71,7 @@ describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
         ]);
         expect(count(tree, 'group')).toBeGreaterThan(0);
         expect(count(tree, 'out')).toBeGreaterThan(0);
-        expect(store.outline('urn:x:no-view')).toEqual([]);
+        expect(store.reads.outline('urn:x:no-view')).toEqual([]);
     });
 
     it('nested group, moved card, hidden relation: still the tree of the read model', () => {
@@ -85,10 +85,10 @@ describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
         const placed = docOf(store).views[view.id].edges.find(e => e.id)!;
         expect(store.execute({ kind: 'hideEdges', view: view.id, ids: [placed.relation], hidden: true }).ok).toBe(true);
         sameAsReadModel();
-        const inner = flat(store.outline(view.id)).find(n => n.name === 'Inner')!;
+        const inner = flat(store.reads.outline(view.id)).find(n => n.name === 'Inner')!;
         expect(inner.kind).toBe('group');
         expect(inner.children.map(c => c.key)).toEqual([card.id]);
-        expect(flat(store.outline(view.id)).some(n => n.key === placed.relation)).toBe(false);
+        expect(flat(store.reads.outline(view.id)).some(n => n.key === placed.relation)).toBe(false);
     });
 
     it('selection: a placement or an element in the view, an element of a listing; a group only in its view', () => {
@@ -96,7 +96,7 @@ describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
         const card = boxes(view, 'card')[0];
         const edge = view.edges.find(e => e.id)!;
         const group = boxes(view, 'group')[0];
-        const selected = (selection: { view?: string; ids: string[] }) => flat(store.outline(view.id, selection)).filter(n => n.selected).map(n => n.element);
+        const selected = (selection: { view?: string; ids: string[] }) => flat(store.reads.outline(view.id, selection)).filter(n => n.selected).map(n => n.element);
         expect(selected({ view: view.id, ids: [card.id] })).toEqual([card.id]);
         expect(selected({ view: view.id, ids: [card.element] })).toEqual([card.id]);
         // A placed edge: its two rows (out of the subject, into the object).
@@ -116,7 +116,7 @@ describe('Outline by SPARQL on the view graph (ADR 0007 step 4)', () => {
         expect(store.execute({ kind: 'addToView', view: other.id, ids: [card.element], at: { x: 0, y: 0 } }).ok).toBe(true);
         const otherCard = boxes(docOf(store).views[other.id], 'card')[0];
         expect(otherCard.element).toBe(card.element);
-        const selected = flat(store.outline(view.id, { view: other.id, ids: [otherCard.id] })).filter(n => n.selected).map(n => n.element);
+        const selected = flat(store.reads.outline(view.id, { view: other.id, ids: [otherCard.id] })).filter(n => n.selected).map(n => n.element);
         expect(selected).toEqual([card.id]);
         sameAsReadModel();
     });

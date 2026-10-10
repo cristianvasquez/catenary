@@ -18,7 +18,7 @@ const textA = `${prefixes}
 <urn:test:a> a <urn:test:Thing>; rdfs:label "Alpha Beta"; <urn:test:link> <urn:test:b> .
 <urn:test:b> a <urn:test:Thing>; rdfs:label "Another Branch" .`;
 const file = (name: string) => join(dir, name + '.ttl');
-const ids = (name: string) => store.explorerChildren(type, file(name)).rows.map(r => r.element);
+const ids = (name: string) => store.reads.explorerChildren(type, file(name)).rows.map(r => r.element);
 const statements = async (name: string) => (await parseQuads(readFileSync(file(name), 'utf8'))).map(q => `${q.subject.value} ${q.predicate.value} ${q.object.value}`).sort();
 beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'catenary-file-explorer-'));
@@ -36,12 +36,12 @@ describe('file explorer', () => {
         expect(ids('a')).toEqual([a, b]);
         expect(ids('b')).toEqual([]);
         expect(ids('c')).toEqual([a]);
-        expect(store.explorerSearch('albe', file('a')).map(r => r.element)).toEqual([a]);
-        expect(store.explorerSearch('albe', file('b'))).toEqual([]);
+        expect(store.reads.explorerSearch('albe', file('a')).map(r => r.element)).toEqual([a]);
+        expect(store.reads.explorerSearch('albe', file('b'))).toEqual([]);
     });
     it('law_folderDragAll: resolves all contents and deduplicates overlapping selections', () => {
-        expect(store.explorerDrag({ file: file('a'), ids: [a], folders: [type, type] }).sort()).toEqual([a, b].sort());
-        expect(store.explorerDrag({ file: file('b'), ids: [a], folders: [type] })).toEqual([]);
+        expect(store.reads.explorerDrag({ file: file('a'), ids: [a], folders: [type, type] }).sort()).toEqual([a, b].sort());
+        expect(store.reads.explorerDrag({ file: file('b'), ids: [a], folders: [type] })).toEqual([]);
     });
     it('law_fileTransferOrigins: moves source statements only, persists, and supports one-step undo and redo', async () => {
         const before = await statements('a'), other = await statements('c'), destination = await statements('b');

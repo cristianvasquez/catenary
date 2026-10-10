@@ -63,7 +63,7 @@ describe('ModelStore.viewFigures keeps the figures of a view over a move', () =>
         store.watching = false;
         try {
             expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-            const viewId = Object.keys(store.viewLabels())[0];
+            const viewId = Object.keys(store.reads.viewLabels())[0];
             const card = store.viewDoc(viewId).views[viewId].boxes.find(b => b.kind === 'card')!;
             const first = store.viewFigures(viewId)!;
             expect(store.execute({ kind: 'setBounds', view: viewId, bounds: [{ id: card.id, x: card.x + 40, y: card.y }] }).ok).toBe(true);

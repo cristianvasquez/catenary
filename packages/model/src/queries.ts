@@ -1,5 +1,5 @@
 // The read queries of the model: one declaration for the store (@catenary/rdf implements it), the RPC service and the CLI.
-// A new query: add it to ModelQueries and MODEL_QUERIES, then implement it in ModelStore. The compiler checks all three.
+// A new query: add it to ModelQueries and MODEL_QUERIES, then implement it in PanelReads. The compiler checks all three.
 
 import type { ActionTarget, OpenTarget, SelectionActions } from './actions';
 import type { AppearanceData, GestureInfo, Occurrence, Showing, ViewGesture } from './view-ui';

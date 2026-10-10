@@ -52,7 +52,7 @@ describe('raw RDF clipboard', () => {
 
     it('law_namedGraphConsent: requires consent and deduplicates flattened graphs without an earlier edit', async () => {
         const { store, view } = await workspace();
-        const r = prepared(await store.prepareRdfPaste('<urn:g1> { <urn:a> <urn:p> "x" . } <urn:g2> { <urn:a> <urn:p> "x" . }'));
+        const r = prepared(await store.reads.prepareRdfPaste('<urn:g1> { <urn:a> <urn:p> "x" . } <urn:g2> { <urn:a> <urn:p> "x" . }'));
         expect(r.namedGraphs).toEqual(['urn:g1', 'urn:g2']);
         const revision = store.snapshot().revision;
         expect(store.execute({ kind: 'pasteRdf', view, rdf: r.rdf }).ok).toBe(false);
@@ -64,47 +64,47 @@ describe('raw RDF clipboard', () => {
 
     it('law_pasteRdfAdditive and law_pasteKeepsOldPositions: adds data and figures in one undo step', async () => {
         const { store, view, dir } = await workspace();
-        const original = prepared(await store.prepareRdfPaste(`<urn:old> a <urn:C>; <${NS.rdfs}label> "Old" .`));
+        const original = prepared(await store.reads.prepareRdfPaste(`<urn:old> a <urn:C>; <${NS.rdfs}label> "Old" .`));
         expect(store.execute({ kind: 'pasteRdf', view, rdf: original.rdf, at: { x: 0, y: 0 } }).ok).toBe(true);
-        const before = store.view(view)!;
-        const r = prepared(await store.prepareRdfPaste(`<urn:a> a <urn:C>; <${NS.rdfs}label> "A"; <urn:link> <urn:b> .
+        const before = store.reads.view(view)!;
+        const r = prepared(await store.reads.prepareRdfPaste(`<urn:a> a <urn:C>; <${NS.rdfs}label> "A"; <urn:link> <urn:b> .
             <urn:b> a <urn:C>; <${NS.rdfs}label> "B" .`));
         const result = store.execute({ kind: 'pasteRdf', view, rdf: r.rdf, at: { x: 0, y: 0 } });
         expect(result.ok).toBe(true);
-        expect(store.view(view)!.boxes).toHaveLength(3);
-        expect(store.view(view)!.boxes.find(b => b.id === before.boxes[0].id)).toEqual(before.boxes[0]);
-        expect(store.view(view)!.edges).toHaveLength(1);
+        expect(store.reads.view(view)!.boxes).toHaveLength(3);
+        expect(store.reads.view(view)!.boxes.find(b => b.id === before.boxes[0].id)).toEqual(before.boxes[0]);
+        expect(store.reads.view(view)!.edges).toHaveLength(1);
         store.undo();
-        expect(store.view(view)).toEqual(before);
+        expect(store.reads.view(view)).toEqual(before);
         expect(store.dataset.match(nn('urn:a'))).toHaveLength(0);
         store.redo();
-        expect(store.view(view)!.boxes).toHaveLength(3);
+        expect(store.reads.view(view)!.boxes).toHaveLength(3);
         expect((await store.save()).ok).toBe(true);
         const saved = parseRdfSync(readFileSync(join(dir, 'data.ttl'), 'utf8'), 'text/turtle');
         expect(saved.some(q => q.subject.value === 'urn:a')).toBe(true);
         expect((await store.open(join(dir, 'workspace.trig'))).ok).toBe(true);
-        expect(store.view(view)!.boxes).toHaveLength(3);
+        expect(store.reads.view(view)!.boxes).toHaveLength(3);
     });
 
     it('reuses existing RDF and places it without duplicating named instances', async () => {
         const { store, view } = await workspace();
-        const r = prepared(await store.prepareRdfPaste('<urn:a> a <urn:C> .'));
+        const r = prepared(await store.reads.prepareRdfPaste('<urn:a> a <urn:C> .'));
         store.execute({ kind: 'pasteRdf', view, rdf: r.rdf });
         store.execute({ kind: 'removeFromView', view, ids: [iriId('urn:a')] });
         expect(store.execute({ kind: 'pasteRdf', view, rdf: r.rdf }).ok).toBe(true);
         expect(store.dataset.match(nn('urn:a'))).toHaveLength(1);
-        expect(store.view(view)!.boxes).toHaveLength(1);
+        expect(store.reads.view(view)!.boxes).toHaveLength(1);
         expect(store.execute({ kind: 'pasteRdf', view, rdf: r.rdf })).toMatchObject({ ok: true, ids: [] });
     });
 
     it('routes shapes, owned property parts, and concepts to their configured files', async () => {
         const { store, view, dir } = await workspace();
-        const r = prepared(await store.prepareRdfPaste(`@prefix sh: <${NS.sh}> . @prefix skos: <${NS.skos}> .
+        const r = prepared(await store.reads.prepareRdfPaste(`@prefix sh: <${NS.sh}> . @prefix skos: <${NS.skos}> .
             <urn:S> a sh:NodeShape; sh:targetClass <urn:C>; sh:property [ sh:path <urn:name>; sh:datatype <${NS.xsd}string> ].
             <urn:scheme> a skos:ConceptScheme . <urn:concept> a skos:Concept; skos:inScheme <urn:scheme> .`));
         expect(store.execute({ kind: 'pasteRdf', view, rdf: r.rdf }).ok).toBe(true);
-        expect(store.shapes().nodeShapes[iriId('urn:S')]).toBeDefined();
-        expect(store.view(view)!.boxes.length).toBeGreaterThan(0);
+        expect(store.reads.shapes().nodeShapes[iriId('urn:S')]).toBeDefined();
+        expect(store.reads.view(view)!.boxes.length).toBeGreaterThan(0);
         expect((await store.save()).ok).toBe(true);
         const shapes = parseRdfSync(readFileSync(join(dir, 'shapes.ttl'), 'utf8'), 'text/turtle');
         expect(shapes.some(q => q.subject.value === 'urn:S')).toBe(true);
@@ -115,23 +115,23 @@ describe('raw RDF clipboard', () => {
 
     it('pastes a relationship by showing its existing ends, without expanding their other links', async () => {
         const { store, view } = await workspace();
-        const data = prepared(await store.prepareRdfPaste('<urn:a> a <urn:C>; <urn:other> <urn:c> . <urn:b> a <urn:C> . <urn:c> a <urn:C> .'));
+        const data = prepared(await store.reads.prepareRdfPaste('<urn:a> a <urn:C>; <urn:other> <urn:c> . <urn:b> a <urn:C> . <urn:c> a <urn:C> .'));
         store.execute({ kind: 'pasteRdf', view, rdf: data.rdf });
         store.execute({ kind: 'removeFromView', view, ids: [iriId('urn:a'), iriId('urn:b'), iriId('urn:c')] });
-        const link = prepared(await store.prepareRdfPaste('<urn:a> <urn:link> <urn:b> .'));
+        const link = prepared(await store.reads.prepareRdfPaste('<urn:a> <urn:link> <urn:b> .'));
         expect(store.execute({ kind: 'pasteRdf', view, rdf: link.rdf }).ok).toBe(true);
-        expect(store.view(view)!.boxes.filter(b => b.kind === 'card').map(b => b.element).sort()).toEqual([iriId('urn:a'), iriId('urn:b')].sort());
-        expect(store.view(view)!.edges).toHaveLength(1);
+        expect(store.reads.view(view)!.boxes.filter(b => b.kind === 'card').map(b => b.element).sort()).toEqual([iriId('urn:a'), iriId('urn:b')].sort());
+        expect(store.reads.view(view)!.edges).toHaveLength(1);
     });
 
     it('exports shape-owned property definitions but leaves target class descriptions out', async () => {
         const { store, view } = await workspace();
-        const input = prepared(await store.prepareRdfPaste(`@prefix sh: <${NS.sh}> .
+        const input = prepared(await store.reads.prepareRdfPaste(`@prefix sh: <${NS.sh}> .
             <urn:S> a sh:NodeShape; sh:targetClass <urn:C>; sh:property <urn:S-name> .
             <urn:S-name> a sh:PropertyShape; sh:path <urn:name>; sh:datatype <${NS.xsd}string> .
             <urn:C> a <${NS.rdfs}Class>; <${NS.rdfs}label> "Class" .`));
         store.execute({ kind: 'pasteRdf', view, rdf: input.rdf });
-        const copy = await store.copyAsRdf(view, [iriId('urn:S')]);
+        const copy = await store.reads.copyAsRdf(view, [iriId('urn:S')]);
         if (!copy.ok) throw new Error(copy.error);
         const quads = parseRdfSync(copy.text, 'text/turtle');
         expect(quads.some(q => q.subject.value === 'urn:S-name' && q.predicate.value === NS.sh + 'path')).toBe(true);
@@ -140,33 +140,33 @@ describe('raw RDF clipboard', () => {
 
     it('ordinary copy cannot duplicate a shape already shown in the canvas', async () => {
         const { store, view } = await workspace();
-        const input = prepared(await store.prepareRdfPaste(`<urn:S> a <${NS.sh}NodeShape>; <${NS.sh}targetClass> <urn:C> .`));
+        const input = prepared(await store.reads.prepareRdfPaste(`<urn:S> a <${NS.sh}NodeShape>; <${NS.sh}targetClass> <urn:C> .`));
         store.execute({ kind: 'pasteRdf', view, rdf: input.rdf });
-        const before = store.view(view)!;
+        const before = store.reads.view(view)!;
         const clip = copyFromView(docOf(store), view, [iriId('urn:S')])!;
         expect(clip).toBeDefined();
         expect(store.execute({ kind: 'pasteIntoView', view, clip }).ok).toBe(false);
-        expect(store.view(view)).toEqual(before);
-        expect(Object.keys(store.shapes().nodeShapes)).toHaveLength(1);
+        expect(store.reads.view(view)).toEqual(before);
+        expect(Object.keys(store.reads.shapes().nodeShapes)).toHaveLength(1);
     });
 
     it('law_rdfCopyWithoutPlacement: exports selected cards and owned values without referenced descriptions', async () => {
         const { store, view } = await workspace();
-        const input = prepared(await store.prepareRdfPaste(`<urn:a> a <urn:C>; <urn:owned> [ <urn:value> "nested" ]; <urn:link> <urn:b> .
+        const input = prepared(await store.reads.prepareRdfPaste(`<urn:a> a <urn:C>; <urn:owned> [ <urn:value> "nested" ]; <urn:link> <urn:b> .
             <urn:b> a <urn:C>; <${NS.rdfs}label> "B" .`));
         store.execute({ kind: 'pasteRdf', view, rdf: input.rdf });
-        const card = store.view(view)!.boxes.find(b => b.kind === 'card' && b.element === iriId('urn:a'))!;
-        const r = await store.copyAsRdf(view, [card.id]);
+        const card = store.reads.view(view)!.boxes.find(b => b.kind === 'card' && b.element === iriId('urn:a'))!;
+        const r = await store.reads.copyAsRdf(view, [card.id]);
         if (!r.ok) throw new Error(r.error);
         const quads = parseRdfSync(r.text, 'text/turtle');
         expect(quads).toHaveLength(4);
         expect(quads.some(q => q.object.value === 'nested')).toBe(true);
         expect(quads.some(q => q.subject.value === 'urn:b' || q.predicate.value.startsWith(NS.view))).toBe(false);
-        const edge = store.view(view)!.edges[0];
-        const relation = await store.copyAsRdf(view, [edge.id!]);
+        const edge = store.reads.view(view)!.edges[0];
+        const relation = await store.reads.copyAsRdf(view, [edge.id!]);
         if (!relation.ok) throw new Error(relation.error);
         expect(parseRdfSync(relation.text, 'text/turtle')).toHaveLength(1);
-        const preparedAgain = prepared(await store.prepareRdfPaste(r.text));
+        const preparedAgain = prepared(await store.reads.prepareRdfPaste(r.text));
         expect(store.execute({ kind: 'pasteRdf', view, rdf: preparedAgain.rdf })).toMatchObject({ ok: true, ids: [] });
     });
 });

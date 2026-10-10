@@ -50,7 +50,7 @@ describe('Problems: the results of the report graph', () => {
         const violations = await validate();
         expect(violations.length).toBeGreaterThan(0);
         const key = (v: Violation) => JSON.stringify([v.focus, v.path ?? '', v.component, v.message, v.shape ?? '']);
-        const problems = store.problems();
+        const problems = store.reads.problems();
         expect(problems.map(({ label, className, ...v }) => v).map(key).sort()).toEqual(violations.map(key).sort());
         // The same objects: instance, severity, path name; and the order (focus node, then path).
         expect(problems.map(({ label, className, ...v }) => v).sort((a, b) => key(a).localeCompare(key(b))))
@@ -65,7 +65,7 @@ describe('Problems: the results of the report graph', () => {
 
     it('have the label and class name of the instance of the focus node', async () => {
         await validate();
-        const problems = store.problems();
+        const problems = store.reads.problems();
         expect(problems.some(p => p.instance)).toBe(true);
         for (const p of problems) {
             const inst = p.instance ? docOf(store).instances[p.instance] : undefined;
@@ -81,9 +81,9 @@ describe('Problems: the results of the report graph', () => {
         const parts = fresh as unknown as { validation: ValidationRunner; graph: never };
         parts.validation = new ValidationRunner(() => ({ graph: parts.graph, input: () => undefined, violations: () => [] }), () => {}, { set: () => undefined, clear: () => {} });
         expect(await fresh.open(writeWorkspace(dir))).toEqual({ ok: true });
-        expect(fresh.problems()).toEqual([]);
+        expect(fresh.reads.problems()).toEqual([]);
         await fresh.idle();
         fresh.close();
-        expect(new ModelStore().problems()).toEqual([]);
+        expect(new ModelStore().reads.problems()).toEqual([]);
     });
 });

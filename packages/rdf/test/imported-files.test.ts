@@ -90,7 +90,7 @@ describe('imported files', () => {
         ok(store.execute({ kind: 'setStatements', id: sales, values: { [DESCRIPTION]: [official, { termType: 'Literal', value: 'Our better note.' }] } }));
         await store.idle();
         expect(f.read('own.ttl')).toContain('Our better note.');
-        const p = store.properties(sales);
+        const p = store.reads.properties(sales);
         expect(p).toMatchObject({ kind: 'instance', importedFiles: [f.official] });
         const locked = p?.kind === 'instance' ? p.locked ?? [] : [];
         expect(locked).toContain(lockedKey(DESCRIPTION, official));
@@ -178,7 +178,13 @@ describe('imported files', () => {
         writeFileSync(file, `@prefix cat: <https://example.org/catalog#> . @prefix dcat: <https://example.org/not-dcat#> . @prefix rdfs: <${NS.rdfs}> .
 cat:c1 a cat:Catalog ; rdfs:label "Catalog" ; cat:publisher [ rdfs:label "Office" ] ; dcat:x "y" .\n`);
         const store = await opened(f.ws);
+        const changes: { reason: string; prefixWarning: boolean }[] = [];
+        const listener = store.onDidChange(({ reason }) => changes.push({ reason, prefixWarning: store.warnings.some(w => w.includes('prefixes not added')) }));
         const r = await store.importFiles([file]);
+        listener.dispose();
+        expect(changes.at(-1)).toEqual({ reason: 'load', prefixWarning: false });
+        expect(changes.filter(c => c.reason === 'load')).toHaveLength(1);
+        expect(changes.every(c => !c.prefixWarning)).toBe(true);
         expect(r).toEqual({ ok: true, files: [join(f.dir, 'imported', 'catalog.ttl')], prefixes: ['cat'] });
         await store.idle();
         const copy = f.read('imported/catalog.ttl');

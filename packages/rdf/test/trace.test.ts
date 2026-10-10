@@ -174,7 +174,7 @@ describe('traced store', () => {
         const store = new ModelStore();
         store.watching = false;
         expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
-        store.onDidChange(() => tracer.span('refresh', 'listener', () => store.viewLabels()));
+        store.onDidChange(() => tracer.span('refresh', 'listener', () => store.reads.viewLabels()));
         tracer.setClient(true);
         expect(store.execute({ kind: 'createView', label: 'Traced' }).ok).toBe(true);
         await store.idle();
@@ -199,9 +199,9 @@ describe('traced store', () => {
             expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
             expect(await store.setSettings({ validation: 'off' })).toEqual({ ok: true });
             expect(store.execute({ kind: 'createView', label: 'Connections trace' }).ok).toBe(true);
-            const view = Object.keys(store.viewLabels()).find(id => store.viewLabels()[id] === 'Connections trace')!;
+            const view = Object.keys(store.reads.viewLabels()).find(id => store.reads.viewLabels()[id] === 'Connections trace')!;
             expect(store.execute({ kind: 'addToView', view, ids: uris.map(model.iriId), at: { x: 0, y: 0 } }).ok).toBe(true);
-            const cards = store.view(view)!.boxes.filter(b => b.kind === 'card');
+            const cards = store.reads.view(view)!.boxes.filter(b => b.kind === 'card');
             const assertScoped = (run: () => unknown, instances: number) => {
                 tracer.clear();
                 run();
@@ -214,21 +214,21 @@ describe('traced store', () => {
                 expect(origins.every(s => s.queries === instances)).toBe(true);
             };
             tracer.setClient(true);
-            assertScoped(() => store.links([model.iriId(uris[0])], view), 1);
-            assertScoped(() => store.links(uris.slice(0, 3).map(model.iriId), view), 3);
-            assertScoped(() => store.links([cards[0].id], view), 1);
-            assertScoped(() => store.selectionActions({ ids: [cards[0].id], view }), 1);
+            assertScoped(() => store.reads.links([model.iriId(uris[0])], view), 1);
+            assertScoped(() => store.reads.links(uris.slice(0, 3).map(model.iriId), view), 3);
+            assertScoped(() => store.reads.links([cards[0].id], view), 1);
+            assertScoped(() => store.reads.selectionActions({ ids: [cards[0].id], view }), 1);
             expect(tracer.take().spans.filter(s => s.name === 'read selected view')).toHaveLength(1);
-            assertScoped(() => store.appearance(view, [model.iriId(uris[0])]), 1);
-            assertScoped(() => store.occurrence([cards[0].id], view), 1);
-            assertScoped(() => store.view(view, [cards[0].id]), 1);
-            assertScoped(() => store.properties(view), 0);
+            assertScoped(() => store.reads.appearance(view, [model.iriId(uris[0])]), 1);
+            assertScoped(() => store.reads.occurrence([cards[0].id], view), 1);
+            assertScoped(() => store.reads.view(view, [cards[0].id]), 1);
+            assertScoped(() => store.reads.properties(view), 0);
             tracer.clear();
-            tracer.span('rpc', 'properties', () => store.properties(view));
+            tracer.span('rpc', 'properties', () => store.reads.properties(view));
             const counts = tracer.take().spans.find(s => s.kind === 'rpc' && s.name === 'properties')!;
             expect(counts.queries).toBeLessThan(30);
             tracer.clear();
-            expect(store.viewDescription(view)).toBe('');
+            expect(store.reads.viewDescription(view)).toBe('');
             expect(tracer.take().spans.some(s => s.name === 'read full view')).toBe(false);
             const before = store.snapshot().revision;
             expect(await store.save()).toEqual({ ok: true });
@@ -248,9 +248,9 @@ describe('traced store', () => {
         store.watching = false;
         try {
             expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
-            const view = Object.keys(store.viewLabels()).find(id => store.view(id)?.edges.length);
+            const view = Object.keys(store.reads.viewLabels()).find(id => store.reads.view(id)?.edges.length);
             expect(view).toBeDefined();
-            const edge = store.view(view!)!.edges[0];
+            const edge = store.reads.view(view!)!.edges[0];
             expect(edge.id).toBeDefined();
             store.viewFigures(view!);
             const figures = vi.spyOn(model, 'viewFigures');
@@ -264,7 +264,7 @@ describe('traced store', () => {
             const derives = spans.filter(s => s.name === 'derive and join figures');
             expect(derives).toHaveLength(1);
             expect(causes(spans, derives[0])).toEqual(['command:sync figures', 'command:removeFromView']);
-            expect(store.view(view!)!.edges.some(e => e.id === edge.id)).toBe(false);
+            expect(store.reads.view(view!)!.edges.some(e => e.id === edge.id)).toBe(false);
         } finally {
             store.close();
         }

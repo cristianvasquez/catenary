@@ -10,7 +10,7 @@ describe('ModelServiceImpl tracing', () => {
         const ok = () => ({ ok: true as const });
         const store = Object.fromEntries(['create', 'setPrefixes', 'setSettings', 'setImported', 'importFiles', 'dismissMigration', 'save', 'undo', 'redo'].map(name => [name, ok]));
         return Object.assign(new ModelServiceImpl(), { store: {
-            ...store, properties: () => undefined,
+            ...store, reads: { properties: () => undefined },
             execute: () => tracer.span('command', 'createView', ok)
         } });
     };
@@ -63,19 +63,19 @@ describe('ModelServiceImpl tracing', () => {
 });
 
 describe('ModelServiceImpl read queries', () => {
-    it('has a prototype method for each query, which calls the store method with the store as `this` and returns a promise', async () => {
-        const store = {
-            prefix: 'store',
+    it('has a prototype method for each query, which calls PanelReads with reads as `this` and returns a promise', async () => {
+        const reads = {
+            prefix: 'reads',
             ...Object.fromEntries(Object.keys(MODEL_QUERIES).map(name => [name, function (this: { prefix: string }, ...args: unknown[]) {
                 return `${this.prefix}.${name}(${args.join(',')})`;
             }]))
         };
-        const service = Object.assign(new ModelServiceImpl(), { store });
+        const service = Object.assign(new ModelServiceImpl(), { store: { reads } });
         for (const name of Object.keys(MODEL_QUERIES) as (keyof typeof MODEL_QUERIES)[]) {
             expect(Object.hasOwn(ModelServiceImpl.prototype, name)).toBe(true);
             const call = (service[name] as (...a: unknown[]) => Promise<unknown>)('a', 1);
             expect(call).toBeInstanceOf(Promise);
-            expect(await call).toBe(`store.${name}(a,1)`);
+            expect(await call).toBe(`reads.${name}(a,1)`);
         }
     });
 });

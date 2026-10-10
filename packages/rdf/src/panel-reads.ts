@@ -1,7 +1,3 @@
-import { ExplorerContext, ExplorerScope, elementInFile, explorerPort, iriOf } from './explorer';
-import { shapeTargetChoices as readShapeTargetChoices } from './link-choices';
-import { dataPredicates, knownClasses as readKnownClasses, viewDescription as readViewDescription } from './queries';
-import { filesOfElement, textTargets } from './selection';
 // Frontend query host: request-scoped reads and the existing panel rules. No shared Doc (ADR 0012).
 
 import {
@@ -13,20 +9,20 @@ import {
 import { absolutePath, pathKey } from 'rdf-files';
 import { ActionContext, placements, selectionActions } from './actions';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
-import { explorerChildren, explorerElements, explorerPaths, explorerSearch } from './explorer';
+import { ExplorerContext, ExplorerScope, elementInFile, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
 import { enclosingWorkspace, positionIn } from './files';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
-import { LinkChoices, linkChoices } from './link-choices';
+import { LinkChoices, linkChoices, shapeTargetChoices as readShapeTargetChoices } from './link-choices';
 import { fileContent } from './loader';
 import { OutlineSelection, outline } from './outline';
 import { filesOfSubject } from './placement';
 import { properties } from './properties';
-import { formData, hiddenRelations, selectionLinks, viewCounts } from './queries';
+import { dataPredicates, formData, hiddenRelations, knownClasses as readKnownClasses, selectionLinks, viewCounts, viewDescription as readViewDescription } from './queries';
 import { reportProblems } from './report-read';
 import { DocScope, instanceLabels } from './scoped-doc';
 import { search } from './search';
-import { selected } from './selection';
+import { filesOfElement, selected, textTargets } from './selection';
 import { Settings } from './settings';
 import { Metamodel, formShapes } from './shapes';
 import { ShapesIndex } from './shapes-read';

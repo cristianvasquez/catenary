@@ -1,5 +1,5 @@
 // SHACL validation of the model graph after changes: debounced, and a run that a newer change makes stale is discarded. The coordinator
-// (ModelStore) gives the input of each run; the validator (validate.ts) is pure. The report graph (ADR 0007) uses the shared patch path,
+// wires the input of each run from ValidationData; the validator (validate.ts) is pure. The report graph (ADR 0007) uses the shared patch path,
 // outside edit history and file tracking (no undo, no file, no dirty state).
 // With a worker file (`useValidationWorker`, the bundled backend), shacl-engine runs in a worker thread: the backend thread stays free
 // for edits and requests. Without one (tests from the source), it runs in this thread.

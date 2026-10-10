@@ -43,7 +43,7 @@ const byIri = (hits: SearchHit[]) => new Map(hits.map(h => [h.iri, h]));
 
 describe('search: the things', () => {
     it('are the typed things, the things with a label and no type and the shapes; with their kind', () => {
-        const h = byIri(store.search());
+        const h = byIri(store.reads.search());
         expect(h.get('urn:x:two')).toMatchObject({ id: iriId('urn:x:two'), kind: 'instance', label: 'Two types', types: ['http://www.w3.org/ns/prov#Agent', 'urn:x:Robot'] });
         expect(h.get('urn:x:untyped')).toMatchObject({ kind: 'instance', label: 'Untyped', types: [] });
         expect(h.get('urn:k:S')).toMatchObject({ kind: 'valueSet', label: 'Scheme' });
@@ -62,7 +62,7 @@ describe('search: the things', () => {
     });
 
     it('property shapes: the id and the node shape of the shapes index, the label from sh:name or the path', () => {
-        const props = store.search().filter(h => h.kind === 'property');
+        const props = store.reads.search().filter(h => h.kind === 'property');
         expect(props.length).toBe(Object.keys(docOf(store).shapes.properties).length);
         for (const p of props) {
             const shape = docOf(store).shapes.properties[p.id];
@@ -73,13 +73,13 @@ describe('search: the things', () => {
     });
 
     it('labels: rdfs:label, skos:prefLabel, else the decoded name from the IRI; sorted by label', () => {
-        const r = store.search().filter(h => h.types.includes('urn:x:Robot'));
+        const r = store.reads.search().filter(h => h.types.includes('urn:x:Robot'));
         expect(r.map(h => h.label)).toEqual(['Naïve name', 'Two types']);
     });
 
     it('views: the views that place the thing, or the node shape of a property shape (viewsShowing of the read model)', () => {
         const doc = docOf(store);
-        for (const h of store.search()) expect(h.views, h.iri).toEqual(viewsShowing(doc, h.owner ?? h.id).map(v => v.id));
-        expect(store.search().some(h => h.views.length)).toBe(true);
+        for (const h of store.reads.search()) expect(h.views, h.iri).toEqual(viewsShowing(doc, h.owner ?? h.id).map(v => v.id));
+        expect(store.reads.search().some(h => h.views.length)).toBe(true);
     });
 });

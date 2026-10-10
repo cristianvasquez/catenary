@@ -40,7 +40,7 @@ export class CreateCardHandler extends OperationHandler implements CreateNodeOpe
             this.session.message('Unknown class. Reload the shapes.');
             return undefined;
         }
-        const label = this.session.store.newLabel('instance', { classIri });
+        const label = this.session.store.reads.newLabel('instance', { classIri });
         const at = op.location ?? { x: 0, y: 0 };
         await this.session.edit({ kind: 'createInstance', classIri, label, view: this.session.viewId, at: {
             x: at.x + model.DEFAULT_SIZE.width / 2, y: at.y + model.DEFAULT_SIZE.height / 2
@@ -62,7 +62,7 @@ export class CreateShapeHandler extends OperationHandler implements CreateNodeOp
     }
 
     async createCommand(op: CreateNodeOperation): Promise<Command | undefined> {
-        const label = this.session.store.newLabel('shape');
+        const label = this.session.store.reads.newLabel('shape');
         const at = op.location ?? { x: 0, y: 0 };
         await this.session.edit({ kind: 'createNodeShape', label, view: this.session.viewId, at: { x: at.x + 130, y: at.y + 40 } }, renameCreated(this.session.viewId));
         return undefined;
@@ -83,7 +83,7 @@ export class CreateValueSetHandler extends OperationHandler implements CreateNod
 
     async createCommand(op: CreateNodeOperation): Promise<Command | undefined> {
         const kind = op.args?.kind === 'collection' ? 'collection' : 'scheme';
-        const label = this.session.store.newLabel(kind);
+        const label = this.session.store.reads.newLabel(kind);
         const at = op.location ?? { x: 0, y: 0 };
         await this.session.edit({ kind: 'createValueSet', valueSet: kind, label, view: this.session.viewId, at: { x: at.x + 120, y: at.y + 40 } }, renameCreated(this.session.viewId));
         return undefined;
@@ -121,7 +121,7 @@ export class CreateGroupHandler extends OperationHandler implements CreateNodeOp
 
     async createCommand(op: CreateNodeOperation): Promise<Command | undefined> {
         const at = op.location ?? { x: 0, y: 0 };
-        const label = this.session.store.newLabel('group', { view: this.session.viewId });
+        const label = this.session.store.reads.newLabel('group', { view: this.session.viewId });
         await this.session.edit({ kind: 'createGroup', view: this.session.viewId, label, rect: { x: at.x, y: at.y, width: 600, height: 400 } }, renameCreated(this.session.viewId));
         return undefined;
     }

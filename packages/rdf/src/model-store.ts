@@ -10,27 +10,24 @@ import { filesOfElement } from './selection';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ActionTarget, AppearanceData, ChangeReason, Choices, CommandResult, DeletePlan, Derivation, Doc, EditCommand, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage,
-    ExplorerPath, ExplorerRow, FileContent, GestureInfo, ImportResult, MetamodelInfo, ModelQueries, ModelSelection, ModelSnapshot, NewLabelKind, Occurrence, OpenTarget,
-    OutlineNode, PREFIXES, Problem, RelationChoices, SearchHit, Selected, SelectionActions, SelectionLinks, ShapesModel, Showing, SnapshotChange, ValidationMode, View,
-    ViewFigures, ViewGesture, Violation, WorkspaceFiles, idIri, prefixesProblem, setPrefixes
+    ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
+    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
-import type { NamedNode, Quad, Term } from '@rdfjs/types';
+import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
 import { OxigraphStore, SerialQueue, isInside, portableRelative } from 'rdf-files';
 import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
-import { Placement, declaredPrefixes, decorateFileReferences, referencedFiles } from './files';
-import { GraphChange, ModelGraph, P, Patch, V, VALIDATION_GRAPH, isRdfsQuad, isVocabularyQuad } from './graph';
+import { Placement, decorateFileReferences, referencedFiles } from './files';
+import { GraphChange, ModelGraph, Patch, VALIDATION_GRAPH, isRdfsQuad, isVocabularyQuad } from './graph';
 import { History } from './history';
 import { elementId, elementTerm } from './ids';
-import { LinkChoices } from './link-choices';
+import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
 import { movedIds } from './moved-ids';
 import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
 import { gone } from './ops';
-import { OutlineSelection } from './outline';
 import { filesOfSubject, placeChanges, transfer } from './placement';
 import { Reconciler } from './reconciler';
 import { ImportCopies, Saver, Writer } from './saver';
@@ -39,10 +36,9 @@ import { Settings, createWorkspace } from './settings';
 import { withCount } from './shape-ops';
 import { Metamodel, buildVocabulary, emptyMetamodel } from './shapes';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
-import { rdf, termKey } from './terms';
+import { rdf } from './terms';
 import { TracedStore, tracer } from './trace';
-import { ShaclResult, violationsOf } from './validate';
-import { validationInput, validationTriples } from './validation-data';
+import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
 import { readView } from './view-read';
 
@@ -103,7 +99,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
-export class ModelStore implements ModelQueries {
+export class ModelStore {
     protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
@@ -112,13 +108,16 @@ export class ModelStore implements ModelQueries {
     protected loader?: Loader;
     protected saver?: Saver;
     protected readonly history = new History();
+    protected readonly validationData = (() => {
+        const store = this;
+        return new ValidationData({
+            get graph() { return store.graph; }, get settings() { return store.settings; },
+            get metamodel() { return store.metamodel; }, shapesIndex: () => this.shapesIndex()
+        }, () => this.validation.invalidate());
+    })();
     protected readonly validation = new ValidationRunner(
-        () => ({ graph: this.graph, input: () => this.validationInput(), violations: r => this.violationsOf(r),
-            stamp: () => `${this.settings?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
-    /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
-    protected readonly openViews = new Map<string, string>();
-    /** In the validation mode "views": the instances that the last run checked. */
-    protected validated?: number;
+        () => ({ graph: this.graph, input: () => this.validationData.validationInput(), violations: r => this.validationData.violationsOf(r),
+            stamp: () => this.validationData.stamp() }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
     /** Numeric projections of the shared events for existing snapshot clients. */
     get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
     get revision(): number { return this.graph.change.sequence; }
@@ -172,7 +171,7 @@ export class ModelStore implements ModelQueries {
     }
 
     /** Read host with live state. Shared caches stay keyed by the coordinator's graph events. */
-    protected readonly reads = (() => {
+    readonly reads = (() => {
         const store = this;
         return new PanelReads({
             get graph() { return store.graph; }, get metamodel() { return store.metamodel; },
@@ -249,111 +248,6 @@ export class ModelStore implements ModelQueries {
 
     protected applicabilityOf(view: View): TargetMatch[] { return applicabilityOf(this.graph, view); }
 
-    /** Data graph of the SHACL form for an instance, as N-Triples. Empty if the instance does not exist. */
-    formData(instanceId: string): string { return this.reads.formData(instanceId); }
-
-    /** One page of the rows of a key of the Model explorer; no key: the sections. Nothing when no model is open. */
-    explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage { return this.reads.explorerChildren(key, file, offset); }
-
-    /** The element rows whose name matches `text`, best first. */
-    explorerSearch(text: string, file?: string): ExplorerRow[] { return this.reads.explorerSearch(text, file); }
-
-    /** Paths to the rows of an element in the Model explorer (Reveal). */
-    explorerPaths(id: string, file?: string): ExplorerPath[] { return this.reads.explorerPaths(id, file); }
-
-    /** Labels of all views (view id → label), by SPARQL: the titles of the view editors (ADR 0007 step 5). */
-    viewLabels(): Record<string, string> { return this.reads.viewLabels(); }
-
-    /** A gesture of a view editor (ADR 0007 step 5): why each candidate target is not one, and the facts of its element. */
-    viewGesture(viewId: string, gesture: ViewGesture): GestureInfo { return this.reads.viewGesture(viewId, gesture); }
-
-    /** The Appearance panel of view `viewId` for the selected `ids`; undefined: no such view. */
-    appearance(viewId: string, ids: string[]): AppearanceData | undefined { return this.reads.appearance(viewId, ids); }
-
-    /** The views that show the selected element (one instance or relation) of a selection of `view`. */
-    occurrence(ids: string[], view?: string): Occurrence | undefined { return this.reads.occurrence(ids, view); }
-
-    /** The views that show an element, and the box of each. */
-    showing(id: string): Showing { return this.reads.showing(id); }
-
-    /** The Outline of a view (ADR 0007): groups, cards and shown relations by SPARQL on the view graph; `selection` marks nodes. */
-    outline(viewId: string, selection?: OutlineSelection): OutlineNode[] { return this.reads.outline(viewId, selection); }
-
-    /** Element ids of the rows under a node key of the Model explorer, at any depth. */
-    explorerElements(key: string, file?: string): string[] { return this.reads.explorerElements(key, file); }
-
-    explorerDrag(selection: ExplorerDrag): string[] { return this.reads.explorerDrag(selection); }
-
-    /** Model properties panel (ADR 0007): the data of an element (properties.ts); no id: the counts of the store. */
-    properties(id?: string): ElementProperties | undefined { return this.reads.properties(id); }
-
-    viewDescription(viewId: string): string | undefined { return this.reads.viewDescription(viewId); }
-
-    /** The Problems panel (ADR 0007): the results of the SHACL report graph, with the labels of their instances. */
-    problems(): Problem[] { return this.reads.problems(); }
-
-    /** Find Element: all things (search.ts, SPARQL). */
-    search(): SearchHit[] { return this.reads.search(); }
-
-    /**
-     * The Links panel data of the selected ids of `view` (SPARQL, see `selectionLinks` in queries.ts): the elements, their views and
-     * statements. Unknown ids give nothing.
-     */
-    links(ids: string[], view?: string): SelectionLinks { return this.reads.links(ids, view); }
-
-    /** The actions that apply to a target, and the facts to run them (actions.ts, spec/ui-manifest.hs §4). */
-    selectionActions(target: ActionTarget): SelectionActions { return this.reads.selectionActions(target); }
-
-    /** Resolve selection from shared RDF queries, without the Doc. */
-    selected(selection: ModelSelection): Selected { return this.reads.selected(selection); }
-
-    /** One stored view, from its view graph (view-read.ts). */
-    view(viewId: string, ids?: string[]): View | undefined { return this.reads.view(viewId, ids); }
-
-    /** The read model of the shapes graphs. */
-    shapes(): ShapesModel { return this.reads.shapes(); }
-
-    // The dialogs and pickers of the user actions (prompts.ts): the same rules for every caller.
-
-    deletePlan(ids: string[]): DeletePlan { return this.reads.deletePlan(ids); }
-
-    relationChoices(source: string, target: string): RelationChoices | undefined { return this.reads.relationChoices(source, target); }
-
-    neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined { return this.reads.neighborChoices(viewId, from, dir); }
-
-    shapeSourceChoices(viewId: string, from: string): Choices | undefined { return this.reads.shapeSourceChoices(viewId, from); }
-
-    shapeTargetChoices(viewId: string, from: string): Choices | undefined { return this.reads.shapeTargetChoices(viewId, from); }
-
-    /** The link picker (link-choices.ts): SPARQL scoped to the instance, its relation types, the view and the typed text. */
-    linkChoices(dir: 'out' | 'in', from: string, viewId: string, text?: string): LinkChoices { return this.reads.linkChoices(dir, from, viewId, text); }
-
-    /** `newLabel` counts the labels of the elements of a kind: only the instances with an "unnamed" label can take a new one. */
-    newLabel(kind: NewLabelKind, opts?: { classIri?: string; view?: string; base?: string }): string { return this.reads.newLabel(kind, opts); }
-
-    /** Predicates in use: the shapes, the metamodel, and the predicates of the statements of the instances (`knownPredicates`). */
-    knownPredicates(): { iri: string; where: string }[] { return this.reads.knownPredicates(); }
-
-    /** The classes of the shapes and the types of the instances: what a typed class name resolves to (`classIri`). */
-    knownClasses(): { iri: string; name?: string }[] { return this.reads.knownClasses(); }
-
-    /** Labels of the instances that are not members of the collection box `collection` of `view` (for "+ member"). */
-    memberOptions(viewId: string, collection: string): string[] { return this.reads.memberOptions(viewId, collection); }
-
-    /** The instances with the label or IRI `text`. */
-    instancesNamed(text: string): string[] { return this.reads.instancesNamed(text); }
-
-    elementRows(ids: string[], viewId?: string): ElementRow[] { return this.reads.elementRows(ids, viewId); }
-
-    /** The instances of `ids` without a card in any view, and the relations of `ids` without a placed edge in any view. */
-    unplaced(ids: string[]): string[] { return this.reads.unplaced(ids); }
-
-    /**
-     * What a file holds that Catenary edits, from its content. With views: the workspace that reads it, the open one when it has the
-     * file as a view file, else the nearest folder above with one workspace file.
-     */
-    async fileContent(file: string): Promise<FileContent> { return this.reads.fileContent(file); }
-
     /**
      * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
      * triple; no such triples: the triples with it as object. Most statements first.
@@ -361,12 +255,6 @@ export class ModelStore implements ModelQueries {
     filesOfElement(id: string): string[] {
         return filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
     }
-
-    /**
-     * Open in…: the presentations that show an element. Source: each file with statements of it, at its position in the file on disk
-     * (unsaved changes are not in it). Model: each of those files whose Model pane has a row of it. Canvas: each view that places it.
-     */
-    async openTargets(id: string): Promise<OpenTarget[]> { return this.reads.openTargets(id); }
 
     protected scopeOf(patch: Patch): ChangeScope {
         const views = new Set<string>(), elements = new Set<string>();
@@ -425,64 +313,8 @@ export class ModelStore implements ModelQueries {
     /** Validate the model now, without the delay after a change. */
     validate(): Promise<void> { return this.validation.now(); }
 
-    /**
-     * An editor (`client`) shows `viewId`, or (undefined) closed. In the validation mode "views", a change of the set of open views
-     * starts a validation.
-     */
     setOpenView(client: string, viewId: string | undefined): void {
-        const before = this.openViewIris().join('\n');
-        if (viewId) this.openViews.set(client, viewId); else this.openViews.delete(client);
-        if (this.settings?.validation === 'views' && this.openViewIris().join('\n') !== before) this.validation.invalidate();
-    }
-
-    /** The IRIs of the open views, sorted, without duplicates. */
-    protected openViewIris(): string[] {
-        return [...new Set([...this.openViews.values()].map(v => elementTerm(v)?.value).filter((v): v is string => !!v))].sort();
-    }
-
-    /**
-     * The elements on the open views (spec/manifest.hs §9 `validationFocus`), by termKey: the elements of placements, the subjects of
-     * placed relations, and the members of groups.
-     */
-    protected validationFocus(): Map<string, Term> {
-        const focus = new Map<string, Term>();
-        const add = (t: Term) => { if (t.termType === 'NamedNode') focus.set(termKey(t), t); };
-        for (const iri of this.openViewIris()) {
-            const g = rdf.namedNode(iri);
-            for (const q of this.graph.store.match(null, V.element, null, g)) add(q.object);
-            for (const q of this.graph.store.match(null, V.member, null, g)) add(q.object);
-            for (const q of this.graph.store.match(null, P.reifies, null, g)) if (q.object.termType === 'Quad') add(q.object.subject);
-        }
-        return focus;
-    }
-
-    /**
-     * The input of the validator by the validation mode (§9 validationInput; undefined: off): the data (validation-data.ts) with the SKOS
-     * projection, and all shapes graphs, own and imported. The validator gets plain quads; it reads nothing from the store.
-     */
-    protected validationInput(): { data: Quad[]; shapes: Quad[] } | undefined {
-        const mode = this.settings?.validation;
-        if (mode === 'off') return undefined;
-        const shapes = this.graph.shapesTriples();
-        if (mode !== 'views') {
-            this.validated = undefined;
-            return { data: validationInput((this.settings && validationTriples(this.graph, this.settings)) ?? this.graph.modelTriples(), shapes), shapes };
-        }
-        const focus = this.validationFocus(), keys = new Set(focus.keys());
-        const data = validationTriples(this.graph, this.settings!, keys) ?? [];
-        // Checked: an instance on an open view with statements in the data (not one that only imported files describe).
-        const subjects = new Set(data.map(q => termKey(q.subject)));
-        this.validated = [...focus].filter(([k, t]) => subjects.has(k) && this.graph.isInstance(t)).length;
-        return { data: validationInput(data, shapes, keys), shapes };
-    }
-
-    /** The violations of a run, with the element ids of the dataset after the run (a change during the run made it stale). */
-    protected violationsOf(results: ShaclResult[]): Violation[] {
-        const idx = this.shapesIndex();
-        return violationsOf(results, this.metamodel, iri => {
-            const t = rdf.namedNode(iri);
-            return this.graph.isInstance(t) ? elementId(t) : undefined;
-        }, t => idx.byTerm.get(termKey(t)));
+        this.validationData.setOpenView(client, viewId);
     }
 
     /** The last change (ModelSnapshot.change). */
@@ -500,7 +332,7 @@ export class ModelStore implements ModelQueries {
                 instances: this.cached('instances', () => instanceCount(this.graph)),
                 results: this.violations.length,
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
-                ...(this.settings?.validation === 'views' && this.validated !== undefined ? { validated: this.validated } : {})
+                ...(this.settings?.validation === 'views' && this.validationData.validated !== undefined ? { validated: this.validationData.validated } : {})
             },
             warnings: this.warnings,
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
@@ -579,8 +411,6 @@ export class ModelStore implements ModelQueries {
         return { ok: true, id: typeof v === 'string' ? v : undefined };
     }
 
-    prepareRdfPaste(text: string, mediaType?: string) { return this.reads.prepareRdfPaste(text, mediaType); }
-    copyAsRdf(viewId: string, ids: string[]) { return this.reads.copyAsRdf(viewId, ids); }
 
     undo(): CommandResult { return tracer.span('command', 'undo', () => this.replay('undo')); }
     redo(): CommandResult { return tracer.span('command', 'redo', () => this.replay('redo')); }
@@ -631,7 +461,7 @@ export class ModelStore implements ModelQueries {
         if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
         // The validation mode "views": a placement on an open view changes what validation checks.
         else if (this.settings?.validation === 'views') {
-            const open = new Set(this.openViewIris());
+            const open = new Set(this.validationData.openViewIris());
             if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
         }
     }
@@ -891,74 +721,15 @@ export class ModelStore implements ModelQueries {
      * (a note). All files or none. With copies, the workspace is read again once: no undo across it.
      */
     importFiles(sources: string[]): Promise<ImportResult> {
-        return this.serial(async (): Promise<ImportResult> => {
-            const ws = this.settings;
-            if (!ws) return { ok: false, error: 'No workspace is open.' };
-            if (!sources.length) return { ok: false, error: 'No file to import.' };
-            // Read all files first: a file that cannot be read imports nothing.
-            const sourcesRead = await readImportSources(sources, file => ws.knownFile(file));
-            if ('error' in sourcesRead) return { ok: false, error: sourcesRead.error };
-            const { reads } = sourcesRead;
-            const table = { ...PREFIXES }, added: string[] = [], skipped = new Set<string>();
-            for (const r of reads) {
-                for (const [prefix, ns] of Object.entries(declaredPrefixes(r.text, r.source))) {
-                    if (table[prefix] === ns) continue;
-                    if (!prefix || table[prefix] !== undefined || Object.values(table).includes(ns)) { skipped.add(prefix); continue; }
-                    table[prefix] = ns;
-                    added.push(prefix);
-                }
-            }
-            const names = reads.map(r => r.name).join(', ');
-            if (added.length && prefixesProblem(table)) return { ok: false, error: `${names}: not imported: ${prefixesProblem(table)}` };
-            const before = { prefixes: ws.prefixes, table: { ...PREFIXES }, imported: ws.importedGlobs };
-            // Files of the workspace: marked where they are. The write gives their blank nodes IRIs first (as Mark as Imported).
-            const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
-            if (own.length) {
-                if (this.saver!.dirty) {
-                    this.writer.commitNotes.push('before import mark');
-                    await this.writer.write();
-                }
-                const marked = ws.applySettings({ imported: [...before.imported, ...own] }, this.saver!.savedState());
-                if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
-            }
-            const note = () => {
-                if (skipped.size) this.note(`${names}: prefixes not added (the workspace has the name or the namespace with another value): ${[...skipped].map(p => `${p}:`).join(' ')}`);
-            };
-            if (added.length) { ws.prefixes = table; setPrefixes(table); }
-            const copies = reads.filter(r => !r.inPlace);
-            if (!copies.length) {
-                // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
-                if (added.length) { this.graph.invalidate(); this.rebuildMetamodel(); }
-                ws.syncShapesTarget();
-                this.writer.commitNotes.push(`import ${names}`);
-                this.changed('files');
-                note();
-                return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
-            }
-            const imported = new ImportCopies(this.folder, copies);
-            const { targets } = imported;
-            const undo = async (error: string): Promise<ImportResult> => {
-                await imported.undo();
-                ws.prefixes = before.prefixes;
-                setPrefixes(before.table);
-                ws.applySettings({ imported: before.imported }, this.saver!.savedState());
-                return { ok: false, error: `${names}: not imported: ${error}` };
-            };
-            try {
-                await imported.write();
-            } catch (e) {
-                return undo((e as Error).message);
-            }
-            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] }, this.saver!.savedState());
-            this.saver!.written.push(...targets.values());
-            this.writer.commitNotes.push(`import ${names}`);
-            const w = await this.writer.write();
-            if (!w.ok) return undo(w.error);
-            const opened = await this.doOpen(ws.path);
-            if (!opened.ok) return opened;
-            note();
-            return { ok: true, files: reads.map(r => r.inPlace ?? targets.get(r)!), prefixes: added };
-        });
+        return this.serial(() => importFiles(sources, {
+            settings: () => this.settings, readSources: readImportSources,
+            copies: (folder, reads) => new ImportCopies(folder, reads),
+            dirty: () => this.saver!.dirty, savedState: () => this.saver!.savedState(),
+            commitNote: note => this.writer.commitNotes.push(note), write: () => this.writer.write(),
+            written: files => this.saver!.written.push(...files), reopen: file => this.doOpen(file),
+            prefixesChanged: () => { this.graph.invalidate(); this.rebuildMetamodel(); },
+            note: text => this.note(text), changed: () => this.changed('files')
+        }));
     }
 
     /** Write the files that are not written yet (after a failed write), and commit them. Normally there is nothing to write. */
@@ -975,6 +746,4 @@ export class ModelStore implements ModelQueries {
     /** Notes of the writes, for the tests and the log. */
     readonly notes: string[] = [];
 
-    /** The shapes for the instance form (see `formShapes`), as N-Triples. */
-    shapesText(): string { return this.reads.shapesText(); }
 }

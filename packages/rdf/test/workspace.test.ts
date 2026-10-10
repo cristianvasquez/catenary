@@ -93,16 +93,19 @@ describe('sync modules', () => {
         expect(source).not.toMatch(/from 'fs'|existsSync|readDisk|readText|commitFiles|FolderWatcher|fs\./);
     });
 
-    it('the coordinator delegates every frontend query and contains no SPARQL text', () => {
-        const source = readFileSync(join(__dirname, '..', 'src', 'model-store.ts'), 'utf8');
-        expect(source).not.toMatch(/SELECT|CONSTRUCT|ASK|GRAPH |FILTER|WHERE \{/);
+    it('PanelReads implements every frontend query; the coordinator has no delegations or SPARQL text', () => {
+        const src = join(__dirname, '..', 'src');
+        const source = readFileSync(join(src, 'model-store.ts'), 'utf8');
+        const reads = readFileSync(join(src, 'panel-reads.ts'), 'utf8');
+        expect(source).not.toMatch(/SELECT|CONSTRUCT|ASK|GRAPH |FILTER|WHERE \{|this\.reads\./);
         for (const name of Object.keys(MODEL_QUERIES)) {
-            expect(source, name).toMatch(new RegExp(`^    (?:async )?${name}\\(.*return this\\.reads\\.${name}\\(`, 'm'));
+            expect(source, name).not.toMatch(new RegExp(`^    (?:async )?${name}\\(`, 'm'));
+            expect(reads, name).toMatch(new RegExp(`^    (?:async )?${name}\\(`, 'm'));
         }
     });
 
     it('no sync module imports another; all read the settings (ModelStore wires them)', () => {
-        const modules = ['loader', 'reconciler', 'placement', 'saver', 'validation-data'];
+        const modules = ['loader', 'reconciler', 'placement', 'saver', 'validation-data', 'import'];
         const src = join(__dirname, '..', 'src');
         expect(readdirSync(src)).toEqual(expect.arrayContaining([...modules, 'settings'].map(m => `${m}.ts`)));
         for (const m of [...modules, 'settings']) {

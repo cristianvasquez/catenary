@@ -140,7 +140,7 @@ export class CliEndpoint implements BackendApplicationContribution {
             }
             case 'model': {
                 // The snapshot, and for inspection the view labels and the report of the backend (one view: `rpc view <id>`).
-                const s = { ...this.store.snapshot(), views: this.store.viewLabels(), violations: this.store.violations };
+                const s = { ...this.store.snapshot(), views: this.store.reads.viewLabels(), violations: this.store.violations };
                 const value = at(s, params.path as string | undefined);
                 if (value === undefined) throw new Error(`no value at "${params.path}"`);
                 return params.keys && value && typeof value === 'object' ? Object.keys(value) : value;

@@ -1,4 +1,4 @@
-// RPC service for one frontend connection. Forwards store changes to the client, and each read query (MODEL_QUERIES) to the store.
+// RPC service for one frontend connection. Forwards store changes to the client, and each read query (MODEL_QUERIES) to PanelReads.
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
@@ -82,7 +82,7 @@ export class ModelServiceImpl implements ModelService, Disposable {
     /** The views of the model by IRI. A view id is the encoded IRI (@catenary/model iriId): the IRI is the identity in a document. */
     protected views(): Map<string, ExportView> {
         const views = new Map<string, ExportView>();
-        for (const [id, label] of Object.entries(this.store.viewLabels())) {
+        for (const [id, label] of Object.entries(this.store.reads.viewLabels())) {
             const iri = idIri(id);
             if (iri) views.set(iri, { id, label });
         }
@@ -94,7 +94,7 @@ export class ModelServiceImpl implements ModelService, Disposable {
         for (const name of Object.keys(MODEL_QUERIES) as (keyof ModelQueries)[]) {
             Object.defineProperty(ModelServiceImpl.prototype, name, {
                 value(this: ModelServiceImpl, ...args: unknown[]) {
-                    return Promise.resolve(tracer.span('rpc', name, () => (this.store[name] as (...a: unknown[]) => unknown).apply(this.store, args)));
+                    return Promise.resolve(tracer.span('rpc', name, () => (this.store.reads[name] as (...a: unknown[]) => unknown).apply(this.store.reads, args)));
                 },
                 writable: true,
                 configurable: true

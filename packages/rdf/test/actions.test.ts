@@ -24,8 +24,8 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
-const ids = (t: ActionTarget) => store.selectionActions(t).actions.map(a => a.id);
-const state = (t: ActionTarget, id: string) => store.selectionActions(t).actions.find(a => a.id === id);
+const ids = (t: ActionTarget) => store.reads.selectionActions(t).actions.map(a => a.id);
+const state = (t: ActionTarget, id: string) => store.reads.selectionActions(t).actions.find(a => a.id === id);
 
 describe('Action model (spec/ui-manifest.hs §4)', () => {
     it('an element selected outside a canvas: element actions, no view actions (Del has no action)', () => {
@@ -38,7 +38,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
         expect(a).not.toContain('catenary.removeFromView');
         expect(a).not.toContain('catenary.showAsEdge');
         // The same element selected on the canvas, by its placement: the view actions too, and the element actions are the same.
-        const onCanvas = store.selectionActions({ view: view.id, ids: [card.id] });
+        const onCanvas = store.reads.selectionActions({ view: view.id, ids: [card.id] });
         expect(onCanvas.items[0]).toMatchObject({ id: card.id, element, placed: true });
         const b = onCanvas.actions.map(x => x.id);
         expect(b).toContain('catenary.removeFromView');
@@ -48,7 +48,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
     it('a view as the item (an empty canvas selection, viewAsItem): Open in… has its view file and its canvas', async () => {
         const view = Object.values(docOf(store).views)[0];
         expect(state({ ids: [view.id], activeView: view.id }, 'catenary.openIn')).toEqual({ id: 'catenary.openIn', enabled: true });
-        const targets = await store.openTargets(view.id);
+        const targets = await store.reads.openTargets(view.id);
         expect(targets.filter(t => t.presentation === 'Source').map(t => t.presentation === 'Source' && t.path)).toEqual([store.files.views.find(v => v.view === view.id)!.path]);
         expect(targets.filter(t => t.presentation === 'Canvas')).toEqual([{ presentation: 'Canvas', view: view.id, label: view.label }]);
     });
@@ -58,7 +58,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
         const view = Object.values(doc.views).find(v => v.boxes.some(b => b.kind === 'card' && doc.instances[b.element]))!;
         const card = view.boxes.find(b => b.kind === 'card' && doc.instances[b.element])!;
         const element = card.kind === 'card' ? card.element : '';
-        const targets = await store.openTargets(element);
+        const targets = await store.reads.openTargets(element);
         const source = targets.find(t => t.presentation === 'Source')!;
         expect(source).toMatchObject({ presentation: 'Source', path: join(dir, 'data.ttl'), line: expect.any(Number), column: 1 });
         expect(targets).toContainEqual({ presentation: 'Model', path: join(dir, 'data.ttl') });
@@ -67,7 +67,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
 
     it('Open in → Source: a relation at its object, a property shape at its own entry, not at its node shape', async () => {
         const doc = docOf(store);
-        const at = async (id: string) => (await store.openTargets(id)).find(t => t.presentation === 'Source') as { path: string; line: number; column: number };
+        const at = async (id: string) => (await store.reads.openTargets(id)).find(t => t.presentation === 'Source') as { path: string; line: number; column: number };
         const textAt = (t: { path: string; line: number; column: number }) => readFileSync(t.path, 'utf8').split('\n')[t.line - 1].slice(t.column - 1);
         const relation = Object.values(doc.relations)[0];
         const object = doc.instances[relation.object].uri, text = textAt(await at(relation.id));
@@ -97,7 +97,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
         const view = Object.values(doc.views)[0];
         for (const id of [shape.id, property.id, relation.id, view.id, Object.keys(doc.instances)[0]]) {
             expect(state({ ids: [id] }, 'catenary.openIn')).toEqual({ id: 'catenary.openIn', enabled: true });
-            const source = (await store.openTargets(id)).find(t => t.presentation === 'Source');
+            const source = (await store.reads.openTargets(id)).find(t => t.presentation === 'Source');
             expect(source).toMatchObject({ line: expect.any(Number) });
         }
         expect(ids({ ids: [shape.id] })).toContain('catenary.rename');
@@ -125,7 +125,7 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
         const doc = docOf(store);
         const both = Object.keys(doc.shapes.nodeShapes).find(id => doc.instances[id]);
         if (!both) return;
-        const items = store.selectionActions({ ids: [both] }).items;
+        const items = store.reads.selectionActions({ ids: [both] }).items;
         expect(items[0].kinds).toEqual(expect.arrayContaining(['shape', 'instance']));
     });
 });
