@@ -134,11 +134,14 @@ export class ModelGraph {
 
     constructor(readonly store: QuadStore) {}
 
-    /** A predicate or a class of an RDFS rule of the model graph: its label and comment are in the metamodel. */
+    /**
+     * A predicate or a class of an RDFS rule of the model graph: its label and comment are in the metamodel. A written subclass
+     * counts too: the rules expand to it.
+     */
     protected inRdfsRule(t: Term): boolean {
         if (t.termType !== 'NamedNode') return false;
-        const [domain, range] = [rdf.namedNode(NS.rdfs + 'domain'), rdf.namedNode(NS.rdfs + 'range')];
-        return [domain, range].some(p => this.store.match(t as NamedNode, p, null, this.model).length > 0 || this.store.match(null, p, t as NamedNode, this.model).length > 0);
+        return ['domain', 'range', 'subClassOf'].map(p => rdf.namedNode(NS.rdfs + p))
+            .some(p => this.store.match(t as NamedNode, p, null, this.model).length > 0 || this.store.match(null, p, t as NamedNode, this.model).length > 0);
     }
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {

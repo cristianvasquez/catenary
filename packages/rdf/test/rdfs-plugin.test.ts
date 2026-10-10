@@ -168,5 +168,7 @@ describe('ModelGraph.shapesRevision', () => {
         expect(changed()).toBe(false);
         g.add(n('Employee'), p('subClassOf'), n('Person'));
         expect(changed()).toBe(true);
+        g.add(n('Employee'), p('label'), rdf.literal('Employee'));
+        expect(changed()).toBe(true);
     });
 });
