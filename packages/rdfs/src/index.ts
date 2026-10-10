@@ -1,4 +1,5 @@
-// RDFS rules: the Classes section of the Model explorer (explorer.ts) and the domain and range providers (schema.ts).
+// RDFS rules: the Classes section of the Model explorer (explorer.ts) and the palette, links and fields providers (domain-range.ts).
 
 export { rdfsExplorer } from './explorer';
-export { rdfsRules, rdfsSchema } from './schema';
+export { rdfsFields, rdfsLinks, rdfsPalette, rdfsRules } from './domain-range';
+export type { RdfsRange, RdfsRule, RdfsRules } from './domain-range';

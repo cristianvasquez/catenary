@@ -31,7 +31,10 @@
   ],
   "dependencies": {
     "@catenary/explorer": "workspace:*",
-    "@catenary/query": "workspace:*"
+    "@catenary/query": "workspace:*",
+    "@catenary/palette": "workspace:*",
+    "@catenary/links": "workspace:*",
+    "@catenary/fields": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b",

@@ -1,7 +1,9 @@
-// Metamodel: palette classes, fields and relation types, as JSON. Built from SHACL shapes by @catenary/rdf, with the schema rules of
-// the schema providers (RDFS) merged in (mergeSchema).
+// Metamodel: palette classes, fields and relation types, as JSON. Merged from what the vocabulary plugins (SHACL, RDFS) give the
+// palette, links and fields contracts (mergeContributions); @catenary/rdf runs the plugins.
 
-import type { Schema } from '@catenary/schema';
+import type { FieldRule } from '@catenary/fields';
+import type { LinkRule } from '@catenary/links';
+import type { PaletteClass } from '@catenary/palette';
 import { NS, TermJSON, localName } from './terms';
 import { compactParts, shortIri } from './shapes-doc';
 
@@ -15,7 +17,7 @@ export interface FieldDef {
     minCount?: number;
     maxCount?: number;
     order?: number;
-    /** The schema provider of the field (`rdfs`). None: the shapes. */
+    /** The plugin of the field (`rdfs`). None: the shapes (SHAPES_SOURCE). */
     source?: string;
 }
 
@@ -30,7 +32,7 @@ export interface RelationDef {
     minCount?: number;
     maxCount?: number;
     order?: number;
-    /** The schema provider of the relation (`rdfs`). None: the shapes. */
+    /** The plugin of the relation (`rdfs`). None: the shapes (SHAPES_SOURCE). */
     source?: string;
 }
 
@@ -86,54 +88,70 @@ export function byOrderThenName(a: { order?: number; name: string }, b: { order?
     return (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name);
 }
 
+/** The plugin whose fields and links are its own shapes: the form shows its shapes, not form shapes of the metamodel. No `source`. */
+export const SHAPES_SOURCE = 'shacl';
+
+/** What one vocabulary plugin gave the palette, links and fields contracts. */
+export interface PluginContributions {
+    id: string;
+    classes?: PaletteClass[];
+    links?: LinkRule[];
+    fields?: FieldRule[];
+}
+
 /**
- * The metamodel with the rules of a schema provider (`source`) added. The shapes win: a rule for a predicate that the shapes already
- * describe on its class adds nothing. A class that only the rules know is added after the classes of the shapes, ordered by name.
- * A class range gives a relation. Literal ranges of one predicate give one field (a datatype only when all ranges have the same one).
- * Any value gives a field without a datatype and a relation to any resource (ANY_RESOURCE).
+ * The metamodel of the plugins, in precedence order (SHACL first). Classes: the first plugin that gives a class wins; the classes of a
+ * plugin go after those of the plugins before it, by order, then name. Links and fields: for a class and a predicate, the first plugin
+ * that gives a link or a field wins. A field of rdfs:label makes the label editable (`labelInShape`). A link without a target admits
+ * any resource (ANY_RESOURCE). A value set without values: the concepts of the scheme, from `vocabulary`.
  */
-export function mergeSchema<T extends Classes>(meta: T, schema: Schema, source: string): T {
-    if (!schema.rules.length) return meta;
-    const byIri = new Map(meta.classes.map(c => [c.iri, c]));
-    const shaped = new Map(meta.classes.map(c => [c.iri, new Set([...c.fields, ...c.relations].map(x => x.path))]));
-    const touched = new Map<string, ClassDef>(), added: ClassDef[] = [];
-    const datatypes = new Map<string, Set<string | undefined>>();
-    for (const rule of schema.rules) {
-        if (shaped.get(rule.domain)?.has(rule.predicate)) continue;
-        let def = touched.get(rule.domain);
-        if (!def) {
-            const own = byIri.get(rule.domain);
-            const info = schema.classes[rule.domain];
-            def = own ? { ...own, fields: [...own.fields], relations: [...own.relations] }
-                : { iri: rule.domain, name: info?.name ?? shortIri(rule.domain), ...(info?.description ? { description: info.description } : {}),
-                    shapes: [], fields: [], relations: [], unsupported: [], color: '', labelInShape: false };
-            if (!own) added.push(def);
-            touched.set(rule.domain, def);
+export function mergeContributions(plugins: readonly PluginContributions[], vocabulary: Pick<Classes, 'schemes' | 'concepts'> = {}): Classes {
+    const classes: ClassDef[] = [], byIri = new Map<string, ClassDef>();
+    const owned = new Set<string>();
+    for (const plugin of plugins) {
+        const block: ClassDef[] = [];
+        for (const c of plugin.classes ?? []) {
+            if (byIri.has(c.iri) || block.some(b => b.iri === c.iri)) continue;
+            block.push({
+                iri: c.iri, name: c.name ?? shortIri(c.iri), ...(c.description !== undefined ? { description: c.description } : {}),
+                shapes: c.sources ?? [], fields: [], relations: [], unsupported: c.notes ?? [], color: '', labelInShape: false,
+                ...(c.order !== undefined ? { order: c.order } : {})
+            });
         }
-        const common = { path: rule.predicate, name: rule.name ?? localName(rule.predicate), ...(rule.description ? { description: rule.description } : {}), source };
-        if (rule.range.kind !== 'literal') {
-            const targetClass = rule.range.kind === 'class' ? rule.range.iri : ANY_RESOURCE;
-            if (!def.relations.some(r => r.path === rule.predicate && r.targetClass === targetClass)) def.relations.push({ ...common, targetClass });
-            if (rule.range.kind === 'class') continue;
+        block.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+        for (const c of block) { classes.push(c); byIri.set(c.iri, c); }
+
+        const source = plugin.id === SHAPES_SOURCE ? {} : { source: plugin.id };
+        const claimed = new Set<string>();
+        const target = (rule: { domain: string; predicate: string }) => {
+            const k = rule.domain + ' ' + rule.predicate;
+            if (owned.has(k)) return undefined;
+            claimed.add(k);
+            return byIri.get(rule.domain);
+        };
+        const common = (r: FieldRule | LinkRule) => ({
+            path: r.predicate, name: r.name ?? localName(r.predicate), description: r.description, minCount: r.minCount, maxCount: r.maxCount, order: r.order, ...source
+        });
+        for (const f of plugin.fields ?? []) {
+            const cls = target(f);
+            if (!cls) continue;
+            if (f.predicate === NS.rdfs + 'label') cls.labelInShape = true;
+            else cls.fields.push({ ...common(f), datatype: f.datatype, iri: f.iri ?? false, in: f.in });
         }
-        const key = rule.domain + ' ' + rule.predicate;
-        const seen = datatypes.get(key) ?? new Set();
-        const given = rule.range.kind === 'literal' ? rule.range.datatype : undefined;
-        seen.add(given);
-        datatypes.set(key, seen);
-        const datatype = seen.size === 1 ? given : undefined;
-        const field = def.fields.find(f => f.path === rule.predicate && f.source === source);
-        if (field) { if (datatype === undefined) delete field.datatype; }
-        else def.fields.push({ ...common, ...(datatype ? { datatype } : {}), iri: false });
+        for (const l of plugin.links ?? []) {
+            const cls = target(l);
+            if (!cls) continue;
+            const values = l.valueSet && (l.valueSet.values ?? (vocabulary.concepts ?? []).filter(c => c.schemes.includes(l.valueSet!.iri)).map(c => c.iri));
+            cls.relations.push({ ...common(l), targetClass: l.target ?? ANY_RESOURCE, ...(l.valueSet ? { valueSet: l.valueSet.iri, values } : {}) });
+        }
+        for (const k of claimed) owned.add(k);
     }
-    for (const def of touched.values()) {
-        def.fields.sort(byOrderThenName);
-        def.relations.sort(byOrderThenName);
+    for (const c of classes) {
+        c.fields.sort(byOrderThenName);
+        c.relations.sort(byOrderThenName);
     }
-    added.sort((a, b) => a.name.localeCompare(b.name) || a.iri.localeCompare(b.iri));
-    const n = meta.classes.length;
-    added.forEach((c, i) => { c.color = CLASS_COLORS[(n + i) % CLASS_COLORS.length]; });
-    return { ...meta, classes: [...meta.classes.map(c => touched.get(c.iri) ?? c), ...added] };
+    classes.forEach((c, i) => { c.color = CLASS_COLORS[i % CLASS_COLORS.length]; });
+    return { classes, ...vocabulary };
 }
 
 // ---- Queries used by the UI and by the operations ----
@@ -156,15 +174,15 @@ export function primaryClass(meta: Classes, types: string[]): ClassDef | undefin
     return undefined;
 }
 
-/** The class ranges of the schema rules (not the shapes) of an instance with `types`: the classes of its link candidates. */
-export function schemaRanges(meta: Classes, types: string[]): string[] {
+/** The class ranges of the links of the plugins other than the shapes (RDFS) of an instance with `types`: the classes of its link candidates. */
+export function pluginRanges(meta: Classes, types: string[]): string[] {
     return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source && r.targetClass !== ANY_RESOURCE).map(r => r.targetClass)))].sort();
 }
 
 /** The class of the views (each view graph has `<view> a view:View`). */
 export const VIEW_CLASS = NS.view + 'View';
 
-/** Relation types the metamodel (shapes and schema rules) permits from an instance with `from` types to one with `to` types (and IRI `toIri`: see RelationDef.values). */
+/** Relation types the metamodel (shapes and plugin rules) permits from an instance with `from` types to one with `to` types (and IRI `toIri`: see RelationDef.values). */
 export function permittedRelations(meta: Classes, from: string[], to: string[], toIri?: string): RelationDef[] {
     const result: RelationDef[] = [];
     const seen = new Set<string>();

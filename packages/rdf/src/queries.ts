@@ -3,7 +3,7 @@ import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shac
 
 import {
     AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, elementLabel, elementOfId, findRelation, formPredicates, kindOf,
-    ViewProperties, predicateName, primaryClass, schemaRanges, shortIri
+    ViewProperties, predicateName, primaryClass, pluginRanges, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, cmp, labelFromIri } from './graph';
@@ -23,7 +23,7 @@ export const FORM_CANDIDATE_LIMIT = 200;
 
 /**
  * The SHACL form data as N-Triples: the thing's statements and its link candidates. Empty: not a thing. `meta`: the class ranges of
- * its schema rules (schemaRanges) also give candidates.
+ * the class ranges of its plugin links (pluginRanges) also give candidates.
  */
 export function formData(g: ModelGraph, instance: NamedNode, meta?: Classes): string {
     const own = formStatements(g, instance);
@@ -39,7 +39,7 @@ export function formStatements(g: ModelGraph, instance: NamedNode): Quad[] | und
 }
 
 /**
- * Form candidates: things of each sh:class range or its subclasses, and of each class range of the schema rules of the thing's
+ * Form candidates: things of each sh:class range or its subclasses, and of each class range of the plugin links of the thing's
  * classes (`meta`), with types and shared display labels.
  * Shape paths include logical constraints. Each class contributes at most FORM_CANDIDATE_LIMIT candidates, sorted by label.
  * The selected thing is not a candidate. The report graph contributes no data.
@@ -56,7 +56,7 @@ export function formCandidates(g: ModelGraph, instance: NamedNode, meta?: Classe
         OPTIONAL { ?sub rdfs:subClassOf+ ?c }
     }`) : [];
     const classes = [...new Set([...found.flatMap(q => q.predicate.value === NS.sh + 'class' ? [q.object.value] : [q.subject.value]),
-        ...(meta ? schemaRanges(meta, head.types) : [])])];
+        ...(meta ? pluginRanges(meta, head.types) : [])])];
     if (!classes.length) return [];
     const candidates = construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
         VALUES ?type { ${classes.map(iriText).join(' ')} }

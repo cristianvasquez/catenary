@@ -1,0 +1,18 @@
+{
+  "name": "@catenary/palette",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The palette provider contract: the classes that a vocabulary plugin gives the palette and the class picker.",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@catenary/query": "workspace:*"
+  }
+}

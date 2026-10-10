@@ -27,7 +27,7 @@ describe('reconnectProblem', () => {
 
     it('refuses a loop, a type the shapes do not permit, a duplicate and a missing instance', () => {
         expect(reconnectProblem(meta, doc, r, 'target', 'alice')).toMatch(/itself/);
-        expect(reconnectProblem(meta, doc, r, 'target', 'dune')).toMatch(/does not permit/);
+        expect(reconnectProblem(meta, doc, r, 'target', 'dune')).toMatch(/rule permits this relation/);
         expect(reconnectProblem(meta, doc, r, 'target', 'carol')).toMatch(/exists already/);
         expect(reconnectProblem(meta, doc, r, 'target', 'nobody')).toMatch(/two instances/);
     });

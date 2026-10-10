@@ -1,8 +1,8 @@
 {
-  "name": "@catenary/schema",
+  "name": "@catenary/links",
   "version": "0.1.0",
   "private": true,
-  "description": "The schema provider contract: a vocabulary package gives schema rules (domain, predicate, range) that join the metamodel.",
+  "description": "The links provider contract: the links (class, predicate, target class) that a vocabulary plugin gives the link picker and the canvas.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [

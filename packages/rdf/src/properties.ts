@@ -5,7 +5,7 @@ import { shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import {
     Classes, ElementProperties, InstanceProperties, NS, PropertyShapeProperties, RelationEnd, ResultRow, TermJSON,
-    lockedKey, schemaForms, searchKind, termKey as jsonKey, termToJSON
+    lockedKey, pluginForms, searchKind, termKey as jsonKey, termToJSON
 } from '@catenary/model';
 import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -77,8 +77,8 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
     const shapeTerms = matches.map(m => m.shape).filter(s => shapeIds.has(s));
     const shapeNames = labels(g, shapeTerms);
     const shapes = shapeTerms.map(s => ({ id: shapeIds.get(s)!, uri: s, label: shapeNames.get(s)!, reasons: matches.find(m => m.shape === s)!.reasons, predicates: shapePredicates(g.store, shapeQueryScope(g).shapes, s) })).sort((a, b) => a.label.localeCompare(b.label));
-    // The forms of the schema rules (RDFS domain and range) of its classes, after the shapes.
-    const schema = schemaForms(ctx.meta, end.types).map(f => ({ id: f.shape, uri: f.shape, label: `${f.cls.name} (${f.source.toUpperCase()})`, predicates: f.predicates }));
+    // The forms of the plugins other than the shapes (RDFS) for its classes, after the shapes.
+    const forms = pluginForms(ctx.meta, end.types).map(f => ({ id: f.shape, uri: f.shape, label: `${f.cls.name} (${f.source.toUpperCase()})`, predicates: f.predicates }));
     const candidates = rdf.dataset(formCandidates(g, t, ctx.meta)).toString().split('\n').filter(Boolean).sort().join('\n');
     const file = ctx.fileOf(t);
     const locked: string[] = [], importedFiles = new Set<string>();
@@ -90,7 +90,7 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
         if (v) locked.push(lockedKey(q.predicate.value, v));
     }
     return {
-        kind: 'instance', ...end, fields, ...(file ? { file } : {}), targets, shapes, ...(schema.length ? { schema } : {}),
+        kind: 'instance', ...end, fields, ...(file ? { file } : {}), targets, shapes, ...(forms.length ? { pluginForms: forms } : {}),
         ...(locked.length ? { locked: locked.sort(cmp), importedFiles: [...importedFiles].sort(cmp) } : {}),
         results: results(ctx, `VALUES ?f { ${iri(t.value)} } ?r sh:focusNode ?f .`), candidates
     };

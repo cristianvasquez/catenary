@@ -53,11 +53,11 @@ const RANGE_TERMS: Record<Range['kind'], string | undefined> = {
 
 // ------------------------------------------------------------------ widget
 
-/** A form of an instance: an applicable node shape, or the form shape of its schema rules (RDFS). */
+/** A form of an instance: an applicable node shape, or the form shape of its plugin rules (RDFS). */
 type FormSection = { id: string; uri: string; label: string; predicates?: string[] };
 
-/** The forms of an instance: its node shapes, then its schema-rule forms. */
-const formSections = (inst: InstanceProperties): FormSection[] => [...inst.shapes, ...inst.schema ?? []];
+/** The forms of an instance: its node shapes, then its plugin forms. */
+const formSections = (inst: InstanceProperties): FormSection[] => [...inst.shapes, ...inst.pluginForms ?? []];
 
 @injectable()
 export class ModelPropertiesWidget extends ElementPanel implements PropertyViewContentWidget {
@@ -272,7 +272,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
 
     // ------------------------------------------------------------ instance
 
-    /** The SHACL form for the statements of an instance that one of its shapes, or its schema rules, describe. */
+    /** The SHACL form for the statements of an instance that one of its shapes, or a plugin form, describes. */
     protected descriptionForm(inst: InstanceProperties, shape: FormSection): React.ReactNode {
         const shapes = this.model.shapesText;
         if (shapes === undefined) return <div className='catenary-help'>Loading shapes…</div>;
@@ -401,7 +401,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 <Row label='From' inline><Link label={s.label} onClick={() => this.editors.show(s.id)} /></Row>
                 <Row label='Predicate' inline><code className='catenary-iri' title={r.predicate}>{compactIri(r.predicate)}</code></Row>
                 <Row label='To' inline><Link label={o.label} onClick={() => this.editors.show(o.id)} /></Row>
-                {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> The schema does not declare this relation for these classes.</div>}
+                {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> No shape or RDFS rule declares this relation for these classes.</div>}
             </Section>
         </>;
     }

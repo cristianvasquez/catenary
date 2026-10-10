@@ -26,7 +26,7 @@ import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
-import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, cmp, isSchemaQuad, isVocabularyQuad } from './graph';
+import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
 import { History, OriginChange } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
@@ -35,8 +35,8 @@ import { readView, viewLabels } from './view-read';
 import { IndexedStore, LAYOUT_PREDICATES, readNotations, storeIndex } from './notations';
 import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, instanceLabels, readWarnings, scopedDoc } from './scoped-doc';
 import { movedIds } from './moved-ids';
-import { withSchema } from './schema';
-import { Metamodel, emptyMetamodel, formShapes, metamodelFromQuads } from './shapes';
+import { authoringMetamodel } from './authoring';
+import { Metamodel, buildVocabulary, emptyMetamodel, formShapes } from './shapes';
 import { withCount } from './shape-ops';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
 import { skolemize } from './skolem';
@@ -641,9 +641,9 @@ export class ModelStore implements ModelQueries {
                 continue;
             }
             layout = false;
-            // A concept scheme, concept or collection of the data file: the value set cards and the metamodel change too. An RDFS schema
+            // A concept scheme, concept or collection of the data file: the value set cards and the metamodel change too. An RDFS rule
             // statement changes the metamodel.
-            if (isVocabularyQuad(q) || isSchemaQuad(q)) shapes = true;
+            if (isVocabularyQuad(q) || isRdfsQuad(q)) shapes = true;
             for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') elements.add(elementId(t as NamedNode));
         }
         return { views: [...views], elements: [...elements], shapes, layout: layout && patch.length > 0 };
@@ -1113,15 +1113,17 @@ export class ModelStore implements ModelQueries {
         this.changed(reason);
     }
 
-    /** The metamodel from the shapes graphs, the SKOS vocabulary of the model graph and the schema rules of all graphs. */
+    /**
+     * The metamodel: the palette classes, links and fields of the plugins (SHACL on the shapes graphs, RDFS on all files), with the SKOS
+     * vocabulary of the shapes graphs and of the model graph. `dataset`: the shapes and the vocabulary, for validation and the form.
+     */
     protected rebuildMetamodel(): void {
         const shapes = this.graph.shapesTriples();
         // The vocabulary (concept schemes, concepts) is part of the metamodel: the targets of scheme properties.
         const vocabulary = this.graph.vocabularyQuads().map(q => rdf.quad(q.subject, q.predicate, q.object));
         const sources = this.ws?.shapeSources() ?? [];
-        const base = shapes.length || vocabulary.length ? metamodelFromQuads([...shapes, ...vocabulary], sources.join(', ')) : emptyMetamodel();
-        // The rules of the schema providers (RDFS domain and range): a suggestion for the editor. Not in `dataset`: validation does not use them.
-        this.metamodel = withSchema(this.graph, base);
+        const dataset = rdf.dataset([...shapes, ...vocabulary]);
+        this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset)), source: sources.join(', ') || undefined, dataset };
         this.shapesVersion++;
     }
 

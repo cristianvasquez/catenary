@@ -24,7 +24,13 @@
       "path": "../explorer"
     },
     {
-      "path": "../schema"
+      "path": "../palette"
+    },
+    {
+      "path": "../links"
+    },
+    {
+      "path": "../fields"
     },
     {
       "path": "../shacl"

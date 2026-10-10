@@ -42,19 +42,21 @@ The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in works
 
 ## Packages
 
-Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/explorer`, `@catenary/schema` and `@catenary/shacl/common`. `@catenary/shacl` imports only `@catenary/query` and `@catenary/explorer`. `@catenary/rdfs` imports only `@catenary/query`, `@catenary/explorer` and `@catenary/schema`. `@catenary/explorer` and `@catenary/schema` import only `@catenary/query`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/rdfs`, `@catenary/query`, `@catenary/explorer`, `@catenary/schema`, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
+Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary/model` imports `@catenary/explorer`, `@catenary/palette`, `@catenary/links`, `@catenary/fields` and `@catenary/shacl/common`. `@catenary/shacl` and `@catenary/rdfs` import only the contracts: `@catenary/query`, `@catenary/explorer`, `@catenary/palette`, `@catenary/links` and `@catenary/fields`. Each contract imports only `@catenary/query`. `@catenary/rdf` imports `@catenary/shacl/backend`, `@catenary/rdfs`, the contracts, `@catenary/model`, `rdf-files` and `rdf-serialization`. `rdf-files` imports `rdf-serialization`. `scripts/check-boundaries.mjs` rejects other imports.
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
 | `packages/query` (`@catenary/query`) | The query port that a host gives to a vocabulary package: SPARQL SELECT, graph patterns, labels. The namespaces and the IRI escaper of the queries. | None. |
-| `packages/explorer` (`@catenary/explorer`) | The Model explorer plugin contract: rows, paths, the explorer port. | `@catenary/query`. |
-| `packages/schema` (`@catenary/schema`) | The schema provider contract: schema rules (domain, predicate, range) that join the metamodel. | `@catenary/query`. |
-| `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules, notation assets and the Shapes section of the Model explorer. | `@catenary/query`, `@catenary/explorer`. Hosts supply query ports and graph identities. |
-| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. The domain and range providers: schema rules from `rdfs:domain` and `rdfs:range`. | `@catenary/query`, `@catenary/explorer`, `@catenary/schema`. |
-| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/explorer`, `@catenary/schema`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
+| `packages/explorer` (`@catenary/explorer`) | The contract of the Model explorer: sections, rows, paths, the explorer port. | `@catenary/query`. |
+| `packages/palette` (`@catenary/palette`) | The contract of the palette and the class picker: classes, with name, description and order. | `@catenary/query`. |
+| `packages/links` (`@catenary/links`) | The contract of the link picker and of drawn and reconnected edges: links (class, predicate, target class, cardinality). | `@catenary/query`. |
+| `packages/fields` (`@catenary/fields`) | The contract of the Properties form and the card fields: fields (class, predicate, datatype or values, cardinality). | `@catenary/query`. |
+| `packages/shacl` (`@catenary/shacl`) | The SHACL plugin: the Shapes section of the Model explorer; the palette classes, links and fields of the shapes. Also SHACL target types, applicability queries, form predicates, connection rules and notation assets. | The contracts. Hosts supply query ports and graph identities. |
+| `packages/rdfs` (`@catenary/rdfs`) | The RDFS plugin: the Classes section of the Model explorer (classes, subclasses and instances as written); the palette classes, links and fields of `rdfs:domain` and `rdfs:range`. | The contracts. |
+| `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models, the merge of the plugins into the metamodel. Runs in Node and the browser. | `canonical-md`, `@catenary/explorer`, `@catenary/palette`, `@catenary/links`, `@catenary/fields`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
 | `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
-| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Node only. | `@catenary/shacl`, `@catenary/rdfs`, `@catenary/query`, `@catenary/explorer`, `@catenary/schema`, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
+| `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Runs the plugins; parses no vocabulary for the metamodel. Node only. | `@catenary/shacl`, `@catenary/rdfs`, the contracts, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
 | `modeler` | Theia extension: RPC service, GLSP adapters, panels, canvas. | `@catenary/model`. Only `src/node` imports `@catenary/rdf`. |
 | `app`, `electron-app` | Browser host and desktop host. | Theia packages and `modeler`. |
 
@@ -65,12 +67,42 @@ Values that cross a package boundary are JSON, including RDF terms and IDs.
 1. Implement `ExplorerPlugin` (`packages/explorer/src/index.ts`) in the package of the vocabulary. Query only through the `ExplorerPort`.
 2. Add the plugin to `EXPLORER_PLUGINS` (`packages/rdf/src/explorer.ts`).
 
-### Add a schema provider
+### Vocabulary plugins
 
-1. Implement `SchemaProvider` (`packages/schema/src/index.ts`) in the package of the vocabulary. Query only through the `QueryPort`.
-2. Add the provider to `SCHEMA_PROVIDERS` (`packages/rdf/src/schema.ts`).
+Each reader of the metamodel has its own provider contract, named after it. A vocabulary plugin implements the contracts it can. It reads its statements only through the query port. The host runs the plugins and merges them. A reader reads only the merged result, never a plugin.
 
-`mergeSchema` (`packages/model/src/metamodel.ts`) adds the rules to the metamodel. The shapes win for a predicate that they describe on the same class. Validation never reads the rules.
+```text
+ READERS (modeler)   Model explorer      Palette            Links                   Properties
+                     tree of sections    class picker,      link picker, draw and   the form,
+                                         card colors        reconnect edges         fields on cards
+                          │ reads             │ reads             │ reads                 │ reads
+ CONTRACTS           ┌────▼─────┐        ┌────▼─────┐        ┌────▼──────────┐       ┌────▼──────────┐
+ (types only)        │ explorer │        │ palette  │        │ links         │       │ fields        │
+                     │ sections,│        │ classes: │        │ (class, pred, │       │ (class, pred, │
+                     │ rows     │        │ name,    │        │ target class, │       │ datatype | in,│
+                     │          │        │ order    │        │ min, max)     │       │ min, max)     │
+                     └────┬─────┘        └────┬─────┘        └──────┬────────┘       └──────┬────────┘
+                          └──────────────┬────┴─────────────────────┴───────────────────────┘
+                                   query: the port every provider reads through (SPARQL, graphs, labels)
+                          ┌──────────────┴──────────────────────────────────────────────┐
+ PLUGINS             shacl (shapes graphs)                          rdfs (all files)
+                     explorer: Shapes section                       explorer: Classes section
+                     palette: sh:targetClass classes                palette: rdfs:domain classes
+                     links: sh:path + sh:class | sh:node            links: rdfs:domain + class rdfs:range
+                     fields: sh:path + sh:datatype | sh:in          fields: rdfs:domain + literal rdfs:range
+                     only SHACL: validation (Problems)              no cardinality, no validation
+                          └──────────────┬──────────────────────────────────────────────┘
+ HOST                rdf (ModelStore): owns the store, gives each plugin a port, runs [shacl, rdfs] for each
+                     contract (authoring.ts, explorer.ts); model merges them (mergeContributions): SHACL wins
+                     for a class and a predicate.
+```
+
+To add a plugin:
+
+1. Implement the contracts that the vocabulary can give in its package: `PaletteProvider` (`packages/palette`), `LinksProvider` (`packages/links`), `FieldsProvider` (`packages/fields`), `ExplorerPlugin` (`packages/explorer`). Query only through the port.
+2. Add it to `AUTHORING_PLUGINS` (`packages/rdf/src/authoring.ts`) with the graphs it reads, and its explorer plugin to `EXPLORER_PLUGINS` (`packages/rdf/src/explorer.ts`). The order of `AUTHORING_PLUGINS` is the precedence: for a class and a predicate, the first plugin that gives a link or a field wins.
+
+Validation never reads the plugins: it reads the shapes.
 
 ### Add a read query for the frontend
 
@@ -87,17 +119,18 @@ Paths are relative to the directory in the first column.
 | Directory | Files | Purpose |
 |---|---|---|
 | `packages/query/src` | `index.ts` | Query port, namespaces and the IRI escaper |
-| `packages/explorer/src` | `index.ts` | Model explorer plugin contract |
-| `packages/schema/src` | `index.ts` | Schema provider contract |
+| `packages/explorer/src` | `index.ts` | Model explorer contract |
+| `packages/palette/src`, `packages/links/src`, `packages/fields/src` | `index.ts` | Palette, links and fields contracts |
 | `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
+| | `backend/authoring.ts` | Palette classes, links and fields of the shapes |
 | `packages/rdfs/src` | `explorer.ts` | Classes section of the Model explorer |
-| | `schema.ts` | Domain and range providers: RDFS schema rules |
+| | `domain-range.ts` | Palette classes, links and fields of `rdfs:domain` and `rdfs:range` |
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts`, `trace-metrics.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records and metric calculations |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
-| | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, schema rules, prefixes, form conversion |
+| | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, the merge of the plugins, prefixes, form conversion |
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
 | | `fuzzy.ts` | Ordered-character matching, match positions and ranking |
@@ -116,8 +149,8 @@ Paths are relative to the directory in the first column.
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or selected placements and their dependencies |
 | | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
-| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
-| | `schema.ts` | Schema providers on the store: RDFS rules join the metamodel |
+| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
+| | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `IndexedStore` keeps the input in step with each change of the store. The bundle copies all assets. |

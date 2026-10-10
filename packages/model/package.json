@@ -17,7 +17,9 @@
   "dependencies": {
     "canonical-md": "^0.3.0",
     "@catenary/explorer": "workspace:*",
-    "@catenary/schema": "workspace:*",
+    "@catenary/palette": "workspace:*",
+    "@catenary/links": "workspace:*",
+    "@catenary/fields": "workspace:*",
     "@catenary/shacl": "workspace:*"
   },
   "devDependencies": {

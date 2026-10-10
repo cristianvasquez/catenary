@@ -41,7 +41,7 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
     const types = dir === 'out'
         ? outgoingRelations(meta, self.types).map(r => ({ r, other: r.targetClass }))
         : meta.classes.flatMap(c => c.relations.filter(r => (r.targetClass === ANY_RESOURCE || self.types.includes(r.targetClass)) && (!r.values || r.values.includes(term.value))).map(r => ({ r, other: c.iri })));
-    if (!types.length) return { error: `The schema declares no relations ${dir === 'out' ? 'from' : 'to'} ${name}.` };
+    if (!types.length) return { error: `No shape or RDFS rule declares a relation ${dir === 'out' ? 'from' : 'to'} ${name}.` };
 
     const F = iri(term.value);
     const view = elementTerm(viewId);

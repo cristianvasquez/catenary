@@ -15,6 +15,8 @@
   "dependencies": {
     "@catenary/explorer": "workspace:*",
     "@catenary/query": "workspace:*",
-    "@catenary/schema": "workspace:*"
+    "@catenary/palette": "workspace:*",
+    "@catenary/links": "workspace:*",
+    "@catenary/fields": "workspace:*"
   }
 }

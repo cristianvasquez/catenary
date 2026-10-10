@@ -10,7 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const packages = ['packages/query', 'packages/schema', 'packages/explorer', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
+const packages = ['packages/query', 'packages/palette', 'packages/links', 'packages/fields', 'packages/explorer', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
 const forbidden = [
     { dir: 'packages/shacl/src/common', module: '@catenary/shacl/backend', why: 'shared SHACL rules must not load the backend' },
     { dir: 'modeler/src/browser', module: '@catenary/shacl/backend', why: 'the browser reads SHACL through RPC' },

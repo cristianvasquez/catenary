@@ -6,5 +6,5 @@
     "types": [], "composite": true
   },
   "include": ["src"],
-  "references": [{ "path": "../explorer" }, { "path": "../query" }, { "path": "../palette" }, { "path": "../links" }, { "path": "../fields" }]
+  "references": [{ "path": "../query" }]
 }

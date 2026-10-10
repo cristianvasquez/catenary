@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rdfsRules } from '@catenary/rdfs';
-import { InstanceProperties, NS, classDef, iriId, permittedRelations, schemaFormShape } from '@catenary/model';
+import { InstanceProperties, NS, classDef, iriId, permittedRelations, pluginFormShape } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { schemaPort } from '../src/schema';
+import { queryPort } from '../src/authoring';
 import { rdf } from '../src/terms';
 import { DATA, DPROD, PROV, SHAPES, emptyGraph, parseQuads, writeWorkspace } from './helpers';
 
@@ -37,7 +37,7 @@ ex:core a ex:Team ; rdfs:label "Core team" .
 async function rules(text = ONTOLOGY) {
     const g = emptyGraph();
     for (const q of await parseQuads(text)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
-    return rdfsRules(schemaPort(g));
+    return rdfsRules(queryPort(g));
 }
 const ofPredicate = (rs: Awaited<ReturnType<typeof rules>>, p: string) => rs.rules.filter(r => r.predicate === EX + p).map(r => `${r.domain.slice(EX.length)} ${JSON.stringify(r.range)}`);
 
@@ -121,13 +121,13 @@ describe('RDFS rules in the store', () => {
         expect(permittedRelations(store.meta, [EX + 'Person'], [EX + 'Employee']).map(r => r.name)).toEqual(['knows']);
         expect(store.execute({ kind: 'createRelation', subject: id('bob'), predicate: EX + 'knows', object: id('ann') })).toMatchObject({ ok: true });
         expect(store.execute({ kind: 'createRelation', subject: id('core'), predicate: EX + 'knows', object: id('ann') }))
-            .toMatchObject({ ok: false, error: expect.stringMatching(/schema does not permit/) });
+            .toMatchObject({ ok: false, error: expect.stringMatching(/rule permits this relation/) });
     });
 
-    it('Properties: a schema form for the RDFS rules, its shape in the form shapes only, and its link candidates', () => {
+    it('Properties: a plugin form for the RDFS rules, its shape in the form shapes only, and its link candidates', () => {
         const props = store.properties(id('bob')) as InstanceProperties;
-        const shape = schemaFormShape('rdfs', EX + 'Person');
-        expect(props.schema).toEqual([{ id: shape, uri: shape, label: 'Person (RDFS)', predicates: [EX + 'age', EX + 'knows', EX + 'memberOf', EX + 'note'] }]);
+        const shape = pluginFormShape('rdfs', EX + 'Person');
+        expect(props.pluginForms).toEqual([{ id: shape, uri: shape, label: 'Person (RDFS)', predicates: [EX + 'age', EX + 'knows', EX + 'memberOf', EX + 'note'] }]);
         expect(props.candidates).toContain(`<${EX}core>`);
         expect(store.shapesText()).toContain(`<${shape}>`);
         // One form property for each predicate: the two class ranges of ex:knows are alternatives.
@@ -152,7 +152,7 @@ describe('RDFS rules in the store', () => {
 });
 
 describe('ModelGraph.shapesRevision', () => {
-    it('changes with an RDFS schema statement of the model graph and with the label of a schema predicate, not with other data', () => {
+    it('changes with an RDFS statement of the model graph and with the label of an RDFS predicate, not with other data', () => {
         const g = emptyGraph(), n = (local: string) => rdf.namedNode(EX + local), p = (local: string) => rdf.namedNode(NS.rdfs + local);
         let revision = g.shapesRevision;
         const changed = () => { const c = g.shapesRevision !== revision; revision = g.shapesRevision; return c; };

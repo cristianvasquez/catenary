@@ -22,8 +22,14 @@
       "@catenary/query": [
         "packages/query/src/index.ts"
       ],
-      "@catenary/schema": [
-        "packages/schema/src/index.ts"
+      "@catenary/palette": [
+        "packages/palette/src/index.ts"
+      ],
+      "@catenary/links": [
+        "packages/links/src/index.ts"
+      ],
+      "@catenary/fields": [
+        "packages/fields/src/index.ts"
       ],
       "@catenary/rdfs": [
         "packages/rdfs/src/index.ts"

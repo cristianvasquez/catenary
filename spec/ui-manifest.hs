@@ -1279,7 +1279,7 @@ law_uncovered e = all (\st -> not (any (`covers` st) (applies e))) (uncovered e)
 -- Node shape: shape fields, then properties (path, target, cardinality, required ones marked), then Reads as (closed by default).
 -- Property shape: Reads as first, then the fields. Cardinality has buttons for 0..1, 1, 0..* and 1..*, and a text field.
 -- Instance: one form for each applicable node shape, then one form "<Class> (RDFS)" for the RDFS rules of each of its classes.
--- With one form, its title is "Description". The link picker and connect errors name "the schema": the shapes and the RDFS rules.
+-- With one form, its title is "Description". The link picker and connect errors name the shapes and the RDFS rules ("No shape or RDFS rule permits ...").
 -- Literal constraints and statements not in shapes are closed by default. Their headings show a summary.
 moreActionsMenu :: [String] -> [String]            -- the other applicable actions
 moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" | "Delete from Model" `elem` as]
