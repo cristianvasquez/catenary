@@ -4,7 +4,7 @@
 import { Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeSides, EditCommand, boxes, Point, ViewClip, centered, gridPositions, isViewClip, nextLabel, rangeOfShape, selection, valueSetOf } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
-import { elementId, relationId } from './ids';
+import { elementId, elementTerm, relationId } from './ids';
 import { deleteElements, renameElement } from './elements';
 import * as ops from './ops';
 import * as shapes from './shape-ops';
@@ -13,6 +13,7 @@ import { figureTermOf, showAsLine, syncFigures } from './figure-edits';
 import { rdf } from './terms';
 import { readView } from './view-read';
 import { layoutNewPlacements, pasteRdf } from './clipboard';
+import { thingHead } from './sparql';
 
 const { ok, fail } = ops;
 const done = ok(undefined);
@@ -217,7 +218,15 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
         }
         case 'addToView': {
             const known = c.ids.filter(id => ops.cardTerm(g, id));
-            if (!known.length) return ops.gone('element', c.ids.join(', '));
+            if (!known.length) {
+                // Find Element includes navigable things without a canvas figure (UI §8.6).
+                for (const id of c.ids) {
+                    const term = elementTerm(id);
+                    const head = term?.termType === 'NamedNode' && thingHead(g, term);
+                    if (head) return fail(`The element "${head.label}" has no supported canvas presentation.`);
+                }
+                return ops.gone('element', c.ids.join(', '));
+            }
             const added = placeAround(g, c.view, known, c.at);
             return added.length ? ok(added[0]) : alreadyInView(c.ids.length);
         }

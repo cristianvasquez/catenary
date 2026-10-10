@@ -13,6 +13,27 @@ const meta = { classes: [] };
 const elementIdOf = (t: Term) => elementId(t as Parameters<typeof elementId>[0]);
 
 describe('view-owned elements', () => {
+    it('law_findUnsupportedExplained: distinguishes an existing unsupported thing from a missing ID (kata p136)', async () => {
+        const g = await load(`
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            <urn:shapes:test> { <urn:AdditionalInformation> a sh:PropertyGroup; rdfs:label "Additional Information"; sh:order 5. }
+        `);
+        g.setShapesGraphs([rdf.namedNode('urn:shapes:test')]);
+        const view = run(g, meta, { kind: 'createView', label: 'Test' }) as string;
+        const before = canonical(g.quads());
+        const rejected = g.transact(x => executeCommand(x, meta, {
+            kind: 'addToView', view, ids: [elementId(rdf.namedNode('urn:AdditionalInformation'))], at: { x: 0, y: 0 }
+        }));
+        expect(rejected.result).toEqual({ ok: false, error: 'The element "Additional Information" has no supported canvas presentation.' });
+        expect(rejected.patch).toHaveLength(0);
+        expect(canonical(g.quads())).toBe(before);
+        const missingId = elementId(rdf.namedNode('urn:missing'));
+        expect(executeCommand(g, meta, { kind: 'addToView', view, ids: [missingId], at: { x: 0, y: 0 } })).toEqual({
+            ok: false, error: `No element with the id ${missingId}: the id is wrong or the element was deleted.`
+        });
+    });
+
     it('law_staleViewDescriptionRejected and law_viewEditsKeepData: guard drafts and change only the view graph', () => {
         const g = emptyGraph();
         const view = run(g, meta, { kind: 'createView', label: 'Description' }) as string;

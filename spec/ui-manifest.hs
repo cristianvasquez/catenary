@@ -1432,6 +1432,15 @@ findKeepsOpen hasView k = hasView && k == CtrlEnter
 law_findNeverDuplicates :: FindKey -> Bool
 law_findNeverDuplicates k = findEffect True True k /= AddCard
 
+-- | If an existing thing has no supported canvas presentation, insertion explains the restriction and adds no placement.
+-- Reason: the picker also serves navigation, so it includes things that the canvas cannot draw.
+findPlacementError :: String -> Bool -> Maybe String  -- label, a supported presentation
+findPlacementError label supported
+  | supported = Nothing
+  | otherwise = Just ("The element \"" ++ label ++ "\" has no supported canvas presentation.")
+law_findUnsupportedExplained :: String -> Bool
+law_findUnsupportedExplained label = isJust (findPlacementError label False)
+
 -- 8.7 Show --------------------------------------------------------------------------
 
 -- | Show: prefer the active view when it shows the element, else the first matching view by label.
