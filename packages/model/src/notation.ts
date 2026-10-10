@@ -4,7 +4,7 @@
 // The join with the placements of the view (what is drawn), removal and arrival: notation-join.ts.
 // One generic program: it has no code for a vocabulary. The diagram: notation-schema.ts. The edits: packages/rdf/src/figure-edits.ts.
 
-import { NTerm, NQuad, NT, Path, RDF, SH, TripleIndex, TripleTerm, conforms, evalPath, iri, nkey, parseShaclPath, pathJSON, triple, uniq } from './notation-graph';
+import { NTerm, NQuad, NT, Path, RDF, SH, TripleIndex, TripleTerm, classesOf, conforms, evalPath, inversePath, iri, nkey, parseShaclPath, pathJSON, triple, uniq } from './notation-graph';
 import { formatPath, shortIri } from './shapes-doc';
 import { sha256Hex } from './sha256';
 import { NS, TermJSON, localName } from './terms';
@@ -206,7 +206,7 @@ export function listTerm(D: TripleIndex, head: TermJSON): TermJSON | undefined {
 /** The statement that holds a list, and the position n of the list (rule 12). Undefined: not a list head, or not one holder. */
 export function listHolder(D: TripleIndex, head: TermJSON): { subject: TermJSON; predicate: string; n: number } | undefined {
     if (!D.one(head, RDF('first'))) return undefined;
-    const holders = [...D.inv.get(nkey(head)) ?? []].filter(([p]) => p !== RDF('rest') && !p.startsWith(NS.view)).flatMap(([p, ss]) => ss.map(s => [s, p] as const));
+    const holders = D.incoming(head).filter(([p]) => p !== RDF('rest') && !p.startsWith(NS.view)).flatMap(([p, ss]) => ss.map(s => [s, p] as const));
     if (holders.length !== 1) return undefined;
     const [s, p] = holders[0];
     const text = (h: NTerm) => D.list(h).map(x => x.value).join(' ');
@@ -236,35 +236,27 @@ export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: stri
         if (!memo.has(k)) memo.set(k, conforms(D, N, when, focus));
         return memo.get(k)!;
     };
+    const newFigure = (focus: TermJSON, fs: FigureShape): Figure => ({
+        id: '', focus, placedAs: listTerm(D, focus) ?? focus, fs, hasOwnTitle: false, tags: [], mult: '', rows: [], connectors: [],
+        startValues: [], endPrivate: false, members: [], starts: [], ends: [], memberFigs: [], carriers: []
+    });
+    const found = new Map<string, Figure>();
+    if (!scope) {
+        for (const fs of shapes) for (const focus of targets(D, fs)) {
+            const k = nkey(focus);
+            if (!found.has(k) && holds(fs.when, focus)) found.set(k, newFigure(focus, fs));
+        }
+    } else scopedFigures(D, shapes, scope, holds, newFigure, found);
+    // One order for a scoped and a whole derivation: the cascade, then the focus.
+    const rank = new Map(shapes.map((fs, i) => [fs, i]));
     const figOf = new Map<string, Figure>(), used = new Set<string>();
-    for (const fs of shapes) for (const focus of targets(D, fs)) {
-        const k = nkey(focus);
-        if (figOf.has(k) || !holds(fs.when, focus)) continue;
-        const local = localName(focus.value) || 'x';
+    for (const f of [...found.values()].sort((a, b) => rank.get(a.fs)! - rank.get(b.fs)! || cmpKey(nkey(a.focus), nkey(b.focus)))) {
+        const local = localName(f.focus.value) || 'x';
         let id = `urn:fig:${viewName}/${local}`;
         for (let n = 2; used.has(id); n++) id = `urn:fig:${viewName}/${local}-${n}`;
         used.add(id);
-        figOf.set(k, {
-            id, focus, placedAs: listTerm(D, focus) ?? focus, fs, hasOwnTitle: false, tags: [], mult: '', rows: [], connectors: [],
-            startValues: [], endPrivate: false, members: [], starts: [], ends: [], memberFigs: [], carriers: []
-        });
-    }
-    if (scope) {
-        // Keep lines and hubs conservatively: removal and data-arrival rules can inspect unplaced figures.
-        // Box content is needed only for the placed boxes and their transitive role dependencies.
-        const roots = new Set(scope.map(nkey));
-        const needed = new Set<string>();
-        const queue: Figure[] = [];
-        const include = (f: Figure) => { const k = nkey(f.focus); if (!needed.has(k)) { needed.add(k); queue.push(f); } };
-        for (const f of figOf.values()) if (f.fs.kind !== 'Box' || roots.has(nkey(f.placedAs))) include(f);
-        for (let i = 0; i < queue.length; i++) {
-            const f = queue[i];
-            for (const p of f.fs.props.filter(p => ['part', 'from', 'to', 'anchor', 'link'].includes(p.role) && holds(p.when, f.focus))) {
-                const values = (p.value ? [p.value] : evalPath(D, p.path, f.focus)).filter(v => !p.select || p.select.some(s => nkey(s) === nkey(v)));
-                for (const v of values) { const dependency = figOf.get(nkey(v)); if (dependency) include(dependency); }
-            }
-        }
-        for (const [k] of figOf) if (!needed.has(k)) figOf.delete(k);
+        f.id = id;
+        figOf.set(nkey(f.focus), f);
     }
     const fig = (t: NTerm | undefined) => t && figOf.get(nkey(t));
     const roleValues = (f: Figure, role: Role) => f.fs.props.filter(p => p.role === role && holds(p.when, f.focus))
@@ -354,6 +346,77 @@ export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: stri
     }
     for (const f of figOf.values()) if (f.fs.kind === 'Line') f.text = `${(f.hasOwnTitle ? f.title : endText(f)) ?? ''}${f.mult}`.trim();
     return { figures: [...figOf.values()], warnings, data: D };
+}
+
+const cmpKey = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+const LINKING: Role[] = ['part', 'from', 'to', 'anchor', 'link'];
+
+/** A focus is a target of a figure shape: the membership test of `targets`, without the enumeration of the workspace. */
+function isTarget(D: TripleIndex, fs: FigureShape, t: TermJSON): boolean {
+    if (t.termType !== 'NamedNode') return false;
+    if (fs.targets.node.some(n => nkey(n) === nkey(t))) return true;
+    if (fs.targets.subjectsOf.some(p => D.objects(t, p.value).length)) return true;
+    if (fs.targets.objectsOf.some(p => D.subjects(p.value, t).length)) return true;
+    return fs.targets.class.length > 0 && classesOf(D, t).some(c => fs.targets.class.some(k => nkey(k) === nkey(c)));
+}
+
+/**
+ * Steps 2–4 for the figures that the placement rules of a view can read, from its placed terms outwards: the placed figures, the
+ * lines and hubs whose role paths reach a placed figure or one of these lines, and the role values of all of them (their parts,
+ * ends and members). A line or hub that reaches no placed figure is never shown, and no arrival or removal from these terms takes it
+ * (law_scopedFiguresPreservePlacementRules). The data is read around these terms only.
+ */
+function scopedFigures(D: TripleIndex, shapes: FigureShape[], scope: readonly NTerm[], holds: (when: NTerm | undefined, focus: NTerm) => boolean,
+    newFigure: (focus: TermJSON, fs: FigureShape) => Figure, figOf: Map<string, Figure>): void {
+    const decided = new Map<string, Figure | null>();
+    const decide = (t: NTerm): Figure | undefined => {
+        if (t.termType !== 'NamedNode') return undefined;
+        const k = nkey(t);
+        if (!decided.has(k)) {
+            const fs = shapes.find(fs => isTarget(D, fs, t) && holds(fs.when, t));
+            decided.set(k, fs ? newFigure(t, fs) : null);
+        }
+        return decided.get(k) ?? undefined;
+    };
+    const queue: { f: Figure; reach: boolean }[] = [];
+    const include = (f: Figure | undefined, reach: boolean) => {
+        if (!f) return;
+        const k = nkey(f.focus);
+        if (!figOf.has(k)) { figOf.set(k, f); queue.push({ f, reach }); } else if (reach && !reached.has(k)) queue.push({ f, reach });
+    };
+    const reached = new Set<string>();
+    // The paths by which a line or a hub reaches another figure: their inverses lead from that figure to the line or hub.
+    const reaching = shapes.filter(fs => fs.kind !== 'Box').flatMap(fs => fs.props.filter(p => LINKING.includes(p.role) && !p.value).map(p => inversePath(p.path)));
+    const roots = new Set(scope.map(nkey));
+    if ([...roots].some(k => k.startsWith('<urn:trellis:list:'))) {
+        // A placed list figure names its list term (rule 12): find the list heads with that term.
+        for (const head of D.subjectsOfP(RDF('first'))) {
+            if (D.subjects(RDF('rest'), head).length) continue;
+            const term = listTerm(D, head);
+            if (term && roots.has(nkey(term))) include(decide(head), true);
+        }
+    }
+    for (const t of scope) {
+        if (t.termType === 'Triple') for (const end of [t.subject, t.object]) include(decide(end), false);
+        else include(decide(t), true);
+    }
+    for (let i = 0; i < queue.length; i++) {
+        const { f, reach } = queue[i];
+        const k = nkey(f.focus);
+        if (reach || f.fs.kind !== 'Box') {
+            if (!reached.has(k)) {
+                reached.add(k);
+                for (const path of reaching) for (const x of evalPath(D, path, f.focus)) {
+                    const g = decide(x);
+                    if (g && g.fs.kind !== 'Box') include(g, true);
+                }
+            }
+        }
+        for (const p of f.fs.props.filter(p => LINKING.includes(p.role) && holds(p.when, f.focus))) {
+            const values = (p.value ? [p.value] : evalPath(D, p.path, f.focus)).filter(v => !p.select || p.select.some(s => nkey(s) === nkey(v)));
+            for (const v of values) include(decide(v), false);
+        }
+    }
 }
 
 const unplacedOf = (t: NTerm | undefined): 'AsRow' | 'Hidden' => t?.value === NT('Hidden') ? 'Hidden' : 'AsRow';

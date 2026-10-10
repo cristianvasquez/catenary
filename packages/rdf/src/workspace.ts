@@ -22,7 +22,6 @@ import { shapesIndexOf } from './shapes-read';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
 import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
-import { IndexedStore } from './notations';
 import { TracedStore } from './trace';
 import { canonical, parseTrig, writeTrig } from './trig';
 
@@ -34,7 +33,7 @@ export interface WorkspaceOptions {
 }
 
 export class Workspace {
-    readonly graph = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore())));
+    readonly graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     /** The workspace file: the manifest. */
     readonly workspace: WorkspaceFile;
     /** View graph IRI -> its view file. The entry of a deleted view stays until a save removes the file (an undo brings it back). */

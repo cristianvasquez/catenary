@@ -4,13 +4,13 @@
 //   data arrival  a new property shape is placed in each view that shows its start and its end
 // Relations and arrows of instances: placeConnectors. The ids of the diagram: notation-schema.ts (@catenary/model).
 
-import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, deriveFigures, iriId, nkey, placementsOf, removal, sha256Hex, unescapeId, viewFigures } from '@catenary/model';
+import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, P, V } from './graph';
 import { tracer } from './trace';
 import { elementId } from './ids';
 import * as ops from './ops';
-import { readNotations, storeIndex } from './notations';
+import { keyTerm, viewFiguresOf } from './notations';
 import { S, shapesIndexOf } from './shapes-read';
 import { rdf } from './terms';
 
@@ -181,14 +181,12 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
     if (!added.size && !removed.size && !created.size && !lists) return;
     if (lists) rekeyLists(g);
 
-    const D = tracer.span('refresh', 'notation input', () => storeIndex(g)), notes = readNotations();
     const views = created.size || lists ? g.views() : [...new Set([...added.keys(), ...removed.keys()])].map(v => rdf.namedNode(v));
     tracer.note(`added ${added.size} views; removed ${removed.size} views; created ${created.size}; lists ${lists}; scanned ${views.length} views`);
     for (const view of views) {
         const vf = tracer.span('refresh', 'derive and join figures', () => {
-            tracer.note(`view ${view.value}; indexed input ready`);
-            const scope = [...placementsOf(D, view.value).keys(), ...(removed.get(view.value)?.keys ?? [])].map(termOf);
-            return viewFigures(D, notes, view.value, deriveFigures(D, notes, view.value, scope));
+            tracer.note(`view ${view.value}`);
+            return viewFiguresOf(g, view.value, (removed.get(view.value)?.keys ?? []).map(keyTerm));
         });
         tracer.span('refresh', 'apply figure placement rules', () => {
             const gone = new Set<string>(), add = new Set<string>();
@@ -197,7 +195,7 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
             if (left.length) {
                 const before: Placements = new Map(vf.placed);
                 for (const k of left) before.set(k, { iri: '', simple: false, keptByLines: false } as NotationPlacement);
-                for (const k of left) for (const x of removal(vf.derivation.figures, before, termOf(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
+                for (const k of left) for (const x of removal(vf.derivation.figures, before, keyTerm(k))) if (!left.includes(x) && vf.placed.has(x)) gone.add(x);
             }
             const now: Placements = new Map([...vf.placed].filter(([k]) => !gone.has(k)));
             for (const k of added.get(view.value)?.keys ?? []) {
@@ -208,7 +206,7 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
                 const box = vf.derivation.figures.find(f => nkey(f.placedAs) === k);
                 const ownPart = (x: string) => Boolean(box?.rows.some(r => r.part?.fs.kind === 'Line' && !r.part.startValues.length
                     && r.part.starts.includes(box) && nkey(r.part.placedAs) === x));
-                for (const x of arrival(vf.derivation.figures, now, termOf(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
+                for (const x of arrival(vf.derivation.figures, now, keyTerm(k))) if (!now.has(x) && iriOfKey(x) && (arrivals || ownPart(x))) add.add(x);
             }
             if (created.size) for (const x of dataArrival(vf.derivation.figures, now, created)) if (iriOfKey(x)) add.add(x);
             if (lists) {
@@ -231,17 +229,8 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
     }
 }
 
-/** A key as an engine term: an IRI, or a statement (its key is enough for the engine functions). */
-function termOf(k: string) {
-    const iri = iriOfKey(k);
-    if (iri) return { termType: 'NamedNode' as const, value: iri };
-    const m = /^<<\(<([^<>]*)> <([^<>]*)> <([^<>]*)>\)>>$/.exec(k);
-    return m ? { termType: 'Triple' as const, value: '' as const, subject: { termType: 'NamedNode' as const, value: m[1] }, predicate: { termType: 'NamedNode' as const, value: m[2] }, object: { termType: 'NamedNode' as const, value: m[3] } }
-        : { termType: 'NamedNode' as const, value: k };
-}
-
 function removeStatementPlacement(g: ModelGraph, view: NamedNode, _vf: ViewFigures, k: string): void {
-    const t = termOf(k);
+    const t = keyTerm(k);
     if (t.termType !== 'Triple') return;
     const e = g.edgeOf(view, rdf.namedNode(t.subject.value), rdf.namedNode(t.predicate.value), rdf.namedNode(t.object.value));
     if (e) ops.removeTree(g, e, view);

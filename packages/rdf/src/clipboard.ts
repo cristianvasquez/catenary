@@ -1,12 +1,12 @@
 // Clipboard RDF uses the normal graph transaction and file routing. Figures come from the view's notations.
-import { Classes, NS, PasteBox, Point, RdfCopy, RdfPaste, TYPES, iriId, layoutPastedBoxes, nkey, selection, toSchema, viewFigures } from '@catenary/model';
+import { Classes, NS, PasteBox, Point, RdfCopy, RdfPaste, TYPES, iriId, layoutPastedBoxes, nkey, selection, termToJSON, toSchema } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { canonical, parseRdfSync } from 'rdf-files';
 import { ModelGraph, P, V } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { serializeRdf } from './files';
 import { figureTermOf, listTermOf } from './figure-edits';
-import { readNotations, storeIndex } from './notations';
+import { viewFiguresOf } from './notations';
 import * as ops from './ops';
 import { skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
@@ -49,7 +49,9 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
         if (!graph) return ops.fail('No file is configured for new shapes.');
         g.add(q.subject, q.predicate, q.object, graph);
     }
-    const vf = viewFigures(storeIndex(g), readNotations(), ops.viewTerm(g, viewId)!.value);
+    // The pasted elements and the ends of the pasted statements are not placed yet: the figures read around them too.
+    const pasted = quads.flatMap(q => [q.subject, q.object]).flatMap(t => { const j = termToJSON(t); return j?.termType === 'NamedNode' ? [j] : []; });
+    const vf = viewFiguresOf(g, ops.viewTerm(g, viewId)!.value, pasted);
     const subjects = new Set(quads.map(q => termKey(q.subject)));
     const statements = new Set(quads.map(tripleKey));
     const placed: string[] = [];
@@ -97,7 +99,7 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
 /** Layout after arrival, inside the paste transaction. Only new placements receive positions. */
 export function layoutNewPlacements(g: ModelGraph, meta: Classes, viewId: string, before: Set<string>, at?: Point, cardScale = 1): string[] {
     const view = ops.viewTerm(g, viewId)!;
-    const vf = viewFigures(storeIndex(g), readNotations(), view.value);
+    const vf = viewFiguresOf(g, view.value);
     const doc = readView(g, viewId);
     const boxes = new Map<string, PasteBox>(doc.views[viewId].boxes.map(b => [b.id, { ...b, group: b.kind === 'group',
         membership: { x: b.x, y: b.y, width: b.width, height: b.height } }]));

@@ -12,7 +12,7 @@ import {
     setPrefixes, ModelQueries, ViewGesture, GestureInfo, viewGesture, AppearanceData, appearanceData, Occurrence, occurrence, Showing, showing, ActionTarget, SelectionActions, OpenTarget,
     Choices, DeletePlan, ElementRow, ModelSelection, NewLabelKind, RelationChoices, Selected, ShapesModel, View, deletePlan,
     elementRows, emptySelected, knownPredicates, neighborChoices, newLabel, relationChoices, shapeSourceChoices, viewProperties,
-    Derivation, ViewFigures, boxes, deriveFigures, elementOfId, idIri, viewFigures, FileContent, ExplorerDrag, shortIri, iriId
+    Derivation, ViewFigures, boxes, elementOfId, idIri, FileContent, ExplorerDrag, shortIri, iriId
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
@@ -32,7 +32,7 @@ import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
 import { formData, selectionLinks, hiddenRelations, viewCounts } from './queries';
 import { readView, viewLabels } from './view-read';
-import { IndexedStore, LAYOUT_PREDICATES, readNotations, storeIndex } from './notations';
+import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
 import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, instanceLabels, readWarnings, scopedDoc } from './scoped-doc';
 import { movedIds } from './moved-ids';
 import { authoringMetamodel } from './authoring';
@@ -110,7 +110,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
 }
 
 export class ModelStore implements ModelQueries {
-    protected graph = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore())));
+    protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
@@ -175,15 +175,16 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * The figures of a view and their join with its placements (ADR 0014). Undefined: no such view. The store keeps the engine input
-     * up to date, and a move or a resize keeps the figures (viewReads): only the join with the placements runs again.
+     * The figures of a view and their join with its placements (ADR 0014). Undefined: no such view. The figures read the store around
+     * the placed elements of the view, and a move or a resize keeps them (viewReads): only the join with the placements runs again.
      */
     viewFigures(viewId: string): ViewFigures | undefined {
         const iri = idIri(viewId);
         if (!iri) return undefined;
         return tracer.span('refresh', 'figures', () => {
-            const data = storeIndex(this.graph), notes = readNotations(), reads = this.viewReads(viewId);
-            return viewFigures(data, notes, iri, reads.figures ??= deriveFigures(data, notes, iri));
+            const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures);
+            reads.figures = vf.derivation;
+            return vf;
         });
     }
 

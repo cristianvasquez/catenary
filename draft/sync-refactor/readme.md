@@ -21,7 +21,7 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 2. **The data and shapes split at load stays** (`shapePart`). Queries keep telling data from shapes by graph.
 3. **A triple that two files hold is stored twice**, once in each data graph. A read over all data removes duplicates. Oxigraph 0.5.11 can query several data graphs through one default scope. This scope must remove duplicate query bindings.
 4. **No notation index.** The global JSON mirror of the store (`TripleIndex`, kept by `IndexedStore` in `packages/rdf/src/notations.ts`) is removed. Its only readers are the diagram figures.
-5. **Each view owns its figure input.** When a change touches a view, its slice is read from the store with SPARQL, and its figures are derived once. Every canvas that shows the view gets those figures through its own GLSP connection.
+5. **Each view owns its figure input.** When a change touches a view, its slice is read from the store (pattern lookups around its placed terms, no copy), and its figures are derived once. Every canvas that shows the view gets those figures through its own GLSP connection.
 6. **ModelStore becomes the coordinator.** It runs a command, gets one patch and sends one change event. It has no other job.
 
 ## Terms
@@ -31,7 +31,7 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 | View | One diagram: one view file and its graph in the store. Shared by all users. |
 | Canvas | One open tab that shows a view. Many canvases can show the same view. |
 | GLSP connection | The link between one canvas and the backend. GLSP makes one for each open canvas. |
-| Slice | What the figures of one view read. See stage 5. |
+| Slice | What the figures of one view read: the store around its placed terms (`viewFiguresOf` in `packages/rdf/src/notations.ts`). |
 | Patch | The added and removed quads of one transaction. |
 | Change event | One message after each patch: the graphs and the elements that the patch touched. |
 | Coordinator | What stays of `ModelStore`. |
@@ -73,24 +73,6 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 - **Open first:** resolve SYNC2 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
 - **Done when:** the validator imports nothing from the store or the workspace. `validation-runner.test.ts` and `validation-mode.test.ts` pass. Tests cover scheme membership supplied only by shapes-file SKOS statements in both All and OpenViews modes. OpenViews tests also cover exclusion of unrelated shapes-file vocabulary. Cover own and imported shapes files.
 - **Manifest:** §9 (validation).
-
-### Stage 5: view slices, no notation index
-
-- **Needs:** nothing. It can run in parallel with stages 2 to 4.
-- **Goal:** prove that a slice gives the same figures as the whole store, then use slices and delete the mirror.
-- **Slice of a view** (from `notation.ts`, `notation-join.ts`, `figure-edits.ts` and `packages/rdf/notations/*.ttl`):
-  1. The view graph: its placements and its `nt:notations`.
-  2. All shapes graphs. Shape rules follow paths of up to three steps inside the shapes, for example `( sh:node sh:property sh:hasValue )`.
-  3. For each placed element: all its outgoing triples.
-  4. Incoming triples only for the inverse paths that the notation files name: today `skos:inScheme`, `view:arrow`, `owl:disjointUnionOf` and `sh:property`. Derive this list from the notation files, not from a list in code.
-  5. For each value that steps 3 and 4 reach: its labels (`rdfs:label`, `skos:prefLabel`, `sh:name`), its `rdf:type`, and its list cells when it is an RDF list.
-  6. The superclass chain of each type.
-- **Steps:**
-  1. Add a test: for each view of `packages/rdf/test/fixtures/notation`, the figures and the join from the slice are equal to the figures and the join from the whole store. Run the removal, arrival and data-arrival rules on both.
-  2. Read the slice with SPARQL in the backend, once per view and change. `ModelStore.viewFigures`, `figure-edits.ts`, `clipboard.ts` and `glsp/layout.ts` use it.
-  3. Delete `IndexedStore` and `storeIndex`. `TripleIndex` stays only as the small per-view input of the engine.
-- **Done when:** step 1 passes on every fixture view. No code builds a `TripleIndex` of the whole store. Measure a non-layout edit on the 20,000-instance workload of PERF2 in `spec/open.md`, before and after.
-- **Manifest:** §4.1 (notations and placements), §3.3 (read models).
 
 ### Stage 6: coordinator
 

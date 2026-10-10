@@ -6,11 +6,11 @@ import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Join, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
+import { Join, LazyTripleIndex, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
 import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
-import { nquads, readNotations, storeIndex } from '../src/notations';
+import { keyTerm, nquads, readNotations, storeIndex, storeInput, viewFiguresOf } from '../src/notations';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,7 @@ afterAll(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+const graph = () => (store as unknown as { graph: ModelGraph }).graph;
 const view = (v: string, d = data) => viewFigures(d, notes, `urn:view:${v}`);
 const without = (placed: Placements, ...keys: string[]) => new Map([...placed].filter(([k]) => !keys.includes(k)));
 const list = (h: string) => nkey(iri(`urn:trellis:list:${h}`));
@@ -80,8 +81,10 @@ describe('figures and join of the example views', () => {
 describe('scoped placement synchronization', () => {
     for (const v of ['model', 'shapes', 'people']) it(`law_scopedFiguresPreservePlacementRules: ${v}`, () => {
         const full = view(v);
-        const seeds = full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs))).map(f => f.focus);
-        const scoped = viewFigures(data, notes, `urn:view:${v}`, deriveFigures(data, notes, `urn:view:${v}`, seeds));
+        // The figures that the app derives: the store read on demand, from the placed terms of the view.
+        const scoped = viewFiguresOf(graph(), `urn:view:${v}`);
+        expect(scoped.derivation.data).toBeInstanceOf(LazyTripleIndex);
+        expect([...scoped.placed.keys()].sort()).toEqual([...full.placed.keys()].sort());
         // The first line is the diagnostic figure count, not displayed content.
         expect(joinText(scoped.derivation, scoped.join).slice(1)).toEqual(joinText(full.derivation, full.join).slice(1));
         expect(scoped.join.problems).toEqual(full.join.problems);
@@ -90,6 +93,26 @@ describe('scoped placement synchronization', () => {
             const before = without(full.placed, nkey(f.placedAs));
             expect(arrival(scoped.derivation.figures, before, f.placedAs).sort()).toEqual(arrival(full.derivation.figures, before, f.placedAs).sort());
             expect(dataArrival(scoped.derivation.figures, before, new Set([nkey(f.placedAs)])).sort()).toEqual(dataArrival(full.derivation.figures, before, new Set([nkey(f.placedAs)])).sort());
+        }
+        // An arrival as a command sees it: the view without the term and what goes with it, then the term placed. The lines and hubs
+        // that arrive are not placed yet: the figures find them from the placed terms.
+        for (const f of full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs)))) {
+            const rest = without(full.placed, ...removal(full.derivation.figures, full.placed, f.placedAs));
+            const seeded = deriveFigures(storeInput(graph()), notes, `urn:view:${v}`, [...rest.keys(), nkey(f.placedAs)].map(keyTerm));
+            expect(arrival(seeded.figures, rest, f.placedAs).sort()).toEqual(arrival(full.derivation.figures, rest, f.placedAs).sort());
+        }
+        // A data change can bring any line of the workspace: the scoped figures place the same ones.
+        const lines = new Set(full.derivation.figures.filter(f => f.fs.kind === 'Line').map(f => nkey(f.focus)));
+        expect(dataArrival(scoped.derivation.figures, scoped.placed, lines).sort()).toEqual(dataArrival(full.derivation.figures, full.placed, lines).sort());
+    });
+
+    it('finds a placed list figure from its list term alone (rule 12)', () => {
+        for (const v of ['model', 'shapes']) {
+            const full = view(v);
+            for (const f of full.derivation.figures.filter(f => f.placedAs !== f.focus && full.placed.has(nkey(f.placedAs)))) {
+                const alone = deriveFigures(storeInput(graph()), notes, `urn:view:${v}`, [f.placedAs]);
+                expect(alone.figures.find(x => nkey(x.placedAs) === nkey(f.placedAs))?.title).toBe(f.title);
+            }
         }
     });
 

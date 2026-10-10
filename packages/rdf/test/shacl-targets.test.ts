@@ -5,7 +5,6 @@ import { OxigraphStore, parseRdfSync } from 'rdf-files';
 import { ModelGraph } from '../src/graph';
 import { shapeTargetMatches } from '../src/shacl-targets';
 import { TracedStore, tracer } from '../src/trace';
-import { IndexedStore } from '../src/notations';
 import { rdf } from '../src/terms';
 
 const prefix = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .`;
@@ -156,7 +155,7 @@ describe('query cost of node constraints', () => {
         const quads = parseRdfSync(prefix + `<urn:shapes> {
             <urn:S> sh:targetNode <urn:parent> ; sh:property <urn:ps> . <urn:ps> sh:path <urn:p> ; sh:node <urn:T> .
         } <urn:name:model> { <urn:parent> <urn:p> <urn:child> . }`, 'application/trig');
-        const g = new ModelGraph(new IndexedStore(new TracedStore(new OxigraphStore(quads))));
+        const g = new ModelGraph(new TracedStore(new OxigraphStore(quads)));
         g.setShapesGraphs([rdf.namedNode('urn:shapes')]);
         const selection = { nodes: [node('urn:child')] };
         tracer.setClient(true);
