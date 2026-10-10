@@ -201,6 +201,7 @@ export class LatentEdge extends GEdge {
 /** Derived source-property → sh:targetSubjectsOf-shape edge. It has no edit controls. */
 export class TargetingEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [fadeFeature];
+    details = '';
     name = '';
     lane = 0;
     lanes = 1;
@@ -331,7 +332,7 @@ export class TargetingEdgeView implements IView {
         if (!source || !target) return svg('g', null);
         return renderEdge({
             source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, self: source === target, elbow: true,
-            route: routeOf(edge), style: edgeStyle(), zoom: zoomOf(edge), name: edge.name, color: '', selected: false, hover: false, hidden: false, targeting: true
+            route: routeOf(edge), style: edgeStyle(), zoom: zoomOf(edge), name: edge.name, details: edge.details, color: '', selected: false, hover: false, hidden: false, targeting: true
         });
     }
 }

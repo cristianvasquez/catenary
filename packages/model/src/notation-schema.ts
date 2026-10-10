@@ -204,8 +204,11 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     const targetingLane = edgeLanes(targeting.map(c => [shapeCards.get(c.source)!, shapeCards.get(c.target)!]));
     for (const c of targeting) {
         const source = shapeCards.get(c.source)!, target = shapeCards.get(c.target)!;
-        const name = c.kind === 'node' ? 'sh:node' : `${c.kind === 'objects' ? 'objects of ' : ''}${formatPath({ kind: 'iri', iri: c.predicate! })}`;
-        edges.push({ type: TYPES.TARGETING, id: c.id, sourceId: source, targetId: target, name, ...targetingLane(source, target) });
+        const name = c.kind === 'node' ? 'sh:node' : c.kind === 'objects' ? 'sh:targetObjectsOf' : 'sh:targetSubjectsOf';
+        const details = [name, `Source shape: ${shapes.nodeShapes[c.source]?.label ?? c.source}`,
+            `Target shape: ${shapes.nodeShapes[c.target]?.label ?? c.target}`,
+            c.predicate ? `Path: ${formatPath({ kind: 'iri', iri: c.predicate })}` : ''].filter(Boolean).join('\n');
+        edges.push({ type: TYPES.TARGETING, id: c.id, sourceId: source, targetId: target, name, details, ...targetingLane(source, target) });
     }
 
     // Logical constraints: a hub placement draws its member lines; the client places the circle at the middle of their labels.

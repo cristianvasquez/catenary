@@ -45,9 +45,11 @@ describe('shared SHACL behavior in the application', () => {
         const schema = toSchema(store.viewDoc(view.id), store.meta, view.id, {
             showHidden: false, violations: [], notation: store.viewFigures(view.id), applicability: connections
         });
-        const edge = schema.children!.find(e => e.type === TYPES.TARGETING && String(e.name).includes('checked through'))!;
+        const edge = schema.children!.find(e => e.type === TYPES.TARGETING && e.name === 'sh:node')!;
         expect(edge).toBeDefined();
         expect(edge.sourceId).toBe(card.id);
+        expect(edge.details).toContain('Path: <urn:p>');
+        expect(edge.details).toContain('Source: a');
         expect(store.view(view.id)!.edges.some(e => e.id === edge.id)).toBe(false);
     });
 

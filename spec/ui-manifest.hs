@@ -886,14 +886,22 @@ noteEditorTextSize = 16
 -- A selected element shows its rows to and from elements of the view as dashed edges. ⇥ on a dashed edge shows it as an edge.
 -- A shown property shape has a dashed targeting edge to a shown node shape when its simple path equals that shape's sh:targetSubjectsOf predicate.
 -- Object-target connectors start at a represented object-end shape when available.
--- Without an object-end shape, the connector starts at the property owner and says "objects of".
--- A node-level constraint connects its source shape to its referenced shape and says "sh:node".
--- A shown instance and its checked shape have a connector labeled with the applicability reasons.
+-- Without an object-end shape, the connector starts at the property owner.
+-- A node-level constraint connects its source shape to its referenced shape.
+-- A shown instance and its checked shape have a connector labeled with distinct, sorted SHACL predicates.
+-- Use sh:targetClass, sh:targetNode, sh:targetSubjectsOf, sh:targetObjectsOf and sh:node, joined with " · ".
+-- An implicit class target uses rdf:type because it has no explicit sh:targetClass statement.
+-- Shape-to-shape connectors use the same predicate labels. This separates schema rules from data relations.
+-- Hover text gives the matched class, source shape, source node and property path when available.
+-- Keep generated explanation sentences and property-shape names out of edge labels.
 -- Targeting edges are derived. They have arrowheads and no edit controls or persisted placements.
 -- A logical constraint (sh:xone, sh:or, sh:and over property shapes) is a hub. Placed, it shows a hub with its member edges.
 -- Unplaced, it is a row group of its card: "xone", then one sub-row per member. Hub and members are placed and removed as one unit.
 -- Del on the hub, on a member line or on its private pill removes the unit. ⇥ on the row group places the hub and the boxes it needs.
 -- An alternative range (sh:or of ranges) is a "one of" box placed by its list. Unplaced, its row shows the box inline.
+law_generatedEdgePredicates :: [String] -> Bool
+law_generatedEdgePredicates predicates = all (`elem` ["sh:targetClass", "sh:targetNode", "sh:targetSubjectsOf", "sh:targetObjectsOf", "sh:node", "rdf:type"]) predicates
+
 targetingConnector :: Iri -> [Iri] -> Bool
 -- | A property path forms a targeting connector when it matches any subject-target predicate.
 targetingConnector path targetPredicates = path `elem` targetPredicates

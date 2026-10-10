@@ -33,7 +33,8 @@ describe('SHACL elements from the notation engine', () => {
             <urn:object> a sh:NodeShape . <urn:shared> a sh:NodeShape .
             <urn:target> sh:targetObjectsOf <urn:p> .`, '', ['urn:source', 'urn:object', 'urn:shared', 'urn:target']);
         const edges = of(g, view, TYPES.TARGETING);
-        const object = edges.find(e => e.name === 'objects of <urn:p>')!;
+        const object = edges.find(e => e.name === 'sh:targetObjectsOf')!;
+        expect(object.details).toContain('Path: <urn:p>');
         expect([element(g, view, object.sourceId), element(g, view, object.targetId)]).toEqual([iriId('urn:object'), iriId('urn:target')]);
         const node = edges.find(e => e.name === 'sh:node')!;
         expect([element(g, view, node.sourceId), element(g, view, node.targetId)]).toEqual([iriId('urn:source'), iriId('urn:shared')]);
@@ -43,7 +44,7 @@ describe('SHACL elements from the notation engine', () => {
     it('labels an object-target connector from its property owner when no object-end shape exists', async () => {
         const { g, view } = await setup(`<urn:source> a sh:NodeShape ; sh:property <urn:property> .
             <urn:property> sh:path <urn:p> . <urn:target> sh:targetObjectsOf <urn:p> .`, '', ['urn:source', 'urn:target']);
-        expect(of(g, view, TYPES.TARGETING).map(e => e.name)).toEqual(['objects of <urn:p>']);
+        expect(of(g, view, TYPES.TARGETING).map(e => e.name)).toEqual(['sh:targetObjectsOf']);
     });
 
     it('draws a self-targeting connector', async () => {
@@ -64,7 +65,8 @@ describe('SHACL elements from the notation engine', () => {
         const edge = of(g, view, TYPES.TARGETING);
         expect(edge).toHaveLength(1);
         expect([element(g, view, edge[0].sourceId), element(g, view, edge[0].targetId)]).toEqual([iriId('urn:source'), iriId('urn:target')]);
-        expect(edge[0].name).toBe('<urn:status>');
+        expect(edge[0].name).toBe('sh:targetSubjectsOf');
+        expect(edge[0].details).toContain('Path: <urn:status>');
         expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('subjects of first or status');
     });
 
@@ -73,7 +75,10 @@ describe('SHACL elements from the notation engine', () => {
             <urn:source> a sh:NodeShape ; sh:property <urn:p1>, <urn:p2> .
             <urn:p1> sh:path <urn:first> . <urn:p2> sh:path <urn:second> .
             <urn:target> a sh:NodeShape ; sh:targetClass <urn:Class> ; sh:targetSubjectsOf <urn:first>, <urn:second> .`, '', ['urn:source', 'urn:target']);
-        expect(of(g, view, TYPES.TARGETING).map(e => e.name).sort()).toEqual(['<urn:first>', '<urn:second>']);
+        expect(of(g, view, TYPES.TARGETING).map(e => e.name)).toEqual(['sh:targetSubjectsOf', 'sh:targetSubjectsOf']);
+        expect(of(g, view, TYPES.TARGETING).map(e => e.details)).toEqual(expect.arrayContaining([
+            expect.stringContaining('Path: <urn:first>'), expect.stringContaining('Path: <urn:second>')
+        ]));
         expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('Class · subjects of first or second');
     });
 

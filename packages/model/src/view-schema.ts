@@ -1,6 +1,6 @@
-import { reasonText } from '@catenary/shacl/common';
+import { reasonPredicates } from '@catenary/shacl/common';
 import { iriId } from './ids';
-import { shortIri } from './shapes-doc';
+import { formatPath, shortIri } from './shapes-doc';
 // Doc + one view -> graph model schema (GLSP / Sprotty). Used by the GLSP server.
 // The SHACL and value-set elements come from the notation engine (notation-schema.ts, ADR 0014); instance cards, relations and marks
 // from the read model of the view (diagram-schema.ts).
@@ -27,7 +27,14 @@ export function toSchema(doc: Doc, meta: Classes, viewId: string, opts: GraphOpt
     const lanes = edgeLanes(matches.map(m => [m.source, m.target]));
     const applicability = matches.map(({ m, source, target }) => ({ type: TYPES.TARGETING,
         id: `${source}_checks_${target}`, sourceId: source, targetId: target,
-        name: reasonText(m.reasons, shortIri), ...lanes(source, target) }));
+        name: reasonPredicates(m.reasons),
+        details: m.reasons.map(r => {
+            const property = r.property ? doc.shapes.properties[iriId(r.property)] : undefined;
+            return [`${reasonPredicates([r])}: ${r.target.termType === 'NamedNode' ? shortIri(r.target.value) : r.target.value}`,
+                r.sourceShape ? `Source shape: ${shortIri(r.sourceShape)}` : '',
+                r.sourceNode ? `Source: ${r.sourceNode.termType === 'NamedNode' ? shortIri(r.sourceNode.value) : r.sourceNode.value}` : '',
+                property ? `Path: ${formatPath(property.path)}` : ''].filter(Boolean).join('\n');
+        }).join('\n\n'), ...lanes(source, target) }));
     // Paint order: groups (large first), edges, cards, collections, pills and logical constraints, view references, notes, arrows.
     return {
         type: TYPES.GRAPH, id: 'root', viewId,

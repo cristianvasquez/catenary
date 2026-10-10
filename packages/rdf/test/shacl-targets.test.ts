@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applicableMatches, readNodeReferences, targetMatches } from '@catenary/shacl/backend';
-import { reasonText, targetText } from '@catenary/shacl/common';
+import { reasonPredicates, reasonText, targetText } from '@catenary/shacl/common';
 import { OxigraphStore, parseRdfSync } from 'rdf-files';
 import { ModelGraph } from '../src/graph';
 import { shapeTargetMatches } from '../src/shacl-targets';
@@ -61,6 +61,13 @@ describe('shared SHACL target relation', () => {
 
     it('rejects query syntax in an IRI', () => {
         expect(() => targetMatches(store(''), scope, { shapes: ['urn:S> } UNION { ?s ?p ?o'] })).toThrow('Invalid IRI');
+    });
+
+    it('law_generatedEdgePredicates: labels use distinct sorted predicates, not explanations', () => {
+        const reasons = (['node', 'targetClass', 'node', 'targetNode', 'targetSubjectsOf', 'targetObjectsOf'] as const)
+            .map(kind => ({ kind, target: node('urn:C') }));
+        expect(reasonPredicates(reasons)).toBe('sh:node · sh:targetClass · sh:targetNode · sh:targetObjectsOf · sh:targetSubjectsOf');
+        expect(reasonPredicates([{ kind: 'implicitClass', target: node('urn:S') }])).toBe('rdf:type');
     });
 
     it('shares target labels and displays the reason that actually matched', () => {

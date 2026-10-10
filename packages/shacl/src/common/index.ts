@@ -44,6 +44,11 @@ export function targetText(targets: ShapeTargets, label: (iri: string) => string
     ].filter(Boolean).join(' · ') || 'no target';
 }
 
+export function reasonPredicates(reasons: readonly TargetReason[]): string {
+    const predicates = [...new Set(reasons.map(r => r.kind === 'implicitClass' ? 'rdf:type' : `sh:${r.kind}`))];
+    return predicates.sort().join(' · ');
+}
+
 export function reasonText(reasons: readonly TargetReason[], label: (iri: string) => string): string {
     return [...new Set(reasons.map(r => {
         const value = r.target.termType === 'NamedNode' ? label(r.target.value) : JSON.stringify(r.target.value);

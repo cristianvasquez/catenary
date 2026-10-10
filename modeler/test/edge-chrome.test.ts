@@ -11,6 +11,14 @@ describe('centered edge labels (UI §7.4 edgeLabelFraction)', () => {
         color: '', selected: false, hover: false, hidden: false
     };
 
+    it('keeps generated edge details in an SVG tooltip, not the label', () => {
+        const details = 'sh:node: Book shape\nSource: Shop\nPath: ex:stocks';
+        const edge = renderEdge({ ...props, parts: undefined, targeting: true, name: 'sh:node', details });
+        const children = edge.children as VNode[];
+        expect(children.find(n => n.sel === 'title')?.text).toBe(details);
+        expect(children.find(n => n.data?.class?.['edge-label'])?.text).toBe('sh:node');
+    });
+
     it('centers an elbow label on its horizontal run without start alignment', () => {
         const geometry = edgeGeometry({ ...props, elbow: true });
         const run = / ([\d.-]+),([\d.-]+) L([\d.-]+),([\d.-]+)$/.exec(geometry.path)!;

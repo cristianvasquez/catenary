@@ -18,6 +18,7 @@ export interface EdgeProps {
     lanes: number;
     zoom: number;
     name: string;
+    details?: string;
     color: string;
     selected: boolean;
     hover: boolean;
@@ -229,6 +230,7 @@ export function renderEdge(p: EdgeProps): VNode {
         class: { 'catenary-edge': true, 'arrow-edge': !!p.arrow, 'latent-edge': !!p.latent, 'targeting-edge': !!p.targeting, colored: !!p.color, selected: p.selected, mouseover: p.hover, 'hidden-edge': p.hidden, invalid: !!p.invalid, property: !!p.parts },
         style: vars(colorVars(p.color))
     }, [
+        ...(p.details ? [s('title', {}, [p.details])] : []),
         s('path', { class: { hit: true }, attrs: { d: path } }),
         s('path', { class: { line: true }, attrs: { d: path } }),
         s('path', { class: { arrow: true }, attrs: { d: arrowHead(p2, n2, ARROW * k) } }),
