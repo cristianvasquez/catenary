@@ -57,6 +57,8 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 
 ### Stage 6: coordinator
 
+Part 1 (writes, watch, file I/O) is done. Part 2 (panel queries) remains.
+
 - **Needs:** PR #34 is merged: it added the query port (`packages/query`) and one provider contract per reader (`packages/palette`, `packages/links`, `packages/fields`).
 - **Goal:** `ModelStore` keeps only the coordinator job. Panel queries move behind those providers. Writes and commits move to the Saver. The watch loop moves to the Reconciler.
 - **Done when:** `model-store.ts` has no SPARQL text and no file I/O. The RPC service still takes its queries from `MODEL_QUERIES` (`packages/model/src/queries.ts`).

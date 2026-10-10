@@ -2,11 +2,11 @@
 // Workspace file (TriG): the manifest graph only. Model files: every other RDF file of the folder of the workspace file and its
 // subfolders; a file that declares a view:View (any name; `*.view.trig` by default) is a view. Manifest paths are relative to the workspace file.
 
-import { NS, VALIDATION_MODES, ValidationMode } from '@catenary/model';
+import { Doc, NS, VALIDATION_MODES, ValidationMode } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { PathApi, listRdfFiles, pathKey, portableRelative, resolveStored, serializeRdf as serialize } from 'rdf-files';
+import { PathApi, TextTarget, listRdfFiles, pathKey, portableRelative, resolveStored, serializeRdf as serialize, turtlePosition } from 'rdf-files';
 import { PREFIXES, rdf } from './terms';
 
 export { globRegExp, parseRdf, writeProblem } from 'rdf-files';
@@ -247,4 +247,41 @@ export function sourceLine(text: string, iri: string): number | undefined {
     }
     for (const [i, line] of lines.entries()) if (forms.some(f => find(line, f) >= 0)) return i + 1;
     return undefined;
+}
+
+/** The disk position: Turtle syntax first, else a source line. */
+export async function positionIn(file: string, targets: TextTarget[]): Promise<{ line?: number; column?: number }> {
+    let text: string;
+    try { text = await fs.readFile(file, 'utf8'); } catch { return {}; }
+    if (/\.ttl$/i.test(file)) {
+        for (const target of targets) {
+            const at = await turtlePosition(text, file, target).catch(() => undefined);
+            if (at) return at;
+        }
+    }
+    for (const { subject } of targets) {
+        const line = sourceLine(text, subject);
+        if (line) return { line };
+    }
+    return {};
+}
+
+/** Resolve file references from the folder of their view file. */
+export function decorateFileReferences(doc: Doc, viewFile: (view: string) => string): void {
+    for (const v of Object.values(doc.views)) {
+        const dir = path.dirname(viewFile(v.uri));
+        for (const b of v.boxes) {
+            if (b.kind !== 'reference' || !b.file) continue;
+            b.path = resolveStored(dir, b.file);
+            b.broken = !existsSync(b.path);
+        }
+    }
+}
+
+/** Reference paths and disk state, sorted for the watcher comparison. */
+export function referencedFiles(references: { view: string; file: string }[], viewFile: (view: string) => string): string {
+    return references.map(({ view, file }) => {
+        const p = resolveStored(path.dirname(viewFile(view)), file);
+        return `${p}:${existsSync(p)}`;
+    }).sort().join('\n');
 }

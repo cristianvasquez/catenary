@@ -6,8 +6,8 @@ import { DEFAULT_PREFIXES, NS, setPrefixes } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { OxigraphStore, hasAnnotation, knownPath, portableRelative } from 'rdf-files';
-import { MANIFEST_GRAPH, NEAR, isViewFile, listModelFiles, parseRdf, readManifest } from './files';
+import { OxigraphStore, absolutePath, hasAnnotation, knownPath, portableRelative } from 'rdf-files';
+import { MANIFEST_GRAPH, NEAR, WORKSPACE_FILE, isViewFile, listModelFiles, parseRdf, readManifest, workspaceFileOf } from './files';
 import { ModelGraph, P, V, cmp, dataGraphIri, fileGraphIri } from './graph';
 import { FileRead, PLACE_KINDS, Settings } from './settings';
 import { isSkolem, skolemize } from './skolem';
@@ -45,6 +45,37 @@ export async function openWorkspace(graph: ModelGraph, primaryPath: string, ofFo
         settings.syncShapesTarget();
     });
     return { settings, loader, warnings };
+}
+
+/** Resolve a folder, workspace file or recent entry. The content decides, not the name. */
+export async function resolveOpenTarget(workspacePath: string): Promise<{ file: string; ofFolder: boolean } | { error: string }> {
+    let given = absolutePath(workspacePath);
+    if (path.basename(given) === WORKSPACE_FILE && !existsSync(given) && existsSync(path.dirname(given))) given = path.dirname(given);
+    const target = await workspaceFileOf(given);
+    if ('error' in target) return { error: target.error };
+    const content = existsSync(target.file) ? await fileContent(target.file) : undefined;
+    if (content?.viewFile && !content.workspace) return { error: `${path.basename(target.file)} is a view file. Open its workspace, then open the view.` };
+    return { file: target.file, ofFolder: target.file !== given };
+}
+
+/** Source reads precede all import changes. */
+export interface ImportRead { name: string; text: string; quads?: Quad[]; source: string; inPlace?: string }
+
+export async function readImportSources(sources: string[], knownFile: (file: string) => string | undefined): Promise<{ reads: ImportRead[] } | { error: string }> {
+    const reads: ImportRead[] = [];
+    for (const source of sources) {
+        const name = path.basename(source);
+        const inPlace = knownFile(path.resolve(source));
+        try {
+            const text = await fs.readFile(source, 'utf8');
+            const quads = inPlace ? undefined : await parseRdf(text, source);
+            if (quads && !quads.length) return { error: `${name}: not imported: the file has no statements.` };
+            reads.push({ name, text, quads, source, inPlace });
+        } catch (e) {
+            return { error: `${name}: not imported: ${(e as Error).message}` };
+        }
+    }
+    return { reads };
 }
 
 /** Puts file reads into the store and takes files out of it. */

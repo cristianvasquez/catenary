@@ -15,9 +15,8 @@ import {
     Derivation, ViewFigures, boxes, elementOfId, idIri, FileContent, ExplorerDrag, shortIri, iriId
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { FolderWatcher, OxigraphStore, SerialQueue, TextTarget, absolutePath, commitFiles, isInside, pathKey, portableRelative, readText as readDisk, resolveStored, turtlePosition } from 'rdf-files';
+import { OxigraphStore, SerialQueue, TextTarget, absolutePath, isInside, pathKey, portableRelative } from 'rdf-files';
 import { ActionContext, Placements, placements, selectionActions } from './actions';
 import { executeCommand } from './commands';
 import type { ExplorerPort } from '@catenary/explorer';
@@ -25,7 +24,7 @@ import { explorerChildren, explorerElements, explorerPaths, explorerSearch } fro
 import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
-import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
+import { Placement, declaredPrefixes, decorateFileReferences, enclosingWorkspace, positionIn, referencedFiles } from './files';
 import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, GraphChange, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
 import { History } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -39,16 +38,15 @@ import { authoringMetamodel } from './authoring';
 import { Metamodel, buildVocabulary, emptyMetamodel, formShapes } from './shapes';
 import { withCount } from './shape-ops';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
-import { skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { reportProblems } from './report-read';
 import { ShaclResult, violationsOf } from './validate';
 import { TracedStore, tracer } from './trace';
 import { ValidationRunner } from './validation-runner';
-import { Loader, fileContent, openWorkspace } from './loader';
+import { Loader, fileContent, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
 import { placeChanges, transfer, filesOfSubject } from './placement';
-import { readChanges } from './reconciler';
-import { Saver } from './saver';
+import { Reconciler } from './reconciler';
+import { ImportCopies, Saver, Writer } from './saver';
 import { Settings, createWorkspace } from './settings';
 import { validationInput, validationTriples } from './validation-data';
 import { search } from './search';
@@ -141,6 +139,33 @@ export class ModelStore implements ModelQueries {
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
     protected readonly fileQueue = new SerialQueue();
+
+    protected readonly writer = (() => {
+        const store = this;
+        return new Writer({
+            saver: () => this.saver,
+            writable: () => !!this.settings && !this.settings.gone,
+            queue: this.fileQueue,
+            get warnings() { return store.warnings; },
+            set warnings(warnings: string[]) { store.warnings = warnings; },
+            saved: () => this.changed('save')
+        });
+    })();
+
+    protected readonly reconciler = new Reconciler({
+        settings: () => this.settings,
+        graph: () => this.graph,
+        files: () => this.loader!,
+        saved: () => this.saver!.savedState(),
+        ownWrites: () => this.saver?.ownWrites,
+        queue: this.fileQueue,
+        syncFromDisk: () => this.syncFromDisk(),
+        gone: ws => this.workspaceGone(ws),
+        reopen: file => this.reopenFromDisk(file),
+        forget: () => this.saver!.forget(),
+        filesRead: (read, notes, unmounted, ws) => this.readFromDisk(read, notes, unmounted, ws),
+        nothingRead: () => this.nothingReadFromDisk()
+    });
 
     protected readonly listeners = new Set<Listener>();
 
@@ -582,7 +607,7 @@ export class ModelStore implements ModelQueries {
     async openTargets(id: string): Promise<OpenTarget[]> {
         if (!this.file) return [];
         const files = this.filesOfElement(id);
-        const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await this.positionIn(path, id) })));
+        const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await positionIn(path, this.textTargets(id)) })));
         const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
         const shown = this.showing(id);
         const canvases = shown.isView
@@ -611,24 +636,6 @@ export class ModelStore implements ModelQueries {
         if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
         const t = elementTerm(id);
         return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
-    }
-
-    /** The position of an element in a file on disk: by its Turtle syntax tree, else the line of a text search (other formats). */
-    protected async positionIn(file: string, id: string): Promise<{ line?: number; column?: number }> {
-        let text: string;
-        try { text = await fs.readFile(file, 'utf8'); } catch { return {}; }
-        const targets = this.textTargets(id);
-        if (/\.ttl$/i.test(file)) {
-            for (const target of targets) {
-                const at = await turtlePosition(text, file, target).catch(() => undefined);
-                if (at) return at;
-            }
-        }
-        for (const { subject } of targets) {
-            const line = sourceLine(text, subject);
-            if (line) return { line };
-        }
-        return {};
     }
 
     protected scopeOf(patch: Patch): ChangeScope {
@@ -667,23 +674,17 @@ export class ModelStore implements ModelQueries {
             }
         });
         // File references: the absolute path (from the folder of the view file), and whether the file is on disk.
-        for (const v of Object.values(doc.views)) {
-            const dir = path.dirname(this.settings?.viewFile(v.uri)?.path ?? path.join(this.folder, 'views', 'x'));
-            for (const b of v.boxes) {
-                if (b.kind !== 'reference' || !b.file) continue;
-                b.path = resolveStored(dir, b.file);
-                b.broken = !existsSync(b.path);
-            }
-        }
+        decorateFileReferences(doc, view => this.referenceViewFile(view));
         return doc;
     }
 
     /** The files that file references name, with their state on disk (for the watcher). */
     protected referencedFiles(): string {
-        return fileReferences(this.graph).map(({ view, file }) => {
-            const p = resolveStored(path.dirname(this.settings?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x')), file);
-            return `${p}:${existsSync(p)}`;
-        }).sort().join('\n');
+        return referencedFiles(fileReferences(this.graph), view => this.referenceViewFile(view));
+    }
+
+    protected referenceViewFile(view: string): string {
+        return this.settings?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x');
     }
 
     get canUndo(): boolean { return this.history.canUndo; }
@@ -832,7 +833,7 @@ export class ModelStore implements ModelQueries {
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
         if (patch.length) {
-            this.commitNotes.push(command.kind);
+            this.writer.commitNotes.push(command.kind);
             this.track(patch);
         }
         this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed,
@@ -922,45 +923,9 @@ export class ModelStore implements ModelQueries {
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
-        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.commitNotes.push(reason);
-        if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.queueWrite();
+        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.commitNotes.push(reason);
+        if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
-    }
-
-    protected writeQueued = false;
-    /** What the next commit contains: command kinds, undo, redo, files. */
-    protected commitNotes: string[] = [];
-    /** The last write error; it shows in the warnings until a write succeeds. */
-    protected writeError?: string;
-
-    /** Queue a write of the changed files: one write for all changes that come before it runs. */
-    protected queueWrite(): void {
-        if (!this.settings || this.writeQueued || this.settings.gone) return;
-        this.writeQueued = true;
-        void this.serial(async () => {
-            this.writeQueued = false;
-            await tracer.span('file', 'write', () => this.write());
-        });
-    }
-
-    /** Write the changed files and commit them. A failure shows in the warnings until a write succeeds. */
-    protected async write(): Promise<CommandResult> {
-        const ws = this.saver;
-        const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
-        // A write does not change the dataset: the caches stay (only the dirty state changes).
-        if (r.ok) this.changed('save');
-        const notes = [...new Set(this.commitNotes.splice(0))];
-        const warningCount = this.warnings.length;
-        const files = ws?.committable() ?? [];
-        const error = r.ok ? await commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`) : `Not written: ${r.error}`;
-        if (r.ok && !error) ws!.written = [];
-        if (error) this.commitNotes.unshift(...notes);
-        if (error !== this.writeError || this.warnings.length !== warningCount) {
-            this.warnings = [...this.warnings.filter(w => w !== this.writeError), ...(error ? [error] : [])];
-            this.writeError = error;
-            this.changed('save');
-        }
-        return r;
     }
 
     /** Resolves when the queued writes are done. */
@@ -974,22 +939,6 @@ export class ModelStore implements ModelQueries {
     watching = true;
     /** `referencedFiles()` at the last change: a difference is a file reference that changed state on disk. */
     protected referencedState = '';
-    protected readonly watcher = new FolderWatcher(changed => void this.serial(() => this.syncFromWatch(changed)));
-
-    /**
-     * After watch events: read the changes on disk, unless each event is a file that Catenary wrote and that still has the text of
-     * that write (a save renames its temporary files over the files, and the watch reports each rename). `changed`: undefined when an
-     * event had no file name. Runs in the file queue, after the write that caused the events.
-     */
-    protected async syncFromWatch(changed?: string[]): Promise<void> {
-        const own = this.saver?.ownWrites;
-        if (own && changed?.length && (await Promise.all(changed.map(f => own.isOwn(f)))).every(Boolean)) {
-            tracer.root('file', 'own write: not read again', () => tracer.note(changed.map(f => path.basename(f)).join(', ')));
-            return;
-        }
-        await tracer.root('file', 'read changed files', () => this.syncFromDisk());
-    }
-
     /**
      * Watch the folder of the workspace file and its subfolders. An event starts `syncFromDisk` after 150 ms without events (an editor
      * writes a file in more than one step). Hidden files and folders (.git) and Catenary's own temporary files are ignored; its own writes
@@ -997,12 +946,12 @@ export class ModelStore implements ModelQueries {
      */
     protected watch(): void {
         if (!this.settings || !this.watching || this.settings.gone) return this.close();
-        this.watcher.watch(this.folder);
+        this.reconciler.watch(this.folder);
     }
 
     /** Stop watching the files. */
     close(): void {
-        this.watcher.close();
+        this.reconciler.close();
     }
 
     /**
@@ -1010,48 +959,45 @@ export class ModelStore implements ModelQueries {
      * files that are new or removed in the folder. A changed workspace file opens the workspace again. The disk wins over a write that
      * is pending. No undo across it. Returns the names of the files read.
      */
-    async syncFromDisk(): Promise<string[]> {
-        const ws = this.settings;
-        if (!ws) return [];
-        const text = await readDisk(ws.path);
-        if (text === undefined && ws.workspace.text !== undefined) {
-            // The workspace file (or its folder) is gone: keep the model as it is, stop watching, say it once.
-            const note = `${path.basename(ws.path)} was removed or moved on disk: the files are not read or written until the workspace is opened again.`;
-            this.close();
-            ws.gone = true;
-            if (!this.warnings.includes(note)) {
-                this.warnings = [...this.warnings, note];
-                this.changed('files');
-            }
-            return [];
-        }
-        // Also a workspace file that another program made (the folder was opened without one).
-        if (text !== undefined && text !== ws.workspace.text) {
-            const name = path.basename(ws.path);
-            const r = await this.doOpen(ws.path);
-            this.warnings = [...this.warnings, r.ok ? `${name} changed on disk: the workspace was opened again.` : `${name} changed on disk and cannot be opened: ${r.error}`];
+    syncFromDisk(): Promise<string[]> {
+        return this.reconciler.syncFromDisk();
+    }
+
+    protected workspaceGone(ws: Settings): void {
+        // Keep the model as it is, stop watching, say it once.
+        const note = `${path.basename(ws.path)} was removed or moved on disk: the files are not read or written until the workspace is opened again.`;
+        this.close();
+        ws.gone = true;
+        if (!this.warnings.includes(note)) {
+            this.warnings = [...this.warnings, note];
             this.changed('files');
-            return [name];
         }
-        const { read, notes, unmounted } = await readChanges(this.graph, ws, this.loader!, this.saver!.savedState());
-        this.saver!.forget();
-        if (!read.length && !notes.length) {
-            // Only a referenced file appeared or disappeared: new doc, no write.
-            if (this.referencedFiles() !== this.referencedState) {
-                this.graph.invalidate({ data: true });
-                this.referencedState = this.referencedFiles();
-                this.changed('disk');
-            }
-            return [];
+    }
+
+    protected async reopenFromDisk(file: string): Promise<void> {
+        const name = path.basename(file);
+        const r = await this.doOpen(file);
+        this.warnings = [...this.warnings, r.ok ? `${name} changed on disk: the workspace was opened again.` : `${name} changed on disk and cannot be opened: ${r.error}`];
+        this.changed('files');
+    }
+
+    protected nothingReadFromDisk(): void {
+        // Only a referenced file appeared or disappeared: new doc, no write.
+        if (this.referencedFiles() !== this.referencedState) {
+            this.graph.invalidate({ data: true });
+            this.referencedState = this.referencedFiles();
+            this.changed('disk');
         }
+    }
+
+    protected async readFromDisk(read: string[], notes: string[], unmounted: Set<string>, ws: Settings): Promise<void> {
         // The failed write of a file that was read again is not pending any more; a new failure shows again.
         const notRead = (w: string) => [...unmounted].some(n => w.startsWith(`${n}: not read: `));
-        this.warnings = [...this.warnings.filter(w => w !== this.writeError && !notRead(w) && !/ changed on disk: read again| was removed on disk| is new on disk/.test(w)), ...notes];
-        this.writeError = undefined;
+        this.warnings = [...this.warnings.filter(w => w !== this.writer.writeError && !notRead(w) && !/ changed on disk: read again| was removed on disk| is new on disk/.test(w)), ...notes];
+        this.writer.writeError = undefined;
         await this.saver!.recordUncommitted(read.map(f => path.resolve(this.folder, f)));
         ws.syncShapesTarget();
         this.filesChanged('files');
-        return read;
     }
 
     // ------------------------------------------------------------ files
@@ -1085,19 +1031,14 @@ export class ModelStore implements ModelQueries {
     }
 
     /**
-     * Open a workspace file, or a folder (`workspaceFileOf`). A folder without a workspace file opens with the default settings; its
+     * Open a workspace file, or a folder (`resolveOpenTarget`). A folder without a workspace file opens with the default settings; its
      * `workspace.trig` is written at the first change of a setting. That path while it is not on disk (a recent entry) is its folder.
      */
     open(workspacePath: string): Promise<CommandResult> {
         return this.serial(async () => {
-            let given = absolutePath(workspacePath);
-            if (path.basename(given) === WORKSPACE_FILE && !existsSync(given) && existsSync(path.dirname(given))) given = path.dirname(given);
-            const target = await workspaceFileOf(given);
+            const target = await resolveOpenTarget(workspacePath);
             if ('error' in target) return { ok: false, error: target.error };
-            // The content decides, not the name: a view file is part of a workspace, not one.
-            const content = existsSync(target.file) ? await fileContent(target.file) : undefined;
-            if (content?.viewFile && !content.workspace) return { ok: false, error: `${path.basename(target.file)} is a view file. Open its workspace, then open the view.` };
-            return this.doOpen(target.file, target.file !== given);
+            return this.doOpen(target.file, target.ofFolder);
         });
     }
 
@@ -1177,15 +1118,15 @@ export class ModelStore implements ModelQueries {
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
         if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && this.saver!.dirty) {
-            this.commitNotes.push('before import mark');
-            await this.write();
+            this.writer.commitNotes.push('before import mark');
+            await this.writer.write();
         }
         const validation = ws.validation;
         const r = ws.applySettings(settings, this.saver!.savedState());
         if ('error' in r) return { ok: false, error: r.error };
         if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
-            await this.write();
+            await this.writer.write();
             return this.doOpen(ws.path);
         }
         ws.syncShapesTarget();
@@ -1225,19 +1166,9 @@ export class ModelStore implements ModelQueries {
             if (!ws) return { ok: false, error: 'No workspace is open.' };
             if (!sources.length) return { ok: false, error: 'No file to import.' };
             // Read all files first: a file that cannot be read imports nothing.
-            const reads: { name: string; text: string; quads?: Quad[]; source: string; inPlace?: string }[] = [];
-            for (const source of sources) {
-                const name = path.basename(source);
-                const inPlace = ws.knownFile(path.resolve(source));
-                try {
-                    const text = await fs.readFile(source, 'utf8');
-                    const quads = inPlace ? undefined : await parseRdf(text, source);
-                    if (quads && !quads.length) return { ok: false, error: `${name}: not imported: the file has no statements.` };
-                    reads.push({ name, text, quads, source, inPlace });
-                } catch (e) {
-                    return { ok: false, error: `${name}: not imported: ${(e as Error).message}` };
-                }
-            }
+            const sourcesRead = await readImportSources(sources, file => ws.knownFile(file));
+            if ('error' in sourcesRead) return { ok: false, error: sourcesRead.error };
+            const { reads } = sourcesRead;
             const table = { ...PREFIXES }, added: string[] = [], skipped = new Set<string>();
             for (const r of reads) {
                 for (const [prefix, ns] of Object.entries(declaredPrefixes(r.text, r.source))) {
@@ -1254,8 +1185,8 @@ export class ModelStore implements ModelQueries {
             const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
             if (own.length) {
                 if (this.saver!.dirty) {
-                    this.commitNotes.push('before import mark');
-                    await this.write();
+                    this.writer.commitNotes.push('before import mark');
+                    await this.writer.write();
                 }
                 const marked = ws.applySettings({ imported: [...before.imported, ...own] }, this.saver!.savedState());
                 if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
@@ -1269,40 +1200,29 @@ export class ModelStore implements ModelQueries {
                 // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
                 if (added.length) { this.graph.invalidate(); this.rebuildMetamodel(); }
                 ws.syncShapesTarget();
-                this.commitNotes.push(`import ${names}`);
+                this.writer.commitNotes.push(`import ${names}`);
                 this.changed('files');
                 note();
                 return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
             }
-            const folder = path.join(this.folder, IMPORT_FOLDER);
-            const targets = new Map<typeof reads[number], string>();
-            for (const r of copies) {
-                const base = r.name.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'imported';
-                let target = path.join(folder, `${base}.ttl`);
-                for (let i = 2; existsSync(target) || [...targets.values()].includes(target); i++) target = path.join(folder, `${base}-${i}.ttl`);
-                targets.set(r, target);
-            }
+            const imported = new ImportCopies(this.folder, copies);
+            const { targets } = imported;
             const undo = async (error: string): Promise<ImportResult> => {
-                for (const t of targets.values()) await fs.rm(t, { force: true });
+                await imported.undo();
                 ws.prefixes = before.prefixes;
                 setPrefixes(before.table);
                 ws.applySettings({ imported: before.imported }, this.saver!.savedState());
                 return { ok: false, error: `${names}: not imported: ${error}` };
             };
             try {
-                await fs.mkdir(folder, { recursive: true });
-                for (const [r, target] of targets) {
-                    // The default graph: a model file has no graph names (open.md STORE1).
-                    const triples = skolemize(r.quads!.map(q => rdf.quad(q.subject, q.predicate, q.object))).quads;
-                    await fs.writeFile(target, await serializeRdf(triples, target), { flag: 'wx' });
-                }
+                await imported.write();
             } catch (e) {
                 return undo((e as Error).message);
             }
             ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] }, this.saver!.savedState());
             this.saver!.written.push(...targets.values());
-            this.commitNotes.push(`import ${names}`);
-            const w = await this.write();
+            this.writer.commitNotes.push(`import ${names}`);
+            const w = await this.writer.write();
             if (!w.ok) return undo(w.error);
             const opened = await this.doOpen(ws.path);
             if (!opened.ok) return opened;
@@ -1313,7 +1233,7 @@ export class ModelStore implements ModelQueries {
 
     /** Write the files that are not written yet (after a failed write), and commit them. Normally there is nothing to write. */
     save(): Promise<CommandResult> {
-        return this.serial(() => this.write());
+        return this.serial(() => this.writer.write());
     }
 
     protected note(text: string): void {

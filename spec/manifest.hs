@@ -1370,7 +1370,8 @@ law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . change
 
 -- 10.1 Write queue and dirty state ------------------------------------------------------
 
--- | Code (packages/rdf/src): saver.ts holds the dirty state, the write and the commit paths; reconciler.ts reads what the watcher reports.
+-- | Code (packages/rdf/src): saver.ts holds Saver (dirty state and file writes) and Writer (queued writes, commits and retry notes).
+-- Writer lives across workspace opens. Reconciler in reconciler.ts owns the watcher and the disk reads.
 -- | File operations run one at a time. Each edit, undo and redo queues a write of the pending changes.
 -- Dirty: a write is pending or failed. It compares current canonical content with saved content.
 -- Touched file graphs invalidate their canonical cache entries. They do not define dirty state.

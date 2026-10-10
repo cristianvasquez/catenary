@@ -88,6 +88,11 @@ describe('sync modules', () => {
         expect(await ws.saver.save()).toEqual({ ok: false, error: 'Another workspace was opened during the save.' });
     });
 
+    it('the coordinator has no direct file I/O', () => {
+        const source = readFileSync(join(__dirname, '..', 'src', 'model-store.ts'), 'utf8');
+        expect(source).not.toMatch(/from 'fs'|existsSync|readDisk|readText|commitFiles|FolderWatcher|fs\./);
+    });
+
     it('no sync module imports another; all read the settings (ModelStore wires them)', () => {
         const modules = ['loader', 'reconciler', 'placement', 'saver', 'validation-data'];
         const src = join(__dirname, '..', 'src');
