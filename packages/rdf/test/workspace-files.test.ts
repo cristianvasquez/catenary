@@ -295,6 +295,23 @@ describe('workspace files', () => {
         expect(again.dirty).toBe(false);
     });
 
+    it('a view IRI with the data graph prefix stays a view: its edits mark and write the view file', async () => {
+        const f = files();
+        const store = await opened(f.ws);
+        const moved = store.execute({ kind: 'setUri', id: viewId(store, 'Product context'), uri: 'urn:data:diagram' });
+        ok(moved);
+        ok(await store.save());
+        expect(f.read('views/product-context.view.trig')).toContain('urn:data:diagram');
+        expect(store.dirty).toBe(false);
+        const id = viewId(store, 'Product context');
+        ok(store.execute({ kind: 'rename', id, label: 'Context map' }));
+        expect(store.files.views.find(v => v.view === id)?.dirty).toBe(true);
+        expect(store.dirty).toBe(true);
+        ok(await store.save());
+        expect(f.read('views/product-context.view.trig')).toContain('Context map');
+        expect(f.read('data.ttl')).not.toContain('Context map');
+    });
+
     it('a new view with a folder gets its view file in that folder; a folder outside the workspace folder is refused', async () => {
         const f = files();
         const store = await opened(f.ws);

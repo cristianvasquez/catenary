@@ -211,7 +211,12 @@ export class ModelGraph {
     dataGraphs(): NamedNode[] { return this.data ?? [this.model]; }
 
     isDataGraph(t: Pick<Term, 'termType' | 'value'> | undefined): boolean {
-        return !!t && t.termType === 'NamedNode' && (t.value === this.model.value || t.value.startsWith(DATA_GRAPH_PREFIX) || !!this.data?.some(g => g.value === t.value));
+        return !!t && t.termType === 'NamedNode' && (t.value === this.model.value || !!this.data?.some(g => g.value === t.value));
+    }
+
+    /** Register the data graph of a model file before statements enter it. The registry, not the IRI, gives a graph its role. */
+    addDataGraph(g: NamedNode): void {
+        if (this.data && !this.data.some(t => t.equals(g))) this.setDataGraphs([...this.data, g]);
     }
 
     /** Resolve temporary data additions before a command commits. Only final file graphs enter its patch. */
@@ -223,6 +228,7 @@ export class ModelGraph {
         const log = this.log;
         const place = (q: Quad, files: string[]) => {
             this.store.delete(q);
+            for (const file of files) this.addDataGraph(rdf.namedNode(dataGraphIri(file)));
             for (const file of files) this.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(file)), additions.get(tripleKey(q))?.was);
         };
         while (pending.length) {
@@ -319,7 +325,6 @@ export class ModelGraph {
         const q = rdf.quad(s, p, o, g);
         if (this.has(q)) return;
         if (!this.log) { this.transact(graph => { graph.add(s, p, o, g, was); return { ok: true }; }); return; }
-        if (this.data && this.isDataGraph(g) && !g.equals(this.model) && !this.data.some(t => t.equals(g))) this.setDataGraphs([...this.data, g as NamedNode]);
         const dependencies = this.dependencies(q);
         this.store.add(q);
         this.invalidate(dependencies);

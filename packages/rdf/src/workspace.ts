@@ -457,10 +457,11 @@ export class Workspace {
         // A file that Catenary does not write keeps its blank nodes on disk: its saved form is the read with IRIs.
         const keep = !this.writeProblemOf(r.path);
         if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
-        const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path));
+        const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path)), data = rdf.namedNode(dataGraphIri(r.path));
+        this.graph.addDataGraph(data);
         for (const q of quads) {
             if (shapes.has(termKey(q.subject))) { this.graph.add(q.subject, q.predicate, q.object, graph); continue; }
-            this.graph.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(r.path)));
+            this.graph.add(q.subject, q.predicate, q.object, data);
         }
         this.modelFiles.set(r.path, { path: r.path, saved: canonical(count && keep ? r.triples : quads), text: r.text, triples: quads, blanks: count });
         return true;
