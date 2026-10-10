@@ -280,3 +280,23 @@ export class SetShowHiddenHandler implements ActionHandler {
         return [];
     }
 }
+
+/** Client action: the canvas is shown or hidden (a Theia tab). A hidden canvas gets one update when it is shown again. */
+export interface SetVisibleAction extends Action {
+    kind: typeof SetVisibleAction.KIND;
+    visible: boolean;
+}
+export namespace SetVisibleAction {
+    export const KIND = 'catenarySetVisible';
+}
+
+@injectable()
+export class SetVisibleHandler implements ActionHandler {
+    @inject(ViewSession) protected readonly session: ViewSession;
+    readonly actionKinds = [SetVisibleAction.KIND];
+
+    async execute(action: Action): Promise<Action[]> {
+        await this.session.setVisible((action as SetVisibleAction).visible !== false);
+        return [];
+    }
+}

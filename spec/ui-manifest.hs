@@ -423,6 +423,26 @@ startupDocument :: Maybe Id -> [Id] -> Maybe Document -> Maybe Document   -- ?vi
 startupDocument (Just v) views restored = if v `elem` views then Just (OpenView (Node v)) else restored
 startupDocument Nothing _ restored = restored
 
+-- | Canvas updates (manifest §11.3, the tiers of a change). The canvas of a view keeps the read model of its view (the part) between changes. A layout-only change of the
+-- view (position, size, style of its placements) goes into the kept part: no view read. A new validation report: the counts come
+-- from the report, no view read. A change of the content (the elements shown, their statements, the shapes, a disk read) reads
+-- the view again. A layout-only change of a view updates no canvas of another view. A hidden canvas (a tab behind another one)
+-- sends nothing while hidden and refreshes once when it is shown. Reason: a move of a card on a large view read the whole view
+-- again for each open canvas, hidden ones too (view-session.ts ViewState.accept, ViewSession.setVisible).
+data CanvasChange = LayoutOnly | Report | Content deriving Eq
+viewReads :: CanvasChange -> Int                  -- full reads of the view that the canvas makes for the change
+viewReads Content = 1
+viewReads _ = 0
+law_layoutChangeReadsNoView :: CanvasChange -> Bool
+law_layoutChangeReadsNoView c = c /= Content ==> viewReads c == 0
+refreshed :: CanvasChange -> Id -> Id -> Bool     -- the change, the changed view, the view of the canvas
+law_layoutChangeStaysInView :: Id -> Id -> Bool
+law_layoutChangeStaysInView changed shown = refreshed LayoutOnly changed shown ==> changed == shown
+updatesAtShow :: Int -> Int                        -- changes while hidden -> updates sent at the show
+updatesAtShow changes = if changes > 0 then 1 else 0
+law_hiddenCanvasRefreshesOnce :: Int -> Bool
+law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
+
 -- 3.3 Selection and highlights ------------------------------------------------------
 
 -- | Save, validation and layout-only snapshots retain selection facts without a read or a resolved-selection event.
@@ -1707,6 +1727,7 @@ rejectionPlace = BelowRow
 -- | GHC requires a binding for each primitive. Add a stub here for each new primitive. Do not give a stub behavior.
 
 layer = manifestOnly
+refreshed = manifestOnly
 statementsOf = manifestOnly
 domainAfter = manifestOnly
 domainBefore = manifestOnly

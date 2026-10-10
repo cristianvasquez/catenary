@@ -211,6 +211,78 @@ describe('model changes reaching view clients', () => {
         expect(b.refresh).not.toHaveBeenCalled();
     });
 
+    it('law_layoutChangeReadsNoView, law_layoutChangeStaysInView: a move updates the kept part without a view read and leaves other views alone', async () => {
+        const a = await client(store, first), b = await client(store, second);
+        const quads = (store as unknown as { graph: { store: { select: unknown; construct: unknown } } }).graph.store;
+        const read = vi.spyOn(store, 'viewDoc'), select = vi.spyOn(quads, 'select' as never), construct = vi.spyOn(quads, 'construct' as never);
+        const card = { ...cardOf(a.state.view, instance)! };
+        edit({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 310, y: 420, width: 500 }] });
+        await a.flushed();
+        expect(a.sent.some(UpdateModelAction.is)).toBe(true);
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ position: { x: 310, y: 420 }, size: { width: 500 } });
+        expect(cardOf(a.state.view, instance)).toMatchObject({ x: 310, y: 420, width: 500 });
+        expect(read).not.toHaveBeenCalled();
+        expect(select).not.toHaveBeenCalled();
+        expect(construct).not.toHaveBeenCalled();
+        // The other view shows the same instance: its placement did not change.
+        expect(b.refresh).not.toHaveBeenCalled();
+        expect(b.sent).toEqual([]);
+        store.undo();
+        await a.flushed();
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ position: { x: card.x, y: card.y }, size: { width: card.width } });
+        expect(read).not.toHaveBeenCalled();
+        expect(b.refresh).not.toHaveBeenCalled();
+        // The style of a card and the sides of an edge are layout too.
+        edit({ kind: 'setViewElements', view: first, ids: [card.id], patch: { display: 'simple', color: '#ff0000' } });
+        await a.flushed();
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ display: 'simple', color: '#ff0000' });
+        expect(read).not.toHaveBeenCalled();
+        // A change of the content of the view reads it again.
+        edit({ kind: 'rename', id: instance, label: 'Content' });
+        await a.flushed();
+        expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it('a validation run refreshes the counts on the cards without a view read', async () => {
+        const a = await client(store, first);
+        const shape = edit({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:name' }, range: { kind: 'datatype', datatype: 'http://www.w3.org/2001/XMLSchema#string' }, minCount: 1 });
+        await a.flushed();
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ violations: 0 });
+        a.refresh.mockClear();
+        const read = vi.spyOn(store, 'viewDoc');
+        const reasons: string[] = [];
+        store.onDidChange(e => reasons.push(e.reason));
+        await store.validate();
+        expect(reasons).toEqual(['validation']);
+        await a.flushed();
+        expect(a.refresh).toHaveBeenCalledTimes(1);
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ violations: 1 });
+        expect(read).not.toHaveBeenCalled();
+    });
+
+    it('law_hiddenCanvasRefreshesOnce: a hidden canvas collects changes and gets one update when it is shown', async () => {
+        const a = await client(store, first);
+        await a.session.setVisible(false);
+        edit({ kind: 'rename', id: instance, label: 'First change' });
+        edit({ kind: 'rename', id: instance, label: 'Second change' });
+        expect(a.refresh).not.toHaveBeenCalled();
+        expect(a.sent).toEqual([]);
+        await a.session.setVisible(true);
+        expect(a.refresh).toHaveBeenCalledTimes(1);
+        expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Second change' });
+        await a.session.setVisible(true);
+        expect(a.refresh).toHaveBeenCalledTimes(1);
+        // Its own edit is sent while hidden; nothing is due at the next show.
+        await a.session.setVisible(false);
+        a.sent.length = 0;
+        await a.session.edit({ kind: 'rename', id: instance, label: 'Own edit' });
+        expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
+        await a.session.setVisible(true);
+        expect(a.refresh).toHaveBeenCalledTimes(1);
+    });
+
     it('sends one update before follow-up selection, and rejects invalid edits without a selection or model change', async () => {
         const a = await client(store, first);
         const select = vi.fn(() => [{ kind: 'select', selectedElementsIDs: [instance] }]);

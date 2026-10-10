@@ -11,7 +11,7 @@ import { TYPES } from '@catenary/model';
 import { DIAGRAM_TYPE } from '../../common/protocol';
 import {
     ChangeBoundsHandler, CreateCardHandler, CreateGroupHandler, CreateNoteHandler, CreateShapeHandler, CreateValueSetHandler, CutHandler, DeleteHandler,
-    PasteHandler, RequestClipboardDataHandler, SetCardScaleHandler, SetShowHiddenHandler, StoreUndoRedoHandler
+    PasteHandler, RequestClipboardDataHandler, SetCardScaleHandler, SetShowHiddenHandler, SetVisibleHandler, StoreUndoRedoHandler
 } from './handlers';
 import { LayoutViewHandler } from './layout';
 import { StoreCommandStack, ViewGModelFactory, ViewModelStorage, ViewSession, ViewState } from './view-session';
@@ -136,6 +136,7 @@ export class ViewDiagramModule extends DiagramModule {
         binding.rebind(UndoRedoActionHandler, StoreUndoRedoHandler);
         binding.add(SetShowHiddenHandler);
         binding.add(SetCardScaleHandler);
+        binding.add(SetVisibleHandler);
         binding.add(RequestClipboardDataHandler);
         binding.add(LayoutViewHandler);
     }

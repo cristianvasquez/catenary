@@ -17,7 +17,7 @@
 --   Part II   Edits              §5 Transactions and history, §6 Edit commands, §7 Arrival and removal,
 --                                §8 Shapes, SKOS and migrations, §9 Validation
 --   Part III  Persistence        §10 Writes, Git and the watcher
---   Part IV   Interfaces         §11 Read interface, §12 CLI
+--   Part IV   Interfaces         §11 Read interface (§11.3 Change propagation), §12 CLI
 
 module Catenary.Manifest where
 
@@ -38,9 +38,12 @@ import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 -- ADR 0006  The Model explorer shows the sections of explorer plugins; a plugin query runs when a folder opens. spec/ui-manifest.hs §8.5.
 -- ADR 0007  The frontend holds UI state only; panels read from backend queries. §11.
 -- ADR 0011  View files are TriG; placement IRIs derive from what they place. §2.3, §4.
--- ADR 0012  No read model of the whole dataset; request-scoped read models from shared SPARQL rules. §3.3, §11.
--- ADR 0013  Client feedback until the server confirms (3 s moves, 5 s pending rows); scoped refresh; SHACL in a worker.
---           spec/ui-manifest.hs §5.2, §6.6, and §9 here.
+-- ADR 0012  No Doc of the whole dataset. Panels read request-scoped Docs from shared SPARQL rules. A canvas keeps the Doc of
+--           its view and applies each change by tier: a view-graph patch in place, a data patch by a scoped read of the changed
+--           elements, a shapes change or a disk read by a view read. Reason: correctness by one oracle law, speed by not
+--           reading what did not change. §3.3, §11.3.
+-- ADR 0013  Client feedback until the server confirms (3 s moves, 5 s pending rows). A change refreshes only the canvases it
+--           touches, and no read on the backend thread blocks a change. SHACL runs in a worker. spec/ui-manifest.hs §3.2, §5.2, §6.6; §9 and §11.3 here.
 -- ADR 0014  Notations draw views: figures are derived, views store only placements. §4, §7, spec/ui-manifest.hs §2.
 
 -- | Helpers of the formal clauses. They are not part of the implementation.
@@ -502,7 +505,8 @@ law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
 
 -- | Read models (ADR 0012). There is no Doc of the whole dataset. Panels and editors build request-local display models.
 -- A request-scoped Doc holds the elements of one request, their neighbors when asked, and the views that can show them.
--- The other views of a scoped Doc have their label only. A scoped Doc is not kept after its request.
+-- The other views of a scoped Doc have their label only. A panel does not keep its Doc after the request. A canvas keeps the
+-- Doc of its view and brings it up to date from each change (§11.3).
 -- A selected-element request reads only its selected elements and required dependencies. Placement IDs do not require a full view read.
 -- Reason: unrelated card statements block selection requests on the backend event loop.
 law_selectedReadScope :: [Id] -> [Id] -> Bool       -- required elements, read elements
@@ -982,6 +986,16 @@ law_viewEditsKeepData :: Backend -> EditCommand -> Bool
 law_viewEditsKeepData b c =
   let outside = filter (not . isViewGraph b . graphOf)
   in isViewEdit c ==> sameSet (outside (storeQuads (snd (step b (Execute c))))) (outside (storeQuads b))
+-- | A placement is an element put on a view. A change of a placement (position, size, style, which view shows the element) is a
+-- patch of that view graph only: no quad of a data or shapes graph. Reason: a move is not a change of the model. Nothing else
+-- has to read, validate or write (law_layoutChangeNoValidation, law_viewPatchWritesOneFile, ui-manifest law_layoutChangeStaysInView).
+isPlacementCommand :: EditCommand -> Bool        -- SetBounds, SetViewElements, HideEdges, AddToView, RemoveFromView, SetEdgeLayout
+quadOf :: Change -> Quad
+quadOf (Add q) = q
+quadOf (Remove q) = q
+law_placementPatchStaysInView :: Backend -> EditCommand -> Bool
+law_placementPatchStaysInView b c =
+  isPlacementCommand c ==> all (isViewGraph b . graphOf . quadOf) (lastPatch (snd (step b (Execute c))))
 -- | Description edits accept an expected value. A stale draft cannot replace a newer description.
 viewDescriptionText :: Backend -> Id -> String
 law_staleViewDescriptionRejected :: Backend -> Id -> String -> String -> Bool
@@ -1356,6 +1370,19 @@ law_allHasProjection own model shapes = all (`elem` validationInput ValidationAl
 law_openViewsHasFocusProjection :: [Term] -> [Quad] -> [Quad] -> [Quad] -> Bool
 law_openViewsHasFocusProjection focus own model shapes =
   all (`elem` validationInput ValidationOpenViews focus own model shapes) [q | q <- skosProjection shapes, subjectOf q `elem` focus]
+-- | A patch of view graphs with layout predicates only (position, size, color, display, edge sides) schedules no run, in every
+-- mode. Reason: the report depends on the model and the shapes; in the mode "views" also on which elements the open views show.
+isLayoutPatch :: Backend -> Patch -> Bool
+validationScheduled :: Backend -> Bool
+law_layoutChangeNoValidation :: Backend -> Op -> Bool
+law_layoutChangeNoValidation b op =
+  let b' = snd (step b op)
+  in isChangeOp op && isLayoutPatch b (lastPatch b') && not (validationScheduled b) ==> not (validationScheduled b')
+isChangeOp :: Op -> Bool                          -- an edit, an undo or a redo
+isChangeOp (Execute _) = True
+isChangeOp Undo = True
+isChangeOp Redo = True
+isChangeOp _ = False
 law_reportNotInPatch :: Backend -> EditCommand -> Bool
 law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
   where
@@ -1390,6 +1417,15 @@ law_saveCleans :: Backend -> FilePath -> Bool
 law_saveCleans b f = let b' = snd (step b Save) in not (writeFailed b' f) ==> not (dirty b' f)
 law_failedWriteStaysDirty :: Backend -> FilePath -> Bool
 law_failedWriteStaysDirty b f = let b' = snd (step b Save) in (dirty b f && writeFailed b' f) ==> dirty b' f
+-- | A patch of one view graph writes one file: the view file. Reason: a move touches no other file (law_placementPatchStaysInView).
+filesWritten :: Backend -> Op -> [FilePath]      -- the files that the write of the Op changes on disk
+viewFileOf :: Backend -> Iri -> FilePath         -- the file of a view graph
+law_viewPatchWritesOneFile :: Backend -> Op -> Bool
+law_viewPatchWritesOneFile b op =
+  let patch = lastPatch (snd (step b op))
+  in case nub (map (graphOf . quadOf) patch) of
+       [g] | isViewGraph b g && not (dirty b (viewFileOf b g)) -> filesWritten b op `elem` [[], [viewFileOf b g]]
+       _ -> True
 
 -- 10.2 Write form -----------------------------------------------------------------------
 
@@ -1552,30 +1588,6 @@ panelsUnchanged (Just c) showsViolations = case reason c of
   SaveChange -> True
   ValidationChange -> not showsViolations
   r -> r `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c
--- | A GLSP session refreshes only when the change scope touches its scoped Doc: a shapes change, a changed view of the
--- Doc, or a changed instance of the Doc. No scope: refresh (view-session.ts, affectedBy).
-refreshes :: Doc -> Maybe SnapshotChange -> Bool
-refreshes _ Nothing = True
-refreshes d (Just c) = shapesFlag c || any (`elem` docViews d) (changedViews c) || any (`elem` docElements d) (changedElements c)
--- | An instance-edge placement removal updates the displayed graph from its committed patch. Other changes use the full projection.
--- Unrelated cards keep their display objects. Removal cascades and arrival rules still run in the transaction (§7).
--- Reason: hiding one edge must not reconstruct unrelated cards.
-law_edgeRemovalUpdatesDisplay :: [Id] -> [Id] -> [Id] -> Bool  -- before, removed edge placements, after
-law_edgeRemovalUpdatesDisplay before removed after = sameSet after [i | i <- before, i `notElem` removed]
--- | Display refresh starts after synchronous edit completion. The backend can then return the edit result before unrelated display work.
-displayRefreshAfterEdit :: Int -> Int -> Bool        -- edit completion, refresh start
-displayRefreshAfterEdit completed started = completed <= started
--- | A validation run that changes the violations has a scope: the instances and property shapes whose count of violations changed.
--- A card shows these counts, so a view that shows none of them does not refresh (model-store.ts violationScope).
--- Reason: a run without a scope rebuilt every open view after each edit.
-violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
-violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
--- | A move, resize or style change of placements keeps the reads that do not read the geometry: the figures, hidden neighbor counts
--- and shape applicability of each view, the explorer, the instance count and the file kinds. A write of the files keeps all reads.
--- The figures of a view read the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
--- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
-keepsReads :: SnapshotChange -> Bool
-keepsReads c = reason c == SaveChange || (reason c `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c)
 law_snapshotMirrorsHistory :: Backend -> Bool
 law_snapshotMirrorsHistory b =
   let s = snapshotOf b
@@ -1591,6 +1603,62 @@ law_movedIdsFollowSetUri :: Backend -> Iri -> Iri -> Bool
 law_movedIdsFollowSetUri b old new =
   let (r, b') = step b (Execute (SetUri (elementId old) (Just new)))
   in not (failed r) ==> (elementId old, elementId new) `elem` movedIds (snapshotOf b')
+
+-- 11.3 Change propagation --------------------------------------------------------------
+
+-- | One change, one patch, one scope (§5.2, §11.2). What follows a change is decided by the patch, by tier. A change of a view
+-- graph only (a placement: position, size, style, which view shows an element) changes no model statement, needs no validation,
+-- writes one file and touches the canvases of that view only (§6.3 law_placementPatchStaysInView, §9 law_layoutChangeNoValidation,
+-- §10.1 law_viewPatchWritesOneFile). A change of data statements touches the canvases that show a changed element. A change of the
+-- shapes, a disk read or an open touches every canvas. Reason: the cost of a change must follow the size of the change, not the
+-- size of the view or the workspace.
+data ChangeTier = ViewPatch | DataPatch | Rebuild deriving Eq
+tierOf :: SnapshotChange -> ChangeTier
+tierOf c
+  | reason c `elem` [LoadChange, FilesChange, DiskChangeReason, ShapesChange] || shapesFlag c = Rebuild
+  | reason c `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c = ViewPatch
+  | otherwise = DataPatch
+-- | A canvas keeps the Doc of its view. It brings the Doc up to date by the tier of the change: a ViewPatch goes into the kept
+-- Doc in place; a DataPatch re-reads the changed elements that the Doc holds, with the scoped read of §3.3, and merges them; a
+-- Rebuild reads the view again. A validation report changes no Doc: the counts on the cards come from the report (violationScope).
+-- Oracle: after any change, the kept Doc equals a fresh read of the view. The tests compare the two (scoped-doc.test.ts pattern).
+keptDoc :: Backend -> Iri -> Doc                 -- the Doc that the canvas of view v holds after the last change
+sameDoc :: Doc -> Doc -> Bool                     -- the same views, boxes, edges, instances and relations
+law_keptDocEqualsRead :: Backend -> Op -> Iri -> Bool
+law_keptDocEqualsRead b op v = let b' = snd (step b op) in sameDoc (keptDoc b' v) (fst (runRead b' (viewDoc v)))
+-- | Which canvases a change refreshes (view-session.ts, affectedBy). No scope: all. A ViewPatch: the canvases of the changed views.
+-- Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on a shapes change.
+docView :: Doc -> Id                              -- the view of the canvas
+refreshes :: Doc -> Maybe SnapshotChange -> Bool
+refreshes _ Nothing = True
+refreshes d (Just c)
+  | tierOf c == ViewPatch = docView d `elem` changedViews c
+  | otherwise = shapesFlag c || any (`elem` docViews d) (changedViews c) || any (`elem` docElements d) (changedElements c)
+law_viewPatchRefreshesOwnViewOnly :: Doc -> SnapshotChange -> Bool
+law_viewPatchRefreshesOwnViewOnly d c = (tierOf c == ViewPatch && refreshes d (Just c)) ==> docView d `elem` changedViews c
+-- | A hidden canvas (a tab behind another one) refreshes nothing while hidden and once when shown (ui-manifest §3.2).
+-- | An instance-edge placement removal updates the displayed graph from its committed patch (a ViewPatch of removals).
+-- Unrelated cards keep their display objects. Removal cascades and arrival rules still run in the transaction (§7).
+law_edgeRemovalUpdatesDisplay :: [Id] -> [Id] -> [Id] -> Bool  -- before, removed edge placements, after
+law_edgeRemovalUpdatesDisplay before removed after = sameSet after [i | i <- before, i `notElem` removed]
+-- | Display refresh starts after synchronous edit completion. The backend returns the edit result before display work.
+displayRefreshAfterEdit :: Int -> Int -> Bool        -- edit completion, refresh start
+displayRefreshAfterEdit completed started = completed <= started
+-- | A validation run that changes the violations has a scope: the instances and property shapes whose count of violations changed.
+-- A card shows these counts, so a canvas that shows none of them does not refresh (model-store.ts violationScope).
+-- Reason: a run without a scope rebuilt every open view after each edit.
+violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
+violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
+-- | A ViewPatch and a save keep the reads that do not read the geometry: the figures, hidden neighbor counts and shape
+-- applicability of each view, the explorer, the instance count, the file kinds and the dataset warnings. The figures of a view read
+-- the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
+-- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
+keepsReads :: SnapshotChange -> Bool
+keepsReads c = reason c == SaveChange || tierOf c == ViewPatch
+-- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, PERF5).
+-- Reason: the GLSP server and every RPC share the backend thread.
+readBudgetMs :: Int
+readBudgetMs = 50
 
 -- 12. CLI --------------------------------------------------------------------
 
@@ -1734,5 +1802,13 @@ lastKnownText = manifestOnly
 isTemporary = manifestOnly
 runQuery = manifestOnly
 getSnapshot = manifestOnly
+isPlacementCommand = manifestOnly
+isLayoutPatch = manifestOnly
+validationScheduled = manifestOnly
+filesWritten = manifestOnly
+viewFileOf = manifestOnly
+docView = manifestOnly
+keptDoc = manifestOnly
+sameDoc = manifestOnly
 onDidChange = manifestOnly
 snapshotOf = manifestOnly

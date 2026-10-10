@@ -1,14 +1,33 @@
 // View editor widget. The tool palette is a bar above the canvas (see modeler.css), so the canvas
 // is not the full widget: GLSP must get the bounds of the SVG, not of the widget node.
+// The server learns when the canvas is shown or hidden (a tab behind another one): a hidden canvas gets one update when shown.
 
 import { Bounds, InitializeCanvasBoundsAction } from '@eclipse-glsp/client';
 import { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { Message, Widget } from '@theia/core/lib/browser';
 import { injectable } from '@theia/core/shared/inversify';
 
+/** Client action to the GLSP server: the canvas is shown or hidden (handlers.ts SetVisibleAction). */
+export const SET_VISIBLE = 'catenarySetVisible';
+
 @injectable()
 export class ViewDiagramWidget extends GLSPDiagramWidget {
     protected canvasObserver?: ResizeObserver;
+
+    protected sendVisible(visible: boolean): void {
+        this.actionDispatcher.dispatch({ kind: SET_VISIBLE, visible } as never).catch(() => { /* the session is closed */ });
+    }
+
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        this.sendVisible(true);
+        this.updateCanvasBounds();
+    }
+
+    protected override onAfterHide(msg: Message): void {
+        super.onAfterHide(msg);
+        this.sendVisible(false);
+    }
 
     protected canvasBounds(): Bounds | undefined {
         const svg = this.node.querySelector('svg.sprotty-graph');
@@ -35,6 +54,8 @@ export class ViewDiagramWidget extends GLSPDiagramWidget {
             else requestAnimationFrame(observe);
         };
         observe();
+        // Restored editors attach behind the active tab: hidden until their tab is shown.
+        this.sendVisible(this.isVisible);
     }
 
     protected override onBeforeDetach(msg: Message): void {

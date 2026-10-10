@@ -133,6 +133,22 @@ describe('validation mode', () => {
         expect(foci(store)).toEqual(['urn:ex:hidden', 'urn:ex:shown']);
     });
 
+    it('law_layoutChangeNoValidation: a layout-only patch schedules no run in any mode', async () => {
+        for (const mode of ['all', 'views', 'off'] as const) {
+            const store = await opened(workspace(mode).path);
+            const view = elementId(rdf.namedNode(VIEW));
+            store.setOpenView('client-1', view);
+            await store.validate();
+            const runs = vi.spyOn((store as unknown as { validation: { invalidate(): void } }).validation, 'invalidate');
+            const shown = elementId(rdf.namedNode('urn:ex:shown'));
+            ok(store.execute({ kind: 'setBounds', view, bounds: [{ id: shown, x: 40, y: 30, width: 500, height: 200 }] }));
+            ok(store.execute({ kind: 'setViewElements', view, ids: [shown], patch: { color: '#ff0000', display: 'simple' } }));
+            store.undo();
+            store.redo();
+            expect(runs, mode).not.toHaveBeenCalled();
+        }
+    });
+
     it('views: the SKOS statements of the shapes files go in only for the open views and the IRIs that the data names', async () => {
         const ws = workspace('views');
         writeFileSync(join(ws.dir, 'shapes.ttl'), `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> .

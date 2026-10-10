@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NS, boxes, cardOf, iriId } from '@catenary/model';
-import { ModelStore } from '../src/model-store';
+import { ModelChange, ModelStore } from '../src/model-store';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
 
@@ -119,6 +119,41 @@ describe('model store', () => {
         expect(readFileSync(join(dir, 'views', 'unsaved.view.trig'), 'utf8')).toContain('Unsaved');
         expect(existsSync(join(dir, 'b', 'views'))).toBe(false);
         expect(Object.values(docOf(store).instances).map(i => i.label)).toEqual(['Only in B']);
+    });
+
+    it('law_placementPatchStaysInView, law_viewPatchWritesOneFile: a placement change touches the view graph and writes the view file only', async () => {
+        const { a, dir } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        await store.open(a);
+        await store.idle();
+        const view = Object.values(docOf(store).views).find(v => boxes(v, 'card').length > 1)!;
+        const card = boxes(view, 'card')[0];
+        const texts = (): Record<string, string> => Object.fromEntries(readdirSync(dir, { recursive: true, encoding: 'utf8' })
+            .filter(f => /\.(ttl|trig)$/.test(f)).map(f => [f, readFileSync(join(dir, f), 'utf8')]));
+        const before = texts();
+        const events: ModelChange[] = [];
+        store.onDidChange(e => events.push(e));
+        const placement = (command: Parameters<ModelStore['execute']>[0]) => {
+            events.length = 0;
+            expect(store.execute(command)).toMatchObject({ ok: true });
+            expect(events.map(e => e.reason)).toEqual(['edit']);
+            const [e] = events;
+            expect(e.patch!.length).toBeGreaterThan(0);
+            expect(e.patch!.map(c => c.quad.graph.value)).toEqual(e.patch!.map(() => view.uri));
+            expect(e.scope).toMatchObject({ views: [view.id], elements: [], shapes: false });
+            return e.scope!;
+        };
+        expect(placement({ kind: 'setBounds', view: view.id, bounds: [{ id: card.id, x: card.x + 50, y: card.y + 50, width: 700 }] }).layout).toBe(true);
+        expect(placement({ kind: 'setViewElements', view: view.id, ids: [card.id], patch: { color: '#00ff00', display: 'simple' } }).layout).toBe(true);
+        expect(placement({ kind: 'removeFromView', view: view.id, ids: [card.id] }).layout).toBe(false);
+        expect(placement({ kind: 'addToView', view: view.id, ids: [card.element], at: { x: 0, y: 0 } }).layout).toBe(false);
+        await settled();
+        await store.idle();
+        const after = texts();
+        const changed = Object.keys(before).filter(f => before[f] !== after[f]);
+        expect(changed).toHaveLength(1);
+        expect(after[changed[0]]).toContain(`<${view.uri}>`);
     });
 
     it('a validation result that is older than the last model edit is dropped', async () => {

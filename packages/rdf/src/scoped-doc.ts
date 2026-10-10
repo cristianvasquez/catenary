@@ -219,9 +219,14 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         if (targets) out.set(shape.id, { in: 0, out: 0, targets });
     }
     if (!cards.size) return out;
-    const shownSets = Object.values(shapes.valueSets).filter(s => view.boxes.some(b => b.kind === 'card' && b.element === s.id));
-    const shown = (iri: string) => cards.has(iri) || view.boxes.some(b => b.kind === 'card' && elementTerm(b.element)?.value === iri)
-        || shownSets.some(s => s.members.some(m => m.uri === iri));
+    // The IRIs that the view shows, once: a card, or a member of a shown value set (not a test per neighbor over all boxes).
+    const shownIris = new Set<string>();
+    for (const b of boxes(view, 'card')) {
+        const t = elementTerm(b.element);
+        if (t) shownIris.add(t.value);
+        for (const m of shapes.valueSets[b.element]?.members ?? []) shownIris.add(m.uri);
+    }
+    const shown = (iri: string) => cards.has(iri) || shownIris.has(iri);
     const instance = new Map<string, boolean>(), home = new Map<string, string>();
     const isInstance = (iri: string) => instance.get(iri) ?? instance.set(iri, g.isInstance(rdf.namedNode(iri))).get(iri)!;
     const homeOf = (iri: string) => home.get(iri) ?? home.set(iri, g.homeOf(rdf.namedNode(iri)).value).get(iri)!;

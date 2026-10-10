@@ -474,7 +474,8 @@ export class ModelStore {
         this.notified = event;
         if (!patch && (reason === 'load' || reason === 'files')) patch = event.patch.length ? event.patch : undefined;
         scope ??= patch && this.scopeOf(patch);
-        if (this.settings && reason !== 'disk') this.referencedState = this.referencedFiles();
+        // A layout change or a report cannot change the file references: the state of the last content change stays.
+        if (this.settings && reason !== 'disk' && reason !== 'validation' && !scope?.layout) this.referencedState = this.referencedFiles();
         this.lastChange = { reason, ...scope };
         if (tracer.on) {
             tracer.span('change', reason, () => {
