@@ -29,10 +29,12 @@ export const AUTHORING_PLUGINS: readonly AuthoringPlugin[] = [
 
 /** A query port on the graphs of the files, or on `graphs` only. */
 export function queryPort(g: ModelGraph, graphs?: readonly string[]): QueryPort {
-    const scope = (v: string) => graphs ? `FILTER (${v} IN (${graphs.map(x => `<${x}>`).join(', ')}))` : `FILTER (${v} != <${VALIDATION_GRAPH}>)`;
+    // `graphs`: VALUES binds the graph first, so the store reads only those graphs (a FILTER would scan the data graphs too).
+    const graph = (pattern: string, v = '?g') => graphs ? `VALUES ${v} { ${graphs.map(x => `<${x}>`).join(' ')} } GRAPH ${v} { ${pattern} }`
+        : `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`;
     return {
         select: query => g.store.select(query) as unknown as Record<string, Term>[],
-        graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } ${scope(v)}`,
+        graph,
         labels: iris => labels(g, [...iris])
     };
 }

@@ -26,6 +26,8 @@ export interface RelationDef {
     name: string;
     description?: string;
     targetClass: string;
+    /** Classes whose instances also count as an instance of `targetClass` (RDFS: its written subclasses). */
+    targetSubclasses?: string[];
     /** A concept scheme or collection as target (targetClass skos:Concept): its IRI, and the allowed objects (its concepts or members). */
     valueSet?: string;
     values?: string[];
@@ -77,8 +79,9 @@ export interface Classes {
 /** The target class of a relation to any resource (an RDFS rule without a class range): it admits an instance of any class. */
 export const ANY_RESOURCE = NS.rdfs + 'Resource';
 
-/** The relation admits an instance with `types`. */
-const admits = (r: RelationDef, types: string[]) => r.targetClass === ANY_RESOURCE || types.includes(r.targetClass);
+/** The relation admits an instance with `types`: of its target class, of a subclass that it names, or any resource. */
+export const relationAdmits = (r: RelationDef, types: readonly string[]) =>
+    r.targetClass === ANY_RESOURCE || types.includes(r.targetClass) || (r.targetSubclasses ?? []).some(c => types.includes(c));
 
 /** JSON Canvas preset colors of the classes, by palette position. */
 export const CLASS_COLORS = ['6', '4', '5', '2', '3', '1'];
@@ -142,7 +145,7 @@ export function mergeContributions(plugins: readonly PluginContributions[], voca
             const cls = target(l);
             if (!cls) continue;
             const values = l.valueSet && (l.valueSet.values ?? (vocabulary.concepts ?? []).filter(c => c.schemes.includes(l.valueSet!.iri)).map(c => c.iri));
-            cls.relations.push({ ...common(l), targetClass: l.target ?? ANY_RESOURCE, ...(l.valueSet ? { valueSet: l.valueSet.iri, values } : {}) });
+            cls.relations.push({ ...common(l), targetClass: l.target ?? ANY_RESOURCE, ...(l.target && l.targetSubclasses?.length ? { targetSubclasses: l.targetSubclasses } : {}), ...(l.valueSet ? { valueSet: l.valueSet.iri, values } : {}) });
         }
         for (const k of claimed) owned.add(k);
     }
@@ -176,7 +179,7 @@ export function primaryClass(meta: Classes, types: string[]): ClassDef | undefin
 
 /** The class ranges of the links of the plugins other than the shapes (RDFS) of an instance with `types`: the classes of its link candidates. */
 export function pluginRanges(meta: Classes, types: string[]): string[] {
-    return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source && r.targetClass !== ANY_RESOURCE).map(r => r.targetClass)))].sort();
+    return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source && r.targetClass !== ANY_RESOURCE).flatMap(r => [r.targetClass, ...r.targetSubclasses ?? []])))].sort();
 }
 
 /** The class of the views (each view graph has `<view> a view:View`). */
@@ -188,7 +191,7 @@ export function permittedRelations(meta: Classes, from: string[], to: string[], 
     const seen = new Set<string>();
     for (const t of from) {
         for (const r of classDef(meta, t)?.relations ?? []) {
-            if (admits(r, to) && (!r.values || toIri === undefined || r.values.includes(toIri)) && !seen.has(r.path)) {
+            if (relationAdmits(r, to) && (!r.values || toIri === undefined || r.values.includes(toIri)) && !seen.has(r.path)) {
                 seen.add(r.path);
                 result.push(r);
             }

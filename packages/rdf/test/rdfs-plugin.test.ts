@@ -45,9 +45,10 @@ describe('RDFS domain and range providers (@catenary/rdfs)', () => {
     it('law_domainSubclasses: a domain applies to its class and its written subclasses; a class range also admits the subclasses', async () => {
         const rs = await rules();
         expect(ofPredicate(rs, 'memberOf')).toEqual([`Person {"kind":"class","iri":"${EX}Team"}`, `Employee {"kind":"class","iri":"${EX}Team"}`]);
+        // One rule for each domain class: the range names its subclasses instead of a rule for each (no domain x range product).
         expect(ofPredicate(rs, 'knows')).toEqual([
-            `Person {"kind":"class","iri":"${EX}Person"}`, `Person {"kind":"class","iri":"${EX}Employee"}`,
-            `Employee {"kind":"class","iri":"${EX}Person"}`, `Employee {"kind":"class","iri":"${EX}Employee"}`]);
+            `Person {"kind":"class","iri":"${EX}Person","subclasses":["${EX}Employee"]}`,
+            `Employee {"kind":"class","iri":"${EX}Person","subclasses":["${EX}Employee"]}`]);
     });
 
     it('several domains are a union; literal ranges are fields; rdfs:Literal takes any literal; no range takes any value; a declared datatype is literal', async () => {
@@ -60,8 +61,8 @@ describe('RDFS domain and range providers (@catenary/rdfs)', () => {
 
     it('a subclass cycle ends; built-in vocabularies give no rules; labels and comments come from the predicate and the class', async () => {
         const rs = await rules();
-        expect(ofPredicate(rs, 'cycle').sort()).toEqual([`A {"kind":"class","iri":"${EX}A"}`, `A {"kind":"class","iri":"${EX}B"}`,
-            `B {"kind":"class","iri":"${EX}A"}`, `B {"kind":"class","iri":"${EX}B"}`]);
+        expect(ofPredicate(rs, 'cycle').sort()).toEqual([`A {"kind":"class","iri":"${EX}B","subclasses":["${EX}A"]}`,
+            `B {"kind":"class","iri":"${EX}B","subclasses":["${EX}A"]}`]);
         expect(rs.rules.some(r => r.predicate.startsWith(NS.rdfs))).toBe(false);
         expect(rs.rules.find(r => r.predicate === EX + 'memberOf')).toMatchObject({ name: 'member of', description: 'The team of a person.' });
         expect(rs.rules.find(r => r.predicate === EX + 'age')!.name).toBeUndefined();
@@ -96,8 +97,8 @@ describe('RDFS rules in the store', () => {
         const { meta } = store;
         const person = classDef(meta, EX + 'Person')!;
         expect(person).toMatchObject({ name: 'Person', description: 'A human.', shapes: [] });
-        expect(person.relations.map(r => [r.name, r.targetClass, r.source])).toEqual([
-            ['knows', EX + 'Person', 'rdfs'], ['knows', EX + 'Employee', 'rdfs'], ['member of', EX + 'Team', 'rdfs']]);
+        expect(person.relations.map(r => [r.name, r.targetClass, r.targetSubclasses, r.source])).toEqual([
+            ['knows', EX + 'Person', [EX + 'Employee'], 'rdfs'], ['member of', EX + 'Team', undefined, 'rdfs']]);
         expect(person.fields.map(f => [f.name, f.datatype, f.source])).toEqual([['age', NS.xsd + 'integer', 'rdfs'], ['note', undefined, 'rdfs']]);
         expect(classDef(meta, EX + 'Robot')!.fields.map(f => [f.path, f.datatype])).toEqual([[EX + 'mixed', undefined]]);
         const product = classDef(meta, DPROD + 'DataProduct')!;

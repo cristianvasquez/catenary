@@ -90,7 +90,9 @@ export function formShapes(meta: Metamodel): Dataset {
         out.add(rdf.quad(shape, n(NS.rdf + 'type'), n(SH + 'NodeShape')));
         const paths = [...new Set(parts.map(x => x.path))];
         paths.forEach((path, i) => {
-            const ranges = parts.filter(x => x.path === path && !('targetClass' in x && x.targetClass === ANY_RESOURCE));
+            // A class range admits its subclasses too: each is an alternative.
+            const ranges = parts.filter(x => x.path === path && !('targetClass' in x && x.targetClass === ANY_RESOURCE))
+                .flatMap((x): typeof parts => 'targetClass' in x ? [x, ...(x.targetSubclasses ?? []).map(c => ({ ...x, targetClass: c }))] : [x]);
             const ps = n(`${shape.value}/${i + 1}`);
             out.add(rdf.quad(shape, n(SH + 'property'), ps));
             out.add(rdf.quad(ps, n(SH + 'path'), n(path)));

@@ -10,8 +10,8 @@ import type { PaletteClass, PaletteProvider } from '@catenary/palette';
 import { OWL, QueryPort, RDF, RDFS, SH, XSD, iri } from '@catenary/query';
 
 /** What the objects of a predicate are: instances of a class, literals (of a datatype), or any value (a literal or a resource). */
-export type RdfsRange = { kind: 'class'; iri: string } | { kind: 'literal'; datatype?: string } | { kind: 'any' };
-/** One domain, predicate and range, after the expansion to the written subclasses. */
+export type RdfsRange = { kind: 'class'; iri: string; subclasses?: string[] } | { kind: 'literal'; datatype?: string } | { kind: 'any' };
+/** One domain, predicate and range. Domains are expanded to the written subclasses; a class range names them (`subclasses`). */
 export interface RdfsRule { domain: string; predicate: string; name?: string; description?: string; range: RdfsRange }
 export interface RdfsRules { rules: RdfsRule[]; classes: Record<string, { name?: string; description?: string }> }
 
@@ -79,21 +79,27 @@ export function rdfsRules(port: QueryPort): RdfsRules {
     const predicates = [...domains.keys()].sort();
     const names = texts(port, 'rdfs:label|skos:prefLabel', predicates), comments = texts(port, 'rdfs:comment', predicates);
     const rules: RdfsRule[] = [], seen = new Set<string>();
+    // The written subclasses of each class range: one shared list.
+    const below = new Map<string, string[]>();
     for (const p of predicates) {
         const objects = (ranges.get(p) ?? []).slice().sort().map(r => rangeOf(r, datatypes));
-        // A class range also admits the instances of its subclasses: one relation for each, as permittedRelations matches types.
-        const expanded: RdfsRange[] = objects.length ? objects.flatMap((r): RdfsRange[] => r.kind === 'class' ? withSubclasses(subs, r.iri).map(c => ({ kind: 'class', iri: c })) : [r])
-            : [{ kind: 'any' }];
+        // A class range also admits the instances of its subclasses: the link names them, so one link covers the whole tree.
+        const expanded: RdfsRange[] = objects.length ? objects.map((r): RdfsRange => {
+            if (r.kind !== 'class') return r;
+            let subclasses = below.get(r.iri);
+            if (!subclasses) below.set(r.iri, subclasses = withSubclasses(subs, r.iri).slice(1));
+            return subclasses.length ? { ...r, subclasses } : r;
+        }) : [{ kind: 'any' }];
         const own = { predicate: p, ...(names.has(p) ? { name: names.get(p) } : {}), ...(comments.has(p) ? { description: comments.get(p) } : {}) };
         const classes = [...new Set(domains.get(p)!.slice().sort().flatMap(d => withSubclasses(subs, d)))];
         for (const domain of classes) for (const range of expanded) {
-            const key = JSON.stringify([domain, p, range]);
+            const key = [domain, p, range.kind, range.kind === 'class' ? range.iri : range.kind === 'literal' ? range.datatype ?? '' : ''].join(' ');
             if (!seen.has(key)) rules.push({ domain, ...own, range });
             seen.add(key);
         }
     }
 
-    const classIris = [...new Set(rules.flatMap(r => [r.domain, ...(r.range.kind === 'class' ? [r.range.iri] : [])]))].sort();
+    const classIris = [...new Set(rules.flatMap(r => [r.domain, ...(r.range.kind === 'class' ? [r.range.iri, ...r.range.subclasses ?? []] : [])]))].sort();
     const classNames = texts(port, 'rdfs:label|skos:prefLabel', classIris), classComments = texts(port, 'rdfs:comment', classIris);
     const classes: RdfsRules['classes'] = {};
     for (const c of classIris) classes[c] = { ...(classNames.has(c) ? { name: classNames.get(c) } : {}), ...(classComments.has(c) ? { description: classComments.get(c) } : {}) };
@@ -118,7 +124,7 @@ const own = (r: RdfsRule) => ({ domain: r.domain, predicate: r.predicate, ...(r.
 
 /** A class range: a link to that class. Any value: a link to any resource (and a field). */
 function links(port: QueryPort): LinkRule[] {
-    return rulesOf(port).rules.flatMap(r => r.range.kind === 'class' ? [{ ...own(r), target: r.range.iri }] : r.range.kind === 'any' ? [own(r)] : []);
+    return rulesOf(port).rules.flatMap(r => r.range.kind === 'class' ? [{ ...own(r), target: r.range.iri, ...(r.range.subclasses ? { targetSubclasses: r.range.subclasses } : {}) }] : r.range.kind === 'any' ? [own(r)] : []);
 }
 
 /** Literal ranges and any value: one field for each domain and predicate, with a datatype only when all its ranges have the same one. */
