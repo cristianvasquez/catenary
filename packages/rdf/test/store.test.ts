@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Violation, boxes, cardOf } from '@catenary/model';
+import { NS, boxes, cardOf } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
@@ -110,9 +110,9 @@ describe('model store', () => {
         await settled();
         expect(store.violations).toEqual([]);
         const dp = Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!.id;
-        let finish!: (result: { violations: Violation[]; report: [] }) => void;
-        const stale = new Promise<{ violations: Violation[]; report: [] }>(resolve => { finish = resolve; });
-        const validate = vi.spyOn(validation, 'validateWithReport').mockReturnValueOnce(stale);
+        let finish!: (result: validation.ValidationReport) => void;
+        const stale = new Promise<validation.ValidationReport>(resolve => { finish = resolve; });
+        const validate = vi.spyOn(validation, 'validate').mockReturnValueOnce(stale);
         const reasons: string[] = [];
         store.onDidChange(e => reasons.push(e.reason));
         // Hold one validation result while a newer edit repairs the model.
@@ -120,7 +120,7 @@ describe('model store', () => {
         await vi.advanceTimersByTimeAsync(250);
         expect(validate).toHaveBeenCalledTimes(1);
         store.execute({ kind: 'setStatements', id: dp, values: { [DCT + 'description']: [{ termType: 'Literal', value: 'Back.' }] } });
-        finish({ violations: [{ instance: dp, focus: docOf(store).instances[dp].uri, severity: 'Violation', component: 'MinCount', message: 'Stale result' }], report: [] });
+        finish({ results: [{ focus: docOf(store).instances[dp].uri, component: NS.sh + 'MinCountConstraintComponent', severity: NS.sh + 'Violation', messages: ['Stale result'] }], report: [] });
         await stale;
         expect(store.violations).toEqual([]);
         expect(reasons).not.toContain('validation');

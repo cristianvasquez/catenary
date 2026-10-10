@@ -13,7 +13,7 @@ import { formCandidates } from './queries';
 import type { ShapesIndex } from './shapes-read';
 import { NOT_REPORT, connections, construct, iri, labels, rows, statements, thingHead, thingTypes, things } from './sparql';
 import { rdf, termKey } from './terms';
-import { readResults } from './validate';
+import { readResults } from './report-read';
 
 export interface PropertiesContext {
     g: ModelGraph;

@@ -150,6 +150,100 @@ ex:loose a skos:Concept ; skos:inScheme ex:scheme ; sh:name "Loose" .\n`);
         expect(foci(store)).toEqual(['urn:ex:loose']);
     });
 
+    /**
+     * A scheme shape on ex:color (sh:node, skos:inScheme sh:hasValue ex:colors). Only vocab.ttl, a shapes file, says that ex:red and
+     * ex:blue are in the scheme (inScheme, hasTopConcept). shown (on the view) has red, other (not on it) has blue, hidden has green (not
+     * in the scheme). ex:loose is unrelated vocabulary without the skos:note that the concept shape needs.
+     */
+    function schemes(mode: 'views' | 'all', vocab: 'own' | 'imported') {
+        const ws = workspace(mode === 'views' ? 'views' : undefined);
+        const f = (name: string, text: string) => writeFileSync(join(ws.dir, name), text);
+        f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-color .
+ex:ThingShape-color sh:path ex:color ; sh:node ex:ColorsShape .
+ex:ColorsShape a sh:NodeShape ; sh:property ex:ColorsShape-scheme .
+ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .
+ex:ConceptShape a sh:NodeShape ; sh:targetClass skos:Concept ; sh:property ex:ConceptShape-note .
+ex:ConceptShape-note sh:path skos:note ; sh:minCount 1 .\n`);
+        // An sh: statement puts each subject into the shapes graph of vocab.ttl: no data file holds the scheme membership.
+        f('vocab.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:colors a skos:ConceptScheme ; skos:hasTopConcept ex:blue ; sh:name "Colors" .
+ex:red a skos:Concept ; skos:inScheme ex:colors ; skos:note "Red." ; sh:name "Red" .
+ex:blue a skos:Concept ; skos:note "Blue." ; sh:name "Blue" .
+ex:green a skos:Concept ; skos:note "Green." ; sh:name "Green" .
+ex:loose a skos:Concept ; skos:inScheme ex:colors ; sh:name "Loose" .\n`);
+        f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing ; ex:color ex:red .\nex:other a ex:Thing ; ex:color ex:blue .\nex:hidden a ex:Thing ; ex:color ex:green .\n`);
+        return async () => {
+            const store = await opened(ws.path);
+            if (vocab === 'imported') ok(await store.setImported('vocab.ttl', true));
+            if (mode === 'views') store.setOpenView('client-1', elementId(rdf.namedNode(VIEW)));
+            await store.validate();
+            const input = (store as unknown as { validationInput(): { data: { subject: { value: string } }[] } }).validationInput();
+            return { store, subjects: new Set(input.data.map(q => q.subject.value)) };
+        };
+    }
+
+    for (const vocab of ['own', 'imported'] as const) {
+        it(`all: scheme membership from a shapes file (${vocab}) is validation data`, async () => {
+            const { store, subjects } = await schemes('all', vocab)();
+            // red (inScheme) and blue (hasTopConcept) are in the scheme; green is not; loose has no note.
+            expect(foci(store)).toEqual(['urn:ex:hidden', 'urn:ex:loose']);
+            expect(subjects.has('urn:ex:loose')).toBe(true);
+        });
+
+        it(`views: scheme membership from a shapes file (${vocab}) is validation data; unrelated vocabulary is not`, async () => {
+            const { store, subjects } = await schemes('views', vocab)();
+            // shown is checked and its red is in the scheme. loose, blue and green are not named by the data on the view.
+            expect(store.snapshot().counts.validated).toBe(1);
+            expect(foci(store)).toEqual([]);
+            expect([...subjects].sort()).toEqual(['urn:ex:red', 'urn:ex:shown']);
+            // A value outside the scheme on the view is a violation.
+            const view = elementId(rdf.namedNode(VIEW));
+            ok(store.execute({ kind: 'addToView', view, ids: [elementId(rdf.namedNode('urn:ex:hidden')), elementId(rdf.namedNode('urn:ex:other'))], at: { x: 200, y: 0 } }));
+            await store.validate();
+            expect(foci(store)).toEqual(['urn:ex:hidden']);
+        });
+    }
+
+    it('all: the scheme membership of a value from an imported data file is validation data (§9 factsOfTargets)', async () => {
+        const ws = workspace();
+        const f = (name: string, text: string) => writeFileSync(join(ws.dir, name), text);
+        f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-color .
+ex:ThingShape-color sh:path ex:color ; sh:node ex:ColorsShape .
+ex:ColorsShape a sh:NodeShape ; sh:property ex:ColorsShape-scheme .
+ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .\n`);
+        // A data file without sh: statements: gray (inScheme) and white (hasTopConcept) are in the scheme.
+        f('official.ttl', `@prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:colors a skos:ConceptScheme ; skos:hasTopConcept ex:white .
+ex:gray a skos:Concept ; skos:inScheme ex:colors .\nex:white a skos:Concept .\nex:black a skos:Concept .\n`);
+        f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing ; ex:color ex:gray .\nex:hidden a ex:Thing ; ex:color ex:white .\nex:other a ex:Thing ; ex:color ex:black .\n`);
+        const store = await opened(ws.path);
+        ok(await store.setImported('official.ttl', true));
+        await store.validate();
+        expect(foci(store)).toEqual(['urn:ex:other']);
+    });
+
+    it('all: an imported concept or scheme that the data names is not a focus node of shapes on topConceptOf or hasTopConcept', async () => {
+        const ws = workspace();
+        const f = (name: string, text: string) => writeFileSync(join(ws.dir, name), text);
+        f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:TopShape a sh:NodeShape ; sh:targetSubjectsOf skos:hasTopConcept, skos:topConceptOf ; sh:property ex:TopShape-label .
+ex:TopShape-label sh:path skos:altLabel ; sh:minCount 1 .
+ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-color .
+ex:ThingShape-color sh:path ex:color ; sh:node ex:ColorsShape .
+ex:ColorsShape a sh:NodeShape ; sh:property ex:ColorsShape-scheme .
+ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .\n`);
+        f('official.ttl', `@prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:colors skos:prefLabel "Colors" ; skos:hasTopConcept ex:white .\nex:gray skos:prefLabel "Gray" ; skos:topConceptOf ex:colors .\n`);
+        f('data.ttl', `@prefix ex: <urn:ex:> .\nex:a a ex:Thing ; ex:color ex:gray .\nex:b a ex:Thing ; ex:color ex:white .\n`);
+        const store = await opened(ws.path);
+        ok(await store.setImported('official.ttl', true));
+        await store.validate();
+        // The imported vocabulary is not checked; its scheme membership still makes gray and white values in the scheme.
+        expect(foci(store)).toEqual([]);
+    });
+
     it('views: an instance that only an imported file describes is not counted as checked', async () => {
         const ws = workspace('views');
         writeFileSync(join(ws.dir, 'official.ttl'), `@prefix ex: <urn:ex:> .\nex:official a ex:Thing ; ex:name "Official" .\n`);

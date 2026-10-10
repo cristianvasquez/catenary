@@ -10,7 +10,6 @@ import { shapeTargetMatches } from '../src/shacl-targets';
 import { ModelStore } from '../src/model-store';
 import { TracedStore, Tracer, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
-import { emptyMetamodel } from '../src/shapes';
 import * as validation from '../src/validate';
 import { ValidationRunner } from '../src/validation-runner';
 import { syncFigures } from '../src/figure-edits';
@@ -272,19 +271,19 @@ describe('traced store', () => {
     });
 
     it('validation: each change schedules a run; a run says what it validated, and a stale run says that it was discarded', async () => {
-        let finish!: (v: { violations: []; report: [] }) => void;
-        vi.spyOn(validation, 'validateWithReport')
+        let finish!: (v: validation.ValidationReport) => void;
+        vi.spyOn(validation, 'validate')
             .mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
-            .mockResolvedValueOnce({ violations: [], report: [] });
+            .mockResolvedValueOnce({ results: [], report: [] });
         const pending: (() => void)[] = [];
-        const r = new ValidationRunner(() => ({ graph: emptyGraph(), metamodel: emptyMetamodel() }), () => undefined,
+        const r = new ValidationRunner(() => ({ graph: emptyGraph(), input: () => ({ data: [], shapes: [] }), violations: () => [] }), () => undefined,
             { set: fn => pending.push(fn), clear: () => undefined });
         tracer.setClient(true);
         r.invalidate();
         r.invalidate();
         const stale = r.now();
         await r.now();
-        finish({ violations: [], report: [] });
+        finish({ results: [], report: [] });
         await stale;
         const spans = tracer.take().spans.filter(s => s.kind === 'validation');
         expect(spans.map(s => [s.name, s.detail])).toEqual([

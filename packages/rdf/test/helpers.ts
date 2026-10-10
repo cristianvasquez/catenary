@@ -2,9 +2,11 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { executeCommand } from '../src/commands';
 import { FILE_GRAPH_PREFIX, ModelGraph } from '../src/graph';
-import type { NamedNode } from '@rdfjs/types';
+import type { NamedNode, Quad } from '@rdfjs/types';
 import { Metamodel, metamodelFromQuads } from '../src/shapes';
-import { Classes, Doc, EditCommand } from '@catenary/model';
+import { Classes, Doc, EditCommand, Violation } from '@catenary/model';
+import { validate, violationsOf } from '../src/validate';
+import { validationInput } from '../src/validation-data';
 import { project } from './project-full';
 import type { ModelStore } from '../src/model-store';
 import { parseTrig } from '../src/trig';
@@ -77,4 +79,13 @@ export function value<T>(r: { ok: true; value: T } | { ok: false; error: string 
 /** Quads of a Turtle text. */
 export async function parseQuads(ttl: string) {
     return [...await rdf.io.dataset.fromText('text/turtle', ttl)];
+}
+
+/**
+ * The violations of `data` against the shapes of `meta`, with the input of the store (§9 validationInput: the data and the SKOS
+ * projection of the shapes). `instanceId`: the element id of a focus IRI.
+ */
+export async function violationsIn(data: Quad[], meta: Metamodel, instanceId: (iri: string) => string | undefined = iri => iri): Promise<Violation[]> {
+    const shapes = [...meta.dataset];
+    return violationsOf((await validate(validationInput(data, shapes), shapes)).results, meta, instanceId);
 }

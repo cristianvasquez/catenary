@@ -22,6 +22,7 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 4. **No notation index.** The global JSON mirror of the store (`TripleIndex`, kept by `IndexedStore` in `packages/rdf/src/notations.ts`) is removed. Its only readers are the diagram figures.
 5. **Each view owns its figure input.** When a change touches a view, its slice is read from the store (pattern lookups around its placed terms, no copy), and its figures are derived once. Every canvas that shows the view gets those figures through its own GLSP connection.
 6. **ModelStore becomes the coordinator.** It runs a command, gets one patch and sends one change event. It has no other job.
+7. **Keep the Metamodel copy** (`shapes.ts`, `metamodelFromQuads`) for the panels. The validator does not use it: it gets data quads and shape quads (stage 4, manifest §9 `validator`).
 
 ## Terms
 
@@ -54,20 +55,9 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 
 Each stage is one pull request. Each stage must pass `pnpm verify` on its own. Add `--e2e` when a stage changes browser wiring. Each stage updates the manifest sections that it names. It also updates `docs/architecture.md` (code map) and `spec/open.md`.
 
-### Stage 4: pure validator
-
-- **Needs:** per-file data and shapes graphs in `ModelGraph`.
-- **Goal:** the validator takes data quads and shape quads and returns a report. The coordinator writes the report graph and acts on the change event. The worker keeps getting a full copy for each run.
-- **Validation data:** include the data graphs of own files and the context that `validationTriples` (`validation-data.ts`) adds today. Also include the SKOS projection of all shapes graphs, own and imported. This projection selects SKOS predicates and `rdf:type` statements whose object is in the SKOS namespace, as `ValidationRunner.validateNow` does today. All mode includes the whole projection. OpenViews mode includes only projection statements about focused elements and IRIs named by the selected data, as §9 requires. Off mode runs no validation.
-- **Shapes:** include all shapes graphs, own and imported.
-- **Files:** `validation-runner.ts`, `validate.ts`, `model-store.ts`, `validation-data.ts` (`validationTriples`).
-- **Open first:** resolve SYNC2 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
-- **Done when:** the validator imports nothing from the store or the workspace. `validation-runner.test.ts` and `validation-mode.test.ts` pass. Tests cover scheme membership supplied only by shapes-file SKOS statements in both All and OpenViews modes. OpenViews tests also cover exclusion of unrelated shapes-file vocabulary. Cover own and imported shapes files.
-- **Manifest:** §9 (validation).
-
 ### Stage 6: coordinator
 
-- **Needs:** stage 4. PR #34 is merged: it added the query port (`packages/query`) and one provider contract per reader (`packages/palette`, `packages/links`, `packages/fields`).
+- **Needs:** PR #34 is merged: it added the query port (`packages/query`) and one provider contract per reader (`packages/palette`, `packages/links`, `packages/fields`).
 - **Goal:** `ModelStore` keeps only the coordinator job. Panel queries move behind those providers. Writes and commits move to the Saver. The watch loop moves to the Reconciler.
 - **Done when:** `model-store.ts` has no SPARQL text and no file I/O. The RPC service still takes its queries from `MODEL_QUERIES` (`packages/model/src/queries.ts`).
 - **Manifest:** §11 (read interface).

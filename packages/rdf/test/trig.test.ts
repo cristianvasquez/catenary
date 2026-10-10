@@ -10,15 +10,14 @@ import * as ops from '../src/ops';
 import { project } from './project-full';
 import { rdf } from '../src/terms';
 import { canonical as canonicalOf, parseTrig, writeTrig } from '../src/trig';
-import { validate } from '../src/validate';
-import { DCT, MODEL, byLabel, doc, example, load, meta, value } from './helpers';
+import { DCT, MODEL, byLabel, doc, example, load, meta, value, violationsIn } from './helpers';
 
 /** scripts/rdf-query.cjs: Oxigraph, a parser independent of the one that Catenary writes with. */
 const rdfQuery = createRequire(join(process.cwd(), 'package.json'))('./scripts/rdf-query.cjs') as { rows(files: string | string[], query: string): Record<string, string>[] };
 
 const canonical = async (text: string) => canonicalOf((await parseTrig(text)).quads);
 const validateGraph = (g: Awaited<ReturnType<typeof load>>, m: Awaited<ReturnType<typeof meta>>) =>
-    validate(g.modelTriples(), m, iri => (g.isInstance(rdf.namedNode(iri)) ? elementId(rdf.namedNode(iri)) : undefined));
+    violationsIn(g.modelTriples(), m, iri => (g.isInstance(rdf.namedNode(iri)) ? elementId(rdf.namedNode(iri)) : undefined));
 
 describe('TriG round trip', () => {
     it('open then save with no change gives the same bytes; the dataset has no blank nodes', async () => {

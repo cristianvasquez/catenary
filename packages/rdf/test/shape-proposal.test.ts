@@ -5,8 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ActionTarget, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { metamodelFromQuads } from '../src/shapes';
-import { validate } from '../src/validate';
-import { DATA, SHAPES, parseQuads, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, parseQuads, writeWorkspace, docOf, violationsIn } from './helpers';
 
 const X = 'urn:x:';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
@@ -98,10 +97,10 @@ describe('Propose Node Shapes from Data (SHACLxtract)', () => {
         const targets = shapes.filter(q => q.predicate.value === 'http://www.w3.org/ns/shacl#targetClass').map(q => q.object.value);
         expect(targets).toEqual(expect.arrayContaining([X + 'Book', X + 'Author']));
         const data = await parseQuads(BOOKS);
-        const violations = await validate(data, metamodelFromQuads(shapes), iri => iri);
+        const violations = await violationsIn(data, metamodelFromQuads(shapes), iri => iri);
         expect(violations).toEqual([]);
         // A negative example: a book without pages.
         const bad = await parseQuads(`<${X}c> a <${X}Book> ; <${RDFS}label> "C" ; <${X}author> <${X}p1> . <${X}p1> a <${X}Author> ; <${RDFS}label> "P1" .`);
-        expect((await validate(bad, metamodelFromQuads(shapes), iri => iri)).length).toBeGreaterThan(0);
+        expect((await violationsIn(bad, metamodelFromQuads(shapes), iri => iri)).length).toBeGreaterThan(0);
     });
 });
