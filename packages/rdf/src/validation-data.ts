@@ -10,8 +10,6 @@ import { rdf, termKey, tripleKey } from './terms';
 
 const toTriple = (q: Quad) => rdf.quad(q.subject, q.predicate, q.object);
 const skos = (local: string) => rdf.namedNode(NS.skos + local);
-/** The facts of a referred IRI besides its statements (§9 factsOfTargets): its types and its scheme membership. */
-const TARGET_FACTS = [P.type, skos('inScheme'), skos('topConceptOf')];
 
 /**
  * The triples that validation checks: the statements of the files that are not imported (with `focus`: of these subjects only), all
@@ -36,8 +34,13 @@ export function validationTriples(graph: ModelGraph, settings: Settings, focus?:
     for (const s of subjects.values()) graph.match(s, null, null, graph.model).forEach(add);
     for (const [k, o] of objects) {
         if (subjects.has(k)) continue;
-        for (const p of TARGET_FACTS) graph.match(o as Quad['subject'], p, null, graph.model).forEach(add);
-        graph.match(null, skos('hasTopConcept'), o, graph.model).forEach(add);
+        // Its types and schemes only, as skos:inScheme: a statement with the referred IRI or its scheme as subject would make it a
+        // focus node of shapes that target that predicate, without its other statements.
+        const s = o as Quad['subject'];
+        graph.match(s, P.type, null, graph.model).forEach(add);
+        graph.match(s, skos('inScheme'), null, graph.model).forEach(add);
+        for (const q of graph.match(s, skos('topConceptOf'), null, graph.model)) add(rdf.quad(s, skos('inScheme'), q.object));
+        for (const q of graph.match(null, skos('hasTopConcept'), s, graph.model)) add(rdf.quad(s, skos('inScheme'), q.subject));
     }
     return [...out.values()];
 }

@@ -1293,8 +1293,11 @@ validationData own model = nub (own ++ ofSubjects ++ factsOfTargets)
     subjects = map subjectOf own
     targets = [o | q <- own, o@(NamedNode _) <- [objectOf q], o `notElem` subjects]
     ofSubjects = [q | q <- model, subjectOf q `elem` subjects]
-    factsOfTargets = [q | q <- model, predicateOf q `elem` [rdfType, skos "inScheme", skos "topConceptOf"], subjectOf q `elem` targets]
-      ++ [q | q <- model, predicateOf q == skos "hasTopConcept", objectOf q `elem` targets]
+    -- Types and schemes of a target, as skos:inScheme with the target as subject: a target or its scheme as the subject of another
+    -- statement would be a focus node of shapes that target that predicate, without its other statements.
+    factsOfTargets = [q | q <- model, predicateOf q `elem` [rdfType, skos "inScheme"], subjectOf q `elem` targets]
+      ++ [Quad c (skos "inScheme") sch g | Quad c p sch g <- model, p == skos "topConceptOf", c `elem` targets]
+      ++ [Quad c (skos "inScheme") sch g | Quad sch p c g <- model, p == skos "hasTopConcept", c `elem` targets]
 rdfType :: Iri
 rdfType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 skos :: String -> Iri

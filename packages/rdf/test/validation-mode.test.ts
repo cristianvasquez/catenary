@@ -224,6 +224,26 @@ ex:gray a skos:Concept ; skos:inScheme ex:colors .\nex:white a skos:Concept .\ne
         expect(foci(store)).toEqual(['urn:ex:other']);
     });
 
+    it('all: an imported concept or scheme that the data names is not a focus node of shapes on topConceptOf or hasTopConcept', async () => {
+        const ws = workspace();
+        const f = (name: string, text: string) => writeFileSync(join(ws.dir, name), text);
+        f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:TopShape a sh:NodeShape ; sh:targetSubjectsOf skos:hasTopConcept, skos:topConceptOf ; sh:property ex:TopShape-label .
+ex:TopShape-label sh:path skos:altLabel ; sh:minCount 1 .
+ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-color .
+ex:ThingShape-color sh:path ex:color ; sh:node ex:ColorsShape .
+ex:ColorsShape a sh:NodeShape ; sh:property ex:ColorsShape-scheme .
+ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .\n`);
+        f('official.ttl', `@prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+ex:colors skos:prefLabel "Colors" ; skos:hasTopConcept ex:white .\nex:gray skos:prefLabel "Gray" ; skos:topConceptOf ex:colors .\n`);
+        f('data.ttl', `@prefix ex: <urn:ex:> .\nex:a a ex:Thing ; ex:color ex:gray .\nex:b a ex:Thing ; ex:color ex:white .\n`);
+        const store = await opened(ws.path);
+        ok(await store.setImported('official.ttl', true));
+        await store.validate();
+        // The imported vocabulary is not checked; its scheme membership still makes gray and white values in the scheme.
+        expect(foci(store)).toEqual([]);
+    });
+
     it('views: an instance that only an imported file describes is not counted as checked', async () => {
         const ws = workspace('views');
         writeFileSync(join(ws.dir, 'official.ttl'), `@prefix ex: <urn:ex:> .\nex:official a ex:Thing ; ex:name "Official" .\n`);
