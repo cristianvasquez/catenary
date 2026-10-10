@@ -18,7 +18,7 @@ const TYPE = P.type.value, LABEL = P.label.value, CONFORMS_TO = P.conformsTo.val
 
 /**
  * The shapes read model of the shapes and vocabulary quads, read again only when these quads or the prefix table change (readShapes
- * compacts IRIs with it). The key is the content, not ModelGraph.shapesRevision: the oracle stays independent of the cache of the
+ * compacts IRIs with it). The key is the content, not ModelGraph.keys.shapes: the oracle stays independent of the cache of the
  * store (shapesIndexOf).
  */
 const shapesRead = new WeakMap<ModelGraph, { key: string; shapes: Doc['shapes'] }>();

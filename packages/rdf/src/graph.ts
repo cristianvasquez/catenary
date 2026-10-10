@@ -1,5 +1,5 @@
-// The model as quads in a QuadStore (store.ts): one store graph for each file (ADR 0003). The data file: the model graph; each shapes
-// file: a shapes graph; both named `urn:file:<path>`. Workspace files: one named graph for each view, with the graph names of the file.
+// The model as quads in a QuadStore. Data files share the model graph; shape subjects use the graph of their file.
+// Each view file uses its view IRI as its graph name.
 // The role of a graph comes from the registry of this class (`model`, `setShapesGraphs`), not from its name.
 // The store is the source of truth. Every change goes through `add` / `remove`, which record a patch:
 // a transaction gives one patch, undo applies the patch backwards. Element ids: see ids.ts.
@@ -93,6 +93,25 @@ export type Change = { op: 'add' | 'remove'; quad: Quad; was?: Quad };
 /** The changes of one transaction, in order. */
 export type Patch = Change[];
 
+/** Placement geometry and style do not change figure derivation. */
+export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
+
+/** One committed patch and its cache dependencies. Metadata changes can have an empty patch. */
+export interface GraphChange {
+    sequence: number;
+    patch: Patch;
+    graphs: string[];
+    elements: string[];
+    shapes: boolean;
+    query: boolean;
+    data: boolean;
+    persisted: boolean;
+    layout: boolean;
+}
+type Dependencies = Pick<GraphChange, 'shapes' | 'query' | 'data' | 'persisted'>;
+let sequence = 0;
+const emptyChange = (): GraphChange => ({ sequence: 0, patch: [], graphs: [], elements: [], shapes: false, query: false, data: false, persisted: false, layout: false });
+
 type Maybe<T> = T | null | undefined;
 
 export class ModelGraph {
@@ -110,26 +129,53 @@ export class ModelGraph {
     /** Data changes that the shape edits of the open transaction ask for (the store puts them in its queue). */
     proposed: { change: MigrationChange; reason: string }[] = [];
 
-    /**
-     * Changes each time the content of `shapesAndVocabulary` or the RDFS rules can change: a quad of a shapes graph, a SKOS
-     * statement or a statement of a SKOS subject of the model graph, an RDFS statement (isRdfsQuad) or the text of an RDFS
-     * predicate or class, the shapes graphs. It keys the cache of the shapes index (shape-ops.ts). A change of the store that does not use `add`, `remove`
-     * or a patch (a read of a file) must call `shapesChanged`.
-     */
-    shapesRevision = 0;
-    /** Source-model and shapes changes. View and report graph edits do not change SHACL target data. */
-    queryRevision = 0;
+    /** The committed event and the last event that affects each cache input. */
+    change: GraphChange = emptyChange();
+    keys = { shapes: this.change, query: this.change, data: this.change, persisted: this.change };
+    protected readonly listeners = new Set<(change: GraphChange) => void>();
+    protected pending: Dependencies = { shapes: false, query: false, data: false, persisted: false };
 
-    shapesChanged(): void {
-        this.shapesRevision++;
-        this.queryRevision++;
+    onDidChange(listener: (change: GraphChange) => void): { dispose(): void } {
+        this.listeners.add(listener);
+        return { dispose: () => this.listeners.delete(listener) };
     }
 
-    protected count(q: Quad): void {
-        if (q.graph.equals(this.model) || this.shapes.has(q.graph as NamedNode) || (q.predicate.equals(P.type) && q.object.equals(V.View))) this.queryRevision++;
-        if (this.shapes.has(q.graph as NamedNode)) this.shapesRevision++;
-        else if (q.graph.equals(this.model) && (isVocabularyQuad(q) || isRdfsQuad(q) || SKOS_TYPES.some(t => this.store.match(q.subject, P.type, t, this.model).length > 0)
-            || (RDFS_TEXT.has(q.predicate.value) && this.inRdfsRule(q.subject)))) this.shapesRevision++;
+    /** Invalidate inputs changed by metadata, such as graph roles, prefixes or file membership. */
+    invalidate(dependencies: Partial<Dependencies> = { shapes: true, query: true, data: true, persisted: true }): void {
+        const event = { ...emptyChange(), ...dependencies };
+        for (const key of Object.keys(this.keys) as (keyof Dependencies)[]) if (event[key]) {
+            this.pending[key] = true;
+            this.keys[key] = event;
+        }
+        if (!this.log) this.publish([], event);
+    }
+
+    protected dependencies(q: Quad): Dependencies {
+        const report = q.graph.value === VALIDATION_GRAPH;
+        const model = q.graph.equals(this.model), shapesGraph = this.isShapesGraph(q.graph);
+        return {
+            persisted: !report,
+            data: !report && (model || shapesGraph || !this.isView(q.graph) || !LAYOUT_PREDICATES.has(q.predicate.value)),
+            query: !report && (model || shapesGraph || !this.isView(q.graph) || (q.predicate.equals(P.type) && q.object.equals(V.View))),
+            shapes: shapesGraph || (model && (isVocabularyQuad(q) || isRdfsQuad(q)
+                || SKOS_TYPES.some(t => this.store.match(q.subject, P.type, t, this.model).length > 0)
+                || (RDFS_TEXT.has(q.predicate.value) && this.inRdfsRule(q.subject))))
+        };
+    }
+
+    protected publish(patch: Patch, dependencies: Dependencies): void {
+        const event: GraphChange = {
+            ...dependencies, sequence: ++sequence, patch,
+            graphs: [...new Set(patch.map(c => c.quad.graph.value))],
+            elements: [...new Set(patch.flatMap(c => [c.quad.subject, c.quad.object])
+                .filter(t => t.termType === 'NamedNode').map(t => t.value))],
+            layout: patch.length > 0 && patch.every(c => this.isView(c.quad.graph) && !this.isShapesGraph(c.quad.graph)
+                && LAYOUT_PREDICATES.has(c.quad.predicate.value))
+        };
+        this.change = event;
+        for (const key of Object.keys(this.keys) as (keyof Dependencies)[]) if (event[key]) this.keys[key] = event;
+        this.pending = { shapes: false, query: false, data: false, persisted: false };
+        for (const listener of [...this.listeners]) listener(event);
     }
 
     constructor(readonly store: QuadStore) {}
@@ -145,9 +191,10 @@ export class ModelGraph {
     }
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
-        this.shapes = rdf.termSet([...graphs]);
-        this.shapesRevision++;
-        this.queryRevision++;
+        const next = [...graphs];
+        if (next.length === this.shapes.size && next.every(g => this.shapes.has(g))) return;
+        this.shapes = rdf.termSet(next);
+        this.invalidate({ shapes: true, query: true, data: true });
     }
 
     isShapesGraph(t: Term | undefined): boolean {
@@ -173,16 +220,20 @@ export class ModelGraph {
     add(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object, g: Quad_Graph = this.model, was?: Quad): void {
         const q = rdf.quad(s, p, o, g);
         if (this.store.has(q)) return;
+        if (!this.log) { this.transact(graph => { graph.add(s, p, o, g, was); return { ok: true }; }); return; }
+        const dependencies = this.dependencies(q);
         this.store.add(q);
-        this.count(q);
-        this.log?.push(was ? { op: 'add', quad: q, was } : { op: 'add', quad: q });
+        this.invalidate(dependencies);
+        this.log.push(was ? { op: 'add', quad: q, was } : { op: 'add', quad: q });
     }
 
     remove(q: Quad): void {
         if (!this.store.has(q)) return;
+        if (!this.log) { this.transact(g => { g.remove(q); return { ok: true }; }); return; }
+        const dependencies = this.dependencies(q);
         this.store.delete(q);
-        this.count(q);
-        this.log?.push({ op: 'remove', quad: q });
+        this.invalidate(dependencies);
+        this.log.push({ op: 'remove', quad: q });
     }
 
     removeMatches(s?: Maybe<Term>, p?: Maybe<Term>, o?: Maybe<Term>, g?: Maybe<Term>): void {
@@ -201,20 +252,39 @@ export class ModelGraph {
      */
     transact<R extends { ok: boolean }>(fn: (g: this) => R): { result: R | { ok: false; error: string }; patch: Patch } {
         if (this.log) throw new Error('A transaction is already open.');
+        const before = { change: this.change, keys: { ...this.keys }, shapes: this.shapes };
         const log: Patch = this.log = [];
+        this.pending = { shapes: false, query: false, data: false, persisted: false };
         this.proposed = [];
         let result: R | { ok: false; error: string };
         try {
             result = fn(this);
         } catch (e) {
             result = { ok: false, error: (e as Error).message };
-        } finally {
-            this.log = undefined;
         }
-        if (result.ok) return { result, patch: log };
+        this.log = undefined;
+        if (result.ok) {
+            if (log.length || Object.values(this.pending).some(Boolean)) this.publish(log, this.pending);
+            return { result, patch: log };
+        }
         this.proposed = [];
-        this.undo(log);
+        for (const c of [...log].reverse()) {
+            if (c.op === 'add') this.store.delete(c.quad);
+            else this.store.add(c.quad);
+        }
+        this.change = before.change;
+        this.keys = before.keys;
+        this.shapes = before.shapes;
+        this.pending = { shapes: false, query: false, data: false, persisted: false };
         return { result, patch: [] };
+    }
+
+    /** Apply a synchronous load inside an existing transaction, or as its own patch. */
+    update(fn: () => void): Patch {
+        if (this.log) { fn(); return []; }
+        const { result, patch } = this.transact(() => { fn(); return { ok: true }; });
+        if (!result.ok) throw new Error('error' in result ? result.error : 'The graph update failed.');
+        return patch;
     }
 
     /** The changes of the open transaction so far (empty outside a transaction). */
@@ -223,17 +293,21 @@ export class ModelGraph {
     }
 
     undo(patch: Patch): void {
-        for (let i = patch.length - 1; i >= 0; i--) this.applyChange(patch[i], true);
+        this.update(() => {
+            for (const c of [...patch].reverse()) {
+                if (c.op === 'add') this.remove(c.quad);
+                else this.add(c.quad.subject, c.quad.predicate, c.quad.object, c.quad.graph);
+            }
+        });
     }
 
     redo(patch: Patch): void {
-        for (const c of patch) this.applyChange(c, false);
-    }
-
-    protected applyChange(c: Change, backwards: boolean): void {
-        if ((c.op === 'add') !== backwards) this.store.add(c.quad);
-        else this.store.delete(c.quad);
-        this.count(c.quad);
+        this.update(() => {
+            for (const c of patch) {
+                if (c.op === 'remove') this.remove(c.quad);
+                else this.add(c.quad.subject, c.quad.predicate, c.quad.object, c.quad.graph, c.was);
+            }
+        });
     }
 
     // ------------------------------------------------------------ reads

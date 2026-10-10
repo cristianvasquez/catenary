@@ -24,7 +24,7 @@ This document describes the structure of the code and the flow of data. The exac
 2. Read: each panel and each view session asks the backend for what it shows. The backend answers with a SPARQL query, and builds a request-scoped read model when a rule needs one. No component holds a copy of the whole model.
 3. Edit: the frontend or a GLSP handler sends one `EditCommand`. The store runs it in one synchronous transaction and produces one patch (added and removed quads) and one undo step.
 4. Write: the file queue writes the patch to the files that hold the statements, as a Turtle text patch when possible, else as a whole file. Then it makes a Git commit of those files.
-5. Notify: each connection receives a snapshot (revision, files, undo and dirty state, the scope of the last change). A panel or view session reads again only when the change scope touches it.
+5. Notify: each patch produces one event with its changed graphs and elements. Caches retain the last event that affects their input. Connections receive snapshots with event sequence numbers, file state and change scope. A panel or view session reads again only when the scope touches it.
 6. Validate: 250 ms after a data or shape change, SHACL runs in a worker thread. The report goes to the unsaved graph `urn:trellis:validation`.
 
 ## Store layout
@@ -141,7 +141,7 @@ Paths are relative to the directory in the first column.
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
-| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, change events, undo and redo. History records quad changes and source-file transfers. |
+| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. Cache keys retain the last relevant event. History records edits and source-file transfers. |
 | | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, statement origin, file of new subjects, save and sync |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
@@ -204,7 +204,7 @@ Path rules take the platform as a parameter (`path.win32` or `path.posix`), so t
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
 
-The test files of a Vitest thread share one module graph (`vitest.config.mts`). `vitest.setup.ts` resets the process-wide state (the prefix table, fake timers) before each file. A file that calls `vi.mock` or `vi.spyOn` runs in a process of its own: the config finds these files. Change the store through `ModelGraph.add` and `remove`, not through `g.store`: the shapes index cache sees only these changes.
+The test files of a Vitest thread share one module graph (`vitest.config.mts`). `vitest.setup.ts` resets the process-wide state (the prefix table, fake timers) before each file. A file that calls `vi.mock` or `vi.spyOn` runs in a process of its own: the config finds these files. Change the store through `ModelGraph.add` and `remove`. Transactions publish one scoped event. Rejected transactions publish none. Loads, unloads and reports use the same path. Cache keys retain the last relevant event.
 
 ### CI
 

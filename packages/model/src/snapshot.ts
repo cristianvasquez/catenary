@@ -122,13 +122,14 @@ export function panelsUnchanged(change: SnapshotChange | undefined, violations =
 }
 
 export interface ModelSnapshot {
+    /** Sequence of the latest shared change event. A save retains it. */
     revision: number;
     /** The change that made this snapshot. Undefined: the first snapshot. */
     change?: SnapshotChange;
     /** File system path of the primary workspace file, if one is open. */
     file?: string;
     files: WorkspaceFiles;
-    /** Changes each time the shapes are read. The frontend then reads them again with `shapesText`. */
+    /** Sequence of the last shared event that affects shapes or the metamodel. The frontend then reads `shapesText` again. */
     shapesVersion: number;
     meta: MetamodelInfo;
     /**

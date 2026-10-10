@@ -16,7 +16,7 @@ import {
 } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
-import { ModelGraph, cmp, fileOfGraph, labelFromIri } from './graph';
+import { GraphChange, ModelGraph, cmp, fileOfGraph, labelFromIri } from './graph';
 import { constraintId, elementId, propertyShapeId } from './ids';
 import { isSkolem } from './skolem';
 import { rdf, termKey } from './terms';
@@ -59,17 +59,17 @@ export interface ShapesIndex {
 
 const key = termKey;
 
-const indexes = new WeakMap<ModelGraph, { revision: number; index: ShapesIndex }>();
+const indexes = new WeakMap<ModelGraph, { event: GraphChange; index: ShapesIndex }>();
 
 /**
  * The shapes index of the shapes graphs and the SKOS vocabulary of the model graph of `g`, cached until they change
- * (ModelGraph.shapesRevision). Do not change it.
+ * (ModelGraph.keys.shapes). Do not change it.
  */
 export function shapesIndexOf(g: ModelGraph): ShapesIndex {
     const cached = indexes.get(g);
-    if (cached?.revision === g.shapesRevision) return cached.index;
+    if (cached?.event === g.keys.shapes) return cached.index;
     const index = readShapes(g.shapesAndVocabulary());
-    indexes.set(g, { revision: g.shapesRevision, index });
+    indexes.set(g, { event: g.keys.shapes, index });
     return index;
 }
 

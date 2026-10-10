@@ -180,3 +180,59 @@ describe('model store', () => {
         expect(store.dirty).toBe(true);
     });
 });
+
+describe('patch notification integration', () => {
+    it('law_eventVersion: edit and replay notify once with the same event that keys the snapshot', async () => {
+        const { a } = workspace(), store = new ModelStore();
+        store.watching = false;
+        try {
+            expect((await store.open(a)).ok).toBe(true);
+            const changes: import('../src/model-store').ModelChange[] = [];
+            store.onDidChange(change => {
+                if (['edit', 'undo', 'redo'].includes(change.reason)) {
+                    expect(store.snapshot().revision).toBe(change.event.sequence);
+                    changes.push(change);
+                }
+            });
+            expect(store.execute({ kind: 'createView', label: 'Event view' }).ok).toBe(true);
+            expect(changes).toHaveLength(1);
+            expect(changes[0].patch).toBe(changes[0].event.patch);
+            expect(store.undo().ok).toBe(true);
+            expect(changes).toHaveLength(2);
+            expect(changes[1].patch).toEqual([...changes[0].patch!].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })));
+            expect(changes[1].patch).toBe(changes[1].event.patch);
+            expect(store.redo().ok).toBe(true);
+            expect(changes).toHaveLength(3);
+            await store.idle();
+            const revision = store.snapshot().revision;
+            await store.save();
+            expect(store.snapshot().revision).toBe(revision);
+        } finally { store.close(); }
+    });
+
+    it('file reload and unload notify their effective patches without entering undo or dirty state', async () => {
+        const { a, dir } = workspace(), store = new ModelStore();
+        store.watching = false;
+        try {
+            expect((await store.open(a)).ok).toBe(true);
+            await store.idle();
+            const changes: import('../src/model-store').ModelChange[] = [];
+            store.onDidChange(c => { if (c.reason === 'files') changes.push(c); });
+            writeFileSync(join(dir, 'new.ttl'), '<urn:event:new> <urn:event:p> "first" .\n');
+            await store.syncFromDisk();
+            expect(changes).toHaveLength(1);
+            expect(changes[0].event.patch.some(c => c.op === 'add' && c.quad.subject.value === 'urn:event:new')).toBe(true);
+            expect(store.snapshot()).toMatchObject({ canUndo: false, dirty: false });
+            writeFileSync(join(dir, 'new.ttl'), '<urn:event:new> <urn:event:p> "second" .\n');
+            await store.syncFromDisk();
+            expect(changes).toHaveLength(2);
+            expect(changes[1].event.patch.filter(c => c.quad.subject.value === 'urn:event:new').map(c => c.op)).toEqual(['remove', 'add']);
+            rmSync(join(dir, 'new.ttl'));
+            await store.syncFromDisk();
+            expect(changes).toHaveLength(3);
+            expect(changes[2].event.patch.some(c => c.op === 'remove' && c.quad.subject.value === 'urn:event:new')).toBe(true);
+            expect(store.snapshot()).toMatchObject({ canUndo: false, dirty: false });
+            await store.idle();
+        } finally { store.close(); }
+    });
+});

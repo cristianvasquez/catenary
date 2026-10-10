@@ -47,11 +47,7 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     return n;
 }
 
-/**
- * Predicates of the geometry and the style of a placement. A change of these only moves, resizes or restyles what a view shows: the
- * figures do not read them (no built-in notation names them, test indexed-store.test.ts).
- */
-export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
+export { LAYOUT_PREDICATES } from './graph';
 
 const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
 
@@ -70,9 +66,6 @@ export function storeIndex(g: ModelGraph): TripleIndex {
  */
 export class IndexedStore implements QuadStore {
     protected live?: TripleIndex;
-    /** Changes with each add and delete, except of the validation report and of LAYOUT_PREDICATES: the figures and the other reads of a view key on it. */
-    dataVersion = 0;
-
     constructor(protected readonly inner: QuadStore) {}
 
     get size(): number { return this.inner.size; }
@@ -82,21 +75,15 @@ export class IndexedStore implements QuadStore {
     construct(query: string): Quad[] { return this.inner.construct(query); }
 
     add(q: Quad): void {
-        this.count(q);
         if (!this.live || isReport(q) || this.inner.has(q)) return this.inner.add(q);
         this.inner.add(q);
         for (const x of nquads([q])) this.live.add(x);
     }
 
     delete(q: Quad): void {
-        this.count(q);
         if (!this.live || isReport(q) || !this.inner.has(q)) return this.inner.delete(q);
         this.inner.delete(q);
         for (const x of nquads([q])) this.live.delete(x);
-    }
-
-    protected count(q: Quad): void {
-        if (!isReport(q) && !LAYOUT_PREDICATES.has(q.predicate.value)) this.dataVersion++;
     }
 
     index(): TripleIndex {
