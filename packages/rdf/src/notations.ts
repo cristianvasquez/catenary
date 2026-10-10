@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
 import type { Quad, Term } from '@rdfjs/types';
-import { Derivation, LazyTripleIndex, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
+import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
 import { parseRdfSync } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { skolemize } from './skolem';
@@ -92,5 +92,14 @@ export function keyTerm(k: string): NTerm {
 export function viewFiguresOf(g: ModelGraph, viewIri: string, also: Iterable<NTerm> = [], derivation?: Derivation): ViewFigures {
     const D = storeInput(g), notes = readNotations();
     const placed = placementsOf(D, viewIri);
-    return viewFigures(D, notes, viewIri, derivation ?? deriveFigures(D, notes, viewIri, [...[...placed.keys()].map(keyTerm), ...also]));
+    // A placement of another term (a statement with a literal) has no figure, and the store cannot look it up: the join reports it.
+    const scope = [...[...placed.keys()].map(keyTerm), ...also].filter(t => t.termType === 'Triple' || IRI.test(t.value));
+    let heads = listHeads.get(g);
+    if (!heads) listHeads.set(g, heads = new Map());
+    return viewFigures(D, notes, viewIri, derivation ?? deriveFigures(D, notes, viewIri, scope, heads));
 }
+
+const IRI = /^[^\s<>"{}|^`\\]+$/;
+
+/** The list heads of each store, kept between derivations (`ListHeads`). */
+const listHeads = new WeakMap<ModelGraph, ListHeads>();

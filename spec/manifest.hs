@@ -509,8 +509,9 @@ law_selectedReadScope :: [Id] -> [Id] -> Bool       -- required elements, read e
 law_selectedReadScope required readElements = all (`elem` required) readElements
 
 -- | The figures of a view start from its placed terms (and the terms that an edit removes or pastes): the placed figures, the lines
--- and hubs whose role paths reach them or reach such a line, and the role values of all of these. A placed list term finds its list
--- head (rule 12). They read the store around these terms only. For what the view shows, and for removal, arrival and data arrival,
+-- and hubs whose role paths reach them or reach such a line, their role values, and the role values of those (an end's title, an
+-- inline list's parts), no further. A placed list term finds its list head (rule 12), kept between derivations. A placement of a
+-- term that is not an IRI or a statement between IRIs has no figure. They read the store around these terms only. For what the view shows, and for removal, arrival and data arrival,
 -- they equal the figures of the whole workspace (notation-engine.test.ts). The order of the figures is the cascade, then the focus.
 -- Reason: figures of the whole workspace made each edit and each canvas read cost seconds in a large workspace.
 law_scopedFiguresPreservePlacementRules :: [Id] -> [Id] -> Bool

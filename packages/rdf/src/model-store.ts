@@ -189,6 +189,8 @@ export class ModelStore implements ModelQueries {
         const iri = idIri(viewId);
         if (!iri) return undefined;
         return tracer.span('refresh', 'figures', () => {
+            // A kept derivation still reads the live store on demand (its data is a LazyTripleIndex, read later by the join and the
+            // labels): sound because viewReads drops it at each change of what the figures read (all but layout and the report).
             const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures);
             reads.figures = vf.derivation;
             return vf;
