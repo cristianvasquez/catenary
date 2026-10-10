@@ -1278,6 +1278,8 @@ law_uncovered e = all (\st -> not (any (`covers` st) (applies e))) (uncovered e)
 -- A field label shows its RDF term at the right. Long help is a tooltip on a "?" icon.
 -- Node shape: shape fields, then properties (path, target, cardinality, required ones marked), then Reads as (closed by default).
 -- Property shape: Reads as first, then the fields. Cardinality has buttons for 0..1, 1, 0..* and 1..*, and a text field.
+-- Instance: one form for each applicable node shape, then one form "<Class> (RDFS)" for the RDFS rules of each of its classes.
+-- With one form, its title is "Description". The link picker and connect errors name the shapes and the RDFS rules ("No shape or RDFS rule permits ...").
 -- Literal constraints and statements not in shapes are closed by default. Their headings show a summary.
 moreActionsMenu :: [String] -> [String]            -- the other applicable actions
 moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" | "Delete from Model" `elem` as]
@@ -1493,7 +1495,8 @@ markerPosition = (1, 1)
 
 -- | Panel data rules. Labels use the shared label query. Data reads exclude the report graph and give subjects no home graph.
 -- Link and form candidates use the shared thing query. Link cardinality counts distinct values across data graphs.
--- SHACL form candidates include written members of sh:class ranges and their declared subclasses.
+-- SHACL form candidates include written members of sh:class ranges and their declared subclasses, and of the class ranges of the
+-- RDFS rules of the instance's classes (spec/manifest.hs §8.5).
 -- The link picker shows placed candidates first, 50 rows per section. Forms keep 200 candidates per class.
 -- Relation and shape-link labels prefer configured prefix:local names. Instance predicates then use sh:name or the local name.
 -- Links uses the same predicate-label rule.

@@ -3,7 +3,7 @@
 
 import type { EditCommand } from './commands';
 import type { Instance } from './doc';
-import type { ClassDef } from './metamodel';
+import { ClassDef, Classes, classDef } from './metamodel';
 import { NS, QuadLike, TermJSON, termKey, termToJSON } from './terms';
 
 const LABEL = NS.rdfs + 'label';
@@ -16,6 +16,29 @@ export function formPredicates(cls: ClassDef): string[] {
     const ps = new Set([...cls.fields.map(f => f.path), ...cls.relations.map(r => r.path)]);
     if (cls.labelInShape) ps.add(LABEL);
     return [...ps].sort();
+}
+
+/** The node shapes of the plugin forms: IRIs of no file, in the form shapes only (rdf shapes.ts formShapes). */
+export const PLUGIN_FORM_PREFIX = 'urn:catenary:plugin-form:';
+
+/** The form node shape of the rules of provider `source` (`rdfs`) on class `cls`. */
+export function pluginFormShape(source: string, cls: string): string {
+    return `${PLUGIN_FORM_PREFIX}${source}:${encodeURIComponent(cls)}`;
+}
+
+/** The fields and relations of a class from each plugin other than the shapes, by plugin in order of appearance. */
+export function pluginParts(cls: ClassDef): Map<string, (ClassDef['fields'][number] | ClassDef['relations'][number])[]> {
+    const out = new Map<string, (ClassDef['fields'][number] | ClassDef['relations'][number])[]>();
+    for (const x of [...cls.fields, ...cls.relations]) if (x.source) out.set(x.source, [...out.get(x.source) ?? [], x]);
+    return out;
+}
+
+/** The plugin forms of an instance with `types`: one for each class and plugin, with the predicates that it edits. */
+export function pluginForms(meta: Classes, types: string[]): { cls: ClassDef; source: string; shape: string; predicates: string[] }[] {
+    return types.flatMap(t => {
+        const cls = classDef(meta, t);
+        return cls ? [...pluginParts(cls)].map(([source, parts]) => ({ cls, source, shape: pluginFormShape(source, cls.iri), predicates: [...new Set(parts.map(x => x.path))].sort() })) : [];
+    });
 }
 
 /** The statements that the form produced for `subject`. Blank-node objects are dropped (the model cannot store them). */

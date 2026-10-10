@@ -273,7 +273,7 @@ export function labelProblem(label: string): string | undefined {
     return undefined;
 }
 
-/** Relation types that the shapes permit from instance `s` to instance `t` and that do not exist yet; else why there are none. */
+/** Relation types that the shapes and the plugin rules permit from instance `s` to instance `t` and that do not exist yet; else why there are none. */
 export function freeRelations(meta: Classes, doc: Doc, s: Instance, t: Instance): { types: RelationDef[] } | { error: string } {
     if (s.id === t.id) return { error: 'A relation from an element to itself is not supported.' };
     const permitted = permittedRelations(meta, s.types, t.types, t.uri);
@@ -282,13 +282,13 @@ export function freeRelations(meta: Classes, doc: Doc, s: Instance, t: Instance)
     if (permitted.length) return { error: `All permitted relations from "${s.label}" to "${t.label}" exist already.` };
     const name = (i: Instance) => primaryClass(meta, i.types)?.name ?? 'unknown class';
     const reverse = permittedRelations(meta, t.types, s.types, s.uri).map(r => `"${r.name}"`);
-    return { error: `The shapes permit no relation from ${name(s)} to ${name(t)}.`
-        + (reverse.length ? ` They permit ${reverse.join(', ')} from ${name(t)} to ${name(s)}: draw it the other way.` : '') };
+    return { error: `No shape or RDFS rule permits a relation from ${name(s)} to ${name(t)}.`
+        + (reverse.length ? ` It permits ${reverse.join(', ')} from ${name(t)} to ${name(s)}: draw it the other way.` : '') };
 }
 
 /**
  * Why the `end` of relation `r` cannot move to instance `to`; undefined: it can. The same instance: only the side changes. The rules
- * of the store (ops.reconnectRelation): no relation to itself, a type that the shapes permit, no duplicate.
+ * of the store (ops.reconnectRelation): no relation to itself, a type that the metamodel permits, no duplicate.
  */
 export function reconnectProblem(meta: Classes, doc: Doc, r: Relation, end: 'source' | 'target', to: string): string | undefined {
     const s = end === 'source' ? to : r.subject, o = end === 'target' ? to : r.object;
@@ -296,7 +296,7 @@ export function reconnectProblem(meta: Classes, doc: Doc, r: Relation, end: 'sou
     if (s === o) return 'A relation from an element to itself is not supported.';
     const si = doc.instances[s], oi = doc.instances[o];
     if (!si || !oi) return 'A relation connects two instances.';
-    if (!permittedRelations(meta, si.types, oi.types, oi.uri).some(d => d.path === r.predicate)) return `The shapes do not permit this relation from "${si.label}" to "${oi.label}".`;
+    if (!permittedRelations(meta, si.types, oi.types, oi.uri).some(d => d.path === r.predicate)) return `No shape or RDFS rule permits this relation from "${si.label}" to "${oi.label}".`;
     if (findRelation(doc, s, r.predicate, o)) return 'This relation exists already.';
     return undefined;
 }

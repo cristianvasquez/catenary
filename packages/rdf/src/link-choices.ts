@@ -1,6 +1,7 @@
-// The link picker reads things and statements from the store. Shapes supply relation choices and cardinalities.
+// The link picker reads things and statements from the store. The metamodel (shapes and RDFS rules) supplies relation choices and
+// cardinalities.
 
-import { Classes, LinkSection, NS, ShapesModel, instanceNoun, outgoingRelations, primaryClass } from '@catenary/model';
+import { ANY_RESOURCE, Classes, LinkSection, NS, ShapesModel, instanceNoun, outgoingRelations, primaryClass, relationAdmits } from '@catenary/model';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
 import { NOT_REPORT, compareLabels, construct, iri, labels, rows, str, thingHead, things } from './sparql';
@@ -38,9 +39,9 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
     if (!self) return undefined;
     const name = primaryClass(meta, self.types)?.name ?? 'unknown class';
     const types = dir === 'out'
-        ? outgoingRelations(meta, self.types).map(r => ({ r, other: r.targetClass }))
-        : meta.classes.flatMap(c => c.relations.filter(r => self.types.includes(r.targetClass) && (!r.values || r.values.includes(term.value))).map(r => ({ r, other: c.iri })));
-    if (!types.length) return { error: `The shapes declare no relations ${dir === 'out' ? 'from' : 'to'} ${name}.` };
+        ? outgoingRelations(meta, self.types).map(r => ({ r, other: r.targetClass, also: r.targetSubclasses ?? [] }))
+        : meta.classes.flatMap(c => c.relations.filter(r => relationAdmits(r, self.types) && (!r.values || r.values.includes(term.value))).map(r => ({ r, other: c.iri, also: [] as string[] })));
+    if (!types.length) return { error: `No shape or RDFS rule declares a relation ${dir === 'out' ? 'from' : 'to'} ${name}.` };
 
     const F = iri(term.value);
     const view = elementTerm(viewId);
@@ -51,7 +52,7 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
     } GROUP BY ?p`).map(r => [r.p.value, Number(r.n.value)]) : []);
     const words = text?.trim().toLowerCase();
 
-    const sections = types.map(({ r, other }): LinkSection => {
+    const sections = types.map(({ r, other, also }): LinkSection => {
         const cls = meta.classes.find(c => c.iri === other);
         const set = dir === 'out' && r.valueSet ? Object.values(shapes.valueSets).find(v => v.uri === r.valueSet) : undefined;
         const otherName = set ? `${set.label} concept` : cls?.name ?? other.replace(/^.*[#/]/, '');
@@ -60,7 +61,7 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
         const P = iri(r.path);
         const found = construct(g, `CONSTRUCT { ?s rdf:type ?type . ?pl view:element ?s } WHERE {
             { ${things()} }
-            FILTER (?type = ${iri(other)} && ?s != ${F})
+            FILTER (${other === ANY_RESOURCE ? '' : `?type IN (${[other, ...also].map(iri).join(', ')}) && `}?s != ${F})
             ${dir === 'out' && r.values ? r.values.length ? `FILTER (?s IN (${r.values.map(iri).join(', ')}))` : 'FILTER (false)' : ''}
             FILTER NOT EXISTS { GRAPH ?linked { ${dir === 'out' ? `${F} ${P} ?s` : `?s ${P} ${F}`} } FILTER (?linked != ${NOT_REPORT}) }
             OPTIONAL { GRAPH ${view ? iri(view.value) : '<urn:trellis:no-view>'} { ?pl view:element ?s } }

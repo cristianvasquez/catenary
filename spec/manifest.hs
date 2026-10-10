@@ -900,17 +900,18 @@ law_setStatementsScope b i vs p =
          Just ts -> failed (fst (step b (Execute (SetStatements i vs)))) || sameSet (objectsOf b' s p) ts
        Nothing -> True
 
--- | A relation must satisfy the shapes, must not duplicate a triple and must not link an instance to itself.
+-- | A relation must satisfy the metamodel (the links of the vocabulary plugins of §8.5), must not duplicate a triple and must not link an
+-- instance to itself.
 -- reconnectRelation keeps the predicate, changes the relation ID and keeps layouts only where both new ends show.
 -- A reconnect to the same end changes only its side.
 -- setUri follows references across graphs, including triple terms. A shape IRI change excludes data rdf:type uses
 -- and can propose a class migration. delete by kind is provisional (open.md D1).
-permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- the shapes permit predicate p from s to o
+permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- a link of the metamodel permits predicate p from s to o
 relationProblem :: Backend -> Iri -> Iri -> Iri -> Maybe Error
 relationProblem b s p o
   | s == o = Just "A relation from an element to itself is not supported."
   | Quad (NamedNode s) p (NamedNode o) (graphIri ModelGraph) `elem` storeQuads b = Just "The relation exists already."
-  | not (permitted b s p o) = Just "The shapes do not permit this relation."
+  | not (permitted b s p o) = Just "No shape or RDFS rule permits this relation."
   | otherwise = Nothing
 law_relationRejected :: Backend -> Iri -> Iri -> Iri -> Bool
 law_relationRejected b s p o =
@@ -1168,12 +1169,60 @@ law_dismissOnlyQueue b i =
   let b' = snd (step b (DismissMigration i))
   in storeQuads b' == storeQuads b && Just (historyOf b') == (dismiss i (historyOf b) <|> Just (historyOf b))
 
--- | Metamodel: built from all shape graphs and SKOS vocabulary. Several node shapes can target one class.
+-- | Metamodel: merged from the palette classes, links and fields of the vocabulary plugins (§8.5), with the SKOS vocabulary. Several node shapes can target one class.
 -- Class labels come from the class resource, not the node-shape name. Value-set relations accept permitted concepts only.
 -- Forms use a temporary sh:in expansion of SKOS helper targets. Saved shapes and validation keep the original constraints.
 -- Limit: forms edit direct-path properties only. Inverse paths and undeclared predicates have no generic form editing.
 -- An external change or a rejected edit can rebuild the form and lose field focus.
 shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes that target it; zero, one or more
+
+-- 8.5 Vocabulary plugins: palette, links, fields --------------------------------------------
+
+-- | Each reader of the metamodel has its own provider contract, named after it: @catenary/palette (the palette and the class
+-- picker), @catenary/links (the link picker, drawn and reconnected edges), @catenary/fields (the Properties form, the card fields).
+-- @catenary/explorer is the contract of the Model explorer (ADR 0006). A vocabulary plugin implements the contracts it can and reads
+-- its statements only through a query port (@catenary/query). The host (@catenary/rdf authoring.ts) parses no vocabulary: it gives
+-- each plugin a port (SHACL: the shapes graphs; RDFS: all graphs of the files, never the validation report), runs the plugins in
+-- precedence order (SHACL, RDFS) and merges them (@catenary/model mergeContributions). The readers read only the merged metamodel.
+-- Merge: the first plugin that gives a class wins it; the classes of a plugin follow those of the plugins before it, by order, then
+-- name. For a class and a predicate, the first plugin that gives a link or a field wins (law_shaclWins). A link without a target
+-- admits an instance of any class. A field of rdfs:label makes the label editable. A link with a value set and no values gets the
+-- concepts of its scheme from the SKOS vocabulary.
+-- SHACL (@catenary/shacl authoring.ts): a class for each sh:targetClass and for a node shape that is also a class; a link for
+-- sh:class or sh:node, else a field (sh:datatype, sh:in, sh:nodeKind sh:IRI), with sh:minCount and sh:maxCount.
+-- RDFS (@catenary/rdfs domain-range.ts): the written rdfs:domain and rdfs:range statements are suggestions for the editor, not
+-- constraints. Validation never reads them, because RDFS domain and range are inference rules. A domain applies to its class and its
+-- written subclasses. A class range gives a link and also admits the written subclasses. A literal range gives a field.
+-- rdfs:Literal takes any literal. No range, rdfs:Resource and owl:Thing take any value: a field and a link without a target.
+-- Several domains or ranges are a union. No cardinality. RDF, RDFS, OWL, SHACL and SKOS predicates and domains give no rules.
+-- No type inference and no rdfs:subPropertyOf. An RDFS statement, or the label or comment of an RDFS predicate or class, rebuilds
+-- the metamodel. Other data does not.
+-- Properties edits the fields and links of a plugin other than SHACL in a form node shape of no file (pluginFormShape), one property
+-- for each predicate with its ranges as alternatives. It is never saved or validated.
+data PaletteClass = PaletteClass { paletteIri :: Iri, paletteOrder :: Maybe Int } deriving Eq
+data LinkRule = LinkRule { linkDomain :: Iri, linkPredicate :: Iri, linkTarget :: Maybe Iri } deriving Eq   -- Nothing: any class
+data FieldRule = FieldRule { fieldDomain :: Iri, fieldPredicate :: Iri, fieldDatatype :: Maybe Iri } deriving Eq
+data Contributions = Contributions { pluginId :: String, pluginClasses :: [PaletteClass], pluginLinks :: [LinkRule], pluginFields :: [FieldRule] }
+pluginContributions :: Backend -> [Contributions]    -- AUTHORING_PLUGINS in precedence order: shacl, rdfs
+keysOf :: Contributions -> [(Iri, Iri)]              -- the (class, predicate) pairs of its links and fields
+keysOf c = nub ([(linkDomain l, linkPredicate l) | l <- pluginLinks c] ++ [(fieldDomain f, fieldPredicate f) | f <- pluginFields c])
+mergedKeys :: [Contributions] -> [(String, (Iri, Iri))]   -- the plugin of each (class, predicate) in the metamodel
+mergedKeys = go []
+  where
+    go _ [] = []
+    go owned (c : cs) = let new = [k | k <- keysOf c, k `notElem` owned] in [(pluginId c, k) | k <- new] ++ go (owned ++ new) cs
+law_shaclWins :: [Contributions] -> Bool
+law_shaclWins cs = and [firstGiver k == p | (p, k) <- mergedKeys cs]
+  where firstGiver k = head [pluginId c | c <- cs, k `elem` keysOf c]
+subclassesOf :: [(Iri, Iri)] -> Iri -> [Iri]         -- written rdfs:subClassOf pairs (sub, super), a class: it, then its subclasses
+subclassesOf pairs c = go [] [c]
+  where
+    go seen [] = seen
+    go seen (x : xs)
+      | x `elem` seen = go seen xs
+      | otherwise = go (seen ++ [x]) (xs ++ [s | (s, d) <- pairs, d == x])
+law_domainSubclasses :: [(Iri, Iri)] -> Iri -> Bool
+law_domainSubclasses pairs c = take 1 (subclassesOf pairs c) == [c] && all (`elem` subclassesOf pairs c) [s | (s, d) <- pairs, d == c]
 
 -- 9. Validation --------------------------------------------------------------
 
@@ -1533,6 +1582,7 @@ readOnlyFile = manifestOnly
 lastOriginChanges = manifestOnly
 lastTransferFiles = manifestOnly
 importedFiles = manifestOnly
+pluginContributions = manifestOnly
 fileStatements = manifestOnly
 currentSettings = manifestOnly
 docElements = manifestOnly

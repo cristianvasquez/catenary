@@ -27,6 +27,18 @@
       "path": "../explorer"
     },
     {
+      "path": "../query"
+    },
+    {
+      "path": "../palette"
+    },
+    {
+      "path": "../links"
+    },
+    {
+      "path": "../fields"
+    },
+    {
       "path": "../shacl"
     },
     {

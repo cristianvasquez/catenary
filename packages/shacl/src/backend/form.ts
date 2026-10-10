@@ -1,3 +1,4 @@
+import { RDF, SH } from '@catenary/query';
 import { iri } from './targets';
 import type { TargetQueryPort } from './targets';
 
@@ -5,7 +6,7 @@ import type { TargetQueryPort } from './targets';
 export function shapePredicates(port: TargetQueryPort, graphs: readonly string[], shape: string): string[] {
     if (!graphs.length) return [];
     const steps = 'sh:node|sh:and/rdf:rest*/rdf:first|sh:or/rdf:rest*/rdf:first|sh:xone/rdf:rest*/rdf:first';
-    return port.select(`PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    return port.select(`PREFIX sh: <${SH}> PREFIX rdf: <${RDF}>
         SELECT DISTINCT ?p ${graphs.map(g => `FROM ${iri(g)}`).join(' ')} WHERE {
             { ${iri(shape)} (${steps})*/sh:property ?ps }
             UNION { ${iri(shape)} (${steps})+ ?ps }

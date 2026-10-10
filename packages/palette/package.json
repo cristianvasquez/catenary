@@ -1,8 +1,8 @@
 {
-  "name": "@catenary/explorer",
+  "name": "@catenary/palette",
   "version": "0.1.0",
   "private": true,
-  "description": "The Model explorer plugin contract: rows, paths and the explorer port.",
+  "description": "The palette provider contract: the classes that a vocabulary plugin gives the palette and the class picker.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [

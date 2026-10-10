@@ -1,8 +1,8 @@
 {
-  "name": "@catenary/explorer",
+  "name": "@catenary/links",
   "version": "0.1.0",
   "private": true,
-  "description": "The Model explorer plugin contract: rows, paths and the explorer port.",
+  "description": "The links provider contract: the links (class, predicate, target class) that a vocabulary plugin gives the link picker and the canvas.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [

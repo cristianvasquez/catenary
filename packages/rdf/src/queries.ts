@@ -3,7 +3,7 @@ import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shac
 
 import {
     AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, elementLabel, elementOfId, findRelation, formPredicates, kindOf,
-    ViewProperties, predicateName, primaryClass, shortIri
+    ViewProperties, predicateName, primaryClass, pluginRanges, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, cmp, labelFromIri } from './graph';
@@ -22,11 +22,12 @@ const iri = (t: NamedNode) => `<${t.value}>`;
 export const FORM_CANDIDATE_LIMIT = 200;
 
 /**
- * The SHACL form data as N-Triples: the thing's statements and its link candidates. Empty: not a thing.
+ * The SHACL form data as N-Triples: the thing's statements and its link candidates. Empty: not a thing. `meta`: the class ranges of
+ * the class ranges of its plugin links (pluginRanges) also give candidates.
  */
-export function formData(g: ModelGraph, instance: NamedNode): string {
+export function formData(g: ModelGraph, instance: NamedNode, meta?: Classes): string {
     const own = formStatements(g, instance);
-    return own ? rdf.dataset([...own, ...formCandidates(g, instance)]).toString() : '';
+    return own ? rdf.dataset([...own, ...formCandidates(g, instance, meta)]).toString() : '';
 }
 
 /** Statements of a thing across data graphs. Undefined: not a thing. */
@@ -38,23 +39,24 @@ export function formStatements(g: ModelGraph, instance: NamedNode): Quad[] | und
 }
 
 /**
- * Form candidates: things of each sh:class range or its subclasses, with types and shared display labels.
+ * Form candidates: things of each sh:class range or its subclasses, and of each class range of the plugin links of the thing's
+ * classes (`meta`), with types and shared display labels.
  * Shape paths include logical constraints. Each class contributes at most FORM_CANDIDATE_LIMIT candidates, sorted by label.
  * The selected thing is not a candidate. The report graph contributes no data.
  */
-export function formCandidates(g: ModelGraph, instance: NamedNode): Quad[] {
+export function formCandidates(g: ModelGraph, instance: NamedNode, meta?: Classes): Quad[] {
     const head = thingHead(g, instance);
     if (!head) return [];
     const steps = 'sh:property|sh:node|sh:or|sh:and|sh:xone|sh:not|sh:qualifiedValueShape|rdf:first|rdf:rest';
     const applicable = shapeTargetMatches(g, { nodes: [{ termType: 'NamedNode', value: instance.value }] });
-    if (!applicable.length) return [];
-    const found = construct(g, `CONSTRUCT { ?ps sh:class ?c . ?sub rdfs:subClassOf ?c }
+    const found = applicable.length ? construct(g, `CONSTRUCT { ?ps sh:class ?c . ?sub rdfs:subClassOf ?c }
         ${shapeQueryScope(g).data.map(t => `FROM ${iriText(t)}`).join(' ')} WHERE {
         VALUES ?ns { ${applicable.map(m => iriText(m.shape)).join(' ')} }
         ?ns (${steps})+ ?ps . ?ps sh:class ?c .
         OPTIONAL { ?sub rdfs:subClassOf+ ?c }
-    }`);
-    const classes = [...new Set(found.flatMap(q => q.predicate.value === NS.sh + 'class' ? [q.object.value] : [q.subject.value]))];
+    }`) : [];
+    const classes = [...new Set([...found.flatMap(q => q.predicate.value === NS.sh + 'class' ? [q.object.value] : [q.subject.value]),
+        ...(meta ? pluginRanges(meta, head.types) : [])])];
     if (!classes.length) return [];
     const candidates = construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
         VALUES ?type { ${classes.map(iriText).join(' ')} }

@@ -36,6 +36,12 @@ export const SKOS_TYPES = ['ConceptScheme', 'Concept', 'Collection'].map(t => rd
 export const SKOS_MEMBERSHIP = ['inScheme', 'topConceptOf'].map(p => rdf.namedNode(NS.skos + p));
 /** A quad of the model graph that changes the vocabulary: a SKOS predicate, or rdf:type of a SKOS class. */
 export const isVocabularyQuad = (q: Quad) => q.predicate.value.startsWith(NS.skos) || (q.predicate.value === RDF_TYPE && q.object.value.startsWith(NS.skos));
+/** Predicates of the RDFS rules (@catenary/rdfs domain-range.ts). */
+const RDFS_PREDICATES = new Set(['domain', 'range', 'subClassOf'].map(p => NS.rdfs + p));
+/** Text of a predicate or a class of an RDFS rule: its name and description in the metamodel. */
+const RDFS_TEXT = new Set([NS.rdfs + 'label', NS.rdfs + 'comment', NS.skos + 'prefLabel']);
+/** A quad of the model graph that can change the RDFS rules of the metamodel (without the text of the predicates and classes). */
+export const isRdfsQuad = (q: Quad) => RDFS_PREDICATES.has(q.predicate.value) || (q.predicate.value === RDF_TYPE && q.object.value === NS.rdfs + 'Datatype');
 
 export const P = {
     type: rdf.namedNode(RDF_TYPE),
@@ -105,8 +111,9 @@ export class ModelGraph {
     proposed: { change: MigrationChange; reason: string }[] = [];
 
     /**
-     * Changes each time the content of `shapesAndVocabulary` can change: a quad of a shapes graph, a SKOS statement or a statement of
-     * a SKOS subject of the model graph, the shapes graphs. It keys the cache of the shapes index (shape-ops.ts). A change of the store that does not use `add`, `remove`
+     * Changes each time the content of `shapesAndVocabulary` or the RDFS rules can change: a quad of a shapes graph, a SKOS
+     * statement or a statement of a SKOS subject of the model graph, an RDFS statement (isRdfsQuad) or the text of an RDFS
+     * predicate or class, the shapes graphs. It keys the cache of the shapes index (shape-ops.ts). A change of the store that does not use `add`, `remove`
      * or a patch (a read of a file) must call `shapesChanged`.
      */
     shapesRevision = 0;
@@ -121,10 +128,21 @@ export class ModelGraph {
     protected count(q: Quad): void {
         if (q.graph.equals(this.model) || this.shapes.has(q.graph as NamedNode) || (q.predicate.equals(P.type) && q.object.equals(V.View))) this.queryRevision++;
         if (this.shapes.has(q.graph as NamedNode)) this.shapesRevision++;
-        else if (q.graph.equals(this.model) && (isVocabularyQuad(q) || SKOS_TYPES.some(t => this.store.match(q.subject, P.type, t, this.model).length > 0))) this.shapesRevision++;
+        else if (q.graph.equals(this.model) && (isVocabularyQuad(q) || isRdfsQuad(q) || SKOS_TYPES.some(t => this.store.match(q.subject, P.type, t, this.model).length > 0)
+            || (RDFS_TEXT.has(q.predicate.value) && this.inRdfsRule(q.subject)))) this.shapesRevision++;
     }
 
     constructor(readonly store: QuadStore) {}
+
+    /**
+     * A predicate or a class of an RDFS rule of the model graph: its label and comment are in the metamodel. A written subclass
+     * counts too: the rules expand to it.
+     */
+    protected inRdfsRule(t: Term): boolean {
+        if (t.termType !== 'NamedNode') return false;
+        return ['domain', 'range', 'subClassOf'].map(p => rdf.namedNode(NS.rdfs + p))
+            .some(p => this.store.match(t as NamedNode, p, null, this.model).length > 0 || this.store.match(null, p, t as NamedNode, this.model).length > 0);
+    }
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
         this.shapes = rdf.termSet([...graphs]);

@@ -25,6 +25,8 @@ export interface InstanceProperties extends Instance {
     targets: Record<string, string[]>;
     /** Node shapes selected by shared SHACL target rules, with reasons. */
     shapes: { id: string; uri: string; label: string; reasons?: TargetReason[]; predicates?: string[] }[];
+    /** Forms of the fields and links of the plugins other than the shapes (RDFS) of its classes: `uri` is the form node shape (pluginFormShape). */
+    pluginForms?: { id: string; uri: string; label: string; predicates: string[] }[];
     /** The results of the report graph with the instance as focus node. */
     results: ResultRow[];
     /** The other instances as the SHACL form sees them (link candidates): sorted N-Triples lines. */

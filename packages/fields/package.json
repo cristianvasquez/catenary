@@ -1,8 +1,8 @@
 {
-  "name": "@catenary/explorer",
+  "name": "@catenary/fields",
   "version": "0.1.0",
   "private": true,
-  "description": "The Model explorer plugin contract: rows, paths and the explorer port.",
+  "description": "The fields provider contract: the fields (class, predicate, datatype or values) that a vocabulary plugin gives the Properties form and the cards.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
