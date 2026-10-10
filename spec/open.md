@@ -78,6 +78,8 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 | F-DOC-1 | `VIEW_HELP` may name a removed palette dropdown. | Check the help text against the current palette. |
 | FONT1 | Card text changes leave fixed widths and unscaled edge/pill labels. | Reproduce truncation at 42 px. Decide which dimensions and labels should follow the preference. |
 | PICKER1 | Add Target picker reportedly closes at once. | Get the user's steps. Earlier headless checks did not reproduce it. |
+| KATA-p4dn | Historical desktop report: `SetUIExtensionVisibilityCommand` had no binding. Current copied-workspace check on port 3917 found the binding and no matching rejection. Palette hide/show succeeded. The reported Vite explorer payload placed its card in a new view and in kjk. | Get the exact failing gesture and stack on a matched build. The initial desktop build was stale. Do not add another binding without a current failure. |
+| SAVE1 | Current copied-workspace browser check on port 3917 captured two `Save operation timed out` rejections after opening kjk and removing a placement. Stack: `bundle.js:716792:24`. This check did not isolate their cause. | Reproduce the save timeout separately. Check model size, pending writes, and the save response before changing code. |
 | HIT1 | Edge hit paths can cover parallel labels. A form edit can require two clicks to select an edge label. Reproduced 2026-10-03: the `keyword` edge intercepted a click on the `language` label. | Test pointer targets and focus after a form commit. Separate hit-testing from selection-update failures. |
 | GROUP1 | An empty entity group can remain. Show on a collected instance can select nothing. | Test last-member deletion and navigation to a contained instance. |
 | QUERY1 | Historical reports: duplicate placements resolve differently in Outline and projections. Counts can differ for SKOS relations in shape graphs. | Add shared query/projection fixtures for both cases. Do not rely on unordered query results. |
@@ -97,6 +99,8 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 - **BOOKSHOP1:** The bundled bookshop example loads with one warning: the `Cities member` helper placement is not shown. The helper is a named node shape with `sh:in` and no target class. Preserve the supplied RDF. Resolve its display with the helper ownership rules (OWN1). The regression test in `workspace-files.test.ts` checks this warning.
 
 ## Verification gaps
+
+- **View URL backend reset:** `pnpm verify --e2e` failed the view-URL test with `ECONNRESET` on its isolated backend. The other 16 tests passed. A full retry passed all 17 tests. Cause unknown. Failure artifacts: `/tmp/catenary-view-url-Zg8FMd`. Logs: `/tmp/catenary-verify-ke2jH5` and `/tmp/catenary-verify-6di3md`. Inspect backend exit and connection handling if this recurs.
 
 These entries record earlier runs on different trees. Their counts are not additive. No entry certifies the current working tree.
 
