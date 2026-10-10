@@ -1521,6 +1521,19 @@ law_eventVersion eventSequence snapshotVersion = snapshotVersion == eventSequenc
 -- its reason and, for an edit, undo or redo, its views, elements, shapes flag and layout flag.
 -- The layout flag marks a change of placement geometry or style only. A panel skips a read that the change cannot affect.
 -- A snapshot carries no Doc and no report. onDidChange is the client callback (ModelClient). getSnapshot reads the current one.
+-- | Snapshot read warnings describe the current dataset, not only the dataset at open. File-operation notes remain separate.
+-- Reason: data arrival or removal can change whether a placement resolves to a card.
+snapshotWarnings :: [String] -> [String] -> [String]
+snapshotWarnings notes currentReadWarnings = notes ++ currentReadWarnings
+law_readWarningsCurrent :: [String] -> [String] -> Bool
+law_readWarningsCurrent notes current = snapshotWarnings notes current == notes ++ current
+
+-- | A placement without a resolved card reports the presentation failure, not resource absence.
+placementWithoutCard :: String -> String
+placementWithoutCard iri = "placement of " ++ iri ++ " has no supported card presentation, kept in the file, not shown"
+law_placementWarningExplains :: String -> Bool
+law_placementWarningExplains iri = placementWithoutCard iri == "placement of " ++ iri ++ " has no supported card presentation, kept in the file, not shown"
+
 data ChangeReason = EditChange | UndoChange | RedoChange | LoadChange | FilesChange | SaveChange | ValidationChange
   | ShapesChange | QueueChange | DiskChangeReason deriving Eq
 data SnapshotChange = SnapshotChange

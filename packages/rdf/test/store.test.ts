@@ -228,6 +228,43 @@ describe('patch notification integration', () => {
         } finally { store.close(); }
     });
 
+    it('law_readWarningsCurrent and law_placementWarningExplains: refresh placement warnings after data arrival, removal and undo (kata d8w7)', async () => {
+        const { a, dir } = workspace(), store = new ModelStore();
+        store.watching = false;
+        writeFileSync(join(dir, 'warnings.view.trig'), `<urn:warning:view> {
+            <urn:warning:view> a <${NS.view}View>; <${NS.rdfs}label> "Warnings" .
+            <urn:warning:placement> a <${NS.view}Placement>; <${NS.view}view> <urn:warning:view>; <${NS.view}element> <urn:warning:resource> .
+        }`);
+        const warning = 'Warnings: placement of urn:warning:resource has no supported card presentation, kept in the file, not shown';
+        const warnings = () => store.snapshot().warnings.filter(w => w.startsWith('Warnings:'));
+        try {
+            expect((await store.open(a)).ok).toBe(true);
+            expect(warnings()).toEqual([warning]);
+            expect(store.execute({ kind: 'rename', id: iriId('urn:warning:view'), label: 'Renamed' }).ok).toBe(true);
+            expect(store.snapshot().warnings).toContain(warning.replace('Warnings:', 'Renamed:'));
+            expect(store.snapshot().warnings).not.toContain(warning);
+            expect(store.undo().ok).toBe(true);
+            expect(warnings()).toEqual([warning]);
+            expect(store.redo().ok).toBe(true);
+            expect(store.snapshot().warnings).toContain(warning.replace('Warnings:', 'Renamed:'));
+            expect(store.undo().ok).toBe(true);
+            await store.idle();
+            writeFileSync(join(dir, 'arrival.ttl'), `<urn:warning:resource> a <urn:warning:Class>; <${NS.rdfs}label> "Arrived" .`);
+            await store.syncFromDisk();
+            expect(warnings()).toEqual([]);
+            expect(store.execute({ kind: 'delete', ids: [iriId('urn:warning:resource')] }).ok).toBe(true);
+            // Deletion also removes placements. Undo restores the resource and its placement.
+            expect(warnings()).toEqual([]);
+            expect(store.undo().ok).toBe(true);
+            expect(warnings()).toEqual([]);
+            await store.idle();
+            rmSync(join(dir, 'arrival.ttl'));
+            await store.syncFromDisk();
+            expect(warnings()).toEqual([warning]);
+            expect(store.snapshot().warnings.some(w => w.includes('was removed on disk'))).toBe(true);
+        } finally { await store.idle(); store.close(); }
+    });
+
     it('file reload and unload notify their effective patches without entering undo or dirty state', async () => {
         const { a, dir } = workspace(), store = new ModelStore();
         store.watching = false;

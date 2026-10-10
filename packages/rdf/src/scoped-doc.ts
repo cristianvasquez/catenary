@@ -170,7 +170,7 @@ export function fileReferences(g: ModelGraph): { view: string; file: string }[] 
 }
 
 /**
- * What the read models cannot show, at the open of a workspace: statements about the model graph, subjects without a type or a label,
+ * What the read models cannot show in the current dataset: statements about the model graph, subjects without a type or a label,
  * instances with several labels, graphs without a view, and the parts of each view (view-read.ts). The statements stay in the files.
  */
 export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {

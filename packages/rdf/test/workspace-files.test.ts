@@ -46,9 +46,11 @@ describe('workspace files', () => {
         dirs.push(dir);
         cpSync(new URL('../../../examples/bookshop/', import.meta.url), dir, { recursive: true });
         const store = await opened(join(dir, 'workspace.trig'));
-        expect(store.warnings.filter(w => !w.startsWith('not committed:'))).toEqual([
-            'Bookshop model: node for unknown instance urn:name:Cities%20member kept in the file, not shown'
+        expect(store.snapshot().warnings.filter(w => !w.startsWith('not committed:'))).toEqual([
+            'Bookshop model: placement of urn:name:Cities%20member has no supported card presentation, kept in the file, not shown'
         ]);
+        // law_placementWarningExplains: this helper exists, but the view has no resolved card for it.
+        expect(store.reads.search().some(h => h.iri === 'urn:name:Cities%20member')).toBe(true);
         const model = docOf(store);
         expect(Object.values(model.views).map(v => v.label).sort()).toEqual(['Bookshop', 'Bookshop model']);
         expect(Object.values(model.instances).map(i => i.label).sort()).toEqual([

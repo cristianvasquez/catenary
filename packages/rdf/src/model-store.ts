@@ -123,7 +123,7 @@ export class ModelStore {
     get revision(): number { return this.graph.change.sequence; }
     protected notified?: GraphChange;
     /** Reads that placement geometry and reports cannot change. */
-    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = {};
+    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope>; readWarnings?: string[] } = {};
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -164,7 +164,7 @@ export class ModelStore {
         return { dispose: () => this.listeners.delete(listener) };
     }
 
-    protected cached<K extends 'placements' | 'instances' | 'explorer'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
+    protected cached<K extends 'placements' | 'instances' | 'explorer' | 'readWarnings'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
         const event = this.graph.keys.data;
         if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
@@ -334,7 +334,7 @@ export class ModelStore {
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
                 ...(this.settings?.validation === 'views' && this.validationData.validated !== undefined ? { validated: this.validationData.validated } : {})
             },
-            warnings: this.warnings,
+            warnings: [...this.warnings, ...this.cached('readWarnings', () => readWarnings(this.graph, this.shapesIndex().model))],
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
             movedIds: this.movedIds,
             prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes },
@@ -615,7 +615,7 @@ export class ModelStore {
         this.history.clear();
         this.validation.reset();
         this.contentChanged();
-        this.warnings = [...r.warnings, ...readWarnings(this.graph, this.shapesIndex().model)];
+        this.warnings = r.warnings;
         await this.saver.recordUncommitted();
         this.changed('load');
         return { ok: true };

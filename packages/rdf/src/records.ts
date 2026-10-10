@@ -158,7 +158,7 @@ export function projectView(
         // The placement of a list figure ("in", "one of", hub; ADR 0014 rule 12): the notation engine reads it (notation-schema.ts).
         if (target?.value.startsWith('urn:trellis:list:')) continue;
         const instance = target?.termType === 'NamedNode' ? instanceIds.get(target.value) : undefined;
-        if (!instance) { warnings.push(`${label}: node for unknown instance ${target?.value} kept in the file, not shown`); continue; }
+        if (!instance) { warnings.push(`${label}: placement of ${target?.value} has no supported card presentation, kept in the file, not shown`); continue; }
         if (cards.has(target!.value)) { warnings.push(`${label}: ${target!.value} placed twice, shows one`); continue; }
         const display = str(r, 'display') === 'simple' ? 'simple' as const : undefined;
         // The placement of a property edge is not drawn under its placement id (an edge, or the pill of one property `<element>_leaf`):

@@ -71,7 +71,7 @@ describe('view reads and open warnings', () => {
         const warnings = readWarnings(g, shapesIndexOf(g).model);
         for (const text of [
             'more than one rdfs:label', 'subject without rdf:type', 'statement about the model graph', 'has no view:View',
-            'node for unknown instance', 'placed twice', 'placement of an unknown relation'
+            'has no supported card presentation', 'placed twice', 'placement of an unknown relation'
         ]) expect(warnings.some(w => w.includes(text)), text).toBe(true);
         expect(g.quads().some(q => q.subject.termType === 'BlankNode' || q.object.termType === 'BlankNode')).toBe(false);
     });

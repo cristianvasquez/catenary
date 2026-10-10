@@ -92,7 +92,7 @@ function projectView(
     for (const s of g.subjects(P.type, V.Placement, graph).filter(s => !ofRelation(s) && !isMarkOrView(s))) {
         const target = obj(s, V.element);
         const instance = target && instanceIds.get(target);
-        if (!instance) { warnings.push(`${label}: node for unknown instance ${target?.value} kept in the file, not shown`); continue; }
+        if (!instance) { warnings.push(`${label}: placement of ${target?.value} has no supported card presentation, kept in the file, not shown`); continue; }
         if (nodes.has(target)) { warnings.push(`${label}: ${target.value} placed twice, shows one`); continue; }
         const color = str(s, V.color);
         nodes.set(target as NamedNode, { kind: 'card', id: elementId(s as NamedNode), ...box(s, DEFAULT_SIZE), ...(color ? { color } : {}), element: instance });
