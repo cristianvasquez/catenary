@@ -279,7 +279,8 @@ export class ModelGraph {
         const dataset = [...this.data, this.model].map(g => `FROM <${g.value}>`).join(' ')
             + ' ' + graphs.map(g => `FROM NAMED <${g}>`).join(' ');
         let index = 0, offset = 0;
-        const graphTokens = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|GRAPH\s+<[^\s<>]*>/g;
+        // Quotes inside IRI tokens are not string delimiters.
+        const graphTokens = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|GRAPH\s+<[^\s<>]*>|<[^\s<>]*>/g;
         while (offset < query.length) {
             graphTokens.lastIndex = offset;
             let graph = graphTokens.exec(query);
