@@ -78,8 +78,8 @@ describe('Problems: the results of the report graph', () => {
         // The store validates 250 ms after an open, and an open can take longer (git on Windows). A timer that never fires: no validation.
         const fresh = new ModelStore();
         fresh.watching = false;
-        const parts = fresh as unknown as { validation: ValidationRunner; graph: never; metamodel: never };
-        parts.validation = new ValidationRunner(() => ({ graph: parts.graph, metamodel: parts.metamodel }), () => {}, { set: () => undefined, clear: () => {} });
+        const parts = fresh as unknown as { validation: ValidationRunner; graph: never };
+        parts.validation = new ValidationRunner(() => ({ graph: parts.graph, input: () => undefined, violations: () => [] }), () => {}, { set: () => undefined, clear: () => {} });
         expect(await fresh.open(writeWorkspace(dir))).toEqual({ ok: true });
         expect(fresh.problems()).toEqual([]);
         await fresh.idle();

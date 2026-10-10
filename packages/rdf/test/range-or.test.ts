@@ -7,9 +7,8 @@ import { emptyMetamodel, metamodelFromQuads } from '../src/shapes';
 import { skolemize } from '../src/skolem';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
-import { validate } from '../src/validate';
 import { executeCommand } from '../src/commands';
-import { parseQuads, run } from './helpers';
+import { parseQuads, run, violationsIn } from './helpers';
 
 // A property shape with sh:or of ranges: "the value is an A or a B" (range kind "or").
 const P = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://ex/> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .`;
@@ -78,7 +77,7 @@ describe('"or" range of a property shape', () => {
         const task = classDef(m, EX + 'Task')!;
         expect(task.relations.filter(r => r.path === EX + 'updates').map(r => r.targetClass).sort()).toEqual([EX + 'Graph', EX + 'Series']);
         expect(permittedRelations(m, [EX + 'Task'], [EX + 'Graph']).map(r => r.path)).toEqual([EX + 'updates']);
-        const check = async (cls: string) => (await validate(await parseQuads(`<${EX}t> a <${EX}Task> ; <${EX}updates> <${EX}v> . <${EX}v> a <${EX}${cls}> .`), m, i => i))
+        const check = async (cls: string) => (await violationsIn(await parseQuads(`<${EX}t> a <${EX}Task> ; <${EX}updates> <${EX}v> . <${EX}v> a <${EX}${cls}> .`), m, i => i))
             .filter(v => v.path === EX + 'updates').length;
         expect(await check('Series')).toBe(0);
         expect(await check('Graph')).toBe(0);

@@ -1,19 +1,17 @@
-// SHACL validation of the model graph after changes: debounced, and a run that a newer change makes stale is discarded. The report
-// graph (ADR 0007) uses the shared patch path, outside edit history and file tracking (no undo, no file, no dirty state).
+// SHACL validation of the model graph after changes: debounced, and a run that a newer change makes stale is discarded. The coordinator
+// (ModelStore) gives the input of each run; the validator (validate.ts) is pure. The report graph (ADR 0007) uses the shared patch path,
+// outside edit history and file tracking (no undo, no file, no dirty state).
 // With a worker file (`useValidationWorker`, the bundled backend), shacl-engine runs in a worker thread: the backend thread stays free
 // for edits and requests. Without one (tests from the source), it runs in this thread.
 
-import { NS, Violation } from '@catenary/model';
-import type { Quad, Term } from '@rdfjs/types';
+import { Violation } from '@catenary/model';
+import type { Quad } from '@rdfjs/types';
 import { Worker } from 'worker_threads';
 import { ModelGraph, Patch, VALIDATION_GRAPH } from './graph';
-import { elementId } from './ids';
 import { PlainTerm, plainToQuads, quadsToPlain } from './plain-quads';
-import { Metamodel } from './shapes';
-import { shapesIndexOf } from './shapes-read';
-import { rdf, termKey } from './terms';
+import { rdf } from './terms';
 import { tracer } from './trace';
-import { ShaclResult, inSchemeTriples, reportQuads, validateWithReport, violationsOf } from './validate';
+import { ShaclResult, ValidationReport, validate } from './validate';
 
 let workerFile: string | undefined;
 
@@ -30,12 +28,12 @@ class ShaclWorker {
     protected next = 0;
     protected readonly waiting = new Map<number, (a: Answer) => void>();
 
-    run(shapes: Iterable<Quad>, data: Iterable<Quad>): Promise<{ results: ShaclResult[]; report: Quad[] }> {
+    run(data: Iterable<Quad>, shapes: Iterable<Quad>): Promise<ValidationReport> {
         const worker = this.worker ??= this.start(workerFile!);
         const id = ++this.next;
         return new Promise((resolve, reject) => {
             this.waiting.set(id, a => a.error !== undefined ? reject(new Error(a.error)) : resolve({ results: a.results!, report: plainToQuads(a.report!) }));
-            worker.postMessage({ id, shapes: quadsToPlain(shapes), data: quadsToPlain(data) });
+            worker.postMessage({ id, data: quadsToPlain(data), shapes: quadsToPlain(shapes) });
         });
     }
 
@@ -69,6 +67,18 @@ export interface Timers {
 
 const realTimers: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: h => clearTimeout(h as ReturnType<typeof setTimeout>) };
 
+/** What a run reads from the coordinator. */
+export interface ValidationSource {
+    /** The dataset of the report graph. */
+    graph: ModelGraph;
+    /** The data and the shapes of the run (§9 validationInput), plain quads. Undefined: the mode off (no run, an empty report). */
+    input(): { data: Quad[]; shapes: Quad[] } | undefined;
+    /** The violations of the results, read after the run. */
+    violations(results: ShaclResult[]): Violation[];
+    /** Read after `input`; a new stamp is a change too (the store counts what the run checked). */
+    stamp?(): string;
+}
+
 export class ValidationRunner {
     violations: Violation[] = [];
     protected stamp = '';
@@ -76,18 +86,11 @@ export class ValidationRunner {
     protected timer?: unknown;
 
     /**
-     * `source`: the dataset and the metamodel at the time of the run (an open replaces them), and the statements of the model graph
-     * to validate (`data`; undefined: all of them). `off` (the validation mode "off"): no run; the report and the violations are
-     * cleared. `focus` (the validation mode "views", read after `data`): the elements on the open views, by termKey; the SKOS
-     * statements of the shapes files then go in only for these elements and for the IRIs of `data`. `stamp`: read after `data`; a new
-     * stamp is a change too (the store counts what the run checked). `changed`: the violations or the stamp changed (`before`: the
-     * violations before the run).
-     * `timers`: tests give their own.
+     * `source`: the coordinator at the time of the run (an open replaces the dataset). `changed`: the violations or the stamp changed
+     * (`before`: the violations before the run). `timers`: tests give their own.
      */
     constructor(
-        protected readonly source: () => {
-            graph: ModelGraph; metamodel: Metamodel; off?: boolean; data?: () => Quad[] | undefined; focus?: () => Set<string> | undefined; stamp?: () => string
-        },
+        protected readonly source: () => ValidationSource,
         protected readonly changed: (before: Violation[], patch: Patch) => void,
         protected readonly timers: Timers = realTimers
     ) {}
@@ -117,51 +120,30 @@ export class ValidationRunner {
     }
 
     protected async validateNow(run: number): Promise<void> {
-        const { graph: g, metamodel, off, data: own, focus: focusOf, stamp } = this.source();
+        const source = this.source(), g = source.graph;
         try {
-            if (off) {
+            const input = source.input();
+            if (!input) {
                 tracer.note(`run ${run}: validation is off`);
                 return this.publish(run, g, [], [], '');
             }
-            // The SKOS statements of the shapes files are data too: a value "in scheme X" is checked against them.
-            let vocabulary = g.shapesTriples().filter(q => q.predicate.value.startsWith(NS.skos)
-                || (q.predicate.value === NS.rdf + 'type' && q.object.value.startsWith(NS.skos)));
-            // Imported files: only the statements that own data needs (Workspace.validationTriples).
-            const model = own?.() ?? g.modelTriples();
-            // Open views: only the SKOS statements of the elements on the views and of the IRIs that the data names.
-            const focus = focusOf?.();
-            if (focus) {
-                const needed = new Set(focus);
-                for (const q of model) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') needed.add(termKey(t));
-                vocabulary = vocabulary.filter(q => needed.has(termKey(q.subject)));
-            }
-            const data = [...model, ...vocabulary];
-            const runStamp = stamp?.() ?? '';
-            tracer.note(`run ${run}: ${data.length} data triples, ${metamodel.dataset.size} shapes triples${workerFile ? ', in the worker' : ''}`, data.length);
-            // The ids after the run: a change during the run made it stale (checked below), so the graph is the validated one.
-            const instanceId = (iri: string) => {
-                const t = rdf.namedNode(iri);
-                return g.isInstance(t) ? elementId(t) : undefined;
-            };
-            const shapeId = (t: Term) => shapesIndexOf(g).byTerm.get(termKey(t));
-            let violations: Violation[] = [], report: Quad[] = [];
-            if (!workerFile) ({ violations, report } = await validateWithReport(data, metamodel, instanceId, shapeId));
-            else if (metamodel.dataset.size) {
-                const r = await shaclWorker.run(metamodel.dataset, [...data, ...inSchemeTriples(metamodel)]);
-                if (run !== this.run) return discarded(run);
-                violations = violationsOf(r.results, metamodel, instanceId, shapeId);
-                report = reportQuads(r.report);
-            }
-            this.publish(run, g, violations, report, runStamp);
+            const { data, shapes } = input, stamp = source.stamp?.() ?? '';
+            tracer.note(`run ${run}: ${data.length} data triples, ${shapes.length} shapes triples${workerFile ? ', in the worker' : ''}`, data.length);
+            // The worker gets a full copy of the input for each run.
+            const r = workerFile && shapes.length ? await shaclWorker.run(data, shapes) : await validate(data, shapes);
+            if (run !== this.run) return discarded(run);
+            // The ids after the run: a change during the run made it stale (checked above), so the graph is the validated one.
+            this.publish(run, g, source.violations(r.results), r.report, stamp);
         } catch (e) {
             console.error('[catenary] validation failed', e);
         }
     }
 
-    /** Replace the report graph and the violations, unless a newer run made this one stale. */
-    protected publish(run: number, g: ModelGraph, violations: Violation[], report: Quad[], stamp: string): void {
+    /** Replace the report graph (the triples of `triples`) and the violations, unless a newer run made this one stale. */
+    protected publish(run: number, g: ModelGraph, violations: Violation[], triples: Quad[], stamp: string): void {
         if (run !== this.run) return discarded(run);
         const graph = rdf.namedNode(VALIDATION_GRAPH);
+        const report = triples.map(q => rdf.quad(q.subject, q.predicate, q.object, graph));
         const patch = g.update(() => {
             const next = rdf.dataset(report);
             for (const q of g.match(null, null, null, graph)) if (!next.has(q)) g.remove(q);

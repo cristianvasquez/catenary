@@ -5,7 +5,7 @@ import { outline } from '../src/outline';
 import { properties } from '../src/properties';
 import { project } from './project-full';
 import { readShapes } from '../src/shapes-read';
-import { readResults } from '../src/validate';
+import { readResults } from '../src/report-read';
 import { freeUnnamedLabel, linkChoices } from '../src/link-choices';
 import { formCandidates, formStatements } from '../src/queries';
 import { thingHead } from '../src/sparql';

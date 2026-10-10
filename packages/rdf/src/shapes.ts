@@ -1,5 +1,6 @@
-// The shapes dataset of the metamodel (validation, the instance form) and the SKOS vocabulary of the value sets. The palette classes,
-// links and fields come from the plugins (authoring.ts): this file reads no SHACL property shape for them.
+// The shapes dataset of the metamodel (the instance form, the panels) and the SKOS vocabulary of the value sets. The validator reads the
+// shapes graphs, not this copy (spec/manifest.hs §9). The palette classes, links and fields come from the plugins (authoring.ts): this
+// file reads no SHACL property shape for them.
 
 import { ANY_RESOURCE, ClassDef, Classes, ConceptDef, NS, SchemeDef, localName, pluginFormShape, pluginParts } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
@@ -11,7 +12,7 @@ import { rdf } from './terms';
 
 export interface Metamodel extends Classes {
     source?: string;             // file name or IRI of the shapes file
-    dataset: Dataset;            // shapes, for shacl-engine
+    dataset: Dataset;            // shapes and vocabulary, for the form
 }
 
 export function emptyMetamodel(): Metamodel {

@@ -41,7 +41,8 @@ import { withCount } from './shape-ops';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
 import { skolemize } from './skolem';
 import { rdf, termKey } from './terms';
-import { reportProblems } from './validate';
+import { reportProblems } from './report-read';
+import { ShaclResult, violationsOf } from './validate';
 import { TracedStore, tracer } from './trace';
 import { ValidationRunner } from './validation-runner';
 import { Loader, fileContent, openWorkspace } from './loader';
@@ -49,7 +50,7 @@ import { placeChanges, transfer, filesOfSubject } from './placement';
 import { readChanges } from './reconciler';
 import { Saver } from './saver';
 import { Settings, createWorkspace } from './settings';
-import { validationTriples } from './validation-data';
+import { validationInput, validationTriples } from './validation-data';
 import { search } from './search';
 import { selected } from './selection';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
@@ -124,13 +125,12 @@ export class ModelStore implements ModelQueries {
     protected saver?: Saver;
     protected readonly history = new History();
     protected readonly validation = new ValidationRunner(
-        () => ({ graph: this.graph, metamodel: this.metamodel, off: this.settings?.validation === 'off', data: () => this.validationData(), focus: () => this.focus,
+        () => ({ graph: this.graph, input: () => this.validationInput(), violations: r => this.violationsOf(r),
             stamp: () => `${this.settings?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
     /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
     protected readonly openViews = new Map<string, string>();
-    /** In the validation mode "views": the instances that the last run checked, and the elements on the open views (by termKey). */
+    /** In the validation mode "views": the instances that the last run checked. */
     protected validated?: number;
-    protected focus?: Set<string>;
     /** Numeric projections of the shared events for existing snapshot clients. */
     get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
     get revision(): number { return this.graph.change.sequence; }
@@ -725,19 +725,33 @@ export class ModelStore implements ModelQueries {
         return focus;
     }
 
-    /** The statements of the model graph that validation reads, by the validation mode (undefined: all). */
-    protected validationData(): Quad[] | undefined {
-        if (this.settings?.validation !== 'views') {
-            this.validated = this.focus = undefined;
-            return this.settings && validationTriples(this.graph, this.settings);
+    /**
+     * The input of the validator by the validation mode (§9 validationInput; undefined: off): the data (validation-data.ts) with the SKOS
+     * projection, and all shapes graphs, own and imported. The validator gets plain quads; it reads nothing from the store.
+     */
+    protected validationInput(): { data: Quad[]; shapes: Quad[] } | undefined {
+        const mode = this.settings?.validation;
+        if (mode === 'off') return undefined;
+        const shapes = this.graph.shapesTriples();
+        if (mode !== 'views') {
+            this.validated = undefined;
+            return { data: validationInput((this.settings && validationTriples(this.graph, this.settings)) ?? this.graph.modelTriples(), shapes), shapes };
         }
-        const focus = this.validationFocus();
-        this.focus = new Set(focus.keys());
-        const data = validationTriples(this.graph, this.settings, this.focus) ?? [];
+        const focus = this.validationFocus(), keys = new Set(focus.keys());
+        const data = validationTriples(this.graph, this.settings!, keys) ?? [];
         // Checked: an instance on an open view with statements in the data (not one that only imported files describe).
         const subjects = new Set(data.map(q => termKey(q.subject)));
         this.validated = [...focus].filter(([k, t]) => subjects.has(k) && this.graph.isInstance(t)).length;
-        return data;
+        return { data: validationInput(data, shapes, keys), shapes };
+    }
+
+    /** The violations of a run, with the element ids of the dataset after the run (a change during the run made it stale). */
+    protected violationsOf(results: ShaclResult[]): Violation[] {
+        const idx = this.shapesIndex();
+        return violationsOf(results, this.metamodel, iri => {
+            const t = rdf.namedNode(iri);
+            return this.graph.isInstance(t) ? elementId(t) : undefined;
+        }, t => idx.byTerm.get(termKey(t)));
     }
 
     /** The last change (ModelSnapshot.change). */
@@ -1123,7 +1137,7 @@ export class ModelStore implements ModelQueries {
 
     /**
      * The metamodel: the palette classes, links and fields of the plugins (SHACL on the shapes graphs, RDFS on all files), with the SKOS
-     * vocabulary of the shapes graphs and of the model graph. `dataset`: the shapes and the vocabulary, for validation and the form.
+     * vocabulary of the shapes graphs and of the model graph. `dataset`: the shapes and the vocabulary, for the form (validation reads the shapes graphs, validationInput).
      */
     protected rebuildMetamodel(): void {
         const shapes = this.graph.shapesTriples();

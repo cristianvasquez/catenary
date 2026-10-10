@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classDef, instanceNoun, permittedRelations } from '@catenary/model';
 import { formShapes } from '../src/shapes';
 import { parseShapes } from './helpers';
-import { validate } from '../src/validate';
-import { DCAT, DCT, DPROD, PROV, meta, parseQuads } from './helpers';
+import { DCAT, DCT, DPROD, PROV, meta, parseQuads, violationsIn } from './helpers';
 
 const DPM = 'osg://vocab/data-product-draft#';
 
@@ -124,7 +123,7 @@ describe('properties with a concept scheme or collection as target', () => {
 
     it('validates a concept of the scheme (the concepts are in the shapes files), and rejects one of another scheme', async () => {
         const m = await parseShapes(TTL);
-        const check = async (value: string) => validate(await parseQuads(`<${EX}p> a <${EX}Person> ; <${EX}mood> <${EX}red> ; <${EX}color> <${EX}${value}> .`), m, i => i);
+        const check = async (value: string) => violationsIn(await parseQuads(`<${EX}p> a <${EX}Person> ; <${EX}mood> <${EX}red> ; <${EX}color> <${EX}${value}> .`), m, i => i);
         expect(await check('red')).toEqual([]);
         expect(await check('blue')).toEqual([]);
         expect((await check('green')).map(v => v.path)).toEqual([EX + 'color']);

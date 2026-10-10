@@ -1268,6 +1268,14 @@ validationDelayMs = 250
 data Severity = Violation | Warning | Info deriving Eq
 data ValidationResult = ValidationResult
   { focusNode :: Iri, sourceShape :: Iri, resultPath :: Maybe Iri, severity :: Severity, component :: Iri, message :: String }
+-- | The validator is a pure function: data quads and shape quads in, the results out. It reads nothing from the store or the files.
+-- The coordinator builds the input (validationInput), writes the report graph and sends the change event. The worker thread gets a
+-- full copy of the input for each run.
+-- Reason: one input, one report. The validator can run in any thread and in tests without a store.
+-- The shapes are all shapes graphs, own and imported. Without shapes, the report is empty.
+validator :: [Quad] -> [Quad] -> [ValidationResult]   -- the data, the shapes
+law_validatorNoShapes :: [Quad] -> Bool
+law_validatorNoShapes dataQs = null (validator dataQs [])
 data ChangeScope = ChangeScope { dataChanged, shapesChanged, layoutOnly :: Bool }
 validates :: ChangeScope -> Bool
 validates s = not (layoutOnly s) && (dataChanged s || shapesChanged s)
@@ -1275,25 +1283,43 @@ validates s = not (layoutOnly s) && (dataChanged s || shapesChanged s)
 reportIsCurrent :: Int -> Int -> Bool                -- the revision of the run, the current revision
 reportIsCurrent run current = run == current
 -- | With imported files (§2.6), validation reads the statements of own files, all statements of their subjects, and the rdf:type
--- statements of the IRIs that they refer to. The rest of the imported files is not validated.
+-- and scheme membership statements of the IRIs that they refer to. The rest of the imported files is not validated.
 -- Reason: imported files are read only and can be large. Validating all of them makes each edit slow, and their results cannot be fixed.
+-- Scheme membership: a value "in scheme S" (sh:node of a scheme shape) is often a concept of an imported vocabulary.
 -- Without imported files, validation reads the whole model graph.
 validationData :: [Quad] -> [Quad] -> [Quad]      -- the statements of own files, the statements of the model graph
-validationData own model = nub (own ++ ofSubjects ++ typesOfTargets)
+validationData own model = nub (own ++ ofSubjects ++ factsOfTargets)
   where
     subjects = map subjectOf own
     targets = [o | q <- own, o@(NamedNode _) <- [objectOf q], o `notElem` subjects]
     ofSubjects = [q | q <- model, subjectOf q `elem` subjects]
-    typesOfTargets = [q | q <- model, predicateOf q == rdfType, subjectOf q `elem` targets]
+    factsOfTargets = [q | q <- model, predicateOf q `elem` [rdfType, skos "inScheme", skos "topConceptOf"], subjectOf q `elem` targets]
+      ++ [q | q <- model, predicateOf q == skos "hasTopConcept", objectOf q `elem` targets]
 rdfType :: Iri
 rdfType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+skos :: String -> Iri
+skos local = "http://www.w3.org/2004/02/skos/core#" ++ local
+-- | The SKOS projection of the shapes graphs: the statements with a SKOS predicate, and the rdf:type statements whose object is a
+-- SKOS class. Concepts and schemes in a shapes file are data for validation: a value "in scheme S" is checked against them.
+-- Scheme membership adds the skos:inScheme statements that skos:topConceptOf and skos:hasTopConcept imply (SKOS: both state it).
+skosProjection :: [Quad] -> [Quad]
+skosProjection shapes = schemeMembership [q | q <- shapes, isSkos q]
+  where
+    isSkos q = skos "" `isPrefixOf` predicateOf q || (predicateOf q == rdfType && isSkosClass (objectOf q))
+    isSkosClass (NamedNode c) = skos "" `isPrefixOf` c
+    isSkosClass _ = False
+schemeMembership :: [Quad] -> [Quad]
+schemeMembership qs = nub (qs ++
+  [Quad c (skos "inScheme") s g | Quad c p s g <- qs, p == skos "topConceptOf"] ++
+  [Quad c (skos "inScheme") s g | Quad s p c g <- qs, p == skos "hasTopConcept"])
 law_ownStatementsValidated :: [Quad] -> [Quad] -> Bool
 law_ownStatementsValidated own model = all (`elem` validationData own model) own
 -- | ws:validation chooses what validation checks: Off, OpenViews ("views") or All. All is the default, and writers do not store it.
 -- Reason: a full run after each edit is slow on a large model. The author chooses speed or completeness for the workspace.
--- Off: no run, an empty report graph, no violations. OpenViews: the own statements whose subject is on an open view (an editor
--- shows the view), then the statements of these subjects and the types of their targets, as validationData does. The SKOS
--- statements of the shapes graphs go in only for the elements on the open views and the IRIs that these statements name.
+-- Off: no run, an empty report graph, no violations. All: validationData and the whole SKOS projection of all shapes graphs.
+-- OpenViews: the own statements whose subject is on an open view (an editor shows the view), then the statements of these subjects
+-- and the facts of their targets, as validationData does. The SKOS projection goes in only for the elements on the open views and
+-- the IRIs that these statements name. Unrelated vocabulary of the shapes files stays out.
 -- The status bar counts an instance as checked only when the input has statements about it (not one that only imported files describe).
 -- A shape that reads an element outside the open views can report too much or too little (spec/open.md VALIDATION2).
 -- In OpenViews, a change of the open views and a change of a placement on an open view (not the layout) start a run.
@@ -1307,14 +1333,26 @@ validationFocus :: [Iri] -> [Quad] -> [Term]        -- the open views, the state
 validationFocus views qs = nub (
   [o | Quad _ p o@(NamedNode _) g <- qs, g `elem` views, p `elem` ["view:element", "view:member"]] ++
   [s | Quad _ "rdf:reifies" (TripleTerm s@(NamedNode _) _ _) g <- qs, g `elem` views])
-validationInput :: ValidationMode -> [Term] -> [Quad] -> [Quad] -> [Quad]   -- the mode, the focus, own statements, the model graph
-validationInput ValidationOff _ _ _ = []
-validationInput ValidationAll _ own model = validationData own model
-validationInput ValidationOpenViews focus own model = validationData [q | q <- own, subjectOf q `elem` focus] model
-law_validationOffEmpty :: [Term] -> [Quad] -> [Quad] -> Bool
-law_validationOffEmpty focus own model = null (validationInput ValidationOff focus own model)
-law_openViewsWithinAll :: [Term] -> [Quad] -> [Quad] -> Bool
-law_openViewsWithinAll focus own model = all (`elem` validationInput ValidationAll focus own model) (validationInput ValidationOpenViews focus own model)
+-- The mode, the focus, own statements, the model graph, the shapes graphs (own and imported).
+validationInput :: ValidationMode -> [Term] -> [Quad] -> [Quad] -> [Quad] -> [Quad]
+validationInput ValidationOff _ _ _ _ = []
+validationInput ValidationAll _ own model shapes = schemeMembership (validationData own model ++ skosProjection shapes)
+validationInput ValidationOpenViews focus own model shapes =
+  schemeMembership (selected ++ [q | q <- skosProjection shapes, subjectOf q `elem` named])
+  where
+    selected = validationData [q | q <- own, subjectOf q `elem` focus] model
+    named = focus ++ [t | q <- selected, t@(NamedNode _) <- [subjectOf q, objectOf q]]
+law_validationOffEmpty :: [Term] -> [Quad] -> [Quad] -> [Quad] -> Bool
+law_validationOffEmpty focus own model shapes = null (validationInput ValidationOff focus own model shapes)
+law_openViewsWithinAll :: [Term] -> [Quad] -> [Quad] -> [Quad] -> Bool
+law_openViewsWithinAll focus own model shapes =
+  all (`elem` validationInput ValidationAll focus own model shapes) (validationInput ValidationOpenViews focus own model shapes)
+law_allHasProjection :: [Quad] -> [Quad] -> [Quad] -> Bool
+law_allHasProjection own model shapes = all (`elem` validationInput ValidationAll [] own model shapes) (skosProjection shapes)
+-- | A projection statement about an element on an open view goes in: scheme membership from a shapes file reaches OpenViews.
+law_openViewsHasFocusProjection :: [Term] -> [Quad] -> [Quad] -> [Quad] -> Bool
+law_openViewsHasFocusProjection focus own model shapes =
+  all (`elem` validationInput ValidationOpenViews focus own model shapes) [q | q <- skosProjection shapes, subjectOf q `elem` focus]
 law_reportNotInPatch :: Backend -> EditCommand -> Bool
 law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
   where
@@ -1666,6 +1704,7 @@ schemesOf = manifestOnly
 migrateData = manifestOnly
 shapesTargeting = manifestOnly
 validate = manifestOnly
+validator = manifestOnly
 canonicalContent = manifestOnly
 savedContent = manifestOnly
 writeFailed = manifestOnly
