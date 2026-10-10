@@ -149,6 +149,8 @@ law_idAlphabet i = all (\c -> isAsciiLower c || isAsciiUpper c || isDigit c || c
 
 -- 2.1 Workspace file ------------------------------------------------------------
 
+-- | Code (packages/rdf/src): settings.ts holds the manifest, file membership and the imported globs; loader.ts reads files into
+-- their graphs; placement.ts gives new statements their file. None imports another; ModelStore creates the store and wires them.
 -- | A workspace is a folder of RDF files. The files are the source of truth (ADR 0003). Files have no roles (ADR 0004).
 -- The optional TriG workspace file holds one graph, urn:name:workspace, in namespace osg://vocab/workspace#.
 -- A workspace file with other graphs does not open.
@@ -413,7 +415,7 @@ importFiles ps = runOp (ImportFiles ps)
 -- | One backend ModelStore indexes one workspace in an in-memory Oxigraph store. All windows share it and its history.
 -- No lock or merge protocol protects simultaneous clients.
 -- The store is local and synchronous: an edit reads its own writes before its transaction ends.
--- Graphs, from Workspace.mount (workspace.ts). The workspace file stays in workspace metadata, outside the read models.
+-- Graphs, from Loader.mount (loader.ts). The workspace file stays in workspace metadata, outside the read models.
 -- Preserve legacy Trellis IRIs because saved view placements use urn:trellis:list:*, and existing files use osg://vocab/trellis-* terms.
 -- Model-file reads preserve SPO statements and source-file provenance, not source graph names (SPOG).
 -- Source graphs merge because Catenary assigns graphs by file and statement kind. View files retain their required view graph IRI.
@@ -1326,6 +1328,7 @@ law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . change
 
 -- 10.1 Write queue and dirty state ------------------------------------------------------
 
+-- | Code (packages/rdf/src): saver.ts holds the dirty state, the write and the commit paths; reconciler.ts reads what the watcher reports.
 -- | File operations run one at a time. Each edit, undo and redo queues a write of the pending changes.
 -- Dirty: a write is pending or failed. It compares current canonical content with saved content.
 -- Touched file graphs invalidate their canonical cache entries. They do not define dirty state.

@@ -11,7 +11,7 @@ import * as ops from './ops';
 import { skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
 import { readView } from './view-read';
-import { shapePart } from './workspace';
+import { shapePart } from './loader';
 
 const formats = ['application/trig', 'application/n-quads', 'application/ld+json', 'application/rdf+xml', 'text/n3'];
 const accepted = new Set(['text/turtle', 'application/n-triples', ...formats]);

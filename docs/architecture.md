@@ -144,7 +144,8 @@ Paths are relative to the directory in the first column.
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. Cache keys retain the last relevant event. History records final file graphs, including transfers. |
-| | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, graph file ownership, file of new subjects, save and sync |
+| | `settings.ts`, `files.ts`, `trig.ts` | Workspace settings: manifest, file membership, imported globs, file of each statement |
+| | `loader.ts`, `reconciler.ts`, `placement.ts`, `saver.ts`, `validation-data.ts` | Sync modules: read files into their graphs, read again after a watch event, file of new statements and moves between files, dirty state, write and commit paths, validation data. None imports another; `model-store.ts` wires them |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
