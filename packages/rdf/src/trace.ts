@@ -29,6 +29,31 @@ const MAX_DETAIL = 4000;
 
 const isThenable = (v: unknown): v is PromiseLike<unknown> => !!v && typeof (v as PromiseLike<unknown>).then === 'function';
 
+/** A span slower than this goes to the backend log while the trace is off. */
+const SLOW_MS = 500;
+/** Errors already logged by an inner span: the outer spans do not log them again. */
+const loggedErrors = new WeakSet<object>();
+
+/** A span while the trace is off: the backend log gets each slow span and the stack of the first span that fails. */
+function logged<T>(kind: TraceKind, name: string, fn: () => T): T {
+    const t0 = performance.now();
+    const end = (error?: unknown) => {
+        const ms = Math.round(performance.now() - t0);
+        if (error === undefined) { if (ms > SLOW_MS) console.warn(`[catenary] slow ${kind} "${name}": ${ms} ms`); return; }
+        if (typeof error === 'object' && error !== null) { if (loggedErrors.has(error)) return; loggedErrors.add(error); }
+        console.error(`[catenary] ${kind} "${name}" failed after ${ms} ms:`, error instanceof Error ? error.stack : error);
+    };
+    let r: T;
+    try {
+        r = fn();
+    } catch (e) {
+        end(e ?? null);
+        throw e;
+    }
+    if (!isThenable(r)) { end(); return r; }
+    return Promise.resolve(r).then(v => { end(); return v; }, e => { end(e ?? null); throw e; }) as T;
+}
+
 export class Tracer {
     /** Recording is on. Read it before you build a span name that costs time. */
     on = false;
@@ -91,7 +116,7 @@ export class Tracer {
 
     /** Run `fn` as a span. A promise result ends the span when it settles. */
     span<T>(kind: TraceKind, name: string, fn: () => T): T {
-        if (!this.on) return fn();
+        if (!this.on) return logged(kind, name, fn);
         const open: Open = { id: ++this.nextId, generation: this.generation, parent: this.context.getStore(), queries: 0, queryMs: 0 };
         const start = Date.now(), t0 = performance.now();
         const end = (error: boolean) => this.record(open, { kind, name, start, ms: performance.now() - t0, error });
@@ -111,7 +136,7 @@ export class Tracer {
 
     /** Run `fn` as a span without a parent: for work that a watcher starts, not the span that set up the watcher. */
     root<T>(kind: TraceKind, name: string, fn: () => T): T {
-        return this.on ? this.context.run(undefined, () => this.span(kind, name, fn)) : fn();
+        return this.on ? this.context.run(undefined, () => this.span(kind, name, fn)) : logged(kind, name, fn);
     }
 
     /** A span without duration: something that happened (for example a scheduled validation). */
