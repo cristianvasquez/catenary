@@ -131,9 +131,11 @@ export class Settings {
         this.kindsCache = { event, kinds };
         const add = (file: string, k: FileKind) => (kinds.get(file) ?? kinds.set(file, new Set()).get(file)!).add(k);
         for (const f of this.modelFiles.keys()) if (this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).length) add(f, 'shapes');
-        for (const q of this.graph.match(null, P.type, null, this.graph.model)) {
-            const k: FileKind = SKOS_TYPES.some(t => t.equals(q.object)) ? 'concepts' : 'instances';
-            for (const f of this.filesOfQuad(q)) add(f, k);
+        // Each data graph once: its file is the graph (a read of the logical model graph loses it, and filesOfQuad per quad costs one
+        // match per file and quad).
+        for (const g of this.graph.dataGraphs()) {
+            const file = fileOfGraph(g.value);
+            for (const q of this.graph.match(null, P.type, null, g)) add(file, SKOS_TYPES.some(t => t.equals(q.object)) ? 'concepts' : 'instances');
         }
         return kinds;
     }
