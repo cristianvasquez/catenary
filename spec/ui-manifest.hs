@@ -1441,6 +1441,13 @@ findPlacementError label supported
 law_findUnsupportedExplained :: String -> Bool
 law_findUnsupportedExplained label = isJust (findPlacementError label False)
 
+-- | One refused Find Element insertion emits one warning. The frontend command runner reports the refusal, not the picker action.
+-- Reason: both paths receive the same command result.
+findRefusalWarnings :: Bool -> Int
+findRefusalWarnings refused = if refused then 1 else 0
+law_findRefusalReportedOnce :: Bool
+law_findRefusalReportedOnce = findRefusalWarnings True == 1
+
 -- 8.7 Show --------------------------------------------------------------------------
 
 -- | Show: prefer the active view when it shows the element, else the first matching view by label.

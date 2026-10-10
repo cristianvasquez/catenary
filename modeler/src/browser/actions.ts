@@ -271,7 +271,7 @@ export class ModelActions {
         const at = this.editors.dropPoint(w);
         const r = card ? await this.executeAndSelect(view, { kind: 'addToView', view, ids: [card], at }, [card])
             : await this.executeAndSelect(view, { kind: 'addViewReference', view, target: hit.id, at });
-        if (!r.ok) this.messages.warn(r.error);
+        // ModelFrontend.execute reports command refusals (UI §8.6).
         return r.ok;
     }
 

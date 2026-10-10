@@ -1,8 +1,9 @@
 import { expect, it, vi } from 'vitest';
-import { CommandResult, EditCommand, Migration, ModelSelection, NewLabelKind, Range, emptyDoc, emptySelected, newLabel } from '@catenary/model';
+import { CommandResult, EditCommand, Migration, ModelSelection, NewLabelKind, Range, SearchHit, emptyDoc, emptySelected, newLabel } from '@catenary/model';
 import { ModelActions } from '../src/browser/actions';
 import { viewAsItem } from '../src/browser/action-service';
 import { SelectionModel } from '../src/browser/selection-model';
+import { ModelFrontend } from '../src/browser/model-client';
 
 // Keep the action logic in Node; these browser-only modules supply DI tokens, not behavior under test.
 vi.mock('@theia/core/lib/browser', () => ({ ConfirmDialog: class {}, SingleTextInputDialog: class {} }));
@@ -35,6 +36,28 @@ function fixture(result: CommandResult = { ok: true, id: 'changed' }) {
     const actions = Object.assign(new ModelActions(), { model: { snapshot, execute }, editors, selection, messages });
     return { actions, execute, editors, selection, messages, widget };
 }
+
+it.each(['instance', 'view'] as const)('law_findRefusalReportedOnce: one refused %s insertion reports once through the real frontend runner (kata w3wz)', async kind => {
+    class FindActions extends ModelActions {
+        accept(view: string, hit: SearchHit) { return this.place(view, hit); }
+    }
+    const error = 'The element "Additional Information" has no supported canvas presentation.';
+    const execute = vi.fn(async (): Promise<CommandResult> => ({ ok: false, error }));
+    const messages = { warn: vi.fn() };
+    const model = Object.assign(new ModelFrontend(), { service: { execute }, messages });
+    const editors = { find: vi.fn(() => ({})), dropPoint: () => ({ x: 0, y: 0 }), whenShown: vi.fn() };
+    const selection = selectionModel();
+    const actions = Object.assign(new FindActions(), { model, editors, selection, messages });
+    const hit: SearchHit = { id: 'unsupported', kind, label: 'Additional Information', iri: 'urn:unsupported', types: [], views: [] };
+    expect(await actions.accept('view', hit)).toBe(false);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(kind === 'instance'
+        ? { kind: 'addToView', view: 'view', ids: ['unsupported'], at: { x: 0, y: 0 } }
+        : { kind: 'addViewReference', view: 'view', target: 'unsupported', at: { x: 0, y: 0 } });
+    expect(messages.warn.mock.calls).toEqual([[error]]);
+    expect(editors.whenShown).not.toHaveBeenCalled();
+    expect(selection.selection.ids).toEqual([]);
+});
 
 const range: Range = { kind: 'scheme', schemes: ['urn:scheme'] };
 const at = { x: 300, y: 200 };
