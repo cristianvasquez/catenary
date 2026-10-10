@@ -50,6 +50,8 @@ export class ViewState {
         if (!view || !scope || !patch?.length || !(reason === 'edit' || reason === 'undo' || reason === 'redo')) { this.invalidate(); return; }
         if (scope.layout) {
             if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch, view))) this.invalidate();
+            // A pending edge removal is already in the part (hidden edges): the next build from the part shows both changes.
+            else this.removedEdges = undefined;
             return;
         }
         if (!this.acceptRemovedEdges(patch, view)) this.invalidate();
