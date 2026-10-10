@@ -72,6 +72,12 @@ export interface Classes {
     concepts?: ConceptDef[];
 }
 
+/** The target class of a relation to any resource (an RDFS rule without a class range): it admits an instance of any class. */
+export const ANY_RESOURCE = NS.rdfs + 'Resource';
+
+/** The relation admits an instance with `types`. */
+const admits = (r: RelationDef, types: string[]) => r.targetClass === ANY_RESOURCE || types.includes(r.targetClass);
+
 /** JSON Canvas preset colors of the classes, by palette position. */
 export const CLASS_COLORS = ['6', '4', '5', '2', '3', '1'];
 
@@ -84,6 +90,7 @@ export function byOrderThenName(a: { order?: number; name: string }, b: { order?
  * The metamodel with the rules of a schema provider (`source`) added. The shapes win: a rule for a predicate that the shapes already
  * describe on its class adds nothing. A class that only the rules know is added after the classes of the shapes, ordered by name.
  * A class range gives a relation. Literal ranges of one predicate give one field (a datatype only when all ranges have the same one).
+ * Any value gives a field without a datatype and a relation to any resource (ANY_RESOURCE).
  */
 export function mergeSchema<T extends Classes>(meta: T, schema: Schema, source: string): T {
     if (!schema.rules.length) return meta;
@@ -104,16 +111,17 @@ export function mergeSchema<T extends Classes>(meta: T, schema: Schema, source: 
             touched.set(rule.domain, def);
         }
         const common = { path: rule.predicate, name: rule.name ?? localName(rule.predicate), ...(rule.description ? { description: rule.description } : {}), source };
-        if (rule.range.kind === 'class') {
-            const targetClass = rule.range.iri;
+        if (rule.range.kind !== 'literal') {
+            const targetClass = rule.range.kind === 'class' ? rule.range.iri : ANY_RESOURCE;
             if (!def.relations.some(r => r.path === rule.predicate && r.targetClass === targetClass)) def.relations.push({ ...common, targetClass });
-            continue;
+            if (rule.range.kind === 'class') continue;
         }
         const key = rule.domain + ' ' + rule.predicate;
         const seen = datatypes.get(key) ?? new Set();
-        seen.add(rule.range.datatype);
+        const given = rule.range.kind === 'literal' ? rule.range.datatype : undefined;
+        seen.add(given);
         datatypes.set(key, seen);
-        const datatype = seen.size === 1 ? rule.range.datatype : undefined;
+        const datatype = seen.size === 1 ? given : undefined;
         const field = def.fields.find(f => f.path === rule.predicate && f.source === source);
         if (field) { if (datatype === undefined) delete field.datatype; }
         else def.fields.push({ ...common, ...(datatype ? { datatype } : {}), iri: false });
@@ -150,7 +158,7 @@ export function primaryClass(meta: Classes, types: string[]): ClassDef | undefin
 
 /** The class ranges of the schema rules (not the shapes) of an instance with `types`: the classes of its link candidates. */
 export function schemaRanges(meta: Classes, types: string[]): string[] {
-    return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source).map(r => r.targetClass)))].sort();
+    return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source && r.targetClass !== ANY_RESOURCE).map(r => r.targetClass)))].sort();
 }
 
 /** The class of the views (each view graph has `<view> a view:View`). */
@@ -162,7 +170,7 @@ export function permittedRelations(meta: Classes, from: string[], to: string[], 
     const seen = new Set<string>();
     for (const t of from) {
         for (const r of classDef(meta, t)?.relations ?? []) {
-            if (to.includes(r.targetClass) && (!r.values || toIri === undefined || r.values.includes(toIri)) && !seen.has(r.path)) {
+            if (admits(r, to) && (!r.values || toIri === undefined || r.values.includes(toIri)) && !seen.has(r.path)) {
                 seen.add(r.path);
                 result.push(r);
             }

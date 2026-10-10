@@ -50,11 +50,11 @@ describe('RDFS domain and range providers (@catenary/rdfs)', () => {
             `Employee {"kind":"class","iri":"${EX}Person"}`, `Employee {"kind":"class","iri":"${EX}Employee"}`]);
     });
 
-    it('several domains are a union; literal ranges are fields; no range and rdfs:Literal take any value; a declared datatype is literal', async () => {
+    it('several domains are a union; literal ranges are fields; rdfs:Literal takes any literal; no range takes any value; a declared datatype is literal', async () => {
         const rs = await rules();
         expect(ofPredicate(rs, 'note')).toEqual(['Person {"kind":"literal"}', 'Employee {"kind":"literal"}', 'Team {"kind":"literal"}']);
         expect(ofPredicate(rs, 'age')).toEqual([`Person {"kind":"literal","datatype":"${NS.xsd}integer"}`, `Employee {"kind":"literal","datatype":"${NS.xsd}integer"}`]);
-        expect(ofPredicate(rs, 'anything')).toEqual(['Team {"kind":"literal"}']);
+        expect(ofPredicate(rs, 'anything')).toEqual(['Team {"kind":"any"}']);
         expect(ofPredicate(rs, 'code')).toEqual([`Team {"kind":"literal","datatype":"${EX}Code"}`]);
     });
 
@@ -112,6 +112,12 @@ describe('RDFS rules in the store', () => {
         if (!choices || 'error' in choices) throw new Error('no choices');
         const member = choices.sections.find(s => s.predicate === EX + 'memberOf')!;
         expect(member.candidates.map(c => c.label)).toEqual(['Core team']);
+        // No range: a field and a relation to any resource.
+        expect(classDef(store.meta, EX + 'Team')!.fields.map(f => f.path)).toContain(EX + 'anything');
+        const team = store.linkChoices('out', id('core'), '');
+        if (!team || 'error' in team) throw new Error('no choices');
+        expect(team.sections.find(s => s.predicate === EX + 'anything')!.candidates.map(c => c.label)).toEqual(expect.arrayContaining(['Ann', 'Bob']));
+        expect(store.execute({ kind: 'createRelation', subject: id('core'), predicate: EX + 'anything', object: id('bob') })).toMatchObject({ ok: true });
         expect(permittedRelations(store.meta, [EX + 'Person'], [EX + 'Employee']).map(r => r.name)).toEqual(['knows']);
         expect(store.execute({ kind: 'createRelation', subject: id('bob'), predicate: EX + 'knows', object: id('ann') })).toMatchObject({ ok: true });
         expect(store.execute({ kind: 'createRelation', subject: id('core'), predicate: EX + 'knows', object: id('ann') }))
@@ -124,6 +130,10 @@ describe('RDFS rules in the store', () => {
         expect(props.schema).toEqual([{ id: shape, uri: shape, label: 'Person (RDFS)', predicates: [EX + 'age', EX + 'knows', EX + 'memberOf', EX + 'note'] }]);
         expect(props.candidates).toContain(`<${EX}core>`);
         expect(store.shapesText()).toContain(`<${shape}>`);
+        // One form property for each predicate: the two class ranges of ex:knows are alternatives.
+        const text = store.shapesText().split('\n');
+        expect(text.filter(l => l.startsWith(`<${shape}/`) && l.includes(`<${NS.sh}path> <${EX}knows>`))).toHaveLength(1);
+        expect(text.filter(l => l.startsWith(`<${shape}/`) && l.includes(`<${NS.sh}or>`))).toHaveLength(1);
         // Validation reads the shapes dataset: no RDFS rule is in it.
         const dataset = (store as unknown as { metamodel: { dataset: { match(...a: unknown[]): { size: number } } } }).metamodel.dataset;
         expect(dataset.match(rdf.namedNode(shape)).size).toBe(0);

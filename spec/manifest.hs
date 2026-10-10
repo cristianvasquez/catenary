@@ -1181,14 +1181,16 @@ shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes t
 -- | RDFS rules (@catenary/rdfs schema.ts, @catenary/model mergeSchema): the written rdfs:domain and rdfs:range statements of all
 -- file graphs add relations and fields to the metamodel. They are suggestions for the editor, not constraints. Validation never
 -- reads them, because RDFS domain and range are inference rules. A domain applies to its class and its written subclasses.
--- A class range gives a relation and also admits the written subclasses. A literal range gives a field. No range, rdfs:Resource,
--- owl:Thing and rdfs:Literal take any value. Several domains or ranges are a union: an editor suggestion, not RDFS semantics.
+-- A class range gives a relation and also admits the written subclasses. A literal range gives a field. rdfs:Literal takes any
+-- literal. No range, rdfs:Resource and owl:Thing take any value: a field and a relation to an instance of any class.
+-- Several domains or ranges are a union: an editor suggestion, not RDFS semantics. A form shows one property for each predicate,
+-- with its ranges as alternatives.
 -- The shapes win: a rule for a predicate that the shapes describe on the same class adds nothing.
 -- A class that only the rules know joins the palette after the classes of the shapes, named by its label, else its short IRI.
 -- RDF, RDFS, OWL, SHACL and SKOS predicates and domains give no rules. No type inference and no rdfs:subPropertyOf.
 -- A schema statement, or the label or comment of a schema predicate or class, rebuilds the metamodel. Other data does not.
 -- Properties edits the rules of each class in a form node shape of no file (schemaFormShape). It is never saved or validated.
-data SchemaRange = RuleClass Iri | RuleLiteral (Maybe Iri) deriving Eq   -- a class range, or a literal range and its datatype
+data SchemaRange = RuleClass Iri | RuleLiteral (Maybe Iri) | RuleAny deriving Eq   -- a class, a literal and its datatype, any value
 data SchemaRule = SchemaRule { ruleDomain :: Iri, rulePredicate :: Iri, ruleRange :: SchemaRange } deriving Eq
 schemaRules :: Backend -> [SchemaRule]               -- rdfsRules over the graphs of the files
 subclassesOf :: [(Iri, Iri)] -> Iri -> [Iri]         -- written rdfs:subClassOf pairs (sub, super), a class: it, then its subclasses

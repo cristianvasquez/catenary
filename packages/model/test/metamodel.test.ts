@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeSchema, permittedRelations, predicateName, primaryClass, schemaRanges, type Classes } from '../src/metamodel';
+import { ANY_RESOURCE, mergeSchema, permittedRelations, predicateName, primaryClass, schemaRanges, type Classes } from '../src/metamodel';
 import { formatPath, shortIri } from '../src/shapes-doc';
 import { localName } from '../src/terms';
 
@@ -80,6 +80,14 @@ describe('schema rules (mergeSchema)', () => {
         ] }, 'rdfs');
         expect(merged.classes[0].fields.filter(f => f.path === 'urn:size').map(f => f.datatype)).toEqual([undefined]);
         expect(meta.classes[0].fields).toHaveLength(1);
+        expect(schemaRanges(merged, ['urn:Task'])).toEqual([]);
+    });
+
+    it('any value: a field without a datatype and a relation to any resource, which admits an instance of any class', () => {
+        const merged = mergeSchema(shapes(), { classes: {}, rules: [{ domain: 'urn:Task', predicate: 'urn:about', range: { kind: 'any' } }] }, 'rdfs');
+        expect(merged.classes[0].fields.find(f => f.path === 'urn:about')).toMatchObject({ iri: false, source: 'rdfs' });
+        expect(merged.classes[0].relations.find(r => r.path === 'urn:about')).toMatchObject({ targetClass: ANY_RESOURCE });
+        expect(permittedRelations(merged, ['urn:Task'], ['urn:Anything']).map(r => r.path)).toEqual(['urn:about']);
         expect(schemaRanges(merged, ['urn:Task'])).toEqual([]);
     });
 });

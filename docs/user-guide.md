@@ -98,7 +98,8 @@ Catenary reads the `rdfs:domain` and `rdfs:range` statements of all model files,
 
 - A predicate with `rdfs:domain C` applies to the instances of C and of the subclasses of C that the files state.
 - A class range gives a relation. The link picker offers the instances of the range class and of its subclasses. Connect accepts them.
-- A literal range (`xsd:*`, `rdf:langString`, a declared `rdfs:Datatype`) gives a field. No range, `rdfs:Literal`, `rdfs:Resource` and `owl:Thing` accept any value.
+- A literal range (`xsd:*`, `rdf:langString`, a declared `rdfs:Datatype`) gives a field. `rdfs:Literal` accepts any literal.
+- No range, `rdfs:Resource` and `owl:Thing` accept any value: a field, and links to instances of any class.
 - Several domains or ranges add up: each one applies.
 - The shapes win. A predicate that a shape describes on the same class keeps the shape's range and cardinality.
 - A class that only the RDFS statements know gets a palette tool after the shape classes.

@@ -1,7 +1,7 @@
 // SHACL shapes -> metamodel (palette classes, relation types, fields, SKOS concepts; types in @catenary/model).
 // The tool reads shapes only. See the mapping table in readme.md.
 
-import { CLASS_COLORS, ClassDef, Classes, ConceptDef, NS, SchemeDef, TermJSON, byOrderThenName, localName, schemaFormShape, schemaParts, shortIri, termToJSON } from '@catenary/model';
+import { ANY_RESOURCE, CLASS_COLORS, ClassDef, Classes, ConceptDef, NS, SchemeDef, TermJSON, byOrderThenName, localName, schemaFormShape, schemaParts, shortIri, termToJSON } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
 import type { Dataset, Grapoi } from 'rdf-ext';
 import { rdf } from './terms';
@@ -185,20 +185,35 @@ export function formShapes(meta: Metamodel): Dataset {
         });
         out.add(rdf.quad(q.subject, n(SH + 'in'), list as never));
     }
-    // The schema rules (RDFS domain and range): one form node shape for each class and provider (schemaFormShape). Not saved, not validated.
+    // The schema rules (RDFS domain and range): one form node shape for each class and provider (schemaFormShape), with one property for
+    // each predicate. Several ranges of a predicate are alternatives (sh:or). A relation to any resource has its field. Not saved, not validated.
+    const range = (node: Term, x: ClassDef['fields'][number] | ClassDef['relations'][number]) => {
+        if ('targetClass' in x) {
+            out.add(rdf.quad(node as never, n(SH + 'class'), n(x.targetClass)));
+            out.add(rdf.quad(node as never, n(SH + 'nodeKind'), n(SH + 'IRI')));
+        } else if (x.datatype) out.add(rdf.quad(node as never, n(SH + 'datatype'), n(x.datatype)));
+    };
     for (const cls of meta.classes) for (const [source, parts] of schemaParts(cls)) {
         const shape = n(schemaFormShape(source, cls.iri));
         out.add(rdf.quad(shape, n(NS.rdf + 'type'), n(SH + 'NodeShape')));
-        parts.forEach((x, i) => {
+        const paths = [...new Set(parts.map(x => x.path))];
+        paths.forEach((path, i) => {
+            const ranges = parts.filter(x => x.path === path && !('targetClass' in x && x.targetClass === ANY_RESOURCE));
             const ps = n(`${shape.value}/${i + 1}`);
             out.add(rdf.quad(shape, n(SH + 'property'), ps));
-            out.add(rdf.quad(ps, n(SH + 'path'), n(x.path)));
-            out.add(rdf.quad(ps, n(SH + 'name'), rdf.literal(x.name)));
-            if (x.description) out.add(rdf.quad(ps, n(SH + 'description'), rdf.literal(x.description)));
-            if ('targetClass' in x) {
-                out.add(rdf.quad(ps, n(SH + 'class'), n(x.targetClass)));
-                out.add(rdf.quad(ps, n(SH + 'nodeKind'), n(SH + 'IRI')));
-            } else if (x.datatype) out.add(rdf.quad(ps, n(SH + 'datatype'), n(x.datatype)));
+            out.add(rdf.quad(ps, n(SH + 'path'), n(path)));
+            out.add(rdf.quad(ps, n(SH + 'name'), rdf.literal(ranges[0].name)));
+            if (ranges[0].description) out.add(rdf.quad(ps, n(SH + 'description'), rdf.literal(ranges[0].description)));
+            if (ranges.length === 1) return range(ps, ranges[0]);
+            let list: Term = n(NS.rdf + 'nil');
+            ranges.slice().reverse().forEach((x, j) => {
+                const k = ranges.length - j, alt = n(`${ps.value}/or/${k}`), cell = n(`${ps.value}/or/${k}/list`);
+                range(alt, x);
+                out.add(rdf.quad(cell, n(NS.rdf + 'first'), alt));
+                out.add(rdf.quad(cell, n(NS.rdf + 'rest'), list as never));
+                list = cell;
+            });
+            out.add(rdf.quad(ps, n(SH + 'or'), list as never));
         });
     }
     return out;

@@ -1,7 +1,8 @@
 // RDFS schema rules: the domain and range providers. A predicate with `rdfs:domain C` applies to the instances of C and of its
 // written subclasses. Its `rdfs:range` says what its objects are: instances of a class and of its written subclasses (a relation), or
 // literals (a field). Several domains or ranges are a union: an editor suggestion, not the intersection of RDFS semantics. No range,
-// rdfs:Resource and owl:Thing: any value. No inference of types, no rdfs:subPropertyOf, no validation.
+// rdfs:Resource and owl:Thing: any value, a literal or a resource. rdfs:Literal: any literal. No inference of types, no
+// rdfs:subPropertyOf, no validation.
 
 import { OWL, QueryPort, RDF, RDFS, SH, Schema, SchemaProvider, SchemaRange, SchemaRule, XSD, iri } from '@catenary/explorer';
 
@@ -10,8 +11,8 @@ const PREFIXES = `PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}> PREFIX skos: <${SK
 
 /** Built-in vocabularies: their predicates and classes give no rules (the editor handles them itself). */
 const BUILT_IN = [RDF, RDFS, OWL, SH, SKOS];
-/** Ranges that accept any value. rdfs:Literal: a literal of any datatype. */
-const ANY = new Set([RDFS + 'Resource', OWL + 'Thing', RDFS + 'Literal']);
+/** Ranges that accept any value: a literal or a resource. */
+const ANY = new Set([RDFS + 'Resource', OWL + 'Thing']);
 /** Literal ranges outside the XSD namespace. */
 const LITERALS = new Set([RDF + 'langString', RDF + 'HTML', RDF + 'XMLLiteral', RDF + 'JSON', RDF + 'PlainLiteral']);
 
@@ -48,9 +49,10 @@ function texts(port: QueryPort, predicates: string, subjects: string[]): Map<str
     return out;
 }
 
-/** The range of one `rdfs:range` value: any value, a literal of a datatype, or a class. */
+/** The range of one `rdfs:range` value: any value, any literal, a literal of a datatype, or a class. */
 function rangeOf(r: string, datatypes: Set<string>): SchemaRange {
-    if (ANY.has(r)) return { kind: 'literal' };
+    if (ANY.has(r)) return { kind: 'any' };
+    if (r === RDFS + 'Literal') return { kind: 'literal' };
     if (r.startsWith(XSD) || LITERALS.has(r) || datatypes.has(r)) return { kind: 'literal', datatype: r };
     return { kind: 'class', iri: r };
 }
@@ -72,7 +74,7 @@ export function rdfsRules(port: QueryPort): Schema {
         const objects = (ranges.get(p) ?? []).slice().sort().map(r => rangeOf(r, datatypes));
         // A class range also admits the instances of its subclasses: one relation for each, as permittedRelations matches types.
         const expanded: SchemaRange[] = objects.length ? objects.flatMap((r): SchemaRange[] => r.kind === 'class' ? withSubclasses(subs, r.iri).map(c => ({ kind: 'class', iri: c })) : [r])
-            : [{ kind: 'literal' }];
+            : [{ kind: 'any' }];
         const own = { predicate: p, ...(names.has(p) ? { name: names.get(p) } : {}), ...(comments.has(p) ? { description: comments.get(p) } : {}) };
         const classes = [...new Set(domains.get(p)!.slice().sort().flatMap(d => withSubclasses(subs, d)))];
         for (const domain of classes) for (const range of expanded) {

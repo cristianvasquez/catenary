@@ -4,8 +4,11 @@
 
 import type { QueryPort } from './query';
 
-/** What the objects of a predicate are: instances of a class (a relation), or literals of a datatype (a field; no datatype: any value). */
-export type SchemaRange = { kind: 'class'; iri: string } | { kind: 'literal'; datatype?: string };
+/**
+ * What the objects of a predicate are: instances of a class (a relation), literals of a datatype (a field; no datatype: any literal),
+ * or any value (a literal or a resource).
+ */
+export type SchemaRange = { kind: 'class'; iri: string } | { kind: 'literal'; datatype?: string } | { kind: 'any' };
 
 export interface SchemaRule {
     /** The class of the subject. */
