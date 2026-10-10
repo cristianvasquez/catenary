@@ -27,7 +27,7 @@ export function viewPart(g: ModelGraph, view: NamedNode): Quad[] {
     // A member of an entity group of the view counts as placed (ADR 0014, C1).
     const member = (x: string, n: string) => `{ GRAPH ${V} { ?${n} a view:Placement ; view:element ?${n}g } GRAPH ?${n}mg { ?${n}g a view:EntityGroup ; view:member ?${x} } }`;
     const inView = (x: string) => `EXISTS { { GRAPH ${V} { ?n_${x} a view:Placement ; view:element ?${x} } } UNION ${member(x, `m_${x}`)} }`;
-    const rows = g.store.select(`${PREFIXES}
+    const rows = g.select(`${PREFIXES}
         SELECT ?g ?s ?p ?o WHERE {
             { GRAPH ${V} { ?s ?p ?o } BIND(${V} AS ?g) }
             UNION

@@ -6,7 +6,7 @@ import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { Change, MODEL_GRAPH, ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, V } from './graph';
 import { elementId } from './ids';
 import type { ShapesIndex } from './shapes-read';
-import { termKey, tripleKey } from './terms';
+import { rdf, termKey, tripleKey } from './terms';
 
 const quadKey = (q: Quad) => `${tripleKey(q)} ${termKey(q.graph)}`;
 const matches = (q: Quad, s?: Term | null, p?: Term | null, o?: Term | null, g?: Term | null) =>
@@ -20,10 +20,15 @@ export function matchBefore(g: ModelGraph, patch: readonly Change[]): (s?: Term 
     const first = new Map<string, Change>();
     for (const c of patch) if (!first.has(quadKey(c.quad))) first.set(quadKey(c.quad), c);
     const removed = [...first.values()].filter(c => c.op === 'remove').map(c => c.quad);
-    return (s, p, o, graph) => [
-        ...g.match(s, p, o, graph).filter(q => first.get(quadKey(q))?.op !== 'add'),
-        ...removed.filter(q => matches(q, s, p, o, graph))
-    ];
+    return (s, p, o, graph) => {
+        const union = graph?.equals(g.model);
+        const matchesGraph = (q: Quad) => !graph || (union ? g.isDataGraph(q.graph) : q.graph.equals(graph));
+        const found = [
+            ...g.match(s, p, o).filter(q => matchesGraph(q) && first.get(quadKey(q))?.op !== 'add'),
+            ...removed.filter(q => matchesGraph(q) && matches(q, s, p, o))
+        ];
+        return union ? [...new Map(found.map(q => [tripleKey(q), rdf.quad(q.subject, q.predicate, q.object, g.model)])).values()] : found;
+    };
 }
 
 /** Old id -> new id of the elements whose IRI `patch` changed. `shapes`: the shapes index before and after the patch. */
@@ -42,8 +47,8 @@ export function movedIds(g: ModelGraph, patch: readonly Change[], shapes?: { bef
 
     const subjects = new Map<string, NamedNode>(), graphs = new Map<string, NamedNode>();
     for (const { quad: q } of patch) {
-        if (q.subject.termType === 'NamedNode' && (q.graph.equals(g.model) || g.isShapesGraph(q.graph))) subjects.set(q.subject.value, q.subject);
-        else if (q.graph.termType === 'NamedNode' && !q.graph.equals(g.model) && !g.isShapesGraph(q.graph)) graphs.set(q.graph.value, q.graph);
+        if (q.subject.termType === 'NamedNode' && (g.isDataGraph(q.graph) || g.isShapesGraph(q.graph))) subjects.set(q.subject.value, q.subject);
+        else if (q.graph.termType === 'NamedNode' && !g.isDataGraph(q.graph) && !g.isShapesGraph(q.graph)) graphs.set(q.graph.value, q.graph);
     }
     const now = g.match.bind(g) as typeof was;
     const ids = (terms: Iterable<NamedNode>, test: (t: NamedNode) => boolean) => [...terms].filter(test).map(elementId);

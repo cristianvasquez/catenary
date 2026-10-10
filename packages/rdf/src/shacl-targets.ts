@@ -28,7 +28,7 @@ function materialize(g: ModelGraph, scope: TargetScope, nodes: readonly FocusNod
     const pending = nodes.filter(n => !cached!.byNode.has(term(n)));
     if (pending.length && scope.data.length) {
         const values = pending.map(term).join(' ');
-        const quads = g.store.construct(`CONSTRUCT { ?s ?p ?o } ${scope.data.map(g => `FROM ${iri(g)}`).join(' ')} WHERE {
+        const quads = g.construct(`CONSTRUCT { ?s ?p ?o } ${scope.data.map(g => `FROM ${iri(g)}`).join(' ')} WHERE {
             { VALUES ?o { ${values} } ?s ?p ?o }
             UNION { VALUES ?s { ${values} } ?s ?p ?o }
         }`);
@@ -51,11 +51,11 @@ export function shapeQueryScope(g: ModelGraph): TargetScope {
     const version = g.keys.query;
     const cached = scopes.get(g);
     if (cached && cached.event === version) return cached.scope;
-    const data = g.store.select(`SELECT DISTINCT ?g WHERE {
+    const data = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
         FILTER (?g != <${VALIDATION_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
     }`).map(r => r.g.value);
-    const shapes = g.store.select(`SELECT DISTINCT ?g WHERE {
+    const shapes = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
         FILTER (?g != <${VALIDATION_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
         FILTER (STRSTARTS(STR(?p), "http://www.w3.org/ns/shacl#") || ?o IN (<http://www.w3.org/ns/shacl#NodeShape>, <http://www.w3.org/ns/shacl#PropertyShape>))
@@ -77,7 +77,7 @@ export function shapeTargetMatches(g: ModelGraph, selection: TargetSelection): T
         }
         if (tracer.on) tracer.note(`references ${cacheable ? 'cacheable' : 'uncacheable'}; ${cached.refs.length} refs; ${scope.shapes.length} shapes graphs; ${scope.data.length} data graphs`);
         const port = {
-            select: (q: string) => g.store.select(q),
+            select: (q: string) => g.select(q),
             traverse: (nodes: readonly FocusNode[], predicates: readonly string[], reverse: boolean, graphs: readonly string[]) => {
                 const datasets = materialize(g, { ...scope, data: graphs }, nodes), out: { node: FocusNode; predicate: string; value: FocusNode }[] = [];
                 for (const node of nodes) {

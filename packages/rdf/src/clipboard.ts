@@ -43,7 +43,7 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
     // Shape descriptions and their owned parts use the primary shapes graph. Existing shapes keep their graph.
     const shapeSubjects = shapePart(quads);
     for (const q of quads) {
-        if (g.match(q.subject, q.predicate, q.object).some(existing => existing.graph.equals(g.model) || g.isShapesGraph(existing.graph))) continue;
+        if (g.match(q.subject, q.predicate, q.object).some(existing => g.isDataGraph(existing.graph) || g.isShapesGraph(existing.graph))) continue;
         const existing = g.match(q.subject).find(existing => g.isShapesGraph(existing.graph));
         const graph = existing?.graph ?? (shapeSubjects.has(termKey(q.subject)) ? g.shapesTarget() : g.homeOf(q.subject));
         if (!graph) return ops.fail('No file is configured for new shapes.');
@@ -145,7 +145,7 @@ export async function copyAsRdf(g: ModelGraph, viewId: string, ids: string[]): P
     const view = ops.viewTerm(g, viewId);
     if (!view) return { ok: false, error: 'The view does not exist.' };
     const out = new Map<string, Quad>(), visited = new Set<string>();
-    const domain = (q: Quad) => q.graph.equals(g.model) || g.isShapesGraph(q.graph);
+    const domain = (q: Quad) => g.isDataGraph(q.graph) || g.isShapesGraph(q.graph);
     const add = (q: Quad) => { if (domain(q)) out.set(tripleKey(q), rdf.quad(q.subject, q.predicate, q.object)); };
     const describe = (s: Term) => {
         const key = termKey(s);

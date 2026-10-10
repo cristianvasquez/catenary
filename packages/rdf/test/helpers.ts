@@ -45,7 +45,7 @@ export const meta = (): Promise<Metamodel> => parseShapes(SHAPES, 'shapes.ttl');
 export async function load(text = MODEL): Promise<ModelGraph> {
     const quads = skolemize((await parseTrig(text)).quads).quads;
     const g = new ModelGraph(new OxigraphStore(quads));
-    g.setShapesGraphs(quads.map(q => q.graph).filter((t): t is NamedNode => t.termType === 'NamedNode' && t.value.startsWith(FILE_GRAPH_PREFIX)));
+    g.setShapesGraphs(quads.map(q => q.graph).filter((t): t is NamedNode => t.termType === 'NamedNode' && (t.value.startsWith(FILE_GRAPH_PREFIX) || t.value.startsWith('urn:file:'))));
     return g;
 }
 export const emptyGraph = (): ModelGraph => new ModelGraph(new OxigraphStore());

@@ -7,7 +7,7 @@ This document describes the structure of the code and the flow of data. The exac
 ```text
  RDF files on disk  ──read / watch──▶  ModelStore (backend, one per workspace)
         ▲                               ├─ QuadStore on Oxigraph (in memory)
-        │                               ├─ origin map: statement → source files
+        │                               ├─ file data and shapes graphs
    text patch / write                   ├─ history: undo, redo, migration queue
    + git commit                         └─ validation (shacl-engine, worker thread)
         │                                        │
@@ -20,7 +20,7 @@ This document describes the structure of the code and the flow of data. The exac
           (Model explorer, Properties, Links, ...)
 ```
 
-1. Open: the backend lists the model files, parses them, replaces blank nodes with skolem IRIs and loads the quads into the store. It records the source files of each statement.
+1. Open: the backend lists the model files, parses them, replaces blank nodes with skolem IRIs and loads the quads into the store. Each quad graph records its file and role.
 2. Read: each panel and each view session asks the backend for what it shows. The backend answers with a SPARQL query, and builds a request-scoped read model when a rule needs one. No component holds a copy of the whole model.
 3. Edit: the frontend or a GLSP handler sends one `EditCommand`. The store runs it in one synchronous transaction and produces one patch (added and removed quads) and one undo step.
 4. Write: the file queue writes the patch to the files that hold the statements, as a Turtle text patch when possible, else as a whole file. Then it makes a Git commit of those files.
@@ -32,11 +32,13 @@ This document describes the structure of the code and the flow of data. The exac
 | Graph | Content |
 |---|---|
 | `<view IRI>` | The statements of one view file. |
-| `urn:file:<encoded path>` | Shape subjects and their nested nodes, per source file. |
-| `urn:name:model` | All other statements. The origin map records the files of each statement. |
+| `urn:shapes:<encoded path>` | Shape subjects and their nested nodes, per source file. |
+| `urn:data:<encoded path>` | Other statements, per source file. |
 | `urn:trellis:validation` | The SHACL report. Not saved, not in undo, not in the dirty check. |
 
 Model-file reads preserve SPO statements and source-file provenance, not source graph names. Catenary assigns the store graphs above instead. View files retain their required view graph IRI. Writes do not restore source graph names.
+
+Data reads use a union of the file data graphs with duplicate triples removed. `ModelGraph.model` is this logical scope. Commands assign final file graphs before they commit. History stores only quad patches and the migration queue. Canonical file content determines dirty state. Touched graphs invalidate only their file cache entries.
 
 The workspace file (`workspace.trig`, graph `urn:name:workspace`) stays in workspace metadata, outside the store graphs above. The `urn:trellis:list:*` identifiers remain because saved view files use them.
 
@@ -141,8 +143,8 @@ Paths are relative to the directory in the first column.
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
-| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. Cache keys retain the last relevant event. History records edits and source-file transfers. |
-| | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, statement origin, file of new subjects, save and sync |
+| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. Cache keys retain the last relevant event. History records final file graphs, including transfers. |
+| | `workspace.ts`, `files.ts`, `placement.ts`, `trig.ts` | Workspace files, manifest, graph file ownership, file of new subjects, save and sync |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |

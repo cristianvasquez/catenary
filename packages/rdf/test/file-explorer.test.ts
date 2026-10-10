@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { iriId, NS, boxes } from '@catenary/model';
+import { dataGraphIri, ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { parseQuads } from './helpers';
 import { relationId } from '../src/ids';
@@ -116,4 +117,26 @@ describe('file explorer', () => {
         expect(store.undo().ok).toBe(true);
         await store.idle(); expect(await statements('shape')).toEqual(before);
     });
+});
+
+
+it('law_originKept and law_undoKeepsOrigin: duplicate triples stay in separate file graphs and transfers publish those graphs', () => {
+    const g = (store as unknown as { graph: ModelGraph }).graph;
+    const subject = rdf.namedNode('urn:test:a'), predicate = rdf.namedNode(NS.rdf + 'type');
+    const graphs = () => g.store.match(subject, predicate).map(q => q.graph.value).sort();
+    const expected = [dataGraphIri(file('a')), dataGraphIri(file('c'))].sort();
+    expect(graphs()).toEqual(expected);
+    expect(g.match(subject, predicate, null, g.model)).toHaveLength(1);
+    expect(g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.model.value}> { <urn:test:a> a <urn:test:Thing> } }`)[0].n.value).toBe('1');
+    const events: typeof g.change[] = [];
+    g.onDidChange(event => events.push(event));
+    expect(move().ok).toBe(true);
+    expect(events).toHaveLength(1);
+    expect(events[0].graphs.sort()).toEqual([dataGraphIri(file('a')), dataGraphIri(file('b'))].sort());
+    expect(events[0].patch.every(c => !c.quad.graph.equals(g.model))).toBe(true);
+    expect(graphs()).toEqual([dataGraphIri(file('b')), dataGraphIri(file('c'))].sort());
+    expect(store.undo().ok).toBe(true);
+    expect(graphs()).toEqual(expected);
+    expect(store.redo().ok).toBe(true);
+    expect(graphs()).toEqual([dataGraphIri(file('b')), dataGraphIri(file('c'))].sort());
 });

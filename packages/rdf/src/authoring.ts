@@ -33,7 +33,7 @@ export function queryPort(g: ModelGraph, graphs?: readonly string[]): QueryPort 
     const graph = (pattern: string, v = '?g') => graphs ? `VALUES ${v} { ${graphs.map(x => `<${x}>`).join(' ')} } GRAPH ${v} { ${pattern} }`
         : `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`;
     return {
-        select: query => g.store.select(query) as unknown as Record<string, Term>[],
+        select: query => g.select(query) as unknown as Record<string, Term>[],
         graph,
         labels: iris => labels(g, [...iris])
     };

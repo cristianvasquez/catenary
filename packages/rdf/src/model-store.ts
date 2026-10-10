@@ -27,7 +27,7 @@ import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
 import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, GraphChange, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
-import { History, OriginChange } from './history';
+import { History } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
 import { formData, selectionLinks, hiddenRelations, viewCounts } from './queries';
@@ -241,7 +241,7 @@ export class ModelStore implements ModelQueries {
         const { subjects, memo } = scope;
         const byTerm = this.shapesIndex().byTerm;
         return {
-            select: query => this.graph.store.select(query) as unknown as Record<string, Term>[],
+            select: query => this.graph.select(query) as unknown as Record<string, Term>[],
             graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`,
             labels: iris => labels(this.graph, [...iris]),
             compact: shortIri,
@@ -489,7 +489,7 @@ export class ModelStore implements ModelQueries {
     protected dataPredicates(): string[] {
         const labels = instanceLabels(this.graph);
         const found = new Set<string>();
-        for (const r of this.graph.store.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${this.graph.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
+        for (const r of this.graph.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${this.graph.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
             if (labels.has(r.s.value) && r.p.value !== P.type.value && r.p.value !== P.label.value) found.add(r.p.value);
         }
         for (const [s, graph] of this.graph.vocabularySubjects()) {
@@ -501,7 +501,7 @@ export class ModelStore implements ModelQueries {
     /** The classes of the shapes and the types of the instances: what a typed class name resolves to (`classIri`). */
     knownClasses(): { iri: string; name?: string }[] {
         const types = new Set<string>();
-        for (const r of this.graph.store.select(`SELECT DISTINCT ?t WHERE { GRAPH <${this.graph.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
+        for (const r of this.graph.select(`SELECT DISTINCT ?t WHERE { GRAPH <${this.graph.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
         for (const [s, graph] of this.graph.vocabularySubjects()) for (const t of this.graph.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
         return [...this.metamodel.classes.map(c => ({ iri: c.iri, name: c.name })), ...[...types].sort(cmp).map(iri => ({ iri }))];
     }
@@ -631,7 +631,7 @@ export class ModelStore implements ModelQueries {
                 layout = false;
                 continue;
             }
-            if (!q.graph.equals(this.graph.model)) {
+            if (!this.graph.isDataGraph(q.graph)) {
                 if (q.graph.termType === 'NamedNode') views.add(elementId(q.graph));
                 if (!LAYOUT_PREDICATES.has(q.predicate.value)) layout = false;
                 continue;
@@ -788,7 +788,6 @@ export class ModelStore implements ModelQueries {
             if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
             ws.newViewFile = file;
         }
-        const origins: OriginChange[] = [];
         if (command.kind === 'moveElementsToFile') {
             command = { ...command, source: ws.knownFile(path.resolve(this.folder, command.source)) ?? command.source,
                 destination: ws.knownFile(path.resolve(this.folder, command.destination)) ?? command.destination };
@@ -801,23 +800,23 @@ export class ModelStore implements ModelQueries {
         // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
             const r = command.kind === 'moveElementsToFile'
-                ? ws.transfer(command.source, command.destination, command.ids, origins)
+                ? ws.transfer(command.source, command.destination, command.ids)
                 : executeCommand(g, this.metamodel, command);
+            if (r.ok) ws.placeChanges();
             const files = r.ok ? ws.importedChanges(g.changes()) : [];
             return files.length ? importedFailure(this.folder, files) : r;
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
-        if (patch.length || origins.length) {
+        if (patch.length) {
             this.commitNotes.push(command.kind);
             this.track(patch);
-            ws.applyOrigins(origins);
         }
-        this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed, origins,
+        this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed,
             command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
         this.graph.proposed = [];
-        if (patch.length || origins.length) {
-            this.contentChanged(origins.length ? undefined : patch, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
-            this.changed('edit', origins.length ? undefined : patch);
+        if (patch.length) {
+            this.contentChanged(patch, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
+            this.changed('edit', patch);
         }
         ws.newViewFolder = ws.newViewFile = undefined;
         const v = 'value' in r ? r.value : undefined;
@@ -847,9 +846,8 @@ export class ModelStore implements ModelQueries {
         const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
         this.graph[reason](step.patch);
         this.track(applied);
-        this.ws.applyOrigins(step.origins, reason === 'undo');
-        this.contentChanged(step.origins.length ? undefined : applied, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
-        this.changed(reason, step.origins.length ? undefined : this.graph.change.patch);
+        this.contentChanged(applied, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
+        this.changed(reason, this.graph.change.patch);
         return { ok: true };
     }
 
@@ -875,7 +873,7 @@ export class ModelStore implements ModelQueries {
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
         for (const [from, to] of Object.entries(this.movedIds)) this.ws?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
         this.ws?.assignViewFiles();
-        if (shapes || patch.some(c => c.quad.graph.equals(this.graph.model))) this.validation.invalidate();
+        if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
         // The validation mode "views": a placement on an open view changes what validation checks.
         else if (this.ws?.validation === 'views') {
             const open = new Set(this.openViewIris());

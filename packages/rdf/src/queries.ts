@@ -90,11 +90,11 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
         const card = prop?.owner ?? cons?.owner ?? term;
         values.push(`(${JSON.stringify(id)} ${iri(term as NamedNode)} ${iri(card)})`);
     }
-    const graphs = `FILTER (?g IN (${[g.model, ...g.shapesGraphs()].map(iri).join(', ')}))`;
+    const graphs = `FILTER (?g IN (${[...g.dataGraphs(), ...g.shapesGraphs()].map(iri).join(', ')}))`;
     const noStep = `FILTER (?p NOT IN (rdf:first, rdf:rest))`;
     const views: ViewLink[] = [], rows: LinkRow[] = [];
     if (values.length) {
-        const found = g.store.select(`${PREFIXES}
+        const found = g.select(`${PREFIXES}
             SELECT ?eid ?dir ?p ?o ?v (SAMPLE(?l) AS ?label) WHERE {
                 VALUES (?eid ?e ?c) { ${values.join(' ')} }
                 {
@@ -142,7 +142,7 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
         }
     }
     if (relations.length) {
-        const found = g.store.select(`${PREFIXES}
+        const found = g.select(`${PREFIXES}
             SELECT DISTINCT ?eid ?v ?h WHERE {
                 VALUES (?eid ?s ?p ?o) { ${relations.join(' ')} }
                 GRAPH ${iri(g.model)} { ?s ?p ?o }
@@ -227,12 +227,13 @@ export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes): A
     const cards = [...placed].filter(s => g.isInstance(rdf.namedNode(s)));
     if (!cards.length) return [];
     const values = cards.map(s => `<${s}>`).join(' '), list = cards.map(s => `<${s}>`).join(', ');
-    const graphs = [g.model, ...g.shapesGraphs()].map(iri).join(', ');
-    const rows = g.store.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
+    const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(iri).join(', ');
+    const graphRows = g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
         VALUES ?s { ${values} } GRAPH ?g { ?s ?p ?o }
         FILTER (?g IN (${graphs}) && ?o IN (${list}) && ?p NOT IN (rdf:type, rdfs:label))
-    }`).filter(r => r.g.value === g.homeOf(rdf.namedNode(r.s.value)).value)
+    }`).filter(r => (g.homeOf(rdf.namedNode(r.s.value)).equals(g.model) ? g.isDataGraph(r.g) : r.g.value === g.homeOf(rdf.namedNode(r.s.value)).value))
         .sort((a, b) => cmp(a.s.value, b.s.value) || cmp(a.p.value, b.p.value) || cmp(a.o.value, b.o.value));
+    const rows = [...new Map(graphRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()];
     const label = (s: string) => {
         const term = rdf.namedNode(s), home = g.homeOf(term);
         const literals = (p: string) => g.match(term, rdf.namedNode(p), null, home).filter(q => q.object.termType === 'Literal').map(q => q.object.value).sort(cmp);
@@ -253,7 +254,7 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     const elements = viewQuads.filter(q => q.predicate.value === NS.view + 'element' && q.object.termType === 'NamedNode' && placements.has(q.subject.value));
     const values = [...new Set(elements.map(q => q.object.value))].map(s => `<${s}>`).join(' ');
     // The same bounded query reads element heads and group-member heads. It never reads card fields.
-    const facts = values ? g.store.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
+    const facts = values ? g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
         { VALUES ?s { ${values} } } UNION { VALUES ?root { ${values} } GRAPH ?owner { ?root view:member ?s } FILTER(isIRI(?s)) }
         GRAPH ?g { ?s ?p ?o }
         FILTER(?p IN (rdf:type, rdfs:label, view:member, view:file, skos:inScheme, skos:topConceptOf))
@@ -268,7 +269,7 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     const homes = new Map<string, string>();
     for (const [s, rows] of bySubject) {
         if (s === g.model.value) continue;
-        if (rows.some(r => r.g.value === g.model.value && [NS.rdf + 'type', NS.rdfs + 'label'].includes(r.p.value))) homes.set(s, g.model.value);
+        if (rows.some(r => g.isDataGraph(r.g) && [NS.rdf + 'type', NS.rdfs + 'label'].includes(r.p.value))) homes.set(s, g.model.value);
         else {
             const graphs = rows.filter(r => shapeGraphs.has(r.g.value) &&
                 (SKOS_MEMBERSHIP.some(p => p.value === r.p.value) || r.p.value === NS.rdf + 'type' && SKOS_TYPES.some(t => t.value === r.o.value)))
@@ -293,10 +294,11 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     }
     const ends = [...new Set([...cards, ...members])].filter(s => homes.has(s));
     const endValues = ends.map(s => `<${s}>`).join(' ');
-    const links = endValues ? g.store.select(`${PREFIXES} SELECT ?s ?p ?o ?g WHERE {
+    const linkRows = endValues ? g.select(`${PREFIXES} SELECT ?s ?p ?o ?g WHERE {
         VALUES ?s { ${endValues} } VALUES ?o { ${endValues} } GRAPH ?g { ?s ?p ?o }
         FILTER(?p NOT IN (rdf:type, rdfs:label))
-    }`).filter(r => r.g.value === homes.get(r.s.value)) : [];
+    }`).filter(r => (homes.get(r.s.value) === g.model.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value))) : [];
+    const links = [...new Map(linkRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()];
     const placedLinks = new Set(viewQuads.filter(q => q.predicate.value === NS.rdf + 'reifies').map(q => termKey(q.object)));
     const hidden = links.filter(r => !members.has(r.s.value) && !members.has(r.o.value)
         && !placedLinks.has(termKey(rdf.quad(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode)))).length;

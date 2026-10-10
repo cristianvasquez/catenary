@@ -20,7 +20,7 @@ export type Plain = { termType: Term['termType']; value: string; term: Term };
 export type Row = Record<string, Plain>;
 
 export function select(g: ModelGraph, query: string): Row[] {
-    return g.store.select(query).map(r => {
+    return g.select(query).map(r => {
         const row: Row = {};
         for (const k in r) row[k] = { termType: r[k].termType, value: r[k].value, term: r[k] };
         return row;

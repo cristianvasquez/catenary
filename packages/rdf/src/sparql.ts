@@ -17,12 +17,12 @@ export const str = (s: string) => JSON.stringify(s);
 
 /** The triples of a CONSTRUCT with the prefixes above. */
 export function construct(g: ModelGraph, query: string): Quad[] {
-    return g.store.construct(`${PREFIXES} ${query}`);
+    return g.construct(`${PREFIXES} ${query}`);
 }
 
 /** Result rows of a SELECT with the prefixes above. */
 export function rows(g: ModelGraph, query: string): Record<string, Term>[] {
-    return g.store.select(`${PREFIXES} ${query}`) as unknown as Record<string, Term>[];
+    return g.select(`${PREFIXES} ${query}`) as unknown as Record<string, Term>[];
 }
 
 /** Types that are not things: the internals of the view files. */

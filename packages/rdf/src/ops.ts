@@ -467,7 +467,7 @@ const isInstanceTerm = (g: ModelGraph, t: Term): t is NamedNode =>
 
 /** A statement of the model graph that the read model shows as a relation: both ends are instances, not rdf:type or rdfs:label. */
 function isRelation(g: ModelGraph, q: Quad): boolean {
-    return q.graph.equals(g.model) && !q.predicate.equals(P.type) && !q.predicate.equals(P.label)
+    return g.isDataGraph(q.graph) && !q.predicate.equals(P.type) && !q.predicate.equals(P.label)
         && isInstanceTerm(g, q.subject) && isInstanceTerm(g, q.object) && g.has(q);
 }
 
@@ -487,7 +487,7 @@ export function placeConnectors(g: ModelGraph): void {
         if (c.op !== 'add') continue;
         const q = c.quad;
         if (q.predicate.equals(V.element) && q.object.termType === 'NamedNode' && q.graph.termType === 'NamedNode') placed.push({ view: q.graph, s: q.object });
-        else if (q.graph.equals(g.model) || q.predicate.equals(V.arrow)) relations.push(q);
+        else if (g.isDataGraph(q.graph) || q.predicate.equals(V.arrow)) relations.push(q);
     }
     for (const { view, s } of placed) {
         if (!g.nodeOf(view, s)) continue;

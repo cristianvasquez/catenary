@@ -250,7 +250,7 @@ export function migrate(g: ModelGraph, m: MigrationChange): Result<number> {
  * `?x rdf:type from` and the statements with `from` as predicate, with their placements (the triple terms that they reify). A migration proposes these.
  */
 function renameIri(g: ModelGraph, from: NamedNode, to: NamedNode): void {
-    replaceTerm(g, from, to, q => q.graph.equals(g.model) && q.predicate.equals(P.type) && q.object.equals(from));
+    replaceTerm(g, from, to, q => g.isDataGraph(q.graph) && q.predicate.equals(P.type) && q.object.equals(from));
 }
 
 /** `t` occurs in no statement other than `self`. */

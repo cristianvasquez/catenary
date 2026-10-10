@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
-import { GraphChange, ModelGraph, VALIDATION_GRAPH } from '../src/graph';
+import { dataGraphIri, GraphChange, ModelGraph, VALIDATION_GRAPH } from '../src/graph';
 import { shapeQueryScope } from '../src/shacl-targets';
 import { shapesIndexOf } from '../src/shapes-read';
 import { rdf } from '../src/terms';
@@ -93,6 +93,21 @@ describe('shared patch events', () => {
         g.add(n('node'), rdf.namedNode(NS.view + 'x'), rdf.literal('2'), n('source'));
         expect(g.keys.query).not.toBe(before);
         expect(g.change.layout).toBe(false);
+    });
+
+    it('file data scopes deduplicate triples and paths without treating literal text as query syntax', () => {
+        const g = graph(), a = rdf.namedNode(dataGraphIri('/w/a.ttl')), b = rdf.namedNode(dataGraphIri('/w/b.ttl'));
+        g.setDataGraphs([a, b]);
+        g.add(n('a'), n('p'), n('b'), a);
+        g.add(n('a'), n('p'), n('b'), b);
+        g.add(n('b'), n('p'), n('c'), b);
+        const text = 'GRAPH <urn:name:model> { ?fake ?p ?o } WHERE';
+        g.add(n('a'), n('label'), rdf.literal(text), a);
+        const count = (pattern: string) => g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.model.value}> { ${pattern} } }`)[0].n.value;
+        expect(count('<urn:test:a> <urn:test:p> <urn:test:b>')).toBe('1');
+        expect(count('<urn:test:a> <urn:test:p>/<urn:test:p> ?end')).toBe('1');
+        expect(count(`<urn:test:a> <urn:test:label> ${JSON.stringify(text)}`)).toBe('1');
+        expect(g.select(`SELECT (${JSON.stringify(text)} AS ?text) ?end WHERE { GRAPH <${g.model.value}> { <urn:test:a> <urn:test:p>/<urn:test:p> ?end } }`)).toHaveLength(1);
     });
 
 });

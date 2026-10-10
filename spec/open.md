@@ -8,7 +8,6 @@ Evidence labels distinguish source checks from historical reports. A historical 
 
 | ID | Decision needed | Current rule or next action |
 |---|---|---|
-| SYNC1 | Graph names for the sync refactor | Before stage 2 of [the sync handoff](../draft/sync-refactor/readme.md#stage-2-one-graph-per-file-and-role), choose data and shapes graph IRIs. The proposal is `urn:data:<path>` and `urn:shapes:<path>`. Keep saved view IRIs (`urn:trellis:list:*`). |
 | SYNC2 | Metamodel copy of shapes in the sync refactor | Before stage 4 of [the sync handoff](../draft/sync-refactor/readme.md#stage-4-pure-validator), decide whether to keep the Metamodel copy (`shapes.ts`, `metamodelFromQuads`). It serves validation and panels. After PR #34, it also holds RDFS rules from data (`isRdfsQuad` in `graph.ts`). |
 | D1 (F5) | Statement deletion by layer | The proposal deletes subject statements but retains incoming statements. Current instance deletion removes incoming data references. Node-shape deletion removes sh:node references. Value-set deletion refuses used sets. Source: `ops.ts`, `shape-ops.ts`. Test these effects before choosing one rule. |
 | D2 | Selection or highlight in other panes | UI §3.3 specifies highlights on the active canvas. Confirm the later request to select placements on other canvases before changing it. |
