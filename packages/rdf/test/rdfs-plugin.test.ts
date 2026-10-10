@@ -152,11 +152,11 @@ describe('RDFS rules in the store', () => {
     });
 });
 
-describe('ModelGraph.shapesRevision', () => {
+describe('ModelGraph.keys.shapes', () => {
     it('changes with an RDFS statement of the model graph and with the label of an RDFS predicate, not with other data', () => {
         const g = emptyGraph(), n = (local: string) => rdf.namedNode(EX + local), p = (local: string) => rdf.namedNode(NS.rdfs + local);
-        let revision = g.shapesRevision;
-        const changed = () => { const c = g.shapesRevision !== revision; revision = g.shapesRevision; return c; };
+        let revision = g.keys.shapes;
+        const changed = () => { const c = g.keys.shapes !== revision; revision = g.keys.shapes; return c; };
         g.add(n('bob'), n('age'), rdf.literal('40'));
         expect(changed()).toBe(false);
         g.add(n('age'), p('domain'), n('Person'));

@@ -85,3 +85,29 @@ describe('validation in a worker thread', () => {
         }
     });
 });
+
+describe('report patch events', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('publishes a changed report through the patch path even when violation counts stay the same', async () => {
+        const g = emptyGraph(), reportGraph = rdf.namedNode(VALIDATION_GRAPH);
+        const quad = (value: string) => rdf.quad(rdf.namedNode('urn:report'), rdf.namedNode('urn:message'), rdf.literal(value), reportGraph);
+        vi.spyOn(validation, 'validateWithReport')
+            .mockResolvedValueOnce({ violations: [violation('same')], report: [quad('first')] })
+            .mockResolvedValueOnce({ violations: [violation('same')], report: [quad('second')] })
+            .mockResolvedValueOnce({ violations: [violation('same')], report: [quad('second')] });
+        const events: import('../src/graph').GraphChange[] = [], notifications: import('../src/graph').Patch[] = [];
+        const keys = { ...g.keys };
+        g.onDidChange(e => events.push(e));
+        const runner = new ValidationRunner(() => ({ graph: g, metamodel: emptyMetamodel() }), (_, patch) => notifications.push(patch));
+        await runner.now();
+        await runner.now();
+        await runner.now();
+        expect(events).toHaveLength(2);
+        expect(notifications).toHaveLength(2);
+        expect(notifications[1].map(c => c.op)).toEqual(['remove', 'add']);
+        expect(events.every(e => e.graphs.length === 1 && e.graphs[0] === VALIDATION_GRAPH)).toBe(true);
+        expect(g.keys).toEqual(keys);
+        expect(g.match(null, null, null, reportGraph).map(q => q.object.value)).toEqual(['second']);
+    });
+});

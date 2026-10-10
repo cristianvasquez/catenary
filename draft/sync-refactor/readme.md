@@ -1,6 +1,6 @@
 # Sync refactor: files, store, validation and figures
 
-This folder is the handoff for the refactor of file and store synchronization. Start here. Take the first stage whose "Needs" are done, and do one stage per pull request.
+This folder is the handoff for the refactor of file and store synchronization. Start here. Take the first remaining stage whose "Needs" are done. Do one stage per pull request.
 
 The picture of today and of the target is in the [Catenary Sync Map](https://claude.ai/artifact/MrKyfiMWjnYDzYoEjKftGW). This readme is the text contract for agents. If the two differ, this readme wins.
 
@@ -11,11 +11,7 @@ Two classes hold most of the sync work today:
 - `Workspace` (`packages/rdf/src/workspace.ts`, about 1,080 lines) has six jobs: load, reconcile, provenance, save plan, dirty check and the choice of validation data.
 - `ModelStore` (`packages/rdf/src/model-store.ts`, about 1,330 lines) has six jobs: edit and undo, the write queue and Git, the watch loop, validation wiring, change notification, and about 50 panel queries.
 
-Three things make the sync hard to change:
-
-1. The model graph `urn:name:model` merges the data of all files. A side map (`origin`, `byFile`, `lastOrigin`) remembers the file of each statement. Shapes and views use graph names for the same purpose.
-2. Some code writes the store outside the patch log: `Workspace.mount` and `unmount`, and `ValidationRunner.publish`.
-3. Seven counters mark changes: `shapesRevision`, `queryRevision`, `dataVersion`, `content`, `layoutChanges`, `revision` and `shapesVersion`. Each counter keys its own cache.
+The model graph `urn:name:model` merges the data of all files. A side map (`origin`, `byFile`, `lastOrigin`) remembers the file of each statement. Shapes and views use graph names for the same purpose.
 
 ## Decisions
 
@@ -59,17 +55,9 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 
 Each stage is one pull request. Each stage must pass `pnpm verify` on its own. Add `--e2e` when a stage changes browser wiring. Each stage updates the manifest sections that it names. It also updates `docs/architecture.md` (code map) and `spec/open.md`.
 
-### Stage 1: one change event
-
-- **Needs:** nothing.
-- **Goal:** one change event for each patch replaces the seven counters. File loads, unloads and the report go through the same patch path. The report stays out of undo, out of the dirty check and out of the files.
-- **Files:** `graph.ts`, `notations.ts` (`dataVersion`), `model-store.ts`, `workspace.ts` (`mount`, `unmount`), `validation-runner.ts` (`publish`), `shapes-read.ts` (cache key).
-- **Done when:** no code calls `graph.store.add` or `graph.store.delete` outside `ModelGraph`. Each cache keys on the change event. The tests in `store.test.ts`, `history.test.ts`, `validation-runner.test.ts` and `indexed-store.test.ts` pass, changed only where they read a removed counter.
-- **Manifest:** §5.2 (one command, one patch), §11.2 (snapshots).
-
 ### Stage 2: one graph per file and role
 
-- **Needs:** stage 1.
+- **Needs:** the shared patch event path in `ModelGraph`.
 - **Goal:** store each file in its own graphs (decisions 1 to 3). Remove `origin`, `byFile` and `lastOrigin`. Placement runs inside the transaction, so the patch has the final graphs. Undo then needs no origin changes (`OriginChange` in `history.ts`). Touched graphs invalidate the canonical content cache of their files. Dirty state compares current canonical file content with the last read or successful write, as §10.1 requires.
 - **Files:** `graph.ts` (`model` becomes a scope over the data graphs, with duplicates removed on read), `workspace.ts`, `placement.ts`, `history.ts`, `sparql.ts`, and each query that names `urn:name:model` (`queries.ts`, `scoped-doc.ts`, `view-read.ts`, `properties.ts`, `link-choices.ts`, `outline.ts`, `search.ts`).
 - **Open first:** resolve SYNC1 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
@@ -97,7 +85,7 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 
 ### Stage 5: view slices, no notation index
 
-- **Needs:** nothing. It can run in parallel with stages 1 to 4.
+- **Needs:** nothing. It can run in parallel with stages 2 to 4.
 - **Goal:** prove that a slice gives the same figures as the whole store, then use slices and delete the mirror.
 - **Slice of a view** (from `notation.ts`, `notation-join.ts`, `figure-edits.ts` and `packages/rdf/notations/*.ttl`):
   1. The view graph: its placements and its `nt:notations`.

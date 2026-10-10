@@ -16,17 +16,15 @@ async function open() {
     dirs.push(dir);
     writeFileSync(join(dir, 'a.ttl'), `@prefix ex: <${EX}> .\nex:a a ex:C .\n`);
     writeFileSync(join(dir, 'b.ttl'), `@prefix ex: <${EX}> .\nex:b a ex:D .\n`);
-    let content = 0;
     const notes: string[] = [];
-    const r = await Workspace.open(join(dir, 'workspace.trig'), true, { content: () => content, note: t => notes.push(t) });
+    const r = await Workspace.open(join(dir, 'workspace.trig'), true, { note: t => notes.push(t) });
     if ('error' in r) throw new Error(r.error);
     const ws = r.workspace;
     /** Add a statement to the model graph, as a command does. */
     const add = (s: string, p: string, o: string) => {
         const quad = rdf.quad(rdf.namedNode(EX + s), rdf.namedNode(p), rdf.namedNode(EX + o), ws.graph.model);
-        ws.graph.store.add(quad);
+        ws.graph.add(quad.subject, quad.predicate, quad.object, quad.graph);
         ws.track([{ op: 'add', quad }]);
-        content++;
     };
     return { dir, ws, add, notes };
 }

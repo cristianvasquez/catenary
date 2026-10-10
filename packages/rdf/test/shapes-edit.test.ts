@@ -235,7 +235,7 @@ describe('shape edits', () => {
         g.store.add(rdf.quad(rdf.namedNode(EX + 'SoftwareAgent'), rdf.namedNode('http://www.w3.org/ns/shacl#property'), rdf.namedNode(EX + 'agentTheme'), GRAPH));
         g.store.add(rdf.quad(rdf.namedNode(EX + 'agentTheme'), rdf.namedNode('http://www.w3.org/ns/shacl#path'), rdf.namedNode(DCAT + 'theme'), GRAPH));
         for (const q of g.match(rdf.namedNode(theme.uri!), rdf.namedNode('http://www.w3.org/ns/shacl#node'), null, GRAPH)) g.store.add(rdf.quad(rdf.namedNode(EX + 'agentTheme'), q.predicate, q.object, GRAPH));
-        g.shapesChanged();
+        g.invalidate();
         const agentTheme = prop(g, EX + 'SoftwareAgent', 'dcat:theme');
         expect(agentTheme.range).toEqual(theme.range);
         exec(g, { kind: 'showAsEdge', view, id: agentTheme.id, at: { x: 600, y: 600 } });

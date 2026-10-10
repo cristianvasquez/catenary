@@ -1,12 +1,12 @@
 // SHACL validation of the model graph after changes: debounced, and a run that a newer change makes stale is discarded. The report
-// graph (ADR 0007) goes to the store directly, not through the edit log (no undo, no file, no dirty state).
+// graph (ADR 0007) uses the shared patch path, outside edit history and file tracking (no undo, no file, no dirty state).
 // With a worker file (`useValidationWorker`, the bundled backend), shacl-engine runs in a worker thread: the backend thread stays free
 // for edits and requests. Without one (tests from the source), it runs in this thread.
 
 import { NS, Violation } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
 import { Worker } from 'worker_threads';
-import { ModelGraph, VALIDATION_GRAPH } from './graph';
+import { ModelGraph, Patch, VALIDATION_GRAPH } from './graph';
 import { elementId } from './ids';
 import { PlainTerm, plainToQuads, quadsToPlain } from './plain-quads';
 import { Metamodel } from './shapes';
@@ -88,7 +88,7 @@ export class ValidationRunner {
         protected readonly source: () => {
             graph: ModelGraph; metamodel: Metamodel; off?: boolean; data?: () => Quad[] | undefined; focus?: () => Set<string> | undefined; stamp?: () => string
         },
-        protected readonly changed: (before: Violation[]) => void,
+        protected readonly changed: (before: Violation[], patch: Patch) => void,
         protected readonly timers: Timers = realTimers
     ) {}
 
@@ -162,13 +162,16 @@ export class ValidationRunner {
     protected publish(run: number, g: ModelGraph, violations: Violation[], report: Quad[], stamp: string): void {
         if (run !== this.run) return discarded(run);
         const graph = rdf.namedNode(VALIDATION_GRAPH);
-        for (const q of g.store.match(null, null, null, graph)) g.store.delete(q);
-        for (const q of report) g.store.add(q);
-        if (stamp === this.stamp && JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
+        const patch = g.update(() => {
+            const next = rdf.dataset(report);
+            for (const q of g.match(null, null, null, graph)) if (!next.has(q)) g.remove(q);
+            for (const q of report) g.add(q.subject, q.predicate, q.object, graph);
+        });
+        if (!patch.length && stamp === this.stamp && JSON.stringify(violations) === JSON.stringify(this.violations)) return tracer.note(`run ${run}: ${violations.length} violations, unchanged`);
         tracer.note(`run ${run}: ${violations.length} violations, changed`);
         const before = this.violations;
         this.violations = violations;
         this.stamp = stamp;
-        this.changed(before);
+        this.changed(before, patch);
     }
 }

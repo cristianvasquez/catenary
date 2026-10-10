@@ -646,6 +646,19 @@ lastPatch :: Backend -> Patch                      -- the patch of the last Op
 
 -- 5.2 One command, one patch, one undo step ------------------------------------------
 
+-- | Each committed nonempty patch gives one change event with its graphs and elements. Rejected transactions give no event.
+-- Loads, unloads, edits, replay and reports use this patch path. Only edit patches enter history and file tracking.
+-- Reason: one event gives each cache the same change scope. Report patches remain outside undo, dirty state and writes.
+patchQuad :: Change -> Quad
+patchQuad (Add q) = q
+patchQuad (Remove q) = q
+patchGraphs :: Patch -> [Iri]
+patchGraphs p = nub [graphOf (patchQuad c) | c <- p]
+patchElements :: Patch -> [Iri]
+patchElements p = nub [i | c <- p, t <- [subjectOf (patchQuad c), objectOf (patchQuad c)], NamedNode i <- [t]]
+law_patchEventScope :: Patch -> [Iri] -> [Iri] -> Bool
+law_patchEventScope p graphs elements = sameSet graphs (patchGraphs p) && sameSet elements (patchElements p)
+
 -- | One successful nonempty EditCommand gives one patch and one undo step. A no-op gives no history entry.
 -- A rejection or an exception rolls back the store transaction. The store transaction is separate from the async file write.
 -- A new edit clears redo. History keeps at most 200 steps. Undo and redo restore the migration queue of their step.
@@ -1431,6 +1444,12 @@ law_sourceLinePositive :: SourceLine -> Bool
 law_sourceLinePositive s = maybe True (>= 1) (sourceLine s)
 
 -- 11.2 Snapshots ---------------------------------------------------------------------------
+
+-- | Caches retain the last change event that affects their input. They use event identity, not independent counters.
+-- Snapshot revision and shapesVersion expose sequence numbers of these events for existing clients.
+-- Layout and report patches keep unrelated cache keys. A save keeps the current snapshot revision.
+law_eventVersion :: Int -> Int -> Bool
+law_eventVersion eventSequence snapshotVersion = snapshotVersion == eventSequence
 
 -- | Each connection receives onDidChange snapshots (packages/model/src/snapshot.ts):
 -- revision, files, shapesVersion, movedIds, warnings, migrations, prefixes, undo and dirty state,

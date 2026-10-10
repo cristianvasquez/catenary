@@ -26,7 +26,7 @@ import { LinkChoices, linkChoices } from './link-choices';
 import { gone } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { IMPORT_FOLDER, Placement, WORKSPACE_FILE, declaredPrefixes, enclosingWorkspace, parseRdf, serializeRdf, workspaceFileOf, sourceLine } from './files';
-import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
+import { MODEL_GRAPH, ModelGraph, P, V, VALIDATION_GRAPH, Patch, GraphChange, cmp, isRdfsQuad, isVocabularyQuad } from './graph';
 import { History, OriginChange } from './history';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { properties } from './properties';
@@ -59,6 +59,8 @@ interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
 
 export interface ModelChange {
     reason: ChangeReason;
+    /** The shared patch event that invalidated backend caches. */
+    event: GraphChange;
     /** What the change touched (edit, undo, redo). Undefined: anything can have changed. */
     scope?: ChangeScope;
     /** Committed store changes, for incremental display updates. */
@@ -78,9 +80,6 @@ export interface ChangeScope {
 }
 
 export type Listener = (change: ModelChange) => void;
-
-/** Each change of the patch is the geometry or the style of a placement (LAYOUT_PREDICATES of a view graph). */
-const isLayoutOnly = (patch: Patch) => patch.length > 0 && patch.every(({ quad: q }) => LAYOUT_PREDICATES.has(q.predicate.value) && q.graph.value !== MODEL_GRAPH);
 
 /**
  * What a validation run changed for the diagrams: the instances and the property shapes whose count of violations changed (a card
@@ -119,21 +118,18 @@ export class ModelStore implements ModelQueries {
     protected readonly history = new History();
     protected readonly validation = new ValidationRunner(
         () => ({ graph: this.graph, metamodel: this.metamodel, off: this.ws?.validation === 'off', data: () => this.validationData(), focus: () => this.focus,
-            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), before => this.changed('validation', undefined, violationScope(before, this.violations)));
+            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
     /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
     protected readonly openViews = new Map<string, string>();
     /** In the validation mode "views": the instances that the last run checked, and the elements on the open views (by termKey). */
     protected validated?: number;
     protected focus?: Set<string>;
-    shapesVersion = 0;
-    revision = 0;
-
-    /** Changes each time the dataset changes. */
-    protected content = 0;
-    /** The changes of `content` that were layout-only patches (`isLayoutOnly`). `content - layoutChanges` keys the caches below. */
-    protected layoutChanges = 0;
-    /** Reads that no layout predicate changes: a move or a resize keeps them. */
-    protected cache: { content: number; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = { content: -1 };
+    /** Numeric projections of the shared events for existing snapshot clients. */
+    get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
+    get revision(): number { return this.graph.change.sequence; }
+    protected notified?: GraphChange;
+    /** Reads that placement geometry and reports cannot change. */
+    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = {};
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -148,12 +144,12 @@ export class ModelStore implements ModelQueries {
     }
 
     protected cached<K extends 'placements' | 'instances' | 'explorer'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
-        const key = this.content - this.layoutChanges;
-        if (this.cache.content !== key) this.cache = { content: key };
+        const event = this.graph.keys.data;
+        if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
     }
 
-    /** The shapes index of the shapes graphs and the SKOS vocabulary of the data file (cached per ModelGraph.shapesRevision). */
+    /** The shapes index of the shapes graphs and the SKOS vocabulary of the data file (cached per ModelGraph.keys.shapes). */
     protected shapesIndex(): ShapesIndex {
         return shapesIndexOf(this.graph);
     }
@@ -199,14 +195,13 @@ export class ModelStore implements ModelQueries {
 
     /**
      * The reads of each view that a move or a resize keeps: they read which elements the view shows, not where. Kept while the store
-     * changes only in the geometry of placements and the validation report (IndexedStore.dataVersion counts each other add and delete).
+     * changes only in the geometry of placements and the validation report (ModelGraph.keys.data retains the last event that affects these reads).
      */
-    protected viewReadCache = { store: undefined as unknown, input: -1, byView: new Map<string, ViewReads>() };
+    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads> } = { byView: new Map() };
 
     protected viewReads(viewId: string): ViewReads {
-        const store = this.graph.store;
-        if (!(store instanceof IndexedStore)) return {};
-        if (this.viewReadCache.store !== store || this.viewReadCache.input !== store.dataVersion) this.viewReadCache = { store, input: store.dataVersion, byView: new Map() };
+        const event = this.graph.keys.data;
+        if (this.viewReadCache.event !== event) this.viewReadCache = { event, byView: new Map() };
         const byView = this.viewReadCache.byView;
         return byView.get(viewId) ?? byView.set(viewId, {}).get(viewId)!;
     }
@@ -628,8 +623,9 @@ export class ModelStore implements ModelQueries {
 
     protected scopeOf(patch: Patch): ChangeScope {
         const views = new Set<string>(), elements = new Set<string>();
-        let shapes = false, layout = true;
+        let shapes = this.graph.change.shapes, layout = true;
         for (const { quad: q } of patch) {
+            if (q.graph.value === VALIDATION_GRAPH) { layout = false; continue; }
             if (this.graph.isShapesGraph(q.graph)) {
                 shapes = true;
                 layout = false;
@@ -801,7 +797,7 @@ export class ModelStore implements ModelQueries {
             const problem = ws.transferProblem([command.source, command.destination]);
             if (problem) return { ok: false, error: problem };
         }
-        const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
+        const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
         // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
             const r = command.kind === 'moveElementsToFile'
@@ -820,7 +816,7 @@ export class ModelStore implements ModelQueries {
             command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
         this.graph.proposed = [];
         if (patch.length || origins.length) {
-            this.contentChanged(origins.length ? undefined : patch, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
+            this.contentChanged(origins.length ? undefined : patch, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
             this.changed('edit', origins.length ? undefined : patch);
         }
         ws.newViewFolder = ws.newViewFile = undefined;
@@ -848,12 +844,12 @@ export class ModelStore implements ModelQueries {
         const problem = this.ws.transferProblem(next.transferFiles);
         if (problem) return { ok: false, error: problem };
         const step = this.history.take(reason)!;
-        const shapesBefore = this.shapesIndex(), revision = this.graph.shapesRevision;
+        const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
         this.graph[reason](step.patch);
         this.track(applied);
         this.ws.applyOrigins(step.origins, reason === 'undo');
-        this.contentChanged(step.origins.length ? undefined : applied, this.graph.shapesRevision !== revision ? shapesBefore : undefined);
-        this.changed(reason, step.origins.length ? undefined : step.patch);
+        this.contentChanged(step.origins.length ? undefined : applied, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
+        this.changed(reason, step.origins.length ? undefined : this.graph.change.patch);
         return { ok: true };
     }
 
@@ -865,20 +861,16 @@ export class ModelStore implements ModelQueries {
     /** Keep the files of the statements in step with a patch (workspace.ts). */
     protected track(patch: Patch): void {
         this.ws?.track(patch);
-        this.content++;
-        if (isLayoutOnly(patch)) this.layoutChanges++;
     }
 
     /**
      * The dataset changed. Validation depends on the model graph only: a layout change does not start it.
      * `patch`: the changes in the order applied. `shapesBefore`: the shapes index before them, when they changed the shapes or the
-     * vocabulary (ModelGraph.shapesRevision); no patch: anything can have changed.
+     * vocabulary (ModelGraph.keys.shapes); no patch: anything can have changed.
      */
     protected contentChanged(patch?: Patch, shapesBefore?: ShapesIndex): void {
         const shapes = !patch || !!shapesBefore;
         if (shapes) this.rebuildMetamodel();
-        this.content++;
-        if (patch && isLayoutOnly(patch)) this.layoutChanges++;
         this.movedIds = patch ? movedIds(this.graph, patch, shapesBefore ? { before: shapesBefore, after: this.shapesIndex() } : undefined) : {};
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
         for (const [from, to] of Object.entries(this.movedIds)) this.ws?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
@@ -892,17 +884,21 @@ export class ModelStore implements ModelQueries {
     }
 
     /** `scope`: what a change without a patch touched (a validation run); else the scope of `patch`; neither: anything. */
-    protected changed(reason: ChangeReason, patch?: Patch, scope = patch && this.scopeOf(patch)): void {
+    protected changed(reason: ChangeReason, patch?: Patch, scope?: ChangeScope): void {
         if (reason !== 'edit' && reason !== 'undo' && reason !== 'redo') this.movedIds = {};
-        if (reason !== 'save') this.revision++;
+        if (reason !== 'save' && this.notified === this.graph.change) this.graph.invalidate({});
+        const event = this.graph.change;
+        this.notified = event;
+        if (!patch && (reason === 'load' || reason === 'files')) patch = event.patch.length ? event.patch : undefined;
+        scope ??= patch && this.scopeOf(patch);
         if (this.ws && reason !== 'disk') this.referencedState = this.referencedFiles();
         this.lastChange = { reason, ...scope };
         if (tracer.on) {
             tracer.span('change', reason, () => {
                 tracer.note(`${this.listeners.size} listeners${scope ? `; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
-                for (const l of [...this.listeners]) l({ reason, scope, patch });
+                for (const l of [...this.listeners]) l({ reason, event, scope, patch });
             });
-        } else for (const l of [...this.listeners]) l({ reason, scope, patch });
+        } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
         if (reason === 'undo' || reason === 'redo' || reason === 'files') this.commitNotes.push(reason);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.queueWrite();
@@ -1019,7 +1015,7 @@ export class ModelStore implements ModelQueries {
         if (!read.length && !notes.length) {
             // Only a referenced file appeared or disappeared: new doc, no write.
             if (this.referencedFiles() !== this.referencedState) {
-                this.content++;
+                this.graph.invalidate({ data: true });
                 this.referencedState = this.referencedFiles();
                 this.changed('disk');
             }
@@ -1084,7 +1080,7 @@ export class ModelStore implements ModelQueries {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
-        const r = await Workspace.open(primaryPath, ofFolder, { content: () => this.content, data: () => this.content - this.layoutChanges, note: text => this.note(text) });
+        const r = await Workspace.open(primaryPath, ofFolder, { note: text => this.note(text) });
         if ('error' in r) return { ok: false, error: r.error };
         if (this.ws) this.ws.retired = true;
         this.ws = r.workspace;
@@ -1124,7 +1120,6 @@ export class ModelStore implements ModelQueries {
         const sources = this.ws?.shapeSources() ?? [];
         const dataset = rdf.dataset([...shapes, ...vocabulary]);
         this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset)), source: sources.join(', ') || undefined, dataset };
-        this.shapesVersion++;
     }
 
     /** Replace the prefix table. It goes to the manifest of the primary workspace file (saved with it). No undo step. */
@@ -1135,10 +1130,9 @@ export class ModelStore implements ModelQueries {
             if (problem) return { ok: false, error: problem };
             this.ws.prefixes = { ...prefixes };
             setPrefixes(this.ws.prefixes);
-            this.graph.shapesChanged();
+            this.graph.invalidate();
             // Compact IRIs in the read models: labels, paths, "Not mapped" rows.
             this.rebuildMetamodel();
-            this.content++;
             this.changed('files');
             return { ok: true };
         });
@@ -1165,12 +1159,10 @@ export class ModelStore implements ModelQueries {
         if ('error' in r) return { ok: false, error: r.error };
         if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
-            this.content++;
             await this.write();
             return this.doOpen(ws.path);
         }
         ws.syncShapesTarget();
-        this.content++;
         this.changed('files');
         return { ok: true };
     }
@@ -1249,10 +1241,9 @@ export class ModelStore implements ModelQueries {
             const copies = reads.filter(r => !r.inPlace);
             if (!copies.length) {
                 // No new file: the store keeps its statements; the prefixes change the read models (as setPrefixes).
-                if (added.length) { this.graph.shapesChanged(); this.rebuildMetamodel(); }
+                if (added.length) { this.graph.invalidate(); this.rebuildMetamodel(); }
                 ws.syncShapesTarget();
                 this.commitNotes.push(`import ${names}`);
-                this.content++;
                 this.changed('files');
                 note();
                 return { ok: true, files: reads.map(r => r.inPlace!), prefixes: added };
@@ -1285,7 +1276,6 @@ export class ModelStore implements ModelQueries {
             ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] });
             ws.written.push(...targets.values());
             this.commitNotes.push(`import ${names}`);
-            this.content++;
             const w = await this.write();
             if (!w.ok) return undo(w.error);
             const opened = await this.doOpen(ws.path);

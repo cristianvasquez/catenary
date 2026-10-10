@@ -16,7 +16,7 @@ import {
     MANIFEST_GRAPH, Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, globRegExp, isViewFile, defaultViewsFolder, listModelFiles, manifestQuads,
     parseRdf, readManifest, serializeRdf, writeProblem
 } from './files';
-import { Change, ModelGraph, P, SKOS_TYPES, V, cmp, fileGraphIri, fileOfGraph, mint } from './graph';
+import { Change, GraphChange, ModelGraph, P, SKOS_TYPES, V, cmp, fileGraphIri, fileOfGraph, mint } from './graph';
 import { elementTerm, relationTriple } from './ids';
 import { OriginChange } from './history';
 import { shapesIndexOf } from './shapes-read';
@@ -30,10 +30,6 @@ import { canonical, parseTrig, writeTrig } from './trig';
 const PLACE_KINDS = ['shapes', 'concepts', 'instances'] as const;
 
 export interface WorkspaceOptions {
-    /** Changes each time the dataset changes: it keys the cache of the canonical forms. */
-    content: () => number;
-    /** Changes each time the dataset changes in more than the geometry of placements: it keys the reads that a move keeps. Default: `content`. */
-    data?: () => number;
     /** A note of a read or a write (the warnings and the log). */
     note: (text: string) => void;
 }
@@ -78,8 +74,8 @@ export class Workspace {
     gone = false;
     /** Another workspace was opened: a save of this one writes nothing. */
     retired = false;
-    protected cache?: { content: number; canonical: Canonical };
-    protected kindsCache?: { content: number; kinds: Map<string, Set<FileKind>> };
+    protected cache?: { event: GraphChange; canonical: Canonical };
+    protected kindsCache?: { event: GraphChange; kinds: Map<string, Set<FileKind>> };
     /**
      * The entries of `cache` that a change made out of date: `f:<path>` a model file, `v:<view IRI>` a view. 'all': every entry (a read
      * of files). `track` and `mount` keep it, so that a change computes the canonical form of the files it touched only.
@@ -119,11 +115,13 @@ export class Workspace {
         for (const k of PLACE_KINDS) if (manifest.placement[k] !== NEAR) manifest.placement[k] = knownPath(reads.map(r => r.path), manifest.placement[k]);
 
         const ws = new Workspace(primaryPath, manifest, primary.text, options);
-        for (const r of reads) {
-            if (typeof r === 'string') warnings.push(r);
-            else ws.mount(r, warnings);
-        }
-        ws.syncShapesTarget();
+        ws.graph.update(() => {
+            for (const r of reads) {
+                if (typeof r === 'string') warnings.push(r);
+                else ws.mount(r, warnings);
+            }
+            ws.syncShapesTarget();
+        });
         return { workspace: ws, warnings };
     }
 
@@ -206,10 +204,10 @@ export class Workspace {
 
     /** What each model file contains: shapes (its graph has quads), concepts and instances (typed subjects of the model graph). */
     protected fileKinds(): Map<string, Set<FileKind>> {
-        const content = (this.options.data ?? this.options.content)();
-        if (this.kindsCache?.content === content) return this.kindsCache.kinds;
+        const event = this.graph.keys.data;
+        if (this.kindsCache?.event === event) return this.kindsCache.kinds;
         const kinds = new Map<string, Set<FileKind>>();
-        this.kindsCache = { content, kinds };
+        this.kindsCache = { event, kinds };
         const add = (file: string, k: FileKind) => (kinds.get(file) ?? kinds.set(file, new Set()).get(file)!).add(k);
         for (const f of this.modelFiles.keys()) if (this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).length) add(f, 'shapes');
         for (const q of this.graph.match(null, P.type, null, this.graph.model)) {
@@ -315,8 +313,8 @@ export class Workspace {
 
     /** Canonical form of each file, as a save writes it. */
     protected current(): Canonical {
-        const content = this.options.content();
-        if (this.cache?.content === content) return this.cache.canonical;
+        const event = this.graph.keys.persisted;
+        if (this.cache?.event === event) return this.cache.canonical;
         const before = this.stale === 'all' ? undefined : this.cache?.canonical;
         const stale = this.stale;
         const fresh = (k: string) => stale !== 'all' && !stale.has(k);
@@ -327,7 +325,7 @@ export class Workspace {
             files: new Map([...this.modelFiles.keys()].map(f => [f, reuse(f) ?? canonical(triples.get(f)!)])),
             views: new Map(this.graph.views().map(v => [v.value, (fresh('v:' + v.value) ? before?.views.get(v.value) : undefined) ?? canonical(this.viewTriples(v))]))
         };
-        this.cache = { content, canonical: value };
+        this.cache = { event, canonical: value };
         this.stale = new Set();
         return value;
     }
@@ -436,8 +434,14 @@ export class Workspace {
      * of the file, the rest to the model graph, with `origin`. Blank nodes get IRIs (skolem.ts); a save writes the IRIs.
      */
     mount(r: FileRead, notes: string[]): boolean {
+        let mounted = false;
+        this.graph.update(() => { mounted = this.mountNow(r, notes); });
+        return mounted;
+    }
+
+    protected mountNow(r: FileRead, notes: string[]): boolean {
         this.stale = 'all';
-        this.graph.shapesChanged();
+        this.graph.invalidate({ persisted: true, data: true });
         const name = portableRelative(this.folder, r.path);
         if (r.kind === 'error') {
             this.modelFiles.set(r.path, { path: r.path, error: r.error });
@@ -453,7 +457,7 @@ export class Workspace {
             // A file with blank nodes differs from its saved form: the next save writes the IRIs (not a file that Catenary does not write).
             const keep = !this.writeProblemOf(r.path);
             if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
-            for (const q of quads) this.graph.store.add(q);
+            for (const q of quads) this.graph.add(q.subject, q.predicate, q.object, q.graph);
             this.viewFiles.set(r.view, { path: r.path, saved: canonical((count && keep ? read : quads).map(toTriple)), text: r.text, triples: quads.map(toTriple), blanks: count });
             return true;
         }
@@ -463,8 +467,8 @@ export class Workspace {
         if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
         const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path));
         for (const q of quads) {
-            if (shapes.has(termKey(q.subject))) { this.graph.store.add(rdf.quad(q.subject, q.predicate, q.object, graph)); continue; }
-            this.graph.store.add(rdf.quad(q.subject, q.predicate, q.object, this.graph.model));
+            if (shapes.has(termKey(q.subject))) { this.graph.add(q.subject, q.predicate, q.object, graph); continue; }
+            this.graph.add(q.subject, q.predicate, q.object);
             this.addOrigin(tripleKey(q), r.path, q);
         }
         this.modelFiles.set(r.path, { path: r.path, saved: canonical(count && keep ? r.triples : quads), text: r.text, triples: quads, blanks: count });
@@ -473,21 +477,25 @@ export class Workspace {
 
     /** Take a file out of the store: a view file its view; a model file its shapes graph and its statements of the model graph. */
     protected unmount(file: string): void {
+        this.graph.update(() => this.unmountNow(file));
+    }
+
+    protected unmountNow(file: string): void {
         this.stale = 'all';
-        this.graph.shapesChanged();
+        this.graph.invalidate({ persisted: true, data: true });
         for (const [iri, f] of [...this.viewFiles]) {
             if (f.path !== file) continue;
-            for (const q of this.graph.match(null, null, null, rdf.namedNode(iri))) this.graph.store.delete(q);
+            for (const q of this.graph.match(null, null, null, rdf.namedNode(iri))) this.graph.remove(q);
             this.viewFiles.delete(iri);
         }
         if (!this.modelFiles.has(file)) return;
-        for (const q of this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(file)))) this.graph.store.delete(q);
+        for (const q of this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(file)))) this.graph.remove(q);
         for (const [k, q] of this.byFile.get(file) ?? []) {
             const o = this.origin.get(k);
             if (!o?.delete(file)) continue;
             if (!o.size) {
                 this.origin.delete(k);
-                this.graph.store.delete(rdf.quad(q.subject, q.predicate, q.object, this.graph.model));
+                this.graph.remove(rdf.quad(q.subject, q.predicate, q.object, this.graph.model));
             }
         }
         this.byFile.delete(file);
@@ -586,6 +594,7 @@ export class Workspace {
     }
 
     applyOrigins(changes: OriginChange[], backwards = false): void {
+        if (changes.length) this.graph.invalidate({ persisted: true, data: true });
         for (const c of changes) {
             this.setOrigin(tripleKey(c.quad), new Set(backwards ? c.before : c.after), c.quad);
             if (this.stale !== 'all') for (const file of [...c.before, ...c.after]) this.stale.add('f:' + file);
@@ -627,23 +636,26 @@ export class Workspace {
         const unmounted = new Set<string>();
         // A file without text and without a read error is not written yet: not a removal.
         const changes = await diskChanges([...known.values()].map(f => ({ path: f.path, text: f.text, unwritten: f.error === undefined })), members);
-        for (const file of changes.removed) {
-            const f = known.get(file)!;
-            this.unmount(file);
-            unmounted.add(name(file));
-            read.push(name(file));
-            notes.push(f.error === undefined ? `${name(file)} was removed on disk: its statements are removed.` : `${name(file)} was removed on disk.`);
-        }
-        for (const { path: file, known: f } of changes.read) {
-            const lost = f && (pending.files.has(file) || [...this.viewFiles].some(([v, x]) => x.path === file && pending.views.has(v)));
-            this.unmount(file);
-            unmounted.add(name(file));
-            const r = await readModelFile(file);
-            if (typeof r === 'string') { notes.push(r); continue; }
-            if (!this.mount(r, notes)) continue;
-            read.push(name(file));
-            notes.push(f ? `${name(file)} changed on disk: read again${lost ? '; its changes that were not written are lost' : ''}.` : `${name(file)} is new on disk: read.`);
-        }
+        const reads = await Promise.all(changes.read.map(async ({ path: file, known: f }) => ({ file, f, r: await readModelFile(file) })));
+        this.graph.update(() => {
+            for (const file of changes.removed) {
+                const f = known.get(file)!;
+                this.unmount(file);
+                unmounted.add(name(file));
+                read.push(name(file));
+                notes.push(f.error === undefined ? `${name(file)} was removed on disk: its statements are removed.` : `${name(file)} was removed on disk.`);
+            }
+            for (const { file, f, r } of reads) {
+                const lost = f && (pending.files.has(file) || [...this.viewFiles].some(([v, x]) => x.path === file && pending.views.has(v)));
+                this.unmount(file);
+                unmounted.add(name(file));
+                if (typeof r === 'string') { notes.push(r); continue; }
+                if (!this.mount(r, notes)) continue;
+                read.push(name(file));
+                notes.push(f ? `${name(file)} changed on disk: read again${lost ? '; its changes that were not written are lost' : ''}.` : `${name(file)} is new on disk: read.`);
+            }
+            this.syncShapesTarget();
+        });
         return { read, notes, unmounted };
     }
 
@@ -664,7 +676,10 @@ export class Workspace {
         }
         const r = this.applyPlaces(settings);
         if ('error' in r) this.imported = was;
-        else if (settings.validation) this.validation = settings.validation;
+        else {
+            if (settings.validation) this.validation = settings.validation;
+            this.graph.invalidate({ persisted: true, data: true });
+        }
         return r;
     }
 
