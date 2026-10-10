@@ -99,7 +99,9 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 These entries record earlier runs on different trees. Their counts are not additive. No entry certifies the current working tree.
 
-- **Optimization and Trace verification:** `pnpm verify --e2e` passed check (4.2 s), test (757 passed, one opt-in benchmark skipped, 9.5 s), build (8.9 s) and browser tests (17/17, 68.6 s). Both manifests typecheck. Logs: `/tmp/catenary-verify-Vnnwvi`. The new browser test checks the five metrics, native model input, Clear and Pause. First model-update latency measures a paint opportunity, not screen presentation or completion of every panel.
+- **Review-fix verification:** `pnpm verify --e2e` passed check (7.3 s), test (769 passed, one opt-in benchmark skipped, 9.5 s), build (9.1 s) and browser tests (17/17, 68.0 s). Both manifests typecheck. Logs: `/tmp/catenary-verify-fFKW0w`. Regression tests cover cached selection epochs, RPC mutation counts and final batches on Pause, Clear and resume. The browser test checks Pause with an unpolled full-view read. First model-update latency remains a paint opportunity, not proof of screen presentation.
+
+- **Shape-undo timeout:** one full browser run timed out waiting for `unnamed shape 1` to disappear after Ctrl+Z. The focused rerun passed (1/1), followed by a full pass (17/17). Cause unknown. Check keyboard focus and command delivery if it recurs. Failure artifacts: `/tmp/catenary-shapes-LNvZK5`.
 
 - **Historical verification (742 tests):** `pnpm verify --e2e` passed check (4.2 s), test (742/742, 9.3 s), build (9.3 s) and browser tests (16/16, 59.2 s). Logs: `/tmp/catenary-verify-7gLuos`. Browser coverage includes edge stroke zoom, hidden-panel reads and save-only requests. The scoped-read trace test now requires no instance-origin span for view counts. `pnpm check:manifests` also passed for both manifests.
 

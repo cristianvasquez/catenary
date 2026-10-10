@@ -20,7 +20,7 @@ export class SelectionModel {
     readonly onDidChange = this.onDidChangeEmitter.event;
 
     /** The last answer of the backend for the selection: `selection` and `revision` that it is for. */
-    protected answer: { selection: ModelSelection; revision: number; value: Selected } = { selection: this.current, revision: -1, value: emptySelected() };
+    protected answer: { selection: ModelSelection; revision: number; epoch: number; value: Selected } = { selection: this.current, revision: -1, epoch: -1, value: emptySelected() };
     protected readonly onDidResolveEmitter = new Emitter<Selected>();
     /** Fires when the backend resolved the current selection (after a change of the selection or of the model). */
     readonly onDidResolve = this.onDidResolveEmitter.event;
@@ -53,12 +53,11 @@ export class SelectionModel {
     /** The current selection by kind, for the current model revision. */
     resolve(): Promise<Selected> {
         const selection = this.current, revision = this.model.snapshot.revision, epoch = this.resolutionEpoch;
-        if (this.answer.selection === selection && this.answer.revision === revision) return Promise.resolve(this.answer.value);
+        if (this.answer.selection === selection && this.answer.revision === revision && this.answer.epoch === epoch) return Promise.resolve(this.answer.value);
         return this.model.service.selected(selection).then(value => {
-            if (this.current === selection && this.resolutionEpoch === epoch) {
-                this.answer = { selection, revision: this.model.snapshot.revision, value };
-                this.onDidResolveEmitter.fire(value);
-            }
+            if (this.current !== selection || this.resolutionEpoch !== epoch) return this.resolve();
+            this.answer = { selection, revision: this.model.snapshot.revision, epoch, value };
+            this.onDidResolveEmitter.fire(value);
             return value;
         });
     }
@@ -66,7 +65,7 @@ export class SelectionModel {
     /** After a model change: ids whose IRI changed follow; ids of deleted elements go. */
     protected async follow({ movedIds, change, revision }: ModelSnapshot): Promise<void> {
         if (this.model.isOpen && panelsUnchanged(change) && !Object.keys(movedIds).length) {
-            if (this.answer.selection === this.current && this.answer.revision >= 0) this.answer.revision = revision;
+            if (this.answer.selection === this.current && this.answer.epoch === this.resolutionEpoch) this.answer.revision = revision;
             return;
         }
         const epoch = ++this.resolutionEpoch;
@@ -79,7 +78,7 @@ export class SelectionModel {
         if (this.current !== before || epoch !== this.resolutionEpoch) return;
         const sameView = r.view === before.view;
         if (sameView && sameIds(r.ids, before.ids)) {
-            this.answer = { selection: before, revision: this.model.snapshot.revision, value: r };
+            this.answer = { selection: before, revision: this.model.snapshot.revision, epoch, value: r };
             this.onDidResolveEmitter.fire(r);
             return;
         }

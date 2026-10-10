@@ -44,11 +44,11 @@ Catenary resets saved layouts once when you first open this version. Later sessi
 |---|---|
 | First model update | Model input → visible DOM change → two animation frames. Not complete panel updates or proof of screen presentation. |
 | Backend event-loop delay | Timer lateness at 50 ms intervals, including OS scheduling delays. Latest 600 samples. |
-| RPC count | Backend requests during recording. |
+| RPC count | Completed ModelService reads and mutations, excluding trace and connection plumbing. |
 | RDF query time | SELECT, CONSTRUCT and pattern-match time, counted once per query. |
 | Full-view reads | Complete view reads during recording. |
 
-Percentiles use retained samples. Inputs without an update expire after five seconds. Backend measurements include other tracing connections. Compare repeated runs with the same workspace and panel layout.
+Pause and hide retain the final backend measurements before stopping. Percentiles use retained samples. Inputs without an update expire after five seconds. Backend measurements include other tracing connections. Compare repeated runs with the same workspace and panel layout.
 
 ## Views and canvases
 

@@ -44,24 +44,26 @@ export class ModelServiceImpl implements ModelService, Disposable {
 
     async getSnapshot(): Promise<ModelSnapshot> { return tracer.span('rpc', 'getSnapshot', () => this.store.snapshot()); }
     open(workspacePath: string): Promise<CommandResult> { return tracer.span('rpc', 'open', () => this.store.open(workspacePath)); }
-    create(workspacePath: string, placement?: WorkspaceSettings['placement']): Promise<CommandResult> { return this.store.create(workspacePath, placement); }
-    setPrefixes(prefixes: Record<string, string>): Promise<CommandResult> { return this.store.setPrefixes(prefixes); }
-    setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return this.store.setSettings(settings); }
-    setImported(file: string, on: boolean): Promise<CommandResult> { return this.store.setImported(file, on); }
-    importFiles(sources: string[]): Promise<ImportResult> { return this.store.importFiles(sources); }
+    create(workspacePath: string, placement?: WorkspaceSettings['placement']): Promise<CommandResult> { return tracer.span('rpc', 'create', () => this.store.create(workspacePath, placement)); }
+    setPrefixes(prefixes: Record<string, string>): Promise<CommandResult> { return tracer.span('rpc', 'setPrefixes', () => this.store.setPrefixes(prefixes)); }
+    setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return tracer.span('rpc', 'setSettings', () => this.store.setSettings(settings)); }
+    setImported(file: string, on: boolean): Promise<CommandResult> { return tracer.span('rpc', 'setImported', () => this.store.setImported(file, on)); }
+    importFiles(sources: string[]): Promise<ImportResult> { return tracer.span('rpc', 'importFiles', () => this.store.importFiles(sources)); }
     async checkMarkdownExport(source: string, destination: string): Promise<MarkdownExportCheck> {
-        return checkOf(await prepareMarkdownExport(source, destination, this.views()));
+        return tracer.span('rpc', 'checkMarkdownExport', async () => checkOf(await prepareMarkdownExport(source, destination, this.views())));
     }
     async exportMarkdown(source: string, destination: string, svgs: Record<string, string>): Promise<MarkdownExportResult> {
-        const prepared = await prepareMarkdownExport(source, destination, this.views());
-        if ('error' in prepared) return { ok: false, error: prepared.error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] };
-        return writeMarkdownExport(prepared, svgs);
+        return tracer.span('rpc', 'exportMarkdown', async () => {
+            const prepared = await prepareMarkdownExport(source, destination, this.views());
+            if ('error' in prepared) return { ok: false, error: prepared.error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] };
+            return writeMarkdownExport(prepared, svgs);
+        });
     }
-    async dismissMigration(id: string): Promise<void> { this.store.dismissMigration(id); }
-    save(): Promise<CommandResult> { return this.store.save(); }
-    async undo(): Promise<CommandResult> { return this.store.undo(); }
-    async redo(): Promise<CommandResult> { return this.store.redo(); }
-    async execute(command: EditCommand): Promise<CommandResult> { return this.store.execute(command); }
+    async dismissMigration(id: string): Promise<void> { tracer.span('rpc', 'dismissMigration', () => this.store.dismissMigration(id)); }
+    save(): Promise<CommandResult> { return tracer.span('rpc', 'save', () => this.store.save()); }
+    async undo(): Promise<CommandResult> { return tracer.span('rpc', 'undo', () => this.store.undo()); }
+    async redo(): Promise<CommandResult> { return tracer.span('rpc', 'redo', () => this.store.redo()); }
+    async execute(command: EditCommand): Promise<CommandResult> { return tracer.span('rpc', 'execute', () => this.store.execute(command)); }
 
     async setTracing(on: boolean): Promise<void> {
         if (on === this.tracing) return;
@@ -69,6 +71,12 @@ export class ModelServiceImpl implements ModelService, Disposable {
         tracer.setClient(on);
     }
     async trace(since: number): Promise<TraceBatch> { return tracer.take(since); }
+    async stopTracing(since: number): Promise<TraceBatch> {
+        const batch = tracer.take(since);
+        // Capture before releasing this connection. The last release clears the shared trace.
+        await this.setTracing(false);
+        return batch;
+    }
     async clearTrace(): Promise<void> { tracer.clear(); }
 
     /** The views of the model by IRI. A view id is the encoded IRI (@catenary/model iriId): the IRI is the identity in a document. */

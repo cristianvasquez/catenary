@@ -48,12 +48,18 @@ export class TraceWidget extends ReactWidget {
     @inject(FrontendTrace) protected readonly local: FrontendTrace;
 
     protected recording = false;
+    /** Set before requesting backend recording. A start canceled before this point owns no backend session. */
+    protected backendRecording = false;
     protected paused = false;
     protected timer?: ReturnType<typeof setInterval>;
     /** Counts the starts: the async steps of a start that a stop or a newer start replaced do nothing. */
     protected session = 0;
     /** A poll waits for its answer: the next poll is skipped (two polls would read the same spans). */
     protected polling = false;
+    /** A new recording waits for the final batch of the preceding recording. */
+    protected stopping: Promise<void> = Promise.resolve();
+    /** Clear invalidates pending batches without canceling recording. */
+    protected resetEpoch = 0;
     /** The `seq` of the last backend batch. */
     protected seq = 0;
     protected spans: TraceSpan[] = [];
@@ -121,10 +127,14 @@ export class TraceWidget extends ReactWidget {
      */
     protected async begin(session: number): Promise<void> {
         try {
+            await this.stopping;
+            if (session !== this.session || !this.recording) return;
+            const reset = this.resetEpoch;
             const before = await this.service.trace(this.seq);
             if (session !== this.session || !this.recording) return;
             this.seq = before.seq;
-            this.baseline = before.stats;
+            if (reset === this.resetEpoch) this.baseline = before.stats;
+            this.backendRecording = true;
             await this.service.setTracing(true);
             if (session !== this.session || !this.recording) return;
             clearInterval(this.timer);
@@ -142,19 +152,38 @@ export class TraceWidget extends ReactWidget {
         clearInterval(this.timer);
         this.local.on = false;
         this.spans = [...this.spans, ...this.local.take()].slice(-KEEP);
-        this.kept = addStats(this.kept, this.live);
-        this.live = [];
-        this.service.setTracing(false).catch(e => this.fail(e));
+        ++this.session; // Discard in-flight polls and incomplete starts.
+        if (!this.backendRecording) { this.update(); return; }
+        this.backendRecording = false;
+        const reset = this.resetEpoch, since = this.seq, baseline = this.baseline, last = this.live;
+        this.stopping = this.stopping.then(async () => {
+            try {
+                const batch = await this.service.stopTracing(since);
+                if (reset !== this.resetEpoch) return;
+                this.seq = batch.seq;
+                this.loopDelay = batch.loopDelay ?? [];
+                this.dropped += batch.dropped;
+                this.spans = [...this.spans, ...batch.spans].slice(-KEEP);
+                this.kept = addStats(this.kept, sessionStats(batch.stats, baseline));
+                this.live = [];
+            } catch (e) {
+                if (reset !== this.resetEpoch) return;
+                this.kept = addStats(this.kept, last);
+                this.live = [];
+                this.fail(e);
+            }
+            this.update();
+        });
         this.update();
     }
 
     protected async poll(): Promise<void> {
         if (!this.recording || this.polling) return;
         this.polling = true;
-        const session = this.session;
+        const session = this.session, reset = this.resetEpoch;
         try {
             const batch = await this.service.trace(this.seq);
-            if (!this.recording || session !== this.session) return;
+            if (!this.recording || session !== this.session || reset !== this.resetEpoch) return;
             this.seq = batch.seq;
             this.loopDelay = batch.loopDelay ?? [];
             this.live = sessionStats(batch.stats, this.baseline);
@@ -176,6 +205,7 @@ export class TraceWidget extends ReactWidget {
     }
 
     protected clear(): void {
+        ++this.resetEpoch;
         this.spans = [];
         this.loopDelay = [];
         this.kept = [];
@@ -217,7 +247,7 @@ export class TraceWidget extends ReactWidget {
             <tbody>
                 <tr title='Input to the first visible model DOM change and two animation frames. Not full operation completion.'><th scope='row'>First model update</th><td>{distribution(metrics.visibleUpdate)}</td></tr>
                 <tr title='Timer lateness beyond a 50 ms interval. Includes OS scheduling delays.'><th scope='row'>Backend event-loop delay</th><td>{distribution(metrics.eventLoop)}</td></tr>
-                <tr><th scope='row'>RPC count</th><td>{metrics.rpcCount}</td></tr>
+                <tr title='Completed ModelService reads and mutations, excluding trace and connection plumbing.'><th scope='row'>RPC count</th><td>{metrics.rpcCount}</td></tr>
                 <tr title='SELECT, CONSTRUCT and pattern-match time. Each query counts once.'><th scope='row'>RDF query time</th><td>{ms(metrics.queryMs)} ms</td></tr>
                 <tr><th scope='row'>Full-view reads</th><td>{metrics.fullViewReads}</td></tr>
                 <tr><td colSpan={2}>Totals cover recording time. Percentiles use retained samples. Backend measurements include other tracing connections.</td></tr>

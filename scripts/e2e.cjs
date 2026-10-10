@@ -1317,8 +1317,16 @@ test('browser: Trace performance metrics record model input and stop on pause', 
   assert.ok(Number(await metric('RPC count').innerText()) > 0);
   assert.match(await metric('RDF query time').innerText(), /[\d.]+ ms/);
   assert.ok(Number(await metric('Full-view reads').innerText()) >= 1);
+  // Stop the poll timer to reproduce Pause before the next poll deterministically.
+  cli('eval', `clearInterval(ctx.shell.getWidgetById('catenary-trace').timer); return true`);
+  const readsBeforePause = Number(await metric('Full-view reads').innerText());
+  cli('rpc', 'view', JSON.stringify(view));
   await panel.getByRole('button', { name: 'Pause', exact: true }).click();
-  await page.waitForTimeout(300);
+  await page.waitForFunction(previous => {
+    const rows = [...document.querySelectorAll('#catenary-trace table[aria-label="Performance metrics"] tr')];
+    const row = rows.find(r => r.querySelector('th')?.textContent === 'Full-view reads');
+    return Number(row?.querySelector('td')?.textContent) > previous;
+  }, readsBeforePause);
   assert.equal(cli('rpc', 'trace', '0').result.on, false);
   await panel.getByRole('button', { name: 'Clear', exact: true }).click();
   assert.equal(await metric('First model update').innerText(), 'No samples');

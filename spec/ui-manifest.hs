@@ -427,7 +427,10 @@ startupDocument Nothing _ restored = restored
 
 -- | Save, validation and layout-only snapshots retain selection facts without a read or a resolved-selection event.
 -- A moved identity or model change requires a read. Ignore responses from an older selection or model-facts epoch.
+-- Promote a cached answer after an unchanged snapshot only when its model-facts epoch is current.
 -- Reason: unchanged facts must not trigger panel reads, and old responses must not replace current facts.
+law_selectionPromotesCurrentFacts :: Int -> Int -> Bool -> Bool
+law_selectionPromotesCurrentFacts answerEpoch currentEpoch promoted = promoted ==> (answerEpoch == currentEpoch)
 law_selectionNoReadForUnchangedPanels :: Bool -> Bool -> Bool -> Bool
 law_selectionNoReadForUnchangedPanels unchanged moved readRequested = (unchanged && not moved) ==> not readRequested
 law_selectionRejectsOldRevision :: Int -> Int -> Bool -> Bool
@@ -1530,7 +1533,14 @@ traceRecords = or
 -- It is a paint opportunity, not proof of screen presentation or completion of all updates. Pending inputs expire after five seconds.
 -- Backend delay is lateness beyond a 50 ms timer interval. Keep at most 600 samples without using the span buffer.
 -- Percentiles use nearest rank over retained samples. Query time sums SELECT, CONSTRUCT and match totals, not inclusive parent spans.
+-- RPC count includes completed ModelService reads and mutations once each. Exclude trace controls and connection plumbing.
+-- Pause and hide capture the final backend batch before releasing the trace connection. A new recording waits for that batch.
+-- Clear rejects pending batches from the preceding reset epoch.
 -- Reason: distinguish user feedback, event-loop blocking and unnecessary reads without counting query work twice.
+law_traceCountsRpcOnce :: [Id] -> Int -> Bool
+law_traceCountsRpcOnce completedCalls reported = length completedCalls == reported
+law_traceStopKeepsFinalBatch :: [Id] -> [Id] -> Bool
+law_traceStopKeepsFinalBatch completed retained = all (`elem` retained) completed
 law_traceQueryTimeOnce :: [Double] -> Double -> Bool
 law_traceQueryTimeOnce queryDurations reported = abs (sum queryDurations - reported) < 0.01
 law_traceLoopSamplesBounded :: Int -> Bool

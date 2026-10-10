@@ -133,6 +133,8 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     setTracing(on: boolean): Promise<void>;
     /** The trace spans after `since` (the `seq` of an earlier batch; 0: all kept spans) and the totals. */
     trace(since: number): Promise<TraceBatch>;
+    /** Capture the final batch before stopping this connection. Other tracing connections remain active. */
+    stopTracing(since: number): Promise<TraceBatch>;
     /** Remove the kept spans and the totals. */
     clearTrace(): Promise<void>;
 }

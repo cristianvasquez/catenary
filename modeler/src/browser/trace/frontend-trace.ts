@@ -6,7 +6,7 @@ import { TraceSpan, TraceStat } from '@catenary/model';
 import { VisibleUpdateTrace } from './visible-update-trace';
 
 /** Calls that the trace does not measure: the trace itself and the RPC plumbing. */
-const UNTRACED = new Set(['setClient', 'getClient', 'dispose', 'setTracing', 'trace', 'clearTrace', 'then']);
+const UNTRACED = new Set(['setClient', 'getClient', 'dispose', 'setTracing', 'trace', 'stopTracing', 'clearTrace', 'then']);
 
 @injectable()
 export class FrontendTrace {
