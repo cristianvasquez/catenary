@@ -2,7 +2,7 @@ import { labels } from './sparql';
 import { reasonText, TargetMatch } from '@catenary/shacl/common';
 import { shapeTargetMatches } from './shacl-targets';
 // The model store: one RDF dataset (ModelGraph), shared by all diagram sessions and by the frontend. It coordinates the parts:
-// the files on disk and the dataset read from them (workspace.ts), undo and the patch queue (history.ts), validation
+// the files on disk and the dataset read from them (settings.ts, loader.ts, reconciler.ts, placement.ts, saver.ts), undo and the patch queue (history.ts), validation
 // (validation-runner.ts), and the read models of the panels and editors, built for each request (ADR 0012: no shared Doc).
 // All edits go through `execute` (one EditCommand = one transaction = one patch = one undo step). File operations run one at a time.
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
@@ -44,7 +44,12 @@ import { rdf, termKey } from './terms';
 import { reportProblems } from './validate';
 import { TracedStore, tracer } from './trace';
 import { ValidationRunner } from './validation-runner';
-import { Workspace, createWorkspace, fileContent } from './workspace';
+import { Loader, fileContent, openWorkspace } from './loader';
+import { placeChanges, transfer, filesOfSubject } from './placement';
+import { readChanges } from './reconciler';
+import { Saver } from './saver';
+import { Settings, createWorkspace } from './settings';
+import { validationTriples } from './validation-data';
 import { search } from './search';
 import { selected } from './selection';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
@@ -114,11 +119,13 @@ export class ModelStore implements ModelQueries {
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
-    protected ws?: Workspace;
+    protected settings?: Settings;
+    protected loader?: Loader;
+    protected saver?: Saver;
     protected readonly history = new History();
     protected readonly validation = new ValidationRunner(
-        () => ({ graph: this.graph, metamodel: this.metamodel, off: this.ws?.validation === 'off', data: () => this.validationData(), focus: () => this.focus,
-            stamp: () => `${this.ws?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
+        () => ({ graph: this.graph, metamodel: this.metamodel, off: this.settings?.validation === 'off', data: () => this.validationData(), focus: () => this.focus,
+            stamp: () => `${this.settings?.validation}:${this.validated ?? ''}` }), (before, patch) => this.changed('validation', patch, violationScope(before, this.violations)));
     /** The view shown by each open editor (GLSP client session): the validation mode "views" checks the elements on these views. */
     protected readonly openViews = new Map<string, string>();
     /** In the validation mode "views": the instances that the last run checked, and the elements on the open views (by termKey). */
@@ -256,7 +263,7 @@ export class ModelStore implements ModelQueries {
 
     /** The IRI subjects of the statements of a file. */
     protected subjectsOfFile(file: string): Set<string> {
-        const ws = this.ws, subjects = new Set<string>();
+        const ws = this.settings, subjects = new Set<string>();
         const known = ws?.knownFile(path.resolve(this.folder, file));
         if (!ws || !known) return subjects;
         for (const q of this.graph.quads()) if (q.subject.termType === 'NamedNode' && !subjects.has(q.subject.value) && ws.filesOfQuad(q).includes(known)) subjects.add(q.subject.value);
@@ -280,7 +287,7 @@ export class ModelStore implements ModelQueries {
     }
 
     protected elementInFile(id: string, file: string): boolean {
-        const ws = this.ws;
+        const ws = this.settings;
         const known = ws?.knownFile(path.resolve(this.folder, file));
         if (!ws || !known) return false;
         const rel = relationTriple(id);
@@ -345,9 +352,9 @@ export class ModelStore implements ModelQueries {
         const view = id === undefined ? undefined : viewCounts(this.graph, this.shapesIndex(), id);
         if (view) return view;
         const idx = this.shapesIndex();
-        const ws = this.ws!;
+        const ws = this.settings!;
         return properties({
-            g: this.graph, meta: this.metamodel, idx, fileOf: t => ws.filesOfSubject(t)[0],
+            g: this.graph, meta: this.metamodel, idx, fileOf: t => filesOfSubject(this.graph, t)[0],
             importedFiles: q => ws.filesOfQuad(q).filter(f => ws.isImported(f))
         }, id);
     }
@@ -542,8 +549,8 @@ export class ModelStore implements ModelQueries {
         const p = absolutePath(file);
         const c = await fileContent(p);
         const views = c.views.map(v => ({ id: elementId(rdf.namedNode(v.iri)), label: v.label }));
-        const own = c.views.some(v => { const f = this.ws?.viewFile(v.iri); return !!f && pathKey(f.path) === pathKey(p); });
-        const workspaceFile = views.length ? (own && this.ws ? this.ws.path : await enclosingWorkspace(p)) : undefined;
+        const own = c.views.some(v => { const f = this.settings?.viewFile(v.iri); return !!f && pathKey(f.path) === pathKey(p); });
+        const workspaceFile = views.length ? (own && this.settings ? this.settings.path : await enclosingWorkspace(p)) : undefined;
         return { workspace: c.workspace, views, ...(workspaceFile ? { workspaceFile } : {}), ...(c.error ? { error: c.error } : {}) };
     }
 
@@ -564,7 +571,7 @@ export class ModelStore implements ModelQueries {
      */
     filesOfElement(id: string): string[] {
         const count = new Map<string, number>();
-        for (const q of this.statementsOf(id)) for (const f of this.ws?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
+        for (const q of this.statementsOf(id)) for (const f of this.settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
         return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
     }
 
@@ -655,13 +662,13 @@ export class ModelStore implements ModelQueries {
             const instances = Object.values(doc.instances);
             tracer.note(`instances ${instances.length}; populated views ${Object.values(doc.views).filter(v => v.boxes.length || v.edges.length || v.arrows.length).map(v => v.id).join(', ') || 'none'}`);
             for (const i of instances) {
-                const f = this.ws?.filesOfSubject(rdf.namedNode(i.uri))[0];
+                const f = this.settings && filesOfSubject(this.graph, rdf.namedNode(i.uri))[0];
                 if (f) i.file = f; else delete i.file;
             }
         });
         // File references: the absolute path (from the folder of the view file), and whether the file is on disk.
         for (const v of Object.values(doc.views)) {
-            const dir = path.dirname(this.ws?.viewFile(v.uri)?.path ?? path.join(this.folder, 'views', 'x'));
+            const dir = path.dirname(this.settings?.viewFile(v.uri)?.path ?? path.join(this.folder, 'views', 'x'));
             for (const b of v.boxes) {
                 if (b.kind !== 'reference' || !b.file) continue;
                 b.path = resolveStored(dir, b.file);
@@ -674,7 +681,7 @@ export class ModelStore implements ModelQueries {
     /** The files that file references name, with their state on disk (for the watcher). */
     protected referencedFiles(): string {
         return fileReferences(this.graph).map(({ view, file }) => {
-            const p = resolveStored(path.dirname(this.ws?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x')), file);
+            const p = resolveStored(path.dirname(this.settings?.viewFile(view)?.path ?? path.join(this.folder, 'views', 'x')), file);
             return `${p}:${existsSync(p)}`;
         }).sort().join('\n');
     }
@@ -694,7 +701,7 @@ export class ModelStore implements ModelQueries {
     setOpenView(client: string, viewId: string | undefined): void {
         const before = this.openViewIris().join('\n');
         if (viewId) this.openViews.set(client, viewId); else this.openViews.delete(client);
-        if (this.ws?.validation === 'views' && this.openViewIris().join('\n') !== before) this.validation.invalidate();
+        if (this.settings?.validation === 'views' && this.openViewIris().join('\n') !== before) this.validation.invalidate();
     }
 
     /** The IRIs of the open views, sorted, without duplicates. */
@@ -720,13 +727,13 @@ export class ModelStore implements ModelQueries {
 
     /** The statements of the model graph that validation reads, by the validation mode (undefined: all). */
     protected validationData(): Quad[] | undefined {
-        if (this.ws?.validation !== 'views') {
+        if (this.settings?.validation !== 'views') {
             this.validated = this.focus = undefined;
-            return this.ws?.validationTriples();
+            return this.settings && validationTriples(this.graph, this.settings);
         }
         const focus = this.validationFocus();
         this.focus = new Set(focus.keys());
-        const data = this.ws.validationTriples(this.focus) ?? [];
+        const data = validationTriples(this.graph, this.settings, this.focus) ?? [];
         // Checked: an instance on an open view with statements in the data (not one that only imported files describe).
         const subjects = new Set(data.map(q => termKey(q.subject)));
         this.validated = [...focus].filter(([k, t]) => subjects.has(k) && this.graph.isInstance(t)).length;
@@ -748,12 +755,12 @@ export class ModelStore implements ModelQueries {
                 instances: this.cached('instances', () => instanceCount(this.graph)),
                 results: this.violations.length,
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
-                ...(this.ws?.validation === 'views' && this.validated !== undefined ? { validated: this.validated } : {})
+                ...(this.settings?.validation === 'views' && this.validated !== undefined ? { validated: this.validated } : {})
             },
             warnings: this.warnings,
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
             movedIds: this.movedIds,
-            prefixes: { table: { ...PREFIXES }, stored: !!this.ws?.prefixes },
+            prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes },
             dirty: this.dirty,
             canUndo: this.canUndo,
             canRedo: this.canRedo
@@ -768,7 +775,7 @@ export class ModelStore implements ModelQueries {
     }
 
     protected executeNow(command: EditCommand): CommandResult {
-        const ws = this.ws;
+        const ws = this.settings;
         if (!ws) return { ok: false, error: 'No model is open.' };
         if (command.kind === 'addFileReference') {
             // The file reference keeps the path relative to its view file (the folder can move).
@@ -803,9 +810,9 @@ export class ModelStore implements ModelQueries {
         // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
             const r = command.kind === 'moveElementsToFile'
-                ? ws.transfer(command.source, command.destination, command.ids)
+                ? transfer(g, ws, command.source, command.destination, command.ids)
                 : executeCommand(g, this.metamodel, command);
-            if (r.ok) ws.placeChanges();
+            if (r.ok) placeChanges(g, ws);
             const files = r.ok ? ws.importedChanges(g.changes()) : [];
             return files.length ? importedFailure(this.folder, files) : r;
         });
@@ -839,11 +846,11 @@ export class ModelStore implements ModelQueries {
      */
     protected replay(reason: 'undo' | 'redo'): CommandResult {
         const next = this.history.peek(reason);
-        if (!next || !this.ws) return { ok: true };
+        if (!next || !this.settings) return { ok: true };
         const applied: Patch = reason === 'undo' ? [...next.patch].reverse().map(c => ({ op: c.op === 'add' ? 'remove' : 'add', quad: c.quad })) : next.patch;
-        const files = [...new Set([...this.ws.importedChanges(applied), ...next.transferFiles.filter(f => this.ws!.isImported(f))])];
+        const files = [...new Set([...this.settings.importedChanges(applied), ...next.transferFiles.filter(f => this.settings!.isImported(f))])];
         if (files.length) return importedFailure(this.folder, files);
-        const problem = this.ws.transferProblem(next.transferFiles);
+        const problem = this.settings.transferProblem(next.transferFiles);
         if (problem) return { ok: false, error: problem };
         const step = this.history.take(reason)!;
         const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
@@ -859,9 +866,9 @@ export class ModelStore implements ModelQueries {
         if (this.history.dismiss(id)) this.changed('queue');
     }
 
-    /** Keep the files of the statements in step with a patch (workspace.ts). */
+    /** Keep the files of the statements in step with a patch (settings.ts). */
     protected track(patch: Patch): void {
-        this.ws?.track(patch);
+        this.settings?.track(patch);
     }
 
     /**
@@ -874,11 +881,11 @@ export class ModelStore implements ModelQueries {
         if (shapes) this.rebuildMetamodel();
         this.movedIds = patch ? movedIds(this.graph, patch, shapesBefore ? { before: shapesBefore, after: this.shapesIndex() } : undefined) : {};
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
-        for (const [from, to] of Object.entries(this.movedIds)) this.ws?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
-        this.ws?.assignViewFiles();
+        for (const [from, to] of Object.entries(this.movedIds)) this.settings?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
+        this.settings?.assignViewFiles();
         if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
         // The validation mode "views": a placement on an open view changes what validation checks.
-        else if (this.ws?.validation === 'views') {
+        else if (this.settings?.validation === 'views') {
             const open = new Set(this.openViewIris());
             if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
         }
@@ -892,7 +899,7 @@ export class ModelStore implements ModelQueries {
         this.notified = event;
         if (!patch && (reason === 'load' || reason === 'files')) patch = event.patch.length ? event.patch : undefined;
         scope ??= patch && this.scopeOf(patch);
-        if (this.ws && reason !== 'disk') this.referencedState = this.referencedFiles();
+        if (this.settings && reason !== 'disk') this.referencedState = this.referencedFiles();
         this.lastChange = { reason, ...scope };
         if (tracer.on) {
             tracer.span('change', reason, () => {
@@ -914,7 +921,7 @@ export class ModelStore implements ModelQueries {
 
     /** Queue a write of the changed files: one write for all changes that come before it runs. */
     protected queueWrite(): void {
-        if (!this.ws || this.writeQueued || this.ws.gone) return;
+        if (!this.settings || this.writeQueued || this.settings.gone) return;
         this.writeQueued = true;
         void this.serial(async () => {
             this.writeQueued = false;
@@ -924,7 +931,7 @@ export class ModelStore implements ModelQueries {
 
     /** Write the changed files and commit them. A failure shows in the warnings until a write succeeds. */
     protected async write(): Promise<CommandResult> {
-        const ws = this.ws;
+        const ws = this.saver;
         const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
         // A write does not change the dataset: the caches stay (only the dirty state changes).
         if (r.ok) this.changed('save');
@@ -961,7 +968,7 @@ export class ModelStore implements ModelQueries {
      * event had no file name. Runs in the file queue, after the write that caused the events.
      */
     protected async syncFromWatch(changed?: string[]): Promise<void> {
-        const own = this.ws?.ownWrites;
+        const own = this.saver?.ownWrites;
         if (own && changed?.length && (await Promise.all(changed.map(f => own.isOwn(f)))).every(Boolean)) {
             tracer.root('file', 'own write: not read again', () => tracer.note(changed.map(f => path.basename(f)).join(', ')));
             return;
@@ -975,7 +982,7 @@ export class ModelStore implements ModelQueries {
      * change nothing (the text on disk is the text it wrote).
      */
     protected watch(): void {
-        if (!this.ws || !this.watching || this.ws.gone) return this.close();
+        if (!this.settings || !this.watching || this.settings.gone) return this.close();
         this.watcher.watch(this.folder);
     }
 
@@ -990,7 +997,7 @@ export class ModelStore implements ModelQueries {
      * is pending. No undo across it. Returns the names of the files read.
      */
     async syncFromDisk(): Promise<string[]> {
-        const ws = this.ws;
+        const ws = this.settings;
         if (!ws) return [];
         const text = await readDisk(ws.path);
         if (text === undefined && ws.workspace.text !== undefined) {
@@ -1012,7 +1019,8 @@ export class ModelStore implements ModelQueries {
             this.changed('files');
             return [name];
         }
-        const { read, notes, unmounted } = await ws.readChanges();
+        const { read, notes, unmounted } = await readChanges(this.graph, ws, this.loader!, this.saver!.savedState());
+        this.saver!.forget();
         if (!read.length && !notes.length) {
             // Only a referenced file appeared or disappeared: new doc, no write.
             if (this.referencedFiles() !== this.referencedState) {
@@ -1026,7 +1034,7 @@ export class ModelStore implements ModelQueries {
         const notRead = (w: string) => [...unmounted].some(n => w.startsWith(`${n}: not read: `));
         this.warnings = [...this.warnings.filter(w => w !== this.writeError && !notRead(w) && !/ changed on disk: read again| was removed on disk| is new on disk/.test(w)), ...notes];
         this.writeError = undefined;
-        await ws.recordUncommitted(read.map(f => path.resolve(this.folder, f)));
+        await this.saver!.recordUncommitted(read.map(f => path.resolve(this.folder, f)));
         ws.syncShapesTarget();
         this.filesChanged('files');
         return read;
@@ -1041,25 +1049,25 @@ export class ModelStore implements ModelQueries {
 
     /** Path of the primary workspace file. */
     get file(): string | undefined {
-        return this.ws?.path;
+        return this.settings?.path;
     }
 
     /** The folder of the workspace file: the model files are in it and its subfolders. */
     get folder(): string {
-        return this.ws?.folder ?? '';
+        return this.settings?.folder ?? '';
     }
 
     get files(): WorkspaceFiles {
-        return this.ws ? this.ws.info(this.graph.views().map(v => elementId(v))) : { files: [], views: [] };
+        return this.settings ? this.settings.info(this.graph.views().map(v => elementId(v)), this.saver!.savedState()) : { files: [], views: [] };
     }
 
-    /** The file for new subjects when "near" finds no file (workspace.ts). */
+    /** The file for new subjects when "near" finds no file (settings.ts). */
     get defaultFile(): string | undefined {
-        return this.ws?.defaultFile;
+        return this.settings?.defaultFile;
     }
 
     get dirty(): boolean {
-        return this.ws?.dirty ?? false;
+        return this.saver?.dirty ?? false;
     }
 
     /**
@@ -1081,16 +1089,19 @@ export class ModelStore implements ModelQueries {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
-        const r = await Workspace.open(primaryPath, ofFolder, { note: text => this.note(text) });
+        const graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+        const r = await openWorkspace(graph, primaryPath, ofFolder);
         if ('error' in r) return { ok: false, error: r.error };
-        if (this.ws) this.ws.retired = true;
-        this.ws = r.workspace;
-        this.graph = r.workspace.graph;
+        if (this.settings) this.settings.retired = true;
+        this.settings = r.settings;
+        this.loader = r.loader;
+        this.saver = new Saver(graph, r.settings, text => this.note(text));
+        this.graph = graph;
         this.history.clear();
         this.validation.reset();
         this.contentChanged();
         this.warnings = [...r.warnings, ...readWarnings(this.graph, this.shapesIndex().model)];
-        await this.ws.recordUncommitted();
+        await this.saver.recordUncommitted();
         this.changed('load');
         return { ok: true };
     }
@@ -1118,7 +1129,7 @@ export class ModelStore implements ModelQueries {
         const shapes = this.graph.shapesTriples();
         // The vocabulary (concept schemes, concepts) is part of the metamodel: the targets of scheme properties.
         const vocabulary = this.graph.vocabularyQuads().map(q => rdf.quad(q.subject, q.predicate, q.object));
-        const sources = this.ws?.shapeSources() ?? [];
+        const sources = this.settings?.shapeSources() ?? [];
         const dataset = rdf.dataset([...shapes, ...vocabulary]);
         this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset)), source: sources.join(', ') || undefined, dataset };
     }
@@ -1126,11 +1137,11 @@ export class ModelStore implements ModelQueries {
     /** Replace the prefix table. It goes to the manifest of the primary workspace file (saved with it). No undo step. */
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult> {
         return this.serial(async () => {
-            if (!this.ws) return { ok: false, error: 'No model is open.' };
+            if (!this.settings) return { ok: false, error: 'No model is open.' };
             const problem = prefixesProblem(prefixes);
             if (problem) return { ok: false, error: problem };
-            this.ws.prefixes = { ...prefixes };
-            setPrefixes(this.ws.prefixes);
+            this.settings.prefixes = { ...prefixes };
+            setPrefixes(this.settings.prefixes);
             this.graph.invalidate();
             // Compact IRIs in the read models: labels, paths, "Not mapped" rows.
             this.rebuildMetamodel();
@@ -1148,15 +1159,15 @@ export class ModelStore implements ModelQueries {
     }
 
     protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): Promise<CommandResult> {
-        const ws = this.ws;
+        const ws = this.settings;
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
-        if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && ws.dirty) {
+        if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && this.saver!.dirty) {
             this.commitNotes.push('before import mark');
             await this.write();
         }
         const validation = ws.validation;
-        const r = ws.applySettings(settings);
+        const r = ws.applySettings(settings, this.saver!.savedState());
         if ('error' in r) return { ok: false, error: r.error };
         if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
@@ -1174,7 +1185,7 @@ export class ModelStore implements ModelQueries {
      */
     setImported(file: string, on: boolean): Promise<CommandResult> {
         return this.serial(async () => {
-            const ws = this.ws;
+            const ws = this.settings;
             if (!ws) return { ok: false, error: 'No workspace is open.' };
             const abs = path.resolve(this.folder, file);
             if (!isInside(this.folder, abs)) return { ok: false, error: `${file}: the file must be in the folder of the workspace file.` };
@@ -1196,7 +1207,7 @@ export class ModelStore implements ModelQueries {
      */
     importFiles(sources: string[]): Promise<ImportResult> {
         return this.serial(async (): Promise<ImportResult> => {
-            const ws = this.ws;
+            const ws = this.settings;
             if (!ws) return { ok: false, error: 'No workspace is open.' };
             if (!sources.length) return { ok: false, error: 'No file to import.' };
             // Read all files first: a file that cannot be read imports nothing.
@@ -1228,11 +1239,11 @@ export class ModelStore implements ModelQueries {
             // Files of the workspace: marked where they are. The write gives their blank nodes IRIs first (as Mark as Imported).
             const own = reads.filter(r => r.inPlace && !ws.isImported(r.inPlace)).map(r => portableRelative(this.folder, r.inPlace!));
             if (own.length) {
-                if (ws.dirty) {
+                if (this.saver!.dirty) {
                     this.commitNotes.push('before import mark');
                     await this.write();
                 }
-                const marked = ws.applySettings({ imported: [...before.imported, ...own] });
+                const marked = ws.applySettings({ imported: [...before.imported, ...own] }, this.saver!.savedState());
                 if ('error' in marked) return { ok: false, error: `${names}: not imported: ${marked.error}` };
             }
             const note = () => {
@@ -1261,7 +1272,7 @@ export class ModelStore implements ModelQueries {
                 for (const t of targets.values()) await fs.rm(t, { force: true });
                 ws.prefixes = before.prefixes;
                 setPrefixes(before.table);
-                ws.applySettings({ imported: before.imported });
+                ws.applySettings({ imported: before.imported }, this.saver!.savedState());
                 return { ok: false, error: `${names}: not imported: ${error}` };
             };
             try {
@@ -1274,8 +1285,8 @@ export class ModelStore implements ModelQueries {
             } catch (e) {
                 return undo((e as Error).message);
             }
-            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] });
-            ws.written.push(...targets.values());
+            ws.applySettings({ imported: [...ws.importedGlobs, ...[...targets.values()].map(t => portableRelative(this.folder, t))] }, this.saver!.savedState());
+            this.saver!.written.push(...targets.values());
             this.commitNotes.push(`import ${names}`);
             const w = await this.write();
             if (!w.ok) return undo(w.error);

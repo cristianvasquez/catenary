@@ -1,10 +1,14 @@
-// Which file has a subject, and where a new subject goes (ADR 0004). Pure functions of the file graphs.
+// Which file has a subject, and where a new subject goes (ADR 0004): functions of the file graphs and the settings (settings.ts). Also
+// the move of statements between files (`transfer`).
 
-import { NS } from '@catenary/model';
+import { CommandResult, NS } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
 import { NEAR, Placement } from './files';
-import { ModelGraph, P, SKOS_TYPES, cmp, fileOfGraph, isVocabularyQuad } from './graph';
-import { rdf } from './terms';
+import { ModelGraph, P, SKOS_TYPES, cmp, dataGraphIri, fileGraphIri, fileOfGraph, isVocabularyQuad } from './graph';
+import { elementTerm, relationTriple } from './ids';
+import type { Settings } from './settings';
+import { shapesIndexOf } from './shapes-read';
+import { rdf, tripleKey } from './terms';
 
 /** The files of a subject (most statements first): its statements of the model graph and of shapes graphs. */
 export function filesOfSubject(g: ModelGraph, t: Term): string[] {
@@ -58,4 +62,58 @@ function nearClass(g: ModelGraph, types: Term[]): string | undefined {
         }
     }
     return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0]?.[0];
+}
+
+/** Assign every new data statement its final file graph inside the command transaction. */
+export function placeChanges(g: ModelGraph, settings: Settings): void {
+    g.placePending((q, changes, fallback) => {
+        const added = changes.find(c => c.op === 'add' && c.quad.graph.equals(g.model) && tripleKey(c.quad) === tripleKey(q));
+        const prior = changes.filter(c => c.op === 'remove' && g.isDataGraph(c.quad.graph)
+            && tripleKey(c.quad) === tripleKey(added?.was ?? q)).flatMap(c => settings.filesOfQuad(c.quad));
+        const files = prior.length ? prior : [...nearFiles(g, q.subject) ?? []];
+        if (!files.length && !fallback) return undefined;
+        const place = () => placeOf(g, settings.placement, file => settings.placeFile(file), q.subject);
+        return [...new Set((files.length ? files : [place()]).map(f => settings.writeProblemOf(f) ? settings.defaultFile : f))];
+    });
+}
+
+/** Move the selected source quads into destination graphs inside one transaction. */
+export function transfer(g: ModelGraph, settings: Settings, source: string, destination: string, ids: string[]): CommandResult {
+    const problem = settings.transferProblem([source, destination]);
+    if (problem) return { ok: false, error: problem };
+    if (source === destination) return { ok: true };
+    const index = shapesIndexOf(g);
+    const subjects = new Set<string>();
+    const relations = new Set<string>();
+    for (const id of ids) {
+        const rel = relationTriple(id);
+        if (rel) relations.add(tripleKey(rdf.quad(rel.s, rel.p, rel.o)));
+        else {
+            const term = index.property.get(id)?.term ?? elementTerm(id);
+            if (!term) return { ok: false, error: 'This element cannot move between files.' };
+            subjects.add(term.value);
+        }
+    }
+    const fromGraph = rdf.namedNode(fileGraphIri(source)), toGraph = rdf.namedNode(fileGraphIri(destination));
+    const shapes = g.match(null, null, null, fromGraph);
+    // Structural shape nodes travel with their selected parent. Referenced classes and named target shapes do not.
+    const structural = new Set(['property', 'or', 'and', 'xone', 'not', 'qualifiedValueShape', 'path', 'inversePath', 'alternativePath', 'zeroOrMorePath', 'oneOrMorePath', 'zeroOrOnePath', 'in', 'languageIn', 'ignoredProperties'].map(p => NS.sh + p));
+    structural.add(NS.rdf + 'first'); structural.add(NS.rdf + 'rest');
+    for (let more = true; more;) {
+        more = false;
+        for (const q of shapes) if (subjects.has(q.subject.value) && structural.has(q.predicate.value) && q.object.termType === 'NamedNode'
+            && !subjects.has(q.object.value) && shapes.some(s => s.subject.equals(q.object))) {
+            subjects.add(q.object.value); more = true;
+        }
+    }
+    if (shapes.some(q => structural.has(q.predicate.value) && subjects.has(q.object.value) && !subjects.has(q.subject.value))) {
+        return { ok: false, error: 'A nested shape has an unselected parent. Select its parent shapes before moving it.' };
+    }
+    for (const q of shapes) if (subjects.has(q.subject.value) || relations.has(tripleKey(q))) {
+        g.remove(q); g.add(q.subject, q.predicate, q.object, toGraph);
+    }
+    for (const q of g.match(null, null, null, rdf.namedNode(dataGraphIri(source)))) if (subjects.has(q.subject.value) || relations.has(tripleKey(q))) {
+        g.remove(q); g.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(destination)));
+    }
+    return { ok: true };
 }
