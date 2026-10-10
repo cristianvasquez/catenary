@@ -1,9 +1,11 @@
 // The link picker reads things and statements from the store. The metamodel (shapes and RDFS rules) supplies relation choices and
 // cardinalities.
 
-import { ANY_RESOURCE, Classes, LinkSection, NS, ShapesModel, instanceNoun, outgoingRelations, primaryClass, relationAdmits } from '@catenary/model';
+import { ANY_RESOURCE, Choices, Classes, Doc, LinkSection, NS, ShapesModel, boxes, elementOfId, instanceNoun, outgoingRelations, primaryClass, relationAdmits, shortIri } from '@catenary/model';
+import { reasonText } from '@catenary/shacl/common';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
+import { shapeTargetMatches } from './shacl-targets';
 import { NOT_REPORT, compareLabels, construct, iri, labels, rows, str, thingHead, things } from './sparql';
 import { rdf } from './terms';
 
@@ -88,4 +90,38 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
         };
     });
     return { title: `${self.label} (${name}): pick ${dir === 'out' ? 'a target' : 'a source'}, or type a name to create one`, sections };
+}
+
+/** Unshown instances for a shape, or unshown applicable shapes for an instance. */
+export function shapeTargetChoices(g: ModelGraph, doc: Doc, viewId: string, from: string): Choices | undefined {
+    const view = doc.views[viewId];
+    if (!view) return undefined;
+    const element = elementOfId(view, from);
+    const shown = new Set(boxes(view, 'card').map(card => card.element));
+    const shape = doc.shapes.nodeShapes[element];
+    if (shape) {
+        const matches = shapeTargetMatches(g, { shapes: [shape.uri] }).filter(m => m.node.termType === 'NamedNode'
+            && g.isInstance(rdf.namedNode(m.node.value)) && !shown.has(elementId(rdf.namedNode(m.node.value))));
+        if (!matches.length) return undefined;
+        const names = labels(g, matches.map(m => m.node.value));
+        return {
+            title: `${shape.label}: instances (${matches.length} not in the view)`,
+            items: matches.map(m => ({ label: names.get(m.node.value) ?? shortIri(m.node.value),
+                description: reasonText(m.reasons, shortIri), ids: [elementId(rdf.namedNode(m.node.value))] }))
+                .sort((a, b) => a.label.localeCompare(b.label) || a.ids[0].localeCompare(b.ids[0]))
+        };
+    }
+    const instance = doc.instances[element];
+    if (!instance) return undefined;
+    const matches = shapeTargetMatches(g, { nodes: [{ termType: 'NamedNode', value: instance.uri }] });
+    const shapes = matches.flatMap(match => {
+        const shape = Object.values(doc.shapes.nodeShapes).find(s => s.uri === match.shape);
+        return shape && !shown.has(shape.id) ? [{ ...shape, reasons: match.reasons }] : [];
+    });
+    if (!shapes.length) return undefined;
+    return {
+        title: `${instance.label}: applicable node shapes (${shapes.length} not in the view)`,
+        items: shapes.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+            .map(shape => ({ label: shape.label, description: reasonText(shape.reasons, shortIri), ids: [shape.id] }))
+    };
 }

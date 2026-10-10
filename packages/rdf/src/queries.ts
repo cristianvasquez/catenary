@@ -1,17 +1,21 @@
+import { View, boxes } from '@catenary/model';
+import type { TargetMatch } from '@catenary/shacl/common';
+import { MODEL_GRAPH } from './graph';
+import { instanceLabels } from './scoped-doc';
 import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
 
 import {
-    AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, elementLabel, elementOfId, findRelation, formPredicates, kindOf,
-    ViewProperties, predicateName, primaryClass, pluginRanges, shortIri
+    AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, ViewProperties, elementLabel, elementOfId, findRelation, formPredicates,
+    kindOf, pluginRanges, predicateName, primaryClass, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, cmp, labelFromIri } from './graph';
-import { NOT_REPORT, compareLabels, construct, iri as iriText, labels, statements, thingHead, things } from './sparql';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
-import type { ShapesIndex } from './shapes-read';
-import { rdf, termKey } from './terms';
 import { cardIdsOf } from './records';
+import type { ShapesIndex } from './shapes-read';
+import { compareLabels, construct, iri as iriText, labels, statements, thingHead, things } from './sparql';
+import { rdf, termKey } from './terms';
 import { viewLabels } from './view-read';
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}>`;
@@ -306,4 +310,50 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     return { kind: 'view', id: viewId, uri: view.value, label: labels[viewId],
         description: viewQuads.find(q => q.subject.equals(view) && q.predicate.value === NS.view + 'description')?.object.value ?? '',
         cards: cards.size - shapes, shapes, notes, references, relations: links.length, hidden };
+}
+
+/** Instance predicates, except rdf:type and rdfs:label, in order. */
+export function dataPredicates(g: ModelGraph): string[] {
+    const labels = instanceLabels(g);
+    const found = new Set<string>();
+    for (const r of g.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${g.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
+        if (labels.has(r.s.value) && r.p.value !== P.type.value && r.p.value !== P.label.value) found.add(r.p.value);
+    }
+    for (const [s, graph] of g.vocabularySubjects()) {
+        for (const q of g.match(rdf.namedNode(s), null, null, graph)) if (!q.predicate.equals(P.type) && !q.predicate.equals(P.label)) found.add(q.predicate.value);
+    }
+    return [...found].sort(cmp);
+}
+
+/** Metamodel classes and written instance types. */
+export function knownClasses(g: ModelGraph, meta: Classes): { iri: string; name?: string }[] {
+    const types = new Set<string>();
+    for (const r of g.select(`SELECT DISTINCT ?t WHERE { GRAPH <${g.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
+    for (const [s, graph] of g.vocabularySubjects()) for (const t of g.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
+    return [...meta.classes.map(c => ({ iri: c.iri, name: c.name })), ...[...types].sort(cmp).map(iri => ({ iri }))];
+}
+
+/** Stored Markdown of a view. Undefined: no open model or no such view. */
+export function viewDescription(g: ModelGraph, file: string | undefined, viewId: string): string | undefined {
+    if (!file) return undefined;
+    const view = elementTerm(viewId);
+    return view && g.isView(view)
+        ? g.match(view, rdf.namedNode(NS.view + 'description'), null, view)[0]?.object.value ?? '' : undefined;
+}
+
+/** Checked-node connections whose instance and shape cards are both shown. */
+export function applicabilityOf(g: ModelGraph, view: View): TargetMatch[] {
+    const shown = new Set(boxes(view, 'card').map(b => b.element));
+    const nodes: string[] = [], shapes: string[] = [];
+    for (const id of shown) {
+        const t = elementTerm(id);
+        if (t?.termType !== 'NamedNode') continue;
+        // A card can be both: a class used as its own node shape. Non-shape IRIs never match, so each card is a shape candidate.
+        shapes.push(t.value);
+        if (g.isInstance(t)) nodes.push(t.value);
+    }
+    // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
+    if (!nodes.length || !shapes.length) return [];
+    return shapeTargetMatches(g, { nodes: nodes.map(value => ({ termType: 'NamedNode', value })), shapes })
+        .filter(m => shown.has(elementId(rdf.namedNode(m.shape))));
 }

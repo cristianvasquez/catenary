@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NS, boxes, cardOf } from '@catenary/model';
+import { NS, boxes, cardOf, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
@@ -32,6 +32,24 @@ function workspace(): { dir: string; a: string; b: string } {
 const settled = () => vi.runAllTimersAsync();
 
 describe('model store', () => {
+    it('the read host uses the current graph and file after each open', async () => {
+        const { a, b } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        expect(store.search()).toEqual([]);
+        expect(store.explorerChildren()).toEqual({ rows: [], total: 0 });
+        expect((await store.open(a)).ok).toBe(true);
+        expect(store.search().length).toBeGreaterThan(0);
+        expect(store.instancesNamed('Only in B')).toEqual([]);
+        const view = Object.keys(docOf(store).views)[0];
+        expect(store.viewDescription(view)).toBe('');
+        expect((await store.open(b)).ok).toBe(true);
+        expect(store.instancesNamed('Only in B')).toEqual([iriId('urn:b')]);
+        expect(store.knownClasses()).toContainEqual({ iri: 'http://ex.org/B' });
+        expect(store.viewDescription(view)).toBeUndefined();
+        expect(store.viewLabels()).toEqual({});
+    });
+
     it('law_viewDescriptionStorage: saves Markdown in the view file, reads Properties, and undoes one edit', async () => {
         const { a } = workspace();
         const store = new ModelStore();

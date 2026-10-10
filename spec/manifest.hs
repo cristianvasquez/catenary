@@ -1498,6 +1498,7 @@ modelQueries = concatMap queries [minBound .. maxBound]
 law_queryNamesUnique :: Bool
 law_queryNamesUnique = unique modelQueries
 -- | A query changes no store content and no history.
+-- packages/rdf/src/panel-reads.ts runs the read modules. ModelStore delegates and retains the event-keyed caches (§11.2).
 runQuery :: Backend -> String -> (String, Backend)  -- query name with JSON arguments; JSON answer
 law_queriesRead :: Backend -> String -> Bool
 law_queriesRead b q = let b' = snd (runQuery b q) in storeQuads b' == storeQuads b && historyOf b' == historyOf b

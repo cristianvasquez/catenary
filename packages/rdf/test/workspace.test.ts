@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { NS } from '@catenary/model';
+import { MODEL_QUERIES, NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { ModelGraph } from '../src/graph';
 import { openWorkspace } from '../src/loader';
@@ -91,6 +91,14 @@ describe('sync modules', () => {
     it('the coordinator has no direct file I/O', () => {
         const source = readFileSync(join(__dirname, '..', 'src', 'model-store.ts'), 'utf8');
         expect(source).not.toMatch(/from 'fs'|existsSync|readDisk|readText|commitFiles|FolderWatcher|fs\./);
+    });
+
+    it('the coordinator delegates every frontend query and contains no SPARQL text', () => {
+        const source = readFileSync(join(__dirname, '..', 'src', 'model-store.ts'), 'utf8');
+        expect(source).not.toMatch(/SELECT|CONSTRUCT|ASK|GRAPH |FILTER|WHERE \{/);
+        for (const name of Object.keys(MODEL_QUERIES)) {
+            expect(source, name).toMatch(new RegExp(`^    (?:async )?${name}\\(.*return this\\.reads\\.${name}\\(`, 'm'));
+        }
     });
 
     it('no sync module imports another; all read the settings (ModelStore wires them)', () => {

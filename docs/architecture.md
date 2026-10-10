@@ -109,7 +109,7 @@ Validation never reads the plugins: it reads the shapes.
 ### Add a read query for the frontend
 
 1. Declare it in `ModelQueries` and `MODEL_QUERIES` (`packages/model/src/queries.ts`).
-2. Implement it in `ModelStore`.
+2. Implement it in a read module in `packages/rdf/src`. Wire it through `panel-reads.ts`. Add a one-line delegation in `ModelStore`.
 3. Call it as `service.<name>(…)` in the frontend.
 
 The RPC service and `catenary rpc` take the query from `MODEL_QUERIES`. The compiler rejects a missing step. Do not edit `protocol.ts` or `model-service.ts` for a query.
@@ -143,15 +143,16 @@ Paths are relative to the directory in the first column.
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
-| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, panel queries, transactions, shared patch events, undo and redo. ModelStore wires file operations through ports. History records final file graphs, including transfers. |
+| `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore delegates frontend queries and wires file operations through ports. History records final file graphs, including transfers. |
+| | `panel-reads.ts` | Frontend query host: request-scoped reads, panel rules and prompt data. Its live context reads coordinator state. ModelStore retains event-keyed caches. |
 | | `settings.ts`, `files.ts`, `trig.ts` | Workspace settings, file membership, imported globs, statement positions, file reference paths and disk state, RDF serialization |
 | | `loader.ts`, `reconciler.ts`, `placement.ts`, `saver.ts`, `validation-data.ts` | Sync modules. Loader resolves open targets and reads workspace, model and import files. Reconciler owns the watcher, own-write filtering and disk reads. Placement assigns file graphs. Saver holds dirty state and import copies. Writer queues writes and commits, retaining retry notes across opens. Validation-data supplies validation input. None imports another. ModelStore wires them through ports. |
 | | `skolem.ts`, `ids.ts`, `terms.ts`, `moved-ids.ts` | Blank-node replacement, identity, IDs that a change replaced |
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
-| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules, read models of one view or selected placements and their dependencies |
-| | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
-| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
+| | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
+| | `explorer.ts` | Model explorer host: plugins, query port, file scopes, keys, pages, search and paths |
+| | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts`, `report-read.ts` | The pure validator (data and shape quads in, a report out); debounced runs in a worker thread that write the report graph; the report read of Problems and Properties |
