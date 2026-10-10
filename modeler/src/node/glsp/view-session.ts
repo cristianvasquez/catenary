@@ -35,6 +35,8 @@ export class ViewState {
 
     /** Edge IDs removed from the displayed graph by a committed placement-only patch. */
     removedEdges?: Set<string>;
+    /** A layout patch went into the part after the last build: the displayed root is behind the part. */
+    rootBehind = false;
 
     /** The next model build reads the view again (`load`). False: the kept part is current and the schema is built from it. */
     readDue = true;
@@ -51,7 +53,7 @@ export class ViewState {
         if (scope.layout) {
             if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch, view))) this.invalidate();
             // A pending edge removal is already in the part (hidden edges): the next build from the part shows both changes.
-            else this.removedEdges = undefined;
+            else { this.removedEdges = undefined; this.rootBehind = true; }
             return;
         }
         if (!this.acceptRemovedEdges(patch, view)) this.invalidate();
@@ -109,9 +111,11 @@ export class ViewState {
         // Hubs, lines, arrows, boxes and additions use the full projection and its cascade rules.
         if (this.showHidden || patch.some(c => c.op !== 'remove'
             || c.quad.graph.value !== view.uri || !edges.has(placementId(c.quad.subject.value)) || !removed.has(placementId(c.quad.subject.value)))) return false;
+        view.edges = view.edges.map(e => e.id && removed.has(e.id) ? { relation: e.relation, hidden: true } : e);
+        // The fast path filters the displayed root: only when that root shows the part (no layout patch since the last build).
+        if (this.rootBehind) return true;
         this.removedEdges ??= new Set();
-        for (const c of patch) this.removedEdges.add(placementId(c.quad.subject.value));
-        view.edges = view.edges.map(e => e.id && this.removedEdges!.has(e.id) ? { relation: e.relation, hidden: true } : e);
+        for (const id of removed) this.removedEdges.add(id);
         return true;
     }
 
@@ -277,6 +281,7 @@ export class ViewGModelFactory implements GModelFactory {
             }
         }
         if (this.session.readDue) this.session.load();
+        this.session.rootBehind = false;
         const schemes = new Map((store.meta.schemes ?? []).map(x => [x.iri, x.label]));
         const { part } = this.session, view = part.views[this.session.viewId];
         const neighbors = tracer.span('refresh', 'hidden neighbors', () => view ? store.hiddenNeighborCounts(view) : new Map<string, { in: number; out: number }>());

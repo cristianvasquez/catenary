@@ -279,6 +279,23 @@ describe('model changes reaching view clients', () => {
         expect((a.elements().find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
     });
 
+    it('shows a move and a later edge removal together after one refresh of a hidden canvas', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const shape = edit({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:p' }, range: { kind: 'class', class: 'urn:Class' } });
+        edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [{ termType: 'NamedNode', value: docOf(store).instances[other].uri }] } });
+        const a = await client(store, first);
+        const edge = a.state.view!.edges.find(e => e.id)!;
+        const card = a.elements().find(e => key(e) === instance) as GNodeSchema;
+        await a.session.setVisible(false);
+        edit({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 1234, y: 567 }] });
+        edit({ kind: 'removeFromView', view: first, ids: [edge.id!] });
+        await a.session.setVisible(true);
+        expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
+        expect(a.elements().some(e => e.id === edge.id)).toBe(false);
+        expect((a.elements().find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
+    });
+
     it('law_hiddenCanvasRefreshesOnce: a hidden canvas collects changes and gets one update when it is shown', async () => {
         const a = await client(store, first);
         await a.session.setVisible(false);
