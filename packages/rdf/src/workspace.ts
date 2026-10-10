@@ -1,7 +1,7 @@
 // The workspace on disk (ADR 0003, ADR 0004): the workspace file (the manifest), the model files, the dataset read from them, which
 // file has each statement, where new statements go, what changed, and the save. An open makes a new Workspace.
 // A file with one view:View is a view: its graph is the view IRI. In the other files, the shapes (shapePart) go to the graph of the file,
-// the other statements to the model graph; `origin` gives the files of each statement of the model graph. A new statement goes to the
+// the other statements to its data graph. A new statement goes to the
 // file of its subject, else of a statement that refers to it, else by the placement of its kind (placement.ts).
 
 import { CommandResult, DEFAULT_PREFIXES, FileKind, NS, PREFIXES, WorkspaceFiles, setPrefixes, VALIDATION_MODES, ValidationMode } from '@catenary/model';
@@ -16,9 +16,8 @@ import {
     MANIFEST_GRAPH, Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, globRegExp, isViewFile, defaultViewsFolder, listModelFiles, manifestQuads,
     parseRdf, readManifest, serializeRdf, writeProblem
 } from './files';
-import { Change, GraphChange, ModelGraph, P, SKOS_TYPES, V, cmp, fileGraphIri, fileOfGraph, mint } from './graph';
+import { Change, GraphChange, ModelGraph, P, SKOS_TYPES, V, cmp, dataGraphIri, fileGraphIri, fileOfGraph, mint } from './graph';
 import { elementTerm, relationTriple } from './ids';
-import { OriginChange } from './history';
 import { shapesIndexOf } from './shapes-read';
 import { filesOfSubject, nearFiles, placeOf } from './placement';
 import { isSkolem, skolemize } from './skolem';
@@ -48,12 +47,6 @@ export class Workspace {
     protected modelFiles = new Map<string, ModelFile>();
     /** Files that Catenary reads but does not write (path -> why), besides the formats it does not write (`writeProblem`). */
     protected noWrite = new Map<string, string>();
-    /** Statement of the model graph (tripleKey) -> the files that have it. Change it with setOrigin, addOrigin and deleteOrigin only. */
-    protected origin = new Map<string, Set<string>>();
-    /** `origin` by file: file -> its statements of the model graph (tripleKey -> triple). The canonical form of a file reads it. */
-    protected byFile = new Map<string, Map<string, Quad>>();
-    /** The files of a statement that was removed: an undo puts it back there. */
-    protected lastOrigin = new Map<string, Set<string>>();
     /** Manifest settings: the file for new subjects (undefined: not set), the placement by kind, the exclude globs. */
     protected defaultFileSetting?: string;
     protected placement: Placement;
@@ -91,6 +84,7 @@ export class Workspace {
         this.imported = manifest.imported;
         this.validation = manifest.validation ?? 'all';
         this.prefixes = manifest.prefixes;
+        this.graph.onDidChange(event => this.touch(event.patch.map(c => c.quad)));
     }
 
     /**
@@ -182,24 +176,23 @@ export class Workspace {
         };
     }
 
-    /** The files of a statement: the model graph by the origin of the triple, a shapes graph its file, a view graph its view file. */
+    /** A concrete quad names its file. A logical data triple names each file graph that contains it. */
     filesOfQuad(q: Quad): string[] {
-        if (q.graph.equals(this.graph.model)) return [...this.origin.get(tripleKey(q)) ?? []];
-        if (this.graph.isShapesGraph(q.graph)) return [fileOfGraph(q.graph.value)];
+        if (q.graph.equals(this.graph.model)) return [...new Set(this.graph.dataGraphs().filter(g => this.graph.match(q.subject, q.predicate, q.object, g).length).map(g => fileOfGraph(g.value)))];
+        if (this.graph.isDataGraph(q.graph) || this.graph.isShapesGraph(q.graph)) return [fileOfGraph(q.graph.value)];
         const f = this.viewFiles.get(q.graph.value)?.path;
         return f ? [f] : [];
     }
 
     /** The file of a new subject by the placement of its kind (placement.ts), as a model file record. */
     protected place(s: Term): string {
-        const f = placeOf(this.graph, this.origin, this.placement, file => this.placeFile(file), s);
-        this.modelFile(f);
+        const f = placeOf(this.graph, this.placement, file => this.placeFile(file), s);
         return f;
     }
 
     /** The files of a subject (most statements first). */
     filesOfSubject(t: Term): string[] {
-        return filesOfSubject(this.graph, this.origin, t);
+        return filesOfSubject(this.graph, t);
     }
 
     /** What each model file contains: shapes (its graph has quads), concepts and instances (typed subjects of the model graph). */
@@ -212,7 +205,7 @@ export class Workspace {
         for (const f of this.modelFiles.keys()) if (this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).length) add(f, 'shapes');
         for (const q of this.graph.match(null, P.type, null, this.graph.model)) {
             const k: FileKind = SKOS_TYPES.some(t => t.equals(q.object)) ? 'concepts' : 'instances';
-            for (const f of this.origin.get(tripleKey(q)) ?? []) add(f, k);
+            for (const f of this.filesOfQuad(q)) add(f, k);
         }
         return kinds;
     }
@@ -261,6 +254,7 @@ export class Workspace {
             if (best) target = best[0];
         }
         this.modelFile(target);
+        this.graph.setDataGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(dataGraphIri(f))));
         this.graph.setShapesGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(fileGraphIri(f))));
         this.graph.primaryShapes = rdf.namedNode(fileGraphIri(target));
     }
@@ -306,9 +300,9 @@ export class Workspace {
         return this.filesTriples([file]).get(file)!;
     }
 
-    /** `fileTriples` of several files: the quads of their shapes graphs and their statements of the model graph (`byFile`). */
+    /** The data and shapes triples of each requested file. */
     protected filesTriples(files: string[]): Map<string, Quad[]> {
-        return new Map(files.map(f => [f, [...this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).map(toTriple), ...this.byFile.get(f)?.values() ?? []]]));
+        return new Map(files.map(f => [f, [...this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).map(toTriple), ...this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(f))).map(toTriple)]]));
     }
 
     /** Canonical form of each file, as a save writes it. */
@@ -330,14 +324,11 @@ export class Workspace {
         return value;
     }
 
-    /** The cache entries of `current` that a change of these quads makes out of date (call after `origin` has the change). */
+    /** The cache entries of `current` that a change of these quads makes out of date. */
     protected touch(quads: Iterable<Quad>): void {
         if (this.stale === 'all') return;
         for (const q of quads) {
-            if (q.graph.equals(this.graph.model)) {
-                const k = tripleKey(q);
-                for (const f of [...this.origin.get(k) ?? [], ...this.lastOrigin.get(k) ?? []]) this.stale.add('f:' + f);
-            } else if (this.graph.isShapesGraph(q.graph)) this.stale.add('f:' + fileOfGraph(q.graph.value));
+            if (this.graph.isDataGraph(q.graph) || this.graph.isShapesGraph(q.graph)) this.stale.add('f:' + fileOfGraph(q.graph.value));
             else this.stale.add('v:' + q.graph.value);
         }
     }
@@ -378,8 +369,7 @@ export class Workspace {
     /**
      * The imported files that a patch changes (sorted): a statement of the model graph that leaves an imported file, any change of a
      * shapes graph or a view graph of an imported file. A statement that the patch removes and adds again (or the reverse) is no
-     * change. Call it before `track`: `origin` has the files of the statements before the patch. A new statement of the model graph
-     * never goes to a protected file (`track`).
+     * change. Placement runs first. A new statement about an imported subject goes to a writable file.
      */
     importedChanges(changes: readonly Change[]): string[] {
         if (!this.imported.length) return [];
@@ -408,9 +398,11 @@ export class Workspace {
     validationTriples(focus?: Set<string>): Quad[] | undefined {
         if (!this.imported.length && !focus) return undefined;
         const out = new Map<string, Quad>();
-        for (const [file, quads] of this.byFile) {
+        for (const file of this.modelFiles.keys()) {
             if (this.isImported(file)) continue;
-            for (const [k, q] of quads) if (!focus || focus.has(termKey(q.subject))) out.set(k, q);
+            for (const q of this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(file)))) {
+                if (!focus || focus.has(termKey(q.subject))) out.set(tripleKey(q), toTriple(q));
+            }
         }
         const subjects = new Map<string, Quad['subject']>(), objects = new Map<string, Quad['object']>();
         for (const q of out.values()) {
@@ -431,7 +423,7 @@ export class Workspace {
 
     /**
      * Put a file read into the store. A view: its graph (false when another file has the view). Another file: its shapes to the graph
-     * of the file, the rest to the model graph, with `origin`. Blank nodes get IRIs (skolem.ts); a save writes the IRIs.
+     * of the file, the rest to its data graph. Blank nodes get IRIs (skolem.ts); a save writes the IRIs.
      */
     mount(r: FileRead, notes: string[]): boolean {
         let mounted = false;
@@ -468,8 +460,7 @@ export class Workspace {
         const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path));
         for (const q of quads) {
             if (shapes.has(termKey(q.subject))) { this.graph.add(q.subject, q.predicate, q.object, graph); continue; }
-            this.graph.add(q.subject, q.predicate, q.object);
-            this.addOrigin(tripleKey(q), r.path, q);
+            this.graph.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(r.path)));
         }
         this.modelFiles.set(r.path, { path: r.path, saved: canonical(count && keep ? r.triples : quads), text: r.text, triples: quads, blanks: count });
         return true;
@@ -490,52 +481,26 @@ export class Workspace {
         }
         if (!this.modelFiles.has(file)) return;
         for (const q of this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(file)))) this.graph.remove(q);
-        for (const [k, q] of this.byFile.get(file) ?? []) {
-            const o = this.origin.get(k);
-            if (!o?.delete(file)) continue;
-            if (!o.size) {
-                this.origin.delete(k);
-                this.graph.remove(rdf.quad(q.subject, q.predicate, q.object, this.graph.model));
-            }
-        }
-        this.byFile.delete(file);
+        for (const q of this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(file)))) this.graph.remove(q);
         this.modelFiles.delete(file);
     }
 
-    /**
-     * Keep `origin` in step with changes of the model graph (in the order applied): a removed statement leaves its files (remembered
-     * for an undo); an added one goes to the files it had before, else to the file of its subject, else of a statement that refers to
-     * its subject, else by the placement of its kind.
-     */
+    /** Assign every new data statement its final file graph inside the command transaction. */
+    placeChanges(): void {
+        this.graph.placePending((q, changes, fallback) => {
+            const added = changes.find(c => c.op === 'add' && c.quad.graph.equals(this.graph.model) && tripleKey(c.quad) === tripleKey(q));
+            const prior = changes.filter(c => c.op === 'remove' && this.graph.isDataGraph(c.quad.graph)
+                && tripleKey(c.quad) === tripleKey(added?.was ?? q)).flatMap(c => this.filesOfQuad(c.quad));
+            const files = prior.length ? prior : [...nearFiles(this.graph, q.subject) ?? []];
+            if (!files.length && !fallback) return undefined;
+            return [...new Set((files.length ? files : [this.place(q.subject)]).map(f => this.writeProblemOf(f) ? this.defaultFile : f))];
+        });
+    }
+
+    /** Invalidate canonical content only for the file graphs touched by the committed patch. */
     track(changes: Change[]): void {
-        let adds: Quad[] = [];
-        for (const c of changes) {
-            if (!c.quad.graph.equals(this.graph.model)) continue;
-            const k = tripleKey(c.quad);
-            if (c.op === 'remove') {
-                const o = this.origin.get(k);
-                if (o) { this.lastOrigin.set(k, o); this.deleteOrigin(k); }
-                adds = adds.filter(q => tripleKey(q) !== k);
-            } else if (!this.origin.has(k)) {
-                // An IRI change: the files of the statement that this one replaces.
-                const was = c.was && this.lastOrigin.get(tripleKey(c.was));
-                if (was?.size) this.lastOrigin.set(k, was);
-                adds.push(c.quad);
-            }
-        }
-        for (let round = 0; adds.length && round < 64; round++) {
-            const rest = adds.filter(q => {
-                const files = this.lastOrigin.get(tripleKey(q)) ?? nearFiles(this.graph, this.origin, q.subject);
-                if (!files?.size) return true;
-                const writable = [...files].map(f => this.writeProblemOf(f) ? this.defaultFile! : f);
-                writable.forEach(f => this.modelFile(f));
-                this.setOrigin(tripleKey(q), new Set(writable), q);
-                return false;
-            });
-            if (rest.length === adds.length) break;
-            adds = rest;
-        }
-        for (const q of adds) this.setOrigin(tripleKey(q), new Set([this.place(q.subject)]), q);
+        for (const c of changes) if (this.graph.isDataGraph(c.quad.graph) && !c.quad.graph.equals(this.graph.model)) this.modelFile(fileOfGraph(c.quad.graph.value));
+        this.graph.setDataGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(dataGraphIri(f))));
         this.touch(changes.map(c => c.quad));
     }
 
@@ -550,8 +515,8 @@ export class Workspace {
         return undefined;
     }
 
-    /** Run inside a graph transaction. Provenance changes are applied only after that transaction succeeds. */
-    transfer(source: string, destination: string, ids: string[], origins: OriginChange[]): CommandResult {
+    /** Move the selected source quads into destination graphs inside one transaction. */
+    transfer(source: string, destination: string, ids: string[]): CommandResult {
         const problem = this.transferProblem([source, destination]);
         if (problem) return { ok: false, error: problem };
         if (source === destination) return { ok: true };
@@ -585,40 +550,10 @@ export class Workspace {
         for (const q of shapes) if (subjects.has(q.subject.value) || relations.has(tripleKey(q))) {
             g.remove(q); g.add(q.subject, q.predicate, q.object, toGraph);
         }
-        for (const triple of this.byFile.get(source)?.values() ?? []) if (subjects.has(triple.subject.value) || relations.has(tripleKey(triple))) {
-            const quad = rdf.quad(triple.subject, triple.predicate, triple.object, g.model);
-            const before = [...this.origin.get(tripleKey(quad)) ?? []];
-            origins.push({ quad, before, after: [...new Set([...before.filter(f => f !== source), destination])] });
+        for (const q of g.match(null, null, null, rdf.namedNode(dataGraphIri(source)))) if (subjects.has(q.subject.value) || relations.has(tripleKey(q))) {
+            g.remove(q); g.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(destination)));
         }
         return { ok: true };
-    }
-
-    applyOrigins(changes: OriginChange[], backwards = false): void {
-        if (changes.length) this.graph.invalidate({ persisted: true, data: true });
-        for (const c of changes) {
-            this.setOrigin(tripleKey(c.quad), new Set(backwards ? c.before : c.after), c.quad);
-            if (this.stale !== 'all') for (const file of [...c.before, ...c.after]) this.stale.add('f:' + file);
-        }
-    }
-
-    /** The files of statement `k` (the triple of `q`) are `files`. */
-    protected setOrigin(k: string, files: Set<string>, q: Quad): void {
-        for (const f of this.origin.get(k) ?? []) if (!files.has(f)) this.byFile.get(f)?.delete(k);
-        this.origin.set(k, files);
-        const t = toTriple(q);
-        for (const f of files) (this.byFile.get(f) ?? this.byFile.set(f, new Map()).get(f)!).set(k, t);
-    }
-
-    /** Statement `k` (the triple of `q`) is also in `file`. */
-    protected addOrigin(k: string, file: string, q: Quad): void {
-        (this.origin.get(k) ?? this.origin.set(k, new Set()).get(k)!).add(file);
-        (this.byFile.get(file) ?? this.byFile.set(file, new Map()).get(file)!).set(k, toTriple(q));
-    }
-
-    /** Statement `k` is in no file (removed from the model graph). */
-    protected deleteOrigin(k: string): void {
-        for (const f of this.origin.get(k) ?? []) this.byFile.get(f)?.delete(k);
-        this.origin.delete(k);
     }
 
     /**
@@ -769,11 +704,11 @@ export class Workspace {
         }
         if (this.retired) return { ok: false, error: 'Another workspace was opened during the save.' };
         // All files or none: temporary files first, then a rename of each.
-        const error = await writeAll(writes, ({ file, text, done }) => {
+        const error = writes.length ? await writeAll(writes, ({ file, text, done }) => {
             this.ownWrites.note(file, text);
             this.written.push(file);
             done();
-        }, '.catenary-tmp');
+        }, '.catenary-tmp') : undefined;
         if (error) return { ok: false, error };
         for (const v of saved.deleted) {
             const f = this.viewFiles.get(v)!;

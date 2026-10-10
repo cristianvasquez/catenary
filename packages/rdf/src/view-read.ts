@@ -185,7 +185,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     const placementScope = (variable: string) => elements ? `VALUES ?${variable} { ${values(placementIds)} }` : '';
 
     // Views that the part names: this view, the targets of its view references, the graphs of the marks and arrows it places.
-    const excluded = [g.model, ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const viewRows = select(g, `${PREFIXES}
         SELECT DISTINCT ?g ?v ?l WHERE {
             { BIND(${V} AS ?g) }
@@ -256,7 +256,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
 
 /** Label of every view (view id → label): the rule of project.ts (the first view:View subject of the graph; rdfs:label, else from the IRI). */
 export function viewLabels(g: ModelGraph): Record<string, string> {
-    const excluded = [g.model, ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const subjects = new Map<string, Map<string, { v: string; labels: string[] }>>();
     for (const r of select(g, `${PREFIXES}
         SELECT ?g ?v ?l WHERE { GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l FILTER (isLiteral(?l)) } } FILTER (isIRI(?g) && ?g NOT IN (${excluded})) }`)) {

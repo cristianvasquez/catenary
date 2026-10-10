@@ -30,7 +30,7 @@ export interface ActionContext {
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX sh: <${NS.sh}>`;
 
 function select(ctx: Pick<ActionContext, 'g'>, query: string): Record<string, Term>[] {
-    return ctx.g.store.select(`${PREFIXES} ${query}`) as unknown as Record<string, Term>[];
+    return ctx.g.select(`${PREFIXES} ${query}`) as unknown as Record<string, Term>[];
 }
 
 /** The placements of all elements (views by element id). */
@@ -81,7 +81,7 @@ function classFacts(ctx: ActionContext, term: NamedNode): ClassFacts {
     const t = `<${term.value}>`;
     const types = select(ctx, `SELECT DISTINCT ?c WHERE { GRAPH ?g { ${t} a ?c } FILTER (isIRI(?c) && ?g != <${VALIDATION_GRAPH}>) }`).map(r => r.c.value);
     const isClass = types.some(c => [NS.rdfs + 'Class', 'http://www.w3.org/2002/07/owl#Class'].includes(c))
-        || ctx.g.store.select(`${PREFIXES} SELECT ?x WHERE { { GRAPH ?g { ?x a ${t} } FILTER (?g != <${VALIDATION_GRAPH}>) } UNION { GRAPH ?h { ?x sh:targetClass ${t} } } } LIMIT 1`).length > 0;
+        || ctx.g.select(`${PREFIXES} SELECT ?x WHERE { { GRAPH ?g { ?x a ${t} } FILTER (?g != <${VALIDATION_GRAPH}>) } UNION { GRAPH ?h { ?x sh:targetClass ${t} } } } LIMIT 1`).length > 0;
     if (!isClass) return { types, unshaped: unshapedClasses(ctx.g, [term]) };
     const classShapes = Object.values(ctx.shapes.nodeShapes).filter(s => s.targetClass === term.value).map(s => s.id);
     return { types, classShapes, unshaped: classShapes.length || !shapeable(term.value) ? [] : [term.value] };

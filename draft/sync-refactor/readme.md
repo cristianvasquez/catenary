@@ -11,7 +11,7 @@ Two classes hold most of the sync work today:
 - `Workspace` (`packages/rdf/src/workspace.ts`, about 1,080 lines) has six jobs: load, reconcile, provenance, save plan, dirty check and the choice of validation data.
 - `ModelStore` (`packages/rdf/src/model-store.ts`, about 1,330 lines) has six jobs: edit and undo, the write queue and Git, the watch loop, validation wiring, change notification, and about 50 panel queries.
 
-The model graph `urn:name:model` merges the data of all files. A side map (`origin`, `byFile`, `lastOrigin`) remembers the file of each statement. Shapes and views use graph names for the same purpose.
+Each model file uses a data graph and a shapes graph. `Workspace` and `ModelStore` still hold most sync jobs.
 
 ## Decisions
 
@@ -19,7 +19,7 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 
 1. **One named graph per file and role.** A model file gets a data graph, and also a shapes graph when it has shapes. A view file keeps its one view graph. The report graph stays. The graph name gives the file. The side map is removed.
 2. **The data and shapes split at load stays** (`shapePart`). Queries keep telling data from shapes by graph.
-3. **A triple that two files hold is stored twice**, once in each data graph. A read over all data removes duplicates. Oxigraph 0.5.11 can query a list of graphs as one graph (query option `default_graph` with a list). This was tested.
+3. **A triple that two files hold is stored twice**, once in each data graph. A read over all data removes duplicates. Oxigraph 0.5.11 can query several data graphs through one default scope. This scope must remove duplicate query bindings.
 4. **No notation index.** The global JSON mirror of the store (`TripleIndex`, kept by `IndexedStore` in `packages/rdf/src/notations.ts`) is removed. Its only readers are the diagram figures.
 5. **Each view owns its figure input.** When a change touches a view, its slice is read from the store with SPARQL, and its figures are derived once. Every canvas that shows the view gets those figures through its own GLSP connection.
 6. **ModelStore becomes the coordinator.** It runs a command, gets one patch and sends one change event. It has no other job.
@@ -55,18 +55,9 @@ These decisions were made on 10 Oct 2026 in the project thread. Do not reopen th
 
 Each stage is one pull request. Each stage must pass `pnpm verify` on its own. Add `--e2e` when a stage changes browser wiring. Each stage updates the manifest sections that it names. It also updates `docs/architecture.md` (code map) and `spec/open.md`.
 
-### Stage 2: one graph per file and role
-
-- **Needs:** the shared patch event path in `ModelGraph`.
-- **Goal:** store each file in its own graphs (decisions 1 to 3). Remove `origin`, `byFile` and `lastOrigin`. Placement runs inside the transaction, so the patch has the final graphs. Undo then needs no origin changes (`OriginChange` in `history.ts`). Touched graphs invalidate the canonical content cache of their files. Dirty state compares current canonical file content with the last read or successful write, as §10.1 requires.
-- **Files:** `graph.ts` (`model` becomes a scope over the data graphs, with duplicates removed on read), `workspace.ts`, `placement.ts`, `history.ts`, `sparql.ts`, and each query that names `urn:name:model` (`queries.ts`, `scoped-doc.ts`, `view-read.ts`, `properties.ts`, `link-choices.ts`, `outline.ts`, `search.ts`).
-- **Open first:** resolve SYNC1 in [spec/open.md](../../spec/open.md#decisions) before this stage starts.
-- **Done when:** a statement in two files is in two data graphs. Undo and redo keep it there (`law_originKept`, `law_undoKeepsOrigin`). A transfer between files is a graph change in the patch. Undo before a queued write clears dirty state when the file returns to its saved content. Reversing an edit after a failed write also clears dirty state when the saved content is restored. Neither case causes a needless write, retry or commit. `file-explorer.test.ts`, `placement.test.ts`, `workspace-files.test.ts`, `imported-files.test.ts`, `review-save.test.ts` and `scoped-doc.test.ts` pass with these dirty-state regressions covered.
-- **Manifest:** §3.1 (graphs), §3.2 (statement origin), §10.1 (preserve canonical comparison, `law_saveCleans` and `law_failedWriteStaysDirty`; use touched graphs for cache invalidation).
-
 ### Stage 3: split Workspace
 
-- **Needs:** stage 2.
+- **Needs:** per-file data and shapes graphs in `ModelGraph`.
 - **Goal:** move the jobs of `Workspace` into Settings, Loader, Reconciler, Placement and Saver. Give each module a small file and a clear name. The coordinator, not `Workspace`, creates the store.
 - **Files:** `workspace.ts` (removed or reduced to Settings), new module files, `model-store.ts`.
 - **Done when:** each module has one job from the table above. No module imports another sync module except through the coordinator. `scripts/check-boundaries.mjs` enforces this if the modules become packages.
@@ -74,7 +65,7 @@ Each stage is one pull request. Each stage must pass `pnpm verify` on its own. A
 
 ### Stage 4: pure validator
 
-- **Needs:** stage 2.
+- **Needs:** per-file data and shapes graphs in `ModelGraph`.
 - **Goal:** the validator takes data quads and shape quads and returns a report. The coordinator writes the report graph and acts on the change event. The worker keeps getting a full copy for each run.
 - **Validation data:** include the data graphs of own files and the context that `Workspace.validationTriples` adds today. Also include the SKOS projection of all shapes graphs, own and imported. This projection selects SKOS predicates and `rdf:type` statements whose object is in the SKOS namespace, as `ValidationRunner.validateNow` does today. All mode includes the whole projection. OpenViews mode includes only projection statements about focused elements and IRIs named by the selected data, as §9 requires. Off mode runs no validation.
 - **Shapes:** include all shapes graphs, own and imported.

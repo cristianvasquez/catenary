@@ -23,8 +23,12 @@ async function open() {
     /** Add a statement to the model graph, as a command does. */
     const add = (s: string, p: string, o: string) => {
         const quad = rdf.quad(rdf.namedNode(EX + s), rdf.namedNode(p), rdf.namedNode(EX + o), ws.graph.model);
-        ws.graph.add(quad.subject, quad.predicate, quad.object, quad.graph);
-        ws.track([{ op: 'add', quad }]);
+        const { patch } = ws.graph.transact(g => {
+            g.add(quad.subject, quad.predicate, quad.object, quad.graph);
+            ws.placeChanges();
+            return { ok: true };
+        });
+        ws.track(patch);
     };
     return { dir, ws, add, notes };
 }
@@ -43,6 +47,21 @@ describe('Workspace', () => {
         expect(readFileSync(join(dir, 'b.ttl'), 'utf8')).toContain('ex:c');
         expect(readFileSync(join(dir, 'a.ttl'), 'utf8')).not.toContain('ex:c');
         expect(ws.written.sort()).toEqual([join(dir, 'b.ttl')]);
+    });
+
+    it('new nested values follow their referring subject before placement commits', async () => {
+        const { dir, ws } = await open();
+        const n = (s: string) => rdf.namedNode(EX + s);
+        const { patch, result } = ws.graph.transact(g => {
+            g.add(n('nested'), n('value'), rdf.literal('child'));
+            g.add(n('b'), n('detail'), n('nested'));
+            ws.placeChanges();
+            return { ok: true };
+        });
+        expect(result.ok).toBe(true);
+        ws.track(patch);
+        expect(ws.filesOfSubject(n('nested'))).toEqual([join(dir, 'b.ttl')]);
+        expect(patch.every(c => !c.quad.graph.equals(ws.graph.model))).toBe(true);
     });
 
     it('reads a file that another program changed, and a new file', async () => {

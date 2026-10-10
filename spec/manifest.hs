@@ -425,12 +425,14 @@ law_sourceTriplesPreserved qs = all (\(s, p, o, _) -> (s, p, o) `elem` sourceTri
 data GraphName
   = ViewGraph Iri          -- the statements of one view file
   | FileGraph FilePath     -- shape subjects and their nested nodes, per source file
-  | ModelGraph             -- all other statements; the origin map records every source file of each statement
+  | DataGraph FilePath     -- other statements, per source file
+  | ModelGraph             -- the logical union of data graphs, never a stored workspace graph
   | ValidationGraph        -- the SHACL report (§9)
   deriving Eq
 graphIri :: GraphName -> Iri
 graphIri (ViewGraph v) = v
-graphIri (FileGraph f) = "urn:file:" ++ encodePath f
+graphIri (FileGraph f) = "urn:shapes:" ++ encodePath f
+graphIri (DataGraph f) = "urn:data:" ++ encodePath f
 graphIri ModelGraph = "urn:name:model"
 graphIri ValidationGraph = "urn:trellis:validation"
 encodePath :: FilePath -> String
@@ -438,16 +440,27 @@ data SourceStatement = InViewFile Iri | ShapeStatement | OtherStatement   -- wha
 mountGraph :: FilePath -> SourceStatement -> GraphName
 mountGraph _ (InViewFile v) = ViewGraph v
 mountGraph f ShapeStatement = FileGraph f
-mountGraph _ OtherStatement = ModelGraph
+mountGraph f OtherStatement = DataGraph f
 law_readOwnWrites :: Backend -> Quad -> Bool
 law_readOwnWrites b q = q `elem` storeQuads (snd (runTx b (addQuad q >> pure ())))
 addQuad :: Quad -> Tx ()
+
+-- | Data reads use the union of file data graphs with duplicate triples removed. Views keep their saved IRIs.
+-- Reason: the graph records each file copy while readers see one statement.
+law_fileRoleGraphs :: FilePath -> Bool
+law_fileRoleGraphs f = graphIri (DataGraph f) /= graphIri (FileGraph f)
+dataGraphNames :: Backend -> [Iri]
+modelStatements :: Backend -> [Quad]
+modelStatements b = nub [Quad s p o (graphIri ModelGraph) | Quad s p o g <- storeQuads b, g `elem` dataGraphNames b]
 
 -- 3.2 Statement origin ------------------------------------------------------------
 
 -- | Statement origin: existing triples keep their files. An addition prefers its prior origin, then the file of its subject,
 -- then the file of a referring statement. A preferred read-only file gives the default file. Imported files are read only (§2.6).
 -- A deletion from a read-only file cannot persist. IRI replacement and undo keep statement origins.
+-- Placement assigns final file graphs inside the transaction. Transfers and replay need only quad patches.
+-- The store has no separate origin map. A statement held by two files has one quad in each file data graph.
+-- Reason: file graph patches preserve ownership through undo without a separate history.
 origin :: Quad -> Tx [FilePath]
 priorOrigin, subjectFile, referrerFile :: Quad -> Tx (Maybe FilePath)
 readOnlyFile :: FilePath -> Tx Bool
@@ -478,6 +491,7 @@ originIn b q = fst (runTx b (origin q))
 -- A model or shapes statement changes that revision. A view declaration changes graph classification and must also invalidate the graph scope.
 -- Reason: a layout or membership edit must not repeat the checked-node walk for an unchanged instance.
 targetDataRevision :: GraphName -> Bool
+targetDataRevision (DataGraph _) = True
 targetDataRevision ModelGraph = True
 targetDataRevision (FileGraph _) = True
 targetDataRevision _ = False
@@ -723,23 +737,22 @@ law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b o
 
 -- | The history model (packages/rdf/src/history.ts). The head of a stack is its top.
 -- A command records its patch, the entry of the migration queue that it applied and the entries that it proposed.
--- A command without quad or origin changes changes nothing. Undo and redo restore both changes and the migration queue.
+-- A command without a quad patch changes nothing. Undo and redo restore its file graphs and migration queue.
 -- A read from disk (open, reload, a watcher change) clears the history (§10.4).
 data Migration = Migration { migrationId :: Id, migrationReason :: String } deriving Eq
-data OriginChange = OriginChange Quad [FilePath] [FilePath] deriving Eq
-data Step = Step { stepPatch :: Patch, stepOrigins :: [OriginChange], transferFiles :: [FilePath], queueBefore, queueAfter :: [Migration] } deriving Eq
+data Step = Step { stepPatch :: Patch, transferFiles :: [FilePath], queueBefore, queueAfter :: [Migration] } deriving Eq
 data History = History { undoStack, redoStack :: [Step], queue :: [Migration] } deriving Eq
 historyLimit :: Int
 historyLimit = 200
 record :: Patch -> Maybe Id -> [Migration] -> History -> History
-record p = recordWithOrigins p [] []
-recordWithOrigins :: Patch -> [OriginChange] -> [FilePath] -> Maybe Id -> [Migration] -> History -> History
-recordWithOrigins p origins files applied proposed h
-  | null p && null origins = h
+record p = recordWithFiles p []
+recordWithFiles :: Patch -> [FilePath] -> Maybe Id -> [Migration] -> History -> History
+recordWithFiles p files applied proposed h
+  | null p = h
   | otherwise = h { undoStack = take historyLimit (s : undoStack h), redoStack = [], queue = q }
   where
     q = filter (\m -> Just (migrationId m) /= applied) (queue h) ++ proposed
-    s = Step p origins files (queue h) q
+    s = Step p files (queue h) q
 takeUndo, takeRedo :: History -> Maybe (Step, History)
 takeUndo h = case undoStack h of
   [] -> Nothing
@@ -757,12 +770,11 @@ law_undoThenRedo :: History -> Bool
 law_undoThenRedo h = maybe True (\(_, h') -> fmap snd (takeRedo h') == Just h) (takeUndo h)
 law_historyBounded :: Patch -> Maybe Id -> [Migration] -> History -> Bool
 law_historyBounded p a ms h = length (undoStack h) <= historyLimit ==> length (undoStack (record p a ms h)) <= historyLimit
-lastOriginChanges :: Backend -> [OriginChange]
 lastTransferFiles :: Backend -> [FilePath]
 law_backendUsesHistory :: Backend -> EditCommand -> Bool
 law_backendUsesHistory b c =
   let (r, b') = step b (Execute c)
-  in not (failed r) ==> undoStack (historyOf b') == undoStack (recordWithOrigins (lastPatch b') (lastOriginChanges b') (lastTransferFiles b') Nothing [] (historyOf b))
+  in not (failed r) ==> undoStack (historyOf b') == undoStack (recordWithFiles (lastPatch b') (lastTransferFiles b') Nothing [] (historyOf b))
 
 -- 6. Edit commands -----------------------------------------------------------
 
@@ -923,7 +935,7 @@ permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- a link of the metamodel 
 relationProblem :: Backend -> Iri -> Iri -> Iri -> Maybe Error
 relationProblem b s p o
   | s == o = Just "A relation from an element to itself is not supported."
-  | Quad (NamedNode s) p (NamedNode o) (graphIri ModelGraph) `elem` storeQuads b = Just "The relation exists already."
+  | Quad (NamedNode s) p (NamedNode o) (graphIri ModelGraph) `elem` modelStatements b = Just "The relation exists already."
   | not (permitted b s p o) = Just "No shape or RDFS rule permits this relation."
   | otherwise = Nothing
 law_relationRejected :: Backend -> Iri -> Iri -> Iri -> Bool
@@ -1314,7 +1326,9 @@ law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . change
 
 -- | File operations run one at a time. Each edit, undo and redo queues a write of the pending changes.
 -- Dirty: a write is pending or failed. It compares current canonical content with saved content.
--- The canonical content of a file is computed again only when a change touched it, or after a read.
+-- Touched file graphs invalidate their canonical cache entries. They do not define dirty state.
+-- Restoring saved content clears dirty state without a write, retry or commit.
+-- Reason: undo must clear pending changes when current content equals saved content.
 -- Save retries pending writes and commits. A successful command does not certify a disk write.
 -- A failed write keeps the dirty state and reports its cause.
 save :: IO CommandResult
@@ -1592,13 +1606,13 @@ subjectKind = manifestOnly
 nearFile = manifestOnly
 defaultFileTx = manifestOnly
 encodePath = manifestOnly
+dataGraphNames = manifestOnly
 addQuad = manifestOnly
 origin = manifestOnly
 priorOrigin = manifestOnly
 subjectFile = manifestOnly
 referrerFile = manifestOnly
 readOnlyFile = manifestOnly
-lastOriginChanges = manifestOnly
 lastTransferFiles = manifestOnly
 importedFiles = manifestOnly
 pluginContributions = manifestOnly

@@ -147,3 +147,39 @@ it('near placement of new shapes skips read-only profiles', async () => {
     expect(store.dirty).toBe(false);
     expect((await parseRdf(f.read('workspace.ttl'), join(f.dir, 'workspace.ttl'))).some(q => q.object.value === 'New shape')).toBe(true);
 });
+
+
+it('undo before the queued write restores saved content without a write or commit', async () => {
+    const f = fixture();
+    f.init();
+    const store = await f.open();
+    const write = vi.spyOn(patcher, 'writeAll');
+    const id = Object.values(docOf(store).instances).find(i => i.uri === 'urn:a')!.id;
+    expect(store.execute({ kind: 'rename', id, label: 'After' }).ok).toBe(true);
+    expect(store.dirty).toBe(true);
+    expect(store.undo().ok).toBe(true);
+    expect(store.dirty).toBe(false);
+    await store.idle();
+    expect(write).not.toHaveBeenCalled();
+    expect(f.read('data.ttl')).toBe(data);
+    expect(f.git('rev-list', '--count', 'HEAD')).toBe('1');
+});
+
+it('law_failedWriteStaysDirty: reversing a failed write restores saved content without retry or commit', async () => {
+    const f = fixture();
+    f.init();
+    const store = await f.open();
+    const write = vi.spyOn(patcher, 'writeAll').mockResolvedValueOnce('test write failure');
+    const id = Object.values(docOf(store).instances).find(i => i.uri === 'urn:a')!.id;
+    expect(store.execute({ kind: 'rename', id, label: 'After' }).ok).toBe(true);
+    await store.idle();
+    expect(store.dirty).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(store.undo().ok).toBe(true);
+    expect(store.dirty).toBe(false);
+    await store.idle();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(store.warnings.some(w => w.includes('test write failure'))).toBe(false);
+    expect(f.read('data.ttl')).toBe(data);
+    expect(f.git('rev-list', '--count', 'HEAD')).toBe('1');
+});

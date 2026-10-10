@@ -76,7 +76,7 @@ export function project(g: ModelGraph): Projection {
     const graphs = new Map<string, { views: Map<string, { v: Plain; labels: Plain[] }> }>();
     for (const r of select(g, `${PREFIXES}
         SELECT ?g ?v ?l WHERE {
-            { SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${[g.model, ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ')})) } }
+            { SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${[...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ')})) } }
             OPTIONAL { GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l } } }
         }`)) {
         let e = graphs.get(r.g.value);

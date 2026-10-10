@@ -76,7 +76,7 @@ export function scopedDoc(ctx: ViewReadContext, scope: DocScope): Doc {
 
 /** The instances with a statement to or from one of `subjects` (model graph and shapes graphs). */
 export function neighbors(g: ModelGraph, subjects: string[]): string[] {
-    const graphs = [g.model, ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
+    const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
     const found = select(g, `${PREFIXES} SELECT DISTINCT ?x WHERE {
         VALUES ?s { ${subjects.map(iri).join(' ')} }
         { GRAPH ?g { ?s ?p ?x } } UNION { GRAPH ?g { ?x ?p ?s } }
@@ -188,7 +188,7 @@ export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {
         FILTER (?s != ${iri(MODEL_GRAPH)} && (!isIRI(?s) || NOT EXISTS { GRAPH ${M} { ?s rdf:type|rdfs:label ?any } })) }`)) {
         warnings.push(`subject without rdf:type or rdfs:label kept in the file, not shown: ${r.s.value}`);
     }
-    const excluded = [g.model, ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => iri(t.value)).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => iri(t.value)).join(', ');
     for (const r of select(g, `${PREFIXES} SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${excluded}))
         FILTER NOT EXISTS { GRAPH ?g { ?v a view:View } } }`).sort((a, b) => cmp(a.g.value, b.g.value))) {
         warnings.push(`graph ${r.g.value} has no view:View, kept in the file, not shown`);
@@ -225,7 +225,7 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
     const instance = new Map<string, boolean>(), home = new Map<string, string>();
     const isInstance = (iri: string) => instance.get(iri) ?? instance.set(iri, g.isInstance(rdf.namedNode(iri))).get(iri)!;
     const homeOf = (iri: string) => home.get(iri) ?? home.set(iri, g.homeOf(rdf.namedNode(iri)).value).get(iri)!;
-    const graphs = [g.model, ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
+    const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
     const values = [...cards.keys()].map(iri).join(' ');
     const others = new Map<string, { in: Set<string>; out: Set<string> }>();
     const add = (self: string, dir: 'in' | 'out', other: string) => {
@@ -238,7 +238,8 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`)) {
         const dir = r.dir.value as 'in' | 'out';
         // A relation is a statement of the graph of its subject (the model graph, or the shapes graph of a SKOS subject).
-        if (r.g.value !== homeOf(dir === 'out' ? r.s.value : r.x.value)) continue;
+        const owner = homeOf(dir === 'out' ? r.s.value : r.x.value);
+        if (owner === g.model.value ? !g.isDataGraph(r.g) : r.g.value !== owner) continue;
         add(r.s.value, dir, r.x.value);
     }
     for (const [self, o] of others) out.set(cards.get(self)!, { in: o.in.size, out: o.out.size });
