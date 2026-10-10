@@ -900,17 +900,18 @@ law_setStatementsScope b i vs p =
          Just ts -> failed (fst (step b (Execute (SetStatements i vs)))) || sameSet (objectsOf b' s p) ts
        Nothing -> True
 
--- | A relation must satisfy the shapes, must not duplicate a triple and must not link an instance to itself.
+-- | A relation must satisfy the schema (the shapes and the RDFS rules of §8.5), must not duplicate a triple and must not link an
+-- instance to itself.
 -- reconnectRelation keeps the predicate, changes the relation ID and keeps layouts only where both new ends show.
 -- A reconnect to the same end changes only its side.
 -- setUri follows references across graphs, including triple terms. A shape IRI change excludes data rdf:type uses
 -- and can propose a class migration. delete by kind is provisional (open.md D1).
-permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- the shapes permit predicate p from s to o
+permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- the schema permits predicate p from s to o
 relationProblem :: Backend -> Iri -> Iri -> Iri -> Maybe Error
 relationProblem b s p o
   | s == o = Just "A relation from an element to itself is not supported."
   | Quad (NamedNode s) p (NamedNode o) (graphIri ModelGraph) `elem` storeQuads b = Just "The relation exists already."
-  | not (permitted b s p o) = Just "The shapes do not permit this relation."
+  | not (permitted b s p o) = Just "The schema does not permit this relation."
   | otherwise = Nothing
 law_relationRejected :: Backend -> Iri -> Iri -> Iri -> Bool
 law_relationRejected b s p o =
@@ -1168,12 +1169,41 @@ law_dismissOnlyQueue b i =
   let b' = snd (step b (DismissMigration i))
   in storeQuads b' == storeQuads b && Just (historyOf b') == (dismiss i (historyOf b) <|> Just (historyOf b))
 
--- | Metamodel: built from all shape graphs and SKOS vocabulary. Several node shapes can target one class.
+-- | Metamodel: built from all shape graphs and SKOS vocabulary, then the RDFS rules join it (§8.5). Several node shapes can target one class.
 -- Class labels come from the class resource, not the node-shape name. Value-set relations accept permitted concepts only.
 -- Forms use a temporary sh:in expansion of SKOS helper targets. Saved shapes and validation keep the original constraints.
 -- Limit: forms edit direct-path properties only. Inverse paths and undeclared predicates have no generic form editing.
 -- An external change or a rejected edit can rebuild the form and lose field focus.
 shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes that target it; zero, one or more
+
+-- 8.5 RDFS schema rules -------------------------------------------------------------------
+
+-- | RDFS rules (@catenary/rdfs schema.ts, @catenary/model mergeSchema): the written rdfs:domain and rdfs:range statements of all
+-- file graphs add relations and fields to the metamodel. They are suggestions for the editor, not constraints. Validation never
+-- reads them, because RDFS domain and range are inference rules. A domain applies to its class and its written subclasses.
+-- A class range gives a relation and also admits the written subclasses. A literal range gives a field. No range, rdfs:Resource,
+-- owl:Thing and rdfs:Literal take any value. Several domains or ranges are a union: an editor suggestion, not RDFS semantics.
+-- The shapes win: a rule for a predicate that the shapes describe on the same class adds nothing.
+-- A class that only the rules know joins the palette after the classes of the shapes, named by its label, else its short IRI.
+-- RDF, RDFS, OWL, SHACL and SKOS predicates and domains give no rules. No type inference and no rdfs:subPropertyOf.
+-- A schema statement, or the label or comment of a schema predicate or class, rebuilds the metamodel. Other data does not.
+-- Properties edits the rules of each class in a form node shape of no file (schemaFormShape). It is never saved or validated.
+data SchemaRange = RuleClass Iri | RuleLiteral (Maybe Iri) deriving Eq   -- a class range, or a literal range and its datatype
+data SchemaRule = SchemaRule { ruleDomain :: Iri, rulePredicate :: Iri, ruleRange :: SchemaRange } deriving Eq
+schemaRules :: Backend -> [SchemaRule]               -- rdfsRules over the graphs of the files
+subclassesOf :: [(Iri, Iri)] -> Iri -> [Iri]         -- written rdfs:subClassOf pairs (sub, super), a class: it, then its subclasses
+subclassesOf pairs c = go [] [c]
+  where
+    go seen [] = seen
+    go seen (x : xs)
+      | x `elem` seen = go seen xs
+      | otherwise = go (seen ++ [x]) (xs ++ [s | (s, d) <- pairs, d == x])
+law_domainSubclasses :: [(Iri, Iri)] -> Iri -> Bool
+law_domainSubclasses pairs c = take 1 (subclassesOf pairs c) == [c] && all (`elem` subclassesOf pairs c) [s | (s, d) <- pairs, d == c]
+mergedPaths :: [(Iri, Iri)] -> [SchemaRule] -> Iri -> [Iri]   -- (class, path) pairs of the shapes, rules, a class: the paths that join it
+mergedPaths shaped rules c = nub [rulePredicate r | r <- rules, ruleDomain r == c, (c, rulePredicate r) `notElem` shaped]
+law_shaclWins :: [(Iri, Iri)] -> [SchemaRule] -> Iri -> Bool
+law_shaclWins shaped rules c = all (\p -> (c, p) `notElem` shaped) (mergedPaths shaped rules c)
 
 -- 9. Validation --------------------------------------------------------------
 
@@ -1533,6 +1563,7 @@ readOnlyFile = manifestOnly
 lastOriginChanges = manifestOnly
 lastTransferFiles = manifestOnly
 importedFiles = manifestOnly
+schemaRules = manifestOnly
 fileStatements = manifestOnly
 currentSettings = manifestOnly
 docElements = manifestOnly

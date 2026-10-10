@@ -1,8 +1,10 @@
+import { RDF, RDFS, SH, XSD, iri } from '@catenary/explorer';
+import type { QueryTerm as Term } from '@catenary/explorer';
 import type { FocusNode, TargetKind, TargetMatch } from '../common';
 
-export interface QueryTerm {
-    termType: string;
-    value: string;
+export { iri };
+
+export interface QueryTerm extends Term {
     language?: string;
     datatype?: { value: string };
 }
@@ -24,15 +26,6 @@ export interface TargetSelection {
     shapes?: readonly string[];
 }
 
-const SH = 'http://www.w3.org/ns/shacl#';
-const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
-
-export function iri(value: string): string {
-    if (/[<>"{}|^`\\\s\u0000-\u001f]/.test(value)) throw new Error('Invalid IRI in SHACL query.');
-    return `<${value}>`;
-}
-
 export function term(node: FocusNode): string {
     if (node.termType === 'NamedNode') return iri(node.value);
     if (node.language && !/^[a-z]+(?:-[a-z0-9]+)*$/i.test(node.language)) throw new Error('Invalid literal language in SHACL query.');
@@ -42,7 +35,7 @@ export function term(node: FocusNode): string {
 export function focus(node: QueryTerm): FocusNode {
     if (node.termType !== 'NamedNode' && node.termType !== 'Literal') throw new Error('SHACL query returned an unsupported term.');
     return { termType: node.termType, value: node.value,
-        ...(node.language ? { language: node.language } : node.datatype && node.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string' ? { datatype: node.datatype.value } : {}) };
+        ...(node.language ? { language: node.language } : node.datatype && node.datatype.value !== XSD + 'string' ? { datatype: node.datatype.value } : {}) };
 }
 
 /** One relation supplies both navigation directions. Graph unions also support split subclass chains. */

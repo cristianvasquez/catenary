@@ -1,8 +1,7 @@
+import { RDF, SH } from '@catenary/explorer';
 import type { FocusNode, TargetMatch, TargetReason } from '../common';
 import { focus, iri, term, targetMatches } from './targets';
 import type { QueryTerm, TargetQueryPort, TargetScope, TargetSelection } from './targets';
-
-const SH = 'http://www.w3.org/ns/shacl#', RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 
 export interface NodeReference {
     source: string;

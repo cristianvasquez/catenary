@@ -53,6 +53,12 @@ const RANGE_TERMS: Record<Range['kind'], string | undefined> = {
 
 // ------------------------------------------------------------------ widget
 
+/** A form of an instance: an applicable node shape, or the form shape of its schema rules (RDFS). */
+type FormSection = { id: string; uri: string; label: string; predicates?: string[] };
+
+/** The forms of an instance: its node shapes, then its schema-rule forms. */
+const formSections = (inst: InstanceProperties): FormSection[] => [...inst.shapes, ...inst.schema ?? []];
+
 @injectable()
 export class ModelPropertiesWidget extends ElementPanel implements PropertyViewContentWidget {
     static readonly ID = 'catenary-properties';
@@ -266,13 +272,13 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
 
     // ------------------------------------------------------------ instance
 
-    /** The SHACL form for the statements of an instance that its shapes describe. */
-    protected descriptionForm(inst: InstanceProperties, shape: InstanceProperties['shapes'][number]): React.ReactNode {
+    /** The SHACL form for the statements of an instance that one of its shapes, or its schema rules, describe. */
+    protected descriptionForm(inst: InstanceProperties, shape: FormSection): React.ReactNode {
         const shapes = this.model.shapesText;
         if (shapes === undefined) return <div className='catenary-help'>Loading shapes…</div>;
         const predicates = shape.predicates ?? [];
         const shapeSubject = shape.uri;
-        const key = this.dataKey(inst, describeProperties(inst, inst.shapes.flatMap(s => s.predicates ?? [])));
+        const key = this.dataKey(inst, describeProperties(inst, formSections(inst).flatMap(s => s.predicates ?? [])));
         const have = this.formValues?.id === inst.id ? this.formValues : undefined;
         if (have?.key !== key) this.requestFormData(inst.id, key);
         if (!have) return <div className='catenary-help'>Loading…</div>;
@@ -318,7 +324,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 this.update();
             });
         }
-        return this.dataKey(inst, { ...describeProperties(inst, inst.shapes.flatMap(s => s.predicates ?? [])), ...after });
+        return this.dataKey(inst, { ...describeProperties(inst, formSections(inst).flatMap(s => s.predicates ?? [])), ...after });
     }
 
     protected instancePanel(id: string): React.ReactNode {
@@ -327,7 +333,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         if (inst?.kind !== 'instance') return this.loading();
         const cls = primaryClass(meta, inst.types);
         const problems = inst.results;
-        const known = new Set(inst.shapes.flatMap(s => s.predicates ?? []));
+        const known = new Set(formSections(inst).flatMap(s => s.predicates ?? []));
         const extra = Object.entries(inst.fields).filter(([p]) => !known.has(p));
         const problemText = (p: typeof problems[number]) => `${p.pathName && !p.message.includes(p.pathName) ? `${p.pathName}: ` : ''}${p.message}`;
         // Statements in protected files: no edit control. An edit in the form is refused and asks to unprotect (ModelFrontend.execute).
@@ -355,7 +361,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                             : <TextInput field='label' value={inst.label} onCommit={v => this.exec({ kind: 'rename', id: inst.id, label: v.trim() })} />}
                     </Row>}
             </Section>
-            {inst.shapes.map(shape => <Section key={shape.id} title={inst.shapes.length === 1 ? 'Description' : shape.label}>{this.descriptionForm(inst, shape)}</Section>)}
+            {formSections(inst).map((shape, _, all) => <Section key={shape.id} title={all.length === 1 ? 'Description' : shape.label}>{this.descriptionForm(inst, shape)}</Section>)}
             {extra.length ? <Section title='Not in shapes' scope={`${extra.reduce((n, [, vs]) => n + vs.length, 0)} statements`} {...this.fold('extra')}>{extra.map(([p, vs]) =>
                 <Row key={p} label={predicateName(meta, p)} tip={p}>{vs.map((v, i) => <div key={i} className='catenary-value'>
                     <span>{v.value}</span>
@@ -395,7 +401,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                 <Row label='From' inline><Link label={s.label} onClick={() => this.editors.show(s.id)} /></Row>
                 <Row label='Predicate' inline><code className='catenary-iri' title={r.predicate}>{compactIri(r.predicate)}</code></Row>
                 <Row label='To' inline><Link label={o.label} onClick={() => this.editors.show(o.id)} /></Row>
-                {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> The shapes do not declare this relation for these classes.</div>}
+                {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> The schema does not declare this relation for these classes.</div>}
             </Section>
         </>;
     }

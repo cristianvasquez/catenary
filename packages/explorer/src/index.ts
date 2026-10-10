@@ -1,6 +1,11 @@
 // The Model explorer plugin contract. A plugin gives its top sections and the children of its own keys. The host owns the store,
 // the graph identities, the label rule, the element ids and the file scope. The plugin owns its queries. All values are JSON.
-// This package has no dependencies.
+// This package has no dependencies. Other contracts of the vocabulary packages: query.ts (the query port), schema.ts (schema rules).
+
+import type { QueryPort, QueryTerm } from './query';
+
+export * from './query';
+export * from './schema';
 
 /** One row of the Model explorer. */
 export interface ExplorerRow {
@@ -23,15 +28,10 @@ export interface ExplorerRow {
 /** A path to the row of an element: keys from a section to the row; `name`: the folder names, for a choice between paths. */
 export interface ExplorerPath { keys: string[]; name: string }
 
-export interface ExplorerTerm { termType: string; value: string }
+export type ExplorerTerm = QueryTerm;
 
-/** What the host gives to a plugin for one request. */
-export interface ExplorerPort {
-    select(query: string): readonly Record<string, ExplorerTerm>[];
-    /** `GRAPH <variable> { pattern }` over the graphs of the files (not the validation report). Variable default: `?g`. */
-    graph(pattern: string, variable?: string): string;
-    /** The display label of each IRI (the label rule of the host). */
-    labels(iris: readonly string[]): Map<string, string>;
+/** What the host gives to a plugin for one request: the query port, and the ids and scope of the explorer. */
+export interface ExplorerPort extends QueryPort {
     /** The short form of an IRI with the prefixes of the workspace (`dcat:dataset`). */
     compact(iri: string): string;
     /** The element id of an IRI. */

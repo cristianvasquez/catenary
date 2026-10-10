@@ -25,7 +25,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 |---|---|
 | Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, R an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
 | Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
-| Right area | Properties (fields from all applicable shapes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
+| Right area | Properties (fields from all applicable shapes and from the RDFS domain and range of the classes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
 | Trace (View → Trace) | Bottom area, next to the terminal. It shows what the backend runs: requests, edits, change events, view refreshes, SHACL target reads, validation, SPARQL queries and file writes. SHACL spans show scope discovery, reference reads, the walk, and whether references can be cached. Summary sorts totals by time or calls per minute. Timeline shows each operation with its effects below. The trace records only while the panel is visible. |
@@ -91,6 +91,19 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 Select a view to edit its Markdown **Notes** in Properties. Like Label, the field saves when you leave it. Click its external-link icon to move editing into Theia’s Markdown editor beside the diagram. The Properties text area disappears while that editor is open.
 
 Notes save automatically after a short pause in typing. Close the editor when you finish. Closing saves the latest text and restores the Properties field, without a save prompt. A failed save keeps the editor open with your text. Notes stay in the view file, not a separate Markdown file.
+
+## RDFS domain and range
+
+Catenary reads the `rdfs:domain` and `rdfs:range` statements of all model files, for example an ontology file next to the data. They give suggestions. They are not constraints: validation uses only the shapes.
+
+- A predicate with `rdfs:domain C` applies to the instances of C and of the subclasses of C that the files state.
+- A class range gives a relation. The link picker offers the instances of the range class and of its subclasses. Connect accepts them.
+- A literal range (`xsd:*`, `rdf:langString`, a declared `rdfs:Datatype`) gives a field. No range, `rdfs:Literal`, `rdfs:Resource` and `owl:Thing` accept any value.
+- Several domains or ranges add up: each one applies.
+- The shapes win. A predicate that a shape describes on the same class keeps the shape's range and cardinality.
+- A class that only the RDFS statements know gets a palette tool after the shape classes.
+- Properties shows the RDFS predicates of an instance in a form named "<Class> (RDFS)".
+- Catenary infers no types and does not read `rdfs:subPropertyOf`.
 
 ## Shapes
 

@@ -1,10 +1,9 @@
 // The Shapes section of the Model explorer: each node shape with its property shapes (sh:property and the members of sh:or,
 // sh:xone and sh:and lists). The rows show the statements as they are written: a property shape by its sh:name, else its path.
 
-import { ExplorerPath, ExplorerPlugin, ExplorerPort, ExplorerRow, byName } from '@catenary/explorer';
+import { ExplorerPath, ExplorerPlugin, ExplorerPort, ExplorerRow, RDF, SH, byName } from '@catenary/explorer';
 
-const SH = 'http://www.w3.org/ns/shacl#';
-const PREFIXES = `PREFIX sh: <${SH}> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>`;
+const PREFIXES = `PREFIX sh: <${SH}> PREFIX rdf: <${RDF}>`;
 const FACTS = ['path', 'name', 'datatype', 'class', 'node', 'minCount', 'maxCount', 'order'] as const;
 
 interface Property { iri: string; facts: Partial<Record<typeof FACTS[number], string>> }

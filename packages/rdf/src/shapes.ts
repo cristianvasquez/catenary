@@ -1,7 +1,7 @@
 // SHACL shapes -> metamodel (palette classes, relation types, fields, SKOS concepts; types in @catenary/model).
 // The tool reads shapes only. See the mapping table in readme.md.
 
-import { ClassDef, Classes, ConceptDef, NS, SchemeDef, TermJSON, localName, shortIri, termToJSON } from '@catenary/model';
+import { CLASS_COLORS, ClassDef, Classes, ConceptDef, NS, SchemeDef, TermJSON, byOrderThenName, localName, schemaFormShape, schemaParts, shortIri, termToJSON } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
 import type { Dataset, Grapoi } from 'rdf-ext';
 import { rdf } from './terms';
@@ -10,8 +10,6 @@ export interface Metamodel extends Classes {
     source?: string;             // file name or IRI of the shapes file
     dataset: Dataset;            // shapes, for shacl-engine
 }
-
-const COLORS = ['6', '4', '5', '2', '3', '1'];
 
 export function emptyMetamodel(): Metamodel {
     return { classes: [], dataset: rdf.dataset() };
@@ -143,7 +141,7 @@ export function buildMetamodel(quads: Iterable<Quad>): Classes {
         c.relations.sort(byOrderThenName);
     }
     classes.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
-    classes.forEach((c, i) => { c.color = COLORS[i % COLORS.length]; });
+    classes.forEach((c, i) => { c.color = CLASS_COLORS[i % CLASS_COLORS.length]; });
     return { classes, ...vocabulary };
 }
 
@@ -167,7 +165,8 @@ function valueSetOf(dataset: Dataset, concepts: ConceptDef[], shape: Term): { ir
 
 /**
  * The shapes as the instance form reads them: a property with a value set helper (`sh:node`) gets `sh:in` of the allowed values
- * instead of `sh:node` and `sh:class`, so that the form offers the concepts. Validation uses the shapes as they are.
+ * instead of `sh:node` and `sh:class`, so that the form offers the concepts. The schema rules get form node shapes. Validation uses
+ * the shapes as they are.
  */
 export function formShapes(meta: Metamodel): Dataset {
     const { dataset } = meta;
@@ -185,6 +184,22 @@ export function formShapes(meta: Metamodel): Dataset {
             list = cell;
         });
         out.add(rdf.quad(q.subject, n(SH + 'in'), list as never));
+    }
+    // The schema rules (RDFS domain and range): one form node shape for each class and provider (schemaFormShape). Not saved, not validated.
+    for (const cls of meta.classes) for (const [source, parts] of schemaParts(cls)) {
+        const shape = n(schemaFormShape(source, cls.iri));
+        out.add(rdf.quad(shape, n(NS.rdf + 'type'), n(SH + 'NodeShape')));
+        parts.forEach((x, i) => {
+            const ps = n(`${shape.value}/${i + 1}`);
+            out.add(rdf.quad(shape, n(SH + 'property'), ps));
+            out.add(rdf.quad(ps, n(SH + 'path'), n(x.path)));
+            out.add(rdf.quad(ps, n(SH + 'name'), rdf.literal(x.name)));
+            if (x.description) out.add(rdf.quad(ps, n(SH + 'description'), rdf.literal(x.description)));
+            if ('targetClass' in x) {
+                out.add(rdf.quad(ps, n(SH + 'class'), n(x.targetClass)));
+                out.add(rdf.quad(ps, n(SH + 'nodeKind'), n(SH + 'IRI')));
+            } else if (x.datatype) out.add(rdf.quad(ps, n(SH + 'datatype'), n(x.datatype)));
+        });
     }
     return out;
 }
@@ -237,10 +252,6 @@ function buildVocabulary(dataset: Dataset): { schemes: SchemeDef[]; concepts: Co
     }));
     const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
     return { schemes: schemes.sort(byLabel), concepts: [...concepts.values()].sort(byLabel) };
-}
-
-function byOrderThenName(a: { order?: number; name: string }, b: { order?: number; name: string }): number {
-    return (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name);
 }
 
 /** The kind of a complex path, from its structure (not its term type); undefined: a predicate path. */

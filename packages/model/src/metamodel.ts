@@ -1,5 +1,7 @@
-// Metamodel: palette classes, fields and relation types, as JSON. Built from SHACL shapes by @catenary/rdf.
+// Metamodel: palette classes, fields and relation types, as JSON. Built from SHACL shapes by @catenary/rdf, with the schema rules of
+// the schema providers (RDFS) merged in (mergeSchema).
 
+import type { Schema } from '@catenary/explorer';
 import { NS, TermJSON, localName } from './terms';
 import { compactParts, shortIri } from './shapes-doc';
 
@@ -13,6 +15,8 @@ export interface FieldDef {
     minCount?: number;
     maxCount?: number;
     order?: number;
+    /** The schema provider of the field (`rdfs`). None: the shapes. */
+    source?: string;
 }
 
 export interface RelationDef {
@@ -26,6 +30,8 @@ export interface RelationDef {
     minCount?: number;
     maxCount?: number;
     order?: number;
+    /** The schema provider of the relation (`rdfs`). None: the shapes. */
+    source?: string;
 }
 
 export interface ClassDef {
@@ -66,6 +72,62 @@ export interface Classes {
     concepts?: ConceptDef[];
 }
 
+/** JSON Canvas preset colors of the classes, by palette position. */
+export const CLASS_COLORS = ['6', '4', '5', '2', '3', '1'];
+
+/** Fields and relations: by sh:order, then by name. */
+export function byOrderThenName(a: { order?: number; name: string }, b: { order?: number; name: string }): number {
+    return (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name);
+}
+
+/**
+ * The metamodel with the rules of a schema provider (`source`) added. The shapes win: a rule for a predicate that the shapes already
+ * describe on its class adds nothing. A class that only the rules know is added after the classes of the shapes, ordered by name.
+ * A class range gives a relation. Literal ranges of one predicate give one field (a datatype only when all ranges have the same one).
+ */
+export function mergeSchema<T extends Classes>(meta: T, schema: Schema, source: string): T {
+    if (!schema.rules.length) return meta;
+    const byIri = new Map(meta.classes.map(c => [c.iri, c]));
+    const shaped = new Map(meta.classes.map(c => [c.iri, new Set([...c.fields, ...c.relations].map(x => x.path))]));
+    const touched = new Map<string, ClassDef>(), added: ClassDef[] = [];
+    const datatypes = new Map<string, Set<string | undefined>>();
+    for (const rule of schema.rules) {
+        if (shaped.get(rule.domain)?.has(rule.predicate)) continue;
+        let def = touched.get(rule.domain);
+        if (!def) {
+            const own = byIri.get(rule.domain);
+            const info = schema.classes[rule.domain];
+            def = own ? { ...own, fields: [...own.fields], relations: [...own.relations] }
+                : { iri: rule.domain, name: info?.name ?? shortIri(rule.domain), ...(info?.description ? { description: info.description } : {}),
+                    shapes: [], fields: [], relations: [], unsupported: [], color: '', labelInShape: false };
+            if (!own) added.push(def);
+            touched.set(rule.domain, def);
+        }
+        const common = { path: rule.predicate, name: rule.name ?? localName(rule.predicate), ...(rule.description ? { description: rule.description } : {}), source };
+        if (rule.range.kind === 'class') {
+            const targetClass = rule.range.iri;
+            if (!def.relations.some(r => r.path === rule.predicate && r.targetClass === targetClass)) def.relations.push({ ...common, targetClass });
+            continue;
+        }
+        const key = rule.domain + ' ' + rule.predicate;
+        const seen = datatypes.get(key) ?? new Set();
+        seen.add(rule.range.datatype);
+        datatypes.set(key, seen);
+        const datatype = seen.size === 1 ? rule.range.datatype : undefined;
+        const field = def.fields.find(f => f.path === rule.predicate && f.source === source);
+        if (field) { if (datatype === undefined) delete field.datatype; }
+        else def.fields.push({ ...common, ...(datatype ? { datatype } : {}), iri: false });
+    }
+    for (const def of touched.values()) {
+        def.fields.sort(byOrderThenName);
+        def.relations.sort(byOrderThenName);
+    }
+    added.sort((a, b) => a.name.localeCompare(b.name) || a.iri.localeCompare(b.iri));
+    const n = meta.classes.length;
+    added.forEach((c, i) => { c.color = CLASS_COLORS[(n + i) % CLASS_COLORS.length]; });
+    return { ...meta, classes: [...meta.classes.map(c => touched.get(c.iri) ?? c), ...added] };
+}
+
 // ---- Queries used by the UI and by the operations ----
 
 /** Noun for new instances of a class: the name without "prefix:", camel case split ("dprod:DataProduct" -> "Data Product"). */
@@ -86,10 +148,15 @@ export function primaryClass(meta: Classes, types: string[]): ClassDef | undefin
     return undefined;
 }
 
+/** The class ranges of the schema rules (not the shapes) of an instance with `types`: the classes of its link candidates. */
+export function schemaRanges(meta: Classes, types: string[]): string[] {
+    return [...new Set(types.flatMap(t => (classDef(meta, t)?.relations ?? []).filter(r => r.source).map(r => r.targetClass)))].sort();
+}
+
 /** The class of the views (each view graph has `<view> a view:View`). */
 export const VIEW_CLASS = NS.view + 'View';
 
-/** Relation types the shapes permit from an instance with `from` types to one with `to` types (and IRI `toIri`: see RelationDef.values). */
+/** Relation types the metamodel (shapes and schema rules) permits from an instance with `from` types to one with `to` types (and IRI `toIri`: see RelationDef.values). */
 export function permittedRelations(meta: Classes, from: string[], to: string[], toIri?: string): RelationDef[] {
     const result: RelationDef[] = [];
     const seen = new Set<string>();

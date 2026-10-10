@@ -46,9 +46,9 @@ Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
-| `packages/explorer` (`@catenary/explorer`) | The Model explorer plugin contract: rows, paths, the plugin interface and the query port. | None. |
+| `packages/explorer` (`@catenary/explorer`) | The contracts of the vocabulary packages: the query port and its helpers, the Model explorer plugin (rows, paths) and the schema provider (rules). | None. |
 | `packages/shacl` (`@catenary/shacl`) | SHACL target types, applicability queries, form predicates, connection rules, notation assets and the Shapes section of the Model explorer. | `@catenary/explorer`. Hosts supply query ports and graph identities. |
-| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. | `@catenary/explorer`. |
+| `packages/rdfs` (`@catenary/rdfs`) | The Classes section of the Model explorer: classes, subclasses and instances as written. The domain and range providers: schema rules from `rdfs:domain` and `rdfs:range`. | `@catenary/explorer`. |
 | `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models. Runs in Node and the browser. | `canonical-md`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
 | `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
@@ -62,6 +62,13 @@ Values that cross a package boundary are JSON, including RDF terms and IDs.
 
 1. Implement `ExplorerPlugin` (`packages/explorer/src/index.ts`) in the package of the vocabulary. Query only through the `ExplorerPort`.
 2. Add the plugin to `EXPLORER_PLUGINS` (`packages/rdf/src/explorer.ts`).
+
+### Add a schema provider
+
+1. Implement `SchemaProvider` (`packages/explorer/src/schema.ts`) in the package of the vocabulary. Query only through the `QueryPort`.
+2. Add the provider to `SCHEMA_PROVIDERS` (`packages/rdf/src/schema.ts`).
+
+`mergeSchema` (`packages/model/src/metamodel.ts`) adds the rules to the metamodel. The shapes win for a predicate that they describe on the same class. Validation never reads the rules.
 
 ### Add a read query for the frontend
 
@@ -77,15 +84,16 @@ Paths are relative to the directory in the first column.
 
 | Directory | Files | Purpose |
 |---|---|---|
-| `packages/explorer/src` | `index.ts` | Model explorer plugin contract |
+| `packages/explorer/src` | `index.ts`, `query.ts`, `schema.ts` | Model explorer plugin contract, query port and helpers, schema provider contract |
 | `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
-| `packages/rdfs/src` | `index.ts` | Classes section of the Model explorer |
+| `packages/rdfs/src` | `explorer.ts` | Classes section of the Model explorer |
+| | `schema.ts` | Domain and range providers: RDFS schema rules |
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts`, `trace-metrics.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records and metric calculations |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
-| | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, prefixes, form conversion |
+| | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, schema rules, prefixes, form conversion |
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
 | | `fuzzy.ts` | Ordered-character matching, match positions and ranking |
@@ -105,6 +113,7 @@ Paths are relative to the directory in the first column.
 | | `explorer.ts` | Model explorer host: the plugins, keys, pages, search and paths |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Metamodel, shapes index, shape proposal and the shared SHACL query adapter |
+| | `schema.ts` | Schema providers on the store: RDFS rules join the metamodel |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins |
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `IndexedStore` keeps the input in step with each change of the store. The bundle copies all assets. |

@@ -1,4 +1,5 @@
-// The link picker reads things and statements from the store. Shapes supply relation choices and cardinalities.
+// The link picker reads things and statements from the store. The metamodel (shapes and RDFS rules) supplies relation choices and
+// cardinalities.
 
 import { Classes, LinkSection, NS, ShapesModel, instanceNoun, outgoingRelations, primaryClass } from '@catenary/model';
 import { ModelGraph } from './graph';
@@ -40,7 +41,7 @@ export function linkChoices(ctx: LinkContext, dir: 'out' | 'in', from: string, v
     const types = dir === 'out'
         ? outgoingRelations(meta, self.types).map(r => ({ r, other: r.targetClass }))
         : meta.classes.flatMap(c => c.relations.filter(r => self.types.includes(r.targetClass) && (!r.values || r.values.includes(term.value))).map(r => ({ r, other: c.iri })));
-    if (!types.length) return { error: `The shapes declare no relations ${dir === 'out' ? 'from' : 'to'} ${name}.` };
+    if (!types.length) return { error: `The schema declares no relations ${dir === 'out' ? 'from' : 'to'} ${name}.` };
 
     const F = iri(term.value);
     const view = elementTerm(viewId);

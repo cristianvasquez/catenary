@@ -2,7 +2,7 @@
   "name": "@catenary/rdfs",
   "version": "0.1.0",
   "private": true,
-  "description": "RDFS rules: the Classes section of the Model explorer (classes, subclasses, instances).",
+  "description": "RDFS rules: the Classes section of the Model explorer (classes, subclasses, instances) and the domain and range providers (schema rules).",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [

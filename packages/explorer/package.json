@@ -2,7 +2,7 @@
   "name": "@catenary/explorer",
   "version": "0.1.0",
   "private": true,
-  "description": "The Model explorer plugin contract: rows, sections and the query port that a host gives to each plugin.",
+  "description": "The contracts of the vocabulary packages: the query port, the Model explorer plugin (rows, sections) and the schema provider (rules).",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [

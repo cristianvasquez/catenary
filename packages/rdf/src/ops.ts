@@ -164,7 +164,7 @@ function relationProblem(g: ModelGraph, meta: Classes, s: NamedNode, p: string, 
     if (s.equals(o)) return 'A relation from an element to itself is not supported.';
     // A scheme or collection target: `o` must be in it now (the metamodel list can be older than a concept created in this command).
     const permitted = permittedRelations(meta, typesOf(g, s), typesOf(g, o)).filter(r => !r.valueSet || inValueSet(g, r.valueSet, o));
-    if (!permitted.some(r => r.path === p)) return `The shapes do not permit this relation from "${g.label(s)}" to "${g.label(o)}".`;
+    if (!permitted.some(r => r.path === p)) return `The schema does not permit this relation from "${g.label(s)}" to "${g.label(o)}".`;
     return undefined;
 }
 
