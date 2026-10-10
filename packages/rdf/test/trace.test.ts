@@ -142,7 +142,7 @@ describe('tracer', () => {
 });
 
 describe('traced store', () => {
-    it('attributes the SHACL walk and uncached reference reads to their caller', () => {
+    it('attributes the SHACL walk and reference reads to their caller; the references stay until the store changes', () => {
         const quads = parseRdfSync('<urn:name:model> { <urn:S> <http://www.w3.org/ns/shacl#targetNode> <urn:a> . }', 'application/trig');
         const graph = new ModelGraph(new TracedStore(new OxigraphStore(quads)));
         tracer.setClient(true);
@@ -150,8 +150,8 @@ describe('traced store', () => {
         const { spans } = tracer.take();
         const matches = spans.filter(s => s.kind === 'shacl' && s.name === 'target matches');
         expect(matches).toHaveLength(2);
-        expect(matches[0].detail).toContain('references uncacheable;');
-        expect(spans.filter(s => s.name === 'read node references')).toHaveLength(2);
+        expect(matches[0].detail).toContain('references 0 refs;');
+        expect(spans.filter(s => s.name === 'read node references')).toHaveLength(1);
         expect(causes(spans, spans.find(s => s.name === 'walk')!)).toEqual(['shacl:target matches']);
     });
 

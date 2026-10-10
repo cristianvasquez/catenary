@@ -3,59 +3,36 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { NTerm, TripleIndex, Violation, nkey } from '@catenary/model';
+import { NTerm, Violation, nkey } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from '../src/graph';
 import { ModelStore, violationScope } from '../src/model-store';
-import { IndexedStore, LAYOUT_PREDICATES, nquads, readNotations, storeIndex } from '../src/notations';
+import { LAYOUT_PREDICATES, readNotations, storeIndex, storeInput } from '../src/notations';
 import { rdf } from '../src/terms';
 
-/** The content of an index as plain data: subject -> predicate -> object keys, and the same for the inverse. */
-function content(ix: TripleIndex) {
-    const plain = (m: Map<string, Map<string, NTerm[]>>) =>
-        Object.fromEntries([...m].sort(([a], [b]) => a < b ? -1 : 1).map(([k, byP]) => [k, Object.fromEntries([...byP].sort(([a], [b]) => a < b ? -1 : 1).map(([p, vs]) => [p, vs.map(nkey)]))]));
-    const predicates = [...new Set([...ix.out.values()].flatMap(byP => [...byP.keys()]))].sort();
-    return {
-        out: plain(ix.out), inv: plain(ix.inv),
-        byP: Object.fromEntries(predicates.map(p => [p, { s: ix.subjectsOfP(p).map(nkey), o: ix.objectsOfP(p).map(nkey) }]))
-    };
-}
-
 const n = (l: string) => rdf.namedNode('urn:x:' + l);
+const j = (l: string): NTerm => ({ termType: 'NamedNode', value: 'urn:x:' + l });
 
-describe('IndexedStore: the engine input in step with each change', () => {
-    it('an index kept by adds and deletes equals an index built from all quads', () => {
-        const store = new IndexedStore(new OxigraphStore());
-        const g = new ModelGraph(store);
+describe('storeInput: the engine input read around the terms that a view asks about', () => {
+    it('gives each lookup of the whole store index: the union of the graphs without the report, without duplicates', () => {
+        const g = new ModelGraph(new OxigraphStore());
         const quad = (s: string, p: string, o: string, graph = 'g1') => rdf.quad(n(s), n(p), o.startsWith('"') ? rdf.literal(o.slice(1)) : n(o), n(graph));
-        for (const q of [quad('a', 'p', 'b'), quad('a', 'p', 'c'), quad('b', 'q', '"text'), quad('c', 'p', 'a')]) store.add(q);
-        const live = storeIndex(g);
-        expect(storeIndex(g)).toBe(live);
-        // The same triple in two graphs: the union keeps it until both graphs lose it.
-        store.add(quad('a', 'p', 'b', 'g2'));
-        store.add(quad('d', 'p', 'a'));
-        store.add(quad('a', 'p', 'b'));
-        store.delete(quad('a', 'p', 'b'));
-        expect(live.has({ termType: 'NamedNode', value: 'urn:x:a' }, 'urn:x:p', { termType: 'NamedNode', value: 'urn:x:b' })).toBe(true);
-        store.delete(quad('a', 'p', 'b', 'g2'));
-        store.delete(quad('c', 'p', 'a'));
-        store.delete(quad('missing', 'p', 'a'));
-        store.add(rdf.quad(n('e'), n('p'), n('f'), rdf.namedNode(VALIDATION_GRAPH)));
-        const rebuilt = new TripleIndex(nquads(g.quads().filter(q => q.graph.value !== VALIDATION_GRAPH)));
-        expect(content(live)).toEqual(content(rebuilt));
-        expect(content(live).out['<urn:x:a>']).toEqual({ 'urn:x:p': ['<urn:x:c>'] });
-    });
-
-    it('an array that a caller read keeps its values after a change', () => {
-        const store = new IndexedStore(new OxigraphStore());
-        const g = new ModelGraph(store);
-        store.add(rdf.quad(n('a'), n('p'), n('b'), n('g')));
-        const ix = storeIndex(g);
-        const read = ix.objects({ termType: 'NamedNode', value: 'urn:x:a' }, 'urn:x:p');
-        store.add(rdf.quad(n('a'), n('p'), n('c'), n('g')));
-        store.delete(rdf.quad(n('a'), n('p'), n('b'), n('g')));
-        expect(read.map(nkey)).toEqual(['<urn:x:b>']);
-        expect(ix.objects({ termType: 'NamedNode', value: 'urn:x:a' }, 'urn:x:p').map(nkey)).toEqual(['<urn:x:c>']);
+        for (const q of [quad('a', 'p', 'b'), quad('a', 'p', 'c'), quad('b', 'q', '"text'), quad('c', 'p', 'a'), quad('a', 'p', 'b', 'g2'), quad('d', 'r', 'a', 'g2')]) g.add(q.subject, q.predicate, q.object, q.graph);
+        g.add(n('e'), n('p'), n('a'), rdf.namedNode(VALIDATION_GRAPH));
+        const lazy = storeInput(g), whole = storeIndex(g);
+        const keys = (ts: NTerm[]) => ts.map(nkey);
+        for (const t of ['a', 'b', 'c', 'd', 'e'].map(j)) {
+            for (const p of ['p', 'q', 'r'].map(l => 'urn:x:' + l)) {
+                expect(keys(lazy.objects(t, p))).toEqual(keys(whole.objects(t, p)));
+                expect(keys(lazy.subjects(p, t))).toEqual(keys(whole.subjects(p, t)));
+            }
+            expect(lazy.predicates(t).sort()).toEqual(whole.predicates(t).sort());
+            expect(lazy.incoming(t).map(([p, ss]) => [p, keys(ss)]).sort()).toEqual(whole.incoming(t).map(([p, ss]) => [p, keys(ss)]).sort());
+        }
+        expect(keys(lazy.subjectsOfP('urn:x:p'))).toEqual(keys(whole.subjectsOfP('urn:x:p')));
+        expect(keys(lazy.objectsOfP('urn:x:p'))).toEqual(keys(whole.objectsOfP('urn:x:p')));
+        expect(keys(lazy.subjects('urn:x:q', { termType: 'Literal', value: 'text' }))).toEqual(['<urn:x:b>']);
+        expect(keys(lazy.objects(j('e'), 'urn:x:p'))).toEqual([]);
     });
 });
 
@@ -67,8 +44,7 @@ describe('the figures do not read the geometry of placements', () => {
     });
 
     it('a layout change keeps the figure input; another change does not', () => {
-        const store = new IndexedStore(new OxigraphStore());
-        const g = new ModelGraph(store);
+        const g = new ModelGraph(new OxigraphStore());
         g.add(n('view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('osg://vocab/view#View'), n('view'));
         const before = g.keys.data;
         g.add(n('p1'), rdf.namedNode('osg://vocab/view#x'), rdf.literal('10'), n('view'));

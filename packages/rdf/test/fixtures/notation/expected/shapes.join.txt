@@ -15,8 +15,8 @@ box   Countries   (Scheme)
         Belgium
         Netherlands
 hub   xone   members: ex:email, ex:phone   (Logic)
-line  Person → xsd:string (private pill)   "ex:email [1..*]"   (by hub xone)
-line  Person → xsd:string (private pill)   "ex:phone [1..*]"   (by hub xone)
 line  Marriage → one of   "ex:date [0..1]"
 line  Marriage → in   "ex:kind [1]"
+line  Person → xsd:string (private pill)   "ex:email [1..*]"   (by hub xone)
 line  Person → Countries   "ex:nationality [0..1]"
+line  Person → xsd:string (private pill)   "ex:phone [1..*]"   (by hub xone)

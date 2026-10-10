@@ -89,6 +89,10 @@ export class TripleIndex {
     subjects(p: string, o: NTerm): TermJSON[] { return this.inv.get(nkey(o))?.get(p) ?? []; }
     one(s: NTerm, p: string): NTerm | undefined { return this.objects(s, p)[0]; }
     has(s: NTerm, p: string, o: NTerm): boolean { return this.objects(s, p).some(x => nkey(x) === nkey(o)); }
+    /** The predicates of the triples with subject `s`. */
+    predicates(s: NTerm): string[] { return [...this.out.get(nkey(s))?.keys() ?? []]; }
+    /** The triples with object `o`, as predicate and subjects. */
+    incoming(o: NTerm): [string, TermJSON[]][] { return [...this.inv.get(nkey(o)) ?? []]; }
     subjectsOfP(p: string): TermJSON[] { return uniq(this.byP.get(p)?.s ?? []); }
     objectsOfP(p: string): NTerm[] { return uniq(this.byP.get(p)?.o ?? []); }
     /** The members of an RDF list, in order. */
@@ -101,6 +105,69 @@ export class TripleIndex {
         }
         return out;
     }
+}
+
+/** What a store gives a LazyTripleIndex: the triples of a subject, of an object (one predicate or all), or of a predicate. */
+export interface TripleSource {
+    outgoing(s: NTerm): NQuad[];
+    incoming(o: NTerm, p?: string): NQuad[];
+    withPredicate(p: string): NQuad[];
+}
+
+/**
+ * A triple index that reads a store on demand: each subject, object or predicate once. The figures of a view read only the triples
+ * around its elements, so a view costs what it shows, not the size of the workspace. Read-only: a change of the store needs a new one.
+ */
+export class LazyTripleIndex extends TripleIndex {
+    protected readonly outs = new Map<string, Map<string, NTerm[]>>();
+    protected readonly ins = new Map<string, Map<string, TermJSON[]>>();
+    protected readonly allIns = new Set<string>();
+    protected readonly byPredicate = new Map<string, { s: TermJSON[]; o: NTerm[] }>();
+
+    constructor(protected readonly source: TripleSource) { super(); }
+
+    override add(): void { throw new Error('LazyTripleIndex is read-only'); }
+    override delete(): void { throw new Error('LazyTripleIndex is read-only'); }
+
+    protected outOf(s: NTerm): Map<string, NTerm[]> {
+        const k = nkey(s);
+        let m = this.outs.get(k);
+        if (!m) {
+            m = new Map();
+            for (const x of this.source.outgoing(s)) (m.get(x.predicate) ?? m.set(x.predicate, []).get(x.predicate)!).push(x.object);
+            for (const [p, vs] of m) m.set(p, uniq(vs).sort(byKey));
+            this.outs.set(k, m);
+        }
+        return m;
+    }
+
+    protected inOf(o: NTerm, p?: string): Map<string, TermJSON[]> {
+        const k = nkey(o);
+        const m = this.ins.get(k) ?? this.ins.set(k, new Map()).get(k)!;
+        if (this.allIns.has(k) || (p !== undefined && m.has(p))) return m;
+        const found = new Map<string, TermJSON[]>(p === undefined ? [] : [[p, []]]);
+        for (const x of this.source.incoming(o, p)) (found.get(x.predicate) ?? found.set(x.predicate, []).get(x.predicate)!).push(x.subject);
+        for (const [q, ss] of found) m.set(q, uniq(ss).sort(byKey));
+        if (p === undefined) this.allIns.add(k);
+        return m;
+    }
+
+    override objects(s: NTerm, p: string): NTerm[] { return this.outOf(s).get(p) ?? []; }
+    override subjects(p: string, o: NTerm): TermJSON[] { return this.inOf(o, p).get(p) ?? []; }
+    override predicates(s: NTerm): string[] { return [...this.outOf(s).keys()]; }
+    override incoming(o: NTerm): [string, TermJSON[]][] { return [...this.inOf(o)].filter(([, ss]) => ss.length); }
+
+    protected ofPredicate(p: string): { s: TermJSON[]; o: NTerm[] } {
+        let e = this.byPredicate.get(p);
+        if (!e) {
+            const xs = this.source.withPredicate(p);
+            e = { s: uniq(xs.map(x => x.subject)).sort(byKey), o: uniq(xs.map(x => x.object)).sort(byKey) };
+            this.byPredicate.set(p, e);
+        }
+        return e;
+    }
+    override subjectsOfP(p: string): TermJSON[] { return this.ofPredicate(p).s; }
+    override objectsOfP(p: string): NTerm[] { return this.ofPredicate(p).o; }
 }
 
 function push<T>(m: Map<string, Map<string, T[]>>, k: string, p: string, v: T): void {
@@ -171,6 +238,11 @@ export function pathJSON(G: TripleIndex, node: NTerm): PathJSON {
     return tree(parseShaclPath(G, node));
 }
 
+/** The inverse of a path: its values from a node are the nodes that reach it. */
+export function inversePath(path: Path): Path {
+    return inverse(path);
+}
+
 function inverse(path: Path): Path {
     if ('p' in path) return { rev: path.p };
     if ('rev' in path) return { p: path.rev };
@@ -231,7 +303,7 @@ export function conforms(D: TripleIndex, N: TripleIndex, shape: NTerm, focus: NT
         for (const n of N.objects(ps, SH('node'))) if (!values.every(v => conforms(D, N, n, v))) return false;
     }
     if (N.one(shape, SH('closed'))?.value === 'true') {
-        for (const p of D.out.get(nkey(focus))?.keys() ?? []) if (!allowed.has(p)) return false;
+        for (const p of D.predicates(focus)) if (!allowed.has(p)) return false;
     }
     return true;
 }

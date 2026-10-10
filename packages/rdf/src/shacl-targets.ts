@@ -3,7 +3,6 @@ import { applicableMatches, readNodeReferences, NodeReference, TargetScope, Targ
 import type { FocusNode, TargetMatch } from '@catenary/shacl/common';
 import type { Dataset } from 'rdf-ext';
 import { GraphChange, ModelGraph, VALIDATION_GRAPH } from './graph';
-import { IndexedStore } from './notations';
 import { jsonToTerm, rdf, termKey } from './terms';
 import { tracer } from './trace';
 
@@ -69,13 +68,13 @@ export function shapeTargetMatches(g: ModelGraph, selection: TargetSelection): T
     return tracer.span('shacl', 'target matches', () => {
         const scope = tracer.span('shacl', 'scope', () => shapeQueryScope(g));
         const version = g.keys.query;
-        const cacheable = g.store instanceof IndexedStore || scope.shapes.every(graph => g.shapesGraphs().some(t => t.value === graph));
+        // keys.query changes with every statement outside the view graphs, so the references of any shapes graph are kept by it.
         let cached = references.get(g);
-        if (!cacheable || !cached || cached.event !== version) {
+        if (!cached || cached.event !== version) {
             cached = { event: version, refs: tracer.span('shacl', 'read node references', () => readNodeReferences(g.store, scope.shapes)) };
-            if (cacheable) references.set(g, cached);
+            references.set(g, cached);
         }
-        if (tracer.on) tracer.note(`references ${cacheable ? 'cacheable' : 'uncacheable'}; ${cached.refs.length} refs; ${scope.shapes.length} shapes graphs; ${scope.data.length} data graphs`);
+        if (tracer.on) tracer.note(`references ${cached.refs.length} refs; ${scope.shapes.length} shapes graphs; ${scope.data.length} data graphs`);
         const port = {
             select: (q: string) => g.select(q),
             traverse: (nodes: readonly FocusNode[], predicates: readonly string[], reverse: boolean, graphs: readonly string[]) => {

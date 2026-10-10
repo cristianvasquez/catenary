@@ -6,11 +6,11 @@ import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Join, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
+import { Join, LazyTripleIndex, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
 import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
-import { nquads, readNotations, storeIndex } from '../src/notations';
+import { keyTerm, nquads, readNotations, storeIndex, storeInput, viewFiguresOf } from '../src/notations';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,7 @@ afterAll(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+const graph = () => (store as unknown as { graph: ModelGraph }).graph;
 const view = (v: string, d = data) => viewFigures(d, notes, `urn:view:${v}`);
 const without = (placed: Placements, ...keys: string[]) => new Map([...placed].filter(([k]) => !keys.includes(k)));
 const list = (h: string) => nkey(iri(`urn:trellis:list:${h}`));
@@ -80,8 +81,10 @@ describe('figures and join of the example views', () => {
 describe('scoped placement synchronization', () => {
     for (const v of ['model', 'shapes', 'people']) it(`law_scopedFiguresPreservePlacementRules: ${v}`, () => {
         const full = view(v);
-        const seeds = full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs))).map(f => f.focus);
-        const scoped = viewFigures(data, notes, `urn:view:${v}`, deriveFigures(data, notes, `urn:view:${v}`, seeds));
+        // The figures that the app derives: the store read on demand, from the placed terms of the view.
+        const scoped = viewFiguresOf(graph(), `urn:view:${v}`);
+        expect(scoped.derivation.data).toBeInstanceOf(LazyTripleIndex);
+        expect([...scoped.placed.keys()].sort()).toEqual([...full.placed.keys()].sort());
         // The first line is the diagnostic figure count, not displayed content.
         expect(joinText(scoped.derivation, scoped.join).slice(1)).toEqual(joinText(full.derivation, full.join).slice(1));
         expect(scoped.join.problems).toEqual(full.join.problems);
@@ -90,6 +93,90 @@ describe('scoped placement synchronization', () => {
             const before = without(full.placed, nkey(f.placedAs));
             expect(arrival(scoped.derivation.figures, before, f.placedAs).sort()).toEqual(arrival(full.derivation.figures, before, f.placedAs).sort());
             expect(dataArrival(scoped.derivation.figures, before, new Set([nkey(f.placedAs)])).sort()).toEqual(dataArrival(full.derivation.figures, before, new Set([nkey(f.placedAs)])).sort());
+        }
+        // An arrival as a command sees it: the view without the term and what goes with it, then the term placed. The lines and hubs
+        // that arrive are not placed yet: the figures find them from the placed terms.
+        for (const f of full.derivation.figures.filter(f => full.placed.has(nkey(f.placedAs)))) {
+            const rest = without(full.placed, ...removal(full.derivation.figures, full.placed, f.placedAs));
+            const seeded = deriveFigures(storeInput(graph()), notes, `urn:view:${v}`, [...rest.keys(), nkey(f.placedAs)].map(keyTerm));
+            expect(arrival(seeded.figures, rest, f.placedAs).sort()).toEqual(arrival(full.derivation.figures, rest, f.placedAs).sort());
+        }
+        // A data change can bring any line of the workspace: the scoped figures place the same ones.
+        const lines = new Set(full.derivation.figures.filter(f => f.fs.kind === 'Line').map(f => nkey(f.focus)));
+        expect(dataArrival(scoped.derivation.figures, scoped.placed, lines).sort()).toEqual(dataArrival(full.derivation.figures, full.placed, lines).sort());
+    });
+
+    it('law_scopedFiguresPreservePlacementRules: random placement sets', () => {
+        let seed = 7;
+        const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+        // Figure ids take -2, -3 suffixes over the derived set, so they can differ; the rest must not.
+        const strip = (text: string[]) => text.slice(1).map(l => l.replace(/urn:fig:[^\s,)]*/g, 'fig'));
+        for (const v of ['model', 'shapes', 'people']) {
+            const whole = deriveFigures(data, notes, `urn:view:${v}`), full = view(v);
+            const keys = [...new Set(whole.figures.map(f => nkey(f.placedAs)))].sort();
+            const lines = new Set(whole.figures.filter(f => f.fs.kind !== 'Box').map(f => nkey(f.focus)));
+            for (let n = 0; n < 40; n++) {
+                const placed: Placements = new Map(keys.filter(() => rand() < 0.3)
+                    .map(k => [k, full.placed.get(k) ?? { iri: `urn:p:${n}:${keys.indexOf(k)}`, simple: false, keptByLines: false, x: 0, y: 0, width: 10, height: 10 }]));
+                const unplaced = keys.filter(k => !placed.has(k)), extra = unplaced[Math.floor(rand() * unplaced.length)];
+                const scoped = deriveFigures(storeInput(graph()), notes, `urn:view:${v}`, [...placed.keys(), ...extra ? [extra] : []].map(keyTerm));
+                const [sj, wj] = [joinFigures(scoped, placed), joinFigures(whole, placed)];
+                expect(strip(joinText(scoped, sj))).toEqual(strip(joinText(whole, wj)));
+                expect(sj.problems.map(p => p.replace(/urn:fig:\S*/g, 'fig'))).toEqual(wj.problems.map(p => p.replace(/urn:fig:\S*/g, 'fig')));
+                for (const k of placed.keys()) expect(removal(scoped.figures, placed, keyTerm(k)).sort()).toEqual(removal(whole.figures, placed, keyTerm(k)).sort());
+                if (extra) expect(arrival(scoped.figures, placed, keyTerm(extra)).sort()).toEqual(arrival(whole.figures, placed, keyTerm(extra)).sort());
+                expect(dataArrival(scoped.figures, placed, lines).sort()).toEqual(dataArrival(whole.figures, placed, lines).sort());
+            }
+        }
+    });
+
+    it('reads the values of values no further: a chain of node shapes does not derive the whole chain', async () => {
+        const chain = Array.from({ length: 60 }, (_, i) => `ex:Chain${i} a sh:NodeShape ; sh:targetClass ex:C${i} ; sh:property [ sh:path ex:next ; sh:node ex:Chain${i + 1} ] .`).join('\n');
+        const extra = nquads(skolemize([...await rdf.io.dataset.fromText('text/turtle', PREFIXES + chain)]).quads);
+        const D = new TripleIndex([...base, ...extra] as NQuad[]);
+        const whole = deriveFigures(D, notes, 'urn:view:shapes');
+        const chained = (d: { figures: { focus: { value: string } }[] }) => d.figures.filter(f => f.focus.value.startsWith(EX + 'Chain')).length;
+        expect(chained(whole)).toBeGreaterThanOrEqual(60);
+        const placed: Placements = new Map([[nkey(ex('Chain0')), { iri: 'urn:p:chain', simple: false, keptByLines: false, x: 0, y: 0, width: 10, height: 10 }]]);
+        const scoped = deriveFigures(D, notes, 'urn:view:shapes', [ex('Chain0')]);
+        expect(chained(scoped)).toBeLessThan(10);
+        expect(joinText(scoped, joinFigures(scoped, placed)).slice(1)).toEqual(joinText(whole, joinFigures(whole, placed)).slice(1));
+    });
+
+    it('a placement of a statement with a literal has no figure and breaks nothing', async () => {
+        const g = graph(), view = rdf.namedNode('urn:view:shapes'), p = rdf.namedNode('urn:placement:odd');
+        const odd = rdf.quad(rdf.namedNode('urn:x:a'), rdf.namedNode('urn:x:p'), rdf.literal('hi'));
+        const quads = [rdf.quad(p, rdf.namedNode('osg://vocab/view#view'), view, view), rdf.quad(p, rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies'), odd as never, view)];
+        g.update(() => quads.forEach(q => g.add(q.subject, q.predicate, q.object, q.graph)));
+        try {
+            const vf = viewFiguresOf(g, 'urn:view:shapes');
+            expect(vf.join.problems.some(x => x.includes('no figure'))).toBe(true);
+        } finally {
+            g.update(() => quads.forEach(q => g.remove(q)));
+        }
+    });
+
+    it('finds a list head again without reading all lists (ListHeads)', () => {
+        const full = view('shapes');
+        const f = full.derivation.figures.find(f => f.placedAs !== f.focus && full.placed.has(nkey(f.placedAs)))!;
+        const heads = new Map();
+        deriveFigures(storeInput(graph()), notes, 'urn:view:shapes', [f.placedAs], heads);
+        expect(heads.size).toBeGreaterThan(1);
+        let firsts = 0;
+        const D = storeInput(graph()), read = D.subjectsOfP.bind(D);
+        D.subjectsOfP = (p: string) => { if (p.endsWith('#first')) firsts++; return read(p); };
+        const again = deriveFigures(D, notes, 'urn:view:shapes', [f.placedAs], heads);
+        expect(again.figures.find(x => nkey(x.placedAs) === nkey(f.placedAs))?.title).toBe(f.title);
+        expect(firsts).toBe(0);
+    });
+
+    it('finds a placed list figure from its list term alone (rule 12)', () => {
+        for (const v of ['model', 'shapes']) {
+            const full = view(v);
+            for (const f of full.derivation.figures.filter(f => f.placedAs !== f.focus && full.placed.has(nkey(f.placedAs)))) {
+                const alone = deriveFigures(storeInput(graph()), notes, `urn:view:${v}`, [f.placedAs]);
+                expect(alone.figures.find(x => nkey(x.placedAs) === nkey(f.placedAs))?.title).toBe(f.title);
+            }
         }
     });
 

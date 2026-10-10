@@ -1,14 +1,14 @@
 // The input of the notation engine (@catenary/model notation.ts): the built-in notation files of the app (packages/rdf/notations, copied
-// next to the backend bundle by scripts/esbuild-catenary.mjs) and the triples of the store, as JSON.
+// next to the backend bundle by scripts/esbuild-catenary.mjs) and the triples of the store, as JSON, read around one view.
 
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
 import type { Quad, Term } from '@rdfjs/types';
-import { NQuad, NS, NTerm, Notations, TermJSON, TripleIndex, notations, termToJSON } from '@catenary/model';
-import { Bindings, QuadStore, parseRdfSync } from 'rdf-files';
+import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
+import { parseRdfSync } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { skolemize } from './skolem';
-import { rdf } from './terms';
+import { jsonToTerm, rdf } from './terms';
 
 /** The folder of the built-in notation files: next to the package source or build, or next to the backend bundle. */
 export const NOTATIONS_DIR = [path.join(__dirname, '..', 'notations'), path.join(__dirname, 'notations')].find(d => existsSync(d))
@@ -51,42 +51,55 @@ export { LAYOUT_PREDICATES } from './graph';
 
 const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
 
+/** An engine term as a store term. Undefined: a term that no statement of the store can have. */
+function storeTerm(t: NTerm): Term | undefined {
+    if (t.termType !== 'Triple') return jsonToTerm(t);
+    const s = storeTerm(t.subject), o = storeTerm(t.object);
+    return s && o ? rdf.quad(s as Quad['subject'], rdf.namedNode(t.predicate.value), o as Quad['object']) : undefined;
+}
+
 /**
- * The engine input of a store: all its quads except the validation report. A store that keeps the input (IndexedStore) gives its
- * index, kept in step with each change; another store builds it from all quads.
+ * The engine input of a store, read on demand (LazyTripleIndex): all graphs except the validation report. A view reads the triples
+ * around its elements only. Make a new one after each change: it keeps what it read.
  */
+export function storeInput(g: ModelGraph): TripleIndex {
+    const read = (s?: Term, p?: Term, o?: Term) => nquads(g.store.match(s, p, o, null).filter(q => !isReport(q)));
+    return new LazyTripleIndex({
+        outgoing: s => { const t = storeTerm(s); return t && t.termType !== 'Literal' ? read(t) : []; },
+        incoming: (o, p) => { const t = storeTerm(o); return t ? read(undefined, p === undefined ? undefined : rdf.namedNode(p), t) : []; },
+        withPredicate: p => read(undefined, rdf.namedNode(p))
+    });
+}
+
+/** The whole store as one engine input. For tests and comparisons: a view reads `storeInput`, not this. */
 export function storeIndex(g: ModelGraph): TripleIndex {
-    if (g.store instanceof IndexedStore) return g.store.index();
     return new TripleIndex(nquads(g.quads().filter(q => !isReport(q))));
 }
 
-/**
- * A quad store that keeps the engine input of its quads (`storeIndex`) in step with each `add` and `delete`: a change does not build
- * it again from all quads, so the cost of a view does not grow with the store. The index is built at the first read.
- */
-export class IndexedStore implements QuadStore {
-    protected live?: TripleIndex;
-    constructor(protected readonly inner: QuadStore) {}
-
-    get size(): number { return this.inner.size; }
-    has(q: Quad): boolean { return this.inner.has(q); }
-    match(s?: Term | null, p?: Term | null, o?: Term | null, g?: Term | null): Quad[] { return this.inner.match(s, p, o, g); }
-    select(query: string): Bindings[] { return this.inner.select(query); }
-    construct(query: string): Quad[] { return this.inner.construct(query); }
-
-    add(q: Quad): void {
-        if (!this.live || isReport(q) || this.inner.has(q)) return this.inner.add(q);
-        this.inner.add(q);
-        for (const x of nquads([q])) this.live.add(x);
-    }
-
-    delete(q: Quad): void {
-        if (!this.live || isReport(q) || !this.inner.has(q)) return this.inner.delete(q);
-        this.inner.delete(q);
-        for (const x of nquads([q])) this.live.delete(x);
-    }
-
-    index(): TripleIndex {
-        return this.live ??= new TripleIndex(nquads(this.inner.match().filter(q => !isReport(q))));
-    }
+/** A placement key (nkey) as an engine term: an IRI, or a statement between IRIs. */
+export function keyTerm(k: string): NTerm {
+    const m = /^<<\(<([^<>]*)> <([^<>]*)> <([^<>]*)>\)>>$/.exec(k);
+    if (m) return { termType: 'Triple', value: '', subject: { termType: 'NamedNode', value: m[1] }, predicate: { termType: 'NamedNode', value: m[2] }, object: { termType: 'NamedNode', value: m[3] } };
+    const iri = /^<([^<>]*)>$/.exec(k);
+    return { termType: 'NamedNode', value: iri ? iri[1] : k };
 }
+
+/**
+ * The figures of a view and their join, from the store read around the view (law_scopedFiguresPreservePlacementRules). `also`: terms
+ * that the view does not place yet but that the caller asks about (removed placements, pasted elements). `derivation`: an earlier one,
+ * kept while the store changed only in what the figures do not read.
+ */
+export function viewFiguresOf(g: ModelGraph, viewIri: string, also: Iterable<NTerm> = [], derivation?: Derivation): ViewFigures {
+    const D = storeInput(g), notes = readNotations();
+    const placed = placementsOf(D, viewIri);
+    // A placement of another term (a statement with a literal) has no figure, and the store cannot look it up: the join reports it.
+    const scope = [...[...placed.keys()].map(keyTerm), ...also].filter(t => t.termType === 'Triple' || IRI.test(t.value));
+    let heads = listHeads.get(g);
+    if (!heads) listHeads.set(g, heads = new Map());
+    return viewFigures(D, notes, viewIri, derivation ?? deriveFigures(D, notes, viewIri, scope, heads));
+}
+
+const IRI = /^[^\s<>"{}|^`\\]+$/;
+
+/** The list heads of each store, kept between derivations (`ListHeads`). */
+const listHeads = new WeakMap<ModelGraph, ListHeads>();

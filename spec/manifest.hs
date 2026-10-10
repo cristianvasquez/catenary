@@ -506,9 +506,12 @@ law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
 law_selectedReadScope :: [Id] -> [Id] -> Bool       -- required elements, read elements
 law_selectedReadScope required readElements = all (`elem` required) readElements
 
--- | Placement synchronization builds box content for placed boxes and transitive role dependencies.
--- Keep lines and hubs until a narrower scope proves their removal and arrival rules equivalent.
--- Reason: unrelated instance content blocks the edit transaction.
+-- | The figures of a view start from its placed terms (and the terms that an edit removes or pastes): the placed figures, the lines
+-- and hubs whose role paths reach them or reach such a line, their role values, and the role values of those (an end's title, an
+-- inline list's parts), no further. A placed list term finds its list head (rule 12), kept between derivations. A placement of a
+-- term that is not an IRI or a statement between IRIs has no figure. They read the store around these terms only. For what the view shows, and for removal, arrival and data arrival,
+-- they equal the figures of the whole workspace (notation-engine.test.ts). The order of the figures is the cascade, then the focus.
+-- Reason: figures of the whole workspace made each edit and each canvas read cost seconds in a large workspace.
 law_scopedFiguresPreservePlacementRules :: [Id] -> [Id] -> Bool
 law_scopedFiguresPreservePlacementRules full scoped = sameSet full scoped
 -- Unmapped RDF statements stay in the store and the files.
@@ -1509,7 +1512,7 @@ violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element 
 violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
 -- | A move, resize or style change of placements keeps the reads that do not read the geometry: the figures, hidden neighbor counts
 -- and shape applicability of each view, the explorer, the instance count and the file kinds. A write of the files keeps all reads.
--- The notation engine input follows each add and delete of the store: a change does not build it again (notations.ts IndexedStore).
+-- The figures of a view read the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
 -- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
 keepsReads :: SnapshotChange -> Bool
 keepsReads c = reason c == SaveChange || (reason c `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c)

@@ -155,7 +155,7 @@ Paths are relative to the directory in the first column.
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts` | Debounced SHACL validation in a worker thread |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins |
-| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `IndexedStore` keeps the input in step with each change of the store. The bundle copies all assets. |
+| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
 | | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |
