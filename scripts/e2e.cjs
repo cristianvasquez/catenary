@@ -962,7 +962,7 @@ test('browser: subject and object targets retain all predicates through Properti
     assert.equal(shape.ok, true);
     cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { [key]: ['urn:test:first', 'urn:test:second'] } }));
     cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
-    if (!await panel.locator('.catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
+    if (!await panel.isVisible()) await page.locator('#shell-tab-property-view').click();
     const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: new RegExp(`^sh:${key}$`) }) }).locator('textarea');
     await field.waitFor();
     assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
