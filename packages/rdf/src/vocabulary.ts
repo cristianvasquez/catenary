@@ -1,15 +1,13 @@
 // The Catenary vocabulary of the model graph: common predicates, the SKOS vocabulary, the RDFS rules, instances, labels and IRIs in
-// use. Functions of a ModelGraph. This module fills graphRules (graph.ts) with metamodelQuad: graph.ts does not import it. It loads
-// views.ts, so that one import of either module fills all the rules (the two modules import each other; they use the imports in
-// functions only).
+// use. Functions of a ModelGraph. metamodelQuad is a graph rule: model-graph.ts passes it to ModelGraph. graph.ts does not import
+// this module.
 
 import { NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { nameFromURI, nameToURI } from 'canonical-md';
-import { MODEL_GRAPH, ModelGraph, cmp, graphRules, sorted } from './graph';
+import { MODEL_GRAPH, ModelGraph, cmp, sorted } from './graph';
 import { isSkolem } from './skolem';
 import { rdf } from './terms';
-import { isView } from './views';
 
 export const P = {
     type: rdf.namedNode(RDF_TYPE),
@@ -41,8 +39,6 @@ export function metamodelQuad(g: ModelGraph, q: Quad): boolean {
         || SKOS_TYPES.some(t => g.match(q.subject, P.type, t, g.model).length > 0)
         || (RDFS_TEXT.has(q.predicate.value) && inRdfsRule(g, q.subject));
 }
-
-graphRules.metamodelQuad = metamodelQuad;
 
 /**
  * A predicate or a class of an RDFS rule of the model graph: its label and comment are in the metamodel. A written subclass
@@ -131,7 +127,8 @@ export class UsedIris {
         if (this.except?.termType === 'NamedNode' && this.except.value === iri) return false;
         if (iri === MODEL_GRAPH || iri === this.g.model.value) return true;
         const t = rdf.namedNode(iri);
-        return isView(this.g, t) || this.g.store.match(t).some(q => this.g.isDataGraph(q.graph) || this.g.isShapesGraph(q.graph));
+        // The GraphFacts method (the isView rule): views.ts imports this module, not the reverse.
+        return this.g.isView(t) || this.g.store.match(t).some(q => this.g.isDataGraph(q.graph) || this.g.isShapesGraph(q.graph));
     }
 
     add(iri: string): void {

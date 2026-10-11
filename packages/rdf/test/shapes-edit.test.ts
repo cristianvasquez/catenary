@@ -16,6 +16,7 @@ import { S } from '../src/shapes-read';
 import { elementId } from '../src/ids';
 const NS_SKOS = 'http://www.w3.org/2004/02/skos/core#';
 import { DCAT, DCT, parseQuads, run } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 const TTL = readFileSync(new URL('./fixtures/dcat-shapes.ttl', import.meta.url), 'utf8');
 const FILE = '/tmp/dcat-shapes.ttl';
@@ -24,7 +25,7 @@ const GRAPH = rdf.namedNode(fileGraphIri(FILE));
 
 /** The shapes file as the store reads it: blank nodes replaced by IRIs (see skolem.ts). */
 async function load(data = ''): Promise<ModelGraph> {
-    const g = new ModelGraph(new OxigraphStore());
+    const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
     for (const q of data ? await parseQuads(data) : []) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));

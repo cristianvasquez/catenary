@@ -12,6 +12,7 @@ import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
 import { shapesAndVocabulary } from '../src/shapes';
+import { newModelGraph } from '../src/model-graph';
 
 const linksOf = (g: ModelGraph, d: Doc, ids: string[]) =>
     links(g, readShapes(shapesAndVocabulary(g)), ids, ids => new Set(ids.filter(id => !!(d.instances[id] || d.views[id] || d.shapes.nodeShapes[id] || d.shapes.valueSets[id]))));
@@ -35,7 +36,7 @@ describe('links query', () => {
     });
 
     it('law_typeRowsShown: rdf:type is an outgoing row of the instance and an incoming row of the class', async () => {
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
             ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person ; rdfs:label "B" ; ex:knows ex:Person .`)) {
             g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
@@ -67,7 +68,7 @@ describe('links query', () => {
                 sh:or ( [ sh:path ex:a ; sh:minCount 1 ] [ sh:path ex:b ; sh:minCount 1 ] ) .
             ex:Person a sh:NodeShape ; sh:targetClass ex:Person ; sh:property ex:Person-name .
             ex:Person-name sh:path ex:name .`;
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         const shapes = rdf.namedNode(fileGraphIri('/tmp/links-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), shapes]);
         for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, shapes));
@@ -112,7 +113,7 @@ describe('links query', () => {
 
 describe('selectionLinks: the Links panel data (ADR 0007)', () => {
     it('law_shapeInstances: lists distinct targets outside views with shared labels', async () => {
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         const shapes = rdf.namedNode(fileGraphIri('/tmp/instance-links-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), shapes]);
         const prefix = `@prefix sh: <${NS.sh}> . @prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .`;
@@ -188,7 +189,7 @@ describe('selectionLinks: the Links panel data (ADR 0007)', () => {
     });
 
     it('law_typeRowsShown: rdf:type rows reach instances and classes outside the scoped read model', async () => {
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
             ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person .`)) {
             g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));

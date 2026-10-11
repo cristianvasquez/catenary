@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Classes, NS } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { OxigraphStore } from 'rdf-files';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp } from '../src/graph';
+import { MODEL_GRAPH, VALIDATION_GRAPH, cmp } from '../src/graph';
 import { elementId } from '../src/ids';
 import { readResults, reportProblems } from '../src/report-read';
 import { TracedStore, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
+import { newModelGraph } from '../src/model-graph';
 
 afterEach(() => { while (tracer.on) tracer.setClient(false); });
 
@@ -44,7 +45,7 @@ describe('report read', () => {
     // The per-result scan of the report quads before this read took 16 s here: the timeout of the test detects it.
     it('reads several hundred results with four queries, in the order focus node, path, message', { timeout: 5000 }, () => {
         const instances = 300, results = 640;
-        const g = new ModelGraph(new TracedStore(new OxigraphStore(dataset(instances, results))));
+        const g = newModelGraph(new TracedStore(new OxigraphStore(dataset(instances, results))));
         tracer.setClient(true);
         const shapeId = (t: { value: string }) => t.value === SHAPE ? 'shape-id' : undefined;
         const problems = reportProblems(g, meta, shapeId);
@@ -74,7 +75,7 @@ describe('report read', () => {
     });
 
     it('is empty without a report', () => {
-        const g = new ModelGraph(new TracedStore(new OxigraphStore(dataset(3, 0))));
+        const g = newModelGraph(new TracedStore(new OxigraphStore(dataset(3, 0))));
         tracer.setClient(true);
         expect(reportProblems(g, meta, () => undefined)).toEqual([]);
         expect(tracer.take().spans.filter(s => s.kind === 'sparql')).toHaveLength(1);

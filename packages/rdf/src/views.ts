@@ -1,10 +1,10 @@
 // The view vocabulary and the reads of view graphs: views, placements, connectors and marks. Functions of a ModelGraph.
-// This module fills graphRules (graph.ts) with isView and views: graph.ts does not import it.
+// isView and views are graph rules: model-graph.ts passes them to ModelGraph. graph.ts does not import this module.
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Graph, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { createHash, randomBytes } from 'crypto';
-import { ModelGraph, cmp, graphRules, sorted } from './graph';
+import { ModelGraph, cmp, sorted } from './graph';
 import { rdf, termKey } from './terms';
 import { P } from './vocabulary';
 
@@ -55,9 +55,6 @@ export function views(g: ModelGraph): NamedNode[] {
     for (const q of g.match(null, P.type, V.View)) if (isView(g, q.graph)) seen.add(q.graph as NamedNode);
     return sorted(seen);
 }
-
-graphRules.isView = isView;
-graphRules.views = views;
 
 /** The view:View subject of a view graph (normally the graph IRI). */
 export function viewSubject(g: ModelGraph, view: Term): Quad_Subject | undefined {

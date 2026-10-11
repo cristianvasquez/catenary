@@ -42,6 +42,7 @@ import { ValidationRunner } from './validation-runner';
 import { readView } from './view-read';
 import { views, V } from './views';
 import { P } from './vocabulary';
+import { newModelGraph } from './model-graph';
 
 /** A patch with more quads than this (a load, a file read) reads the hidden neighbor counts of each view again. */
 const NEIGHBOR_PATCH_LIMIT = 2000;
@@ -175,7 +176,7 @@ export class ModelStore {
     protected newGraph(): { graph: ModelGraph; guard: TrapGuard } {
         const guard: TrapGuard = new TrapGuard(this.newStore(), trap => this.trapped(trap, guard));
         this.guard ??= guard;
-        return { graph: new ModelGraph(new TracedStore(guard)), guard };
+        return { graph: newModelGraph(new TracedStore(guard)), guard };
     }
 
     /**

@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MODEL_QUERIES, NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
-import { ModelGraph } from '../src/graph';
 import { openWorkspace } from '../src/loader';
 import { filesOfSubject, placeChanges } from '../src/placement';
 import { readChanges } from '../src/reconciler';
 import { Saver } from '../src/saver';
 import { rdf } from '../src/terms';
 import { TracedStore } from '../src/trace';
+import { newModelGraph } from '../src/model-graph';
 
 const EX = 'http://example.org/';
 const dirs: string[] = [];
@@ -23,7 +23,7 @@ async function open() {
     writeFileSync(join(dir, 'a.ttl'), `@prefix ex: <${EX}> .\nex:a a ex:C .\n`);
     writeFileSync(join(dir, 'b.ttl'), `@prefix ex: <${EX}> .\nex:b a ex:D .\n`);
     const notes: string[] = [];
-    const graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+    const graph = newModelGraph(new TracedStore(new OxigraphStore()));
     const r = await openWorkspace(graph, join(dir, 'workspace.trig'), true);
     if ('error' in r) throw new Error(r.error);
     const { settings, loader } = r, saver = new Saver(graph, settings, t => notes.push(t));

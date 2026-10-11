@@ -6,6 +6,7 @@ import { ModelGraph } from '../src/graph';
 import { shapeTargetMatches } from '../src/shacl-targets';
 import { TracedStore, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
+import { newModelGraph } from '../src/model-graph';
 
 const prefix = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .`;
 const node = (value: string) => ({ termType: 'NamedNode' as const, value });
@@ -162,7 +163,7 @@ describe('query cost of node constraints', () => {
         const quads = parseRdfSync(prefix + `<urn:shapes> {
             <urn:S> sh:targetNode <urn:parent> ; sh:property <urn:ps> . <urn:ps> sh:path <urn:p> ; sh:node <urn:T> .
         } <urn:name:model> { <urn:parent> <urn:p> <urn:child> . }`, 'application/trig');
-        const g = new ModelGraph(new TracedStore(new OxigraphStore(quads)));
+        const g = newModelGraph(new TracedStore(new OxigraphStore(quads)));
         g.setShapesGraphs([rdf.namedNode('urn:shapes')]);
         const selection = { nodes: [node('urn:child')] };
         tracer.setClient(true);
@@ -192,7 +193,7 @@ describe('query cost of node constraints', () => {
         } <urn:data> { <urn:parent> <urn:a> <urn:child> ; <urn:b> <urn:child> . }`);
         const refs = readNodeReferences(g, scope.shapes), selected = { nodes: [node('urn:child')] };
         const expected = applicableMatches(g, scope, refs, selected);
-        const graph = new ModelGraph(new TracedStore(g));
+        const graph = newModelGraph(new TracedStore(g));
         tracer.setClient(true);
         try {
             expect(shapeTargetMatches(graph, selected)).toEqual(expected);
@@ -212,7 +213,7 @@ describe('query cost of node constraints', () => {
         } <urn:data> { <urn:parent> <urn:q> <urn:child> . }`);
         const selection = { nodes: [node('urn:child')] };
         const expected = applicableMatches(g, scope, readNodeReferences(g, scope.shapes), selection);
-        const graph = new ModelGraph(new TracedStore(g));
+        const graph = newModelGraph(new TracedStore(g));
         tracer.setClient(true);
         try {
             expect(shapeTargetMatches(graph, selection)).toEqual(expected);
@@ -242,12 +243,12 @@ describe('query cost of node constraints', () => {
 });
 
 describe('kept target matches (§11.3 law_keptReadsEqualRead)', () => {
-    const fresh = (g: ModelGraph) => new ModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
+    const fresh = (g: ModelGraph) => newModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
     const L = 'http://www.w3.org/2000/01/rdf-schema#label';
 
     it('a path through a shared literal: a rename of one end drops the kept match of the other end', () => {
         // S targets A; its property (rdfs:label / ^rdfs:label) has sh:node T: T applies to each node with a label of A.
-        const g = new ModelGraph(new TracedStore(store(`<urn:shapes> {
+        const g = newModelGraph(new TracedStore(store(`<urn:shapes> {
                 <urn:S> sh:targetNode <urn:a> ; sh:property <urn:P> .
                 <urn:P> sh:path <urn:path1> ; sh:node <urn:T> .
                 <urn:path1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> rdfs:label ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <urn:path2> .
@@ -267,12 +268,12 @@ describe('kept target matches (§11.3 law_keptReadsEqualRead)', () => {
 });
 
 describe('kept target matches through an unchanged literal (§11.3 law_keptReadsEqualRead)', () => {
-    const fresh = (g: ModelGraph) => new ModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
+    const fresh = (g: ModelGraph) => newModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
     const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 
     it('removing the target class of the root drops the kept match of the node behind the shared label', () => {
         // S targets class X; its property (rdfs:label / ^rdfs:label) has sh:node T. A has type X; A and B share a label.
-        const g = new ModelGraph(new TracedStore(store(`<urn:shapes> {
+        const g = newModelGraph(new TracedStore(store(`<urn:shapes> {
                 <urn:S> sh:targetClass <urn:X> ; sh:property <urn:P> .
                 <urn:P> sh:path <urn:path1> ; sh:node <urn:T> .
                 <urn:path1> <${RDF}first> rdfs:label ; <${RDF}rest> <urn:path2> .

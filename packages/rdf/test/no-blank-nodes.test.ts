@@ -12,6 +12,7 @@ import { SKOLEM_BASE, skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { parseTrig } from '../src/trig';
 import { SHAPES, value, writeWorkspace } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 const blank = (qs: Quad[]) => qs.filter(q => q.subject.termType === 'BlankNode' || q.object.termType === 'BlankNode');
 const EX = 'http://ex/';
@@ -22,7 +23,7 @@ const TRIG = `@prefix ex: <${EX}> . @prefix rdfs: <${NS.rdfs}> .
 <urn:name:model> { ex:a a ex:T ; rdfs:label "A" ; ex:address [ ex:city "X" ; ex:geo [ ex:lat 1 ] ] . }`;
 
 async function graph(): Promise<ModelGraph> {
-    return new ModelGraph(new OxigraphStore(skolemize((await parseTrig(TRIG)).quads).quads));
+    return newModelGraph(new OxigraphStore(skolemize((await parseTrig(TRIG)).quads).quads));
 }
 
 describe('no blank nodes in the dataset (AGENTS.md)', () => {

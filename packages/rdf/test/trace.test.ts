@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { queryKey, type TraceSpan } from '@catenary/model';
 import * as model from '@catenary/model';
 import { OxigraphStore, parseRdfSync } from 'rdf-files';
-import { ModelGraph } from '../src/graph';
 import { shapeTargetMatches } from '../src/shacl-targets';
 import { ModelStore } from '../src/model-store';
 import { TracedStore, Tracer, tracer } from '../src/trace';
@@ -14,6 +13,7 @@ import * as validation from '../src/validate';
 import { ValidationRunner } from '../src/validation-runner';
 import { syncFigures } from '../src/figure-edits';
 import { DATA, SHAPES, emptyGraph, writeWorkspace } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -143,7 +143,7 @@ describe('tracer', () => {
 describe('traced store', () => {
     it('attributes the SHACL walk and reference reads to their caller; the references stay until the store changes', () => {
         const quads = parseRdfSync('<urn:name:model> { <urn:S> <http://www.w3.org/ns/shacl#targetNode> <urn:a> . }', 'application/trig');
-        const graph = new ModelGraph(new TracedStore(new OxigraphStore(quads)));
+        const graph = newModelGraph(new TracedStore(new OxigraphStore(quads)));
         tracer.setClient(true);
         for (let i = 0; i < 2; i++) expect(shapeTargetMatches(graph, { nodes: [{ termType: 'NamedNode', value: 'urn:a' }] })).toHaveLength(1);
         const { spans } = tracer.take();

@@ -5,18 +5,19 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { NTerm, Violation, nkey } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
-import { ModelGraph, VALIDATION_GRAPH } from '../src/graph';
+import { VALIDATION_GRAPH } from '../src/graph';
 import { ModelStore, violationScope } from '../src/model-store';
 import { LAYOUT_PREDICATES } from '../src/change';
 import { readNotations, storeIndex, storeInput } from '../src/notations';
 import { rdf } from '../src/terms';
+import { newModelGraph } from '../src/model-graph';
 
 const n = (l: string) => rdf.namedNode('urn:x:' + l);
 const j = (l: string): NTerm => ({ termType: 'NamedNode', value: 'urn:x:' + l });
 
 describe('storeInput: the engine input read around the terms that a view asks about', () => {
     it('gives each lookup of the whole store index: the union of the graphs without the report, without duplicates', () => {
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         const quad = (s: string, p: string, o: string, graph = 'g1') => rdf.quad(n(s), n(p), o.startsWith('"') ? rdf.literal(o.slice(1)) : n(o), n(graph));
         for (const q of [quad('a', 'p', 'b'), quad('a', 'p', 'c'), quad('b', 'q', '"text'), quad('c', 'p', 'a'), quad('a', 'p', 'b', 'g2'), quad('d', 'r', 'a', 'g2')]) g.add(q.subject, q.predicate, q.object, q.graph);
         g.add(n('e'), n('p'), n('a'), rdf.namedNode(VALIDATION_GRAPH));
@@ -45,7 +46,7 @@ describe('the figures do not read the geometry of placements', () => {
     });
 
     it('a layout change keeps the figure input; another change does not', () => {
-        const g = new ModelGraph(new OxigraphStore());
+        const g = newModelGraph(new OxigraphStore());
         g.add(n('view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('osg://vocab/view#View'), n('view'));
         const before = g.keys.data;
         g.add(n('p1'), rdf.namedNode('osg://vocab/view#x'), rdf.literal('10'), n('view'));

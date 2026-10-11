@@ -10,6 +10,7 @@ import { AUTHORING_PLUGINS, authoringMetamodel } from './authoring';
 import { ModelGraph } from './graph';
 import { rdf } from './terms';
 import { P, SKOS_TYPES } from './vocabulary';
+import { newModelGraph } from './model-graph';
 
 /**
  * The graph for new node shapes: the primary shapes graph, else the first one. The primary graph can be empty (an empty
@@ -57,7 +58,7 @@ export function emptyMetamodel(): Metamodel {
 export function metamodelFromQuads(quads: Iterable<Quad>, source?: string): Metamodel {
     const triples = [...quads].map(q => rdf.quad(q.subject, q.predicate, q.object));
     const dataset = rdf.dataset(triples);
-    const g = new ModelGraph(new OxigraphStore(triples.map(q => rdf.quad(q.subject, q.predicate, q.object, n(SHAPES_GRAPH)))));
+    const g = newModelGraph(new OxigraphStore(triples.map(q => rdf.quad(q.subject, q.predicate, q.object, n(SHAPES_GRAPH)))));
     const shacl = AUTHORING_PLUGINS.filter(p => p.reads === 'shapes');
     return { ...authoringMetamodel(g, buildVocabulary(dataset), shacl, [SHAPES_GRAPH]), source, dataset };
 }

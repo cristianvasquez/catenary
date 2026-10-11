@@ -3,7 +3,7 @@
 // The role of a graph comes from the registry of this class (`model`, `setShapesGraphs`), not from its name.
 // The store is the source of truth. Every change goes through `add` / `remove`, which record a patch:
 // a transaction gives one patch, undo applies the patch backwards. Element ids: see ids.ts.
-// Vocabulary and view reads are functions of a ModelGraph in vocabulary.ts, views.ts, shapes.ts. They fill graphRules.
+// Vocabulary and view reads are functions of a ModelGraph in vocabulary.ts, views.ts, shapes.ts. model-graph.ts passes the rules.
 
 import type { MigrationChange } from '@catenary/model';
 import { VALIDATION_GRAPH, layoutOnly, quadDependencies } from './change';
@@ -31,15 +31,12 @@ export const fileOfGraph = (graph: string) => {
     try { return decodeURI(rest); } catch { return rest; }
 };
 
-/** The vocabulary rules of the change events and the logical data scope. views.ts and vocabulary.ts fill them when they load. */
+/** The vocabulary rules of the change events and the logical data scope (model-graph.ts newModelGraph gives the Catenary rules). */
 export interface GraphRules {
     isView(g: ModelGraph, t: Term | undefined): boolean;
     views(g: ModelGraph): NamedNode[];
     metamodelQuad(g: ModelGraph, q: Quad): boolean;
 }
-const notLoaded = (module: string) => (): never => { throw new Error(`The graph rules of ${module} are not loaded.`); };
-export const graphRules: GraphRules = { isView: notLoaded('views.ts'), views: notLoaded('views.ts'), metamodelQuad: notLoaded('vocabulary.ts') };
-const placeholders = new Set<unknown>(Object.values(graphRules));
 
 /** `was`: on an add, the statement that it replaces (an IRI change); the store keeps the files of that statement. */
 export type Change = { op: 'add' | 'remove'; quad: Quad; was?: Quad };
@@ -99,14 +96,14 @@ export class ModelGraph {
         return quadDependencies(this, q);
     }
 
-    /** A quad of a data graph that changes the metamodel (GraphFacts.metamodelQuad): vocabulary.ts metamodelQuad, through graphRules. */
+    /** A quad of a data graph that changes the metamodel (GraphFacts.metamodelQuad): the metamodelQuad rule. */
     metamodelQuad(q: Quad): boolean {
-        return graphRules.metamodelQuad(this, q);
+        return this.rules.metamodelQuad(this, q);
     }
 
-    /** View: a named graph with a view:View subject (GraphFacts.isView): views.ts isView, through graphRules. */
+    /** View: a named graph with a view:View subject (GraphFacts.isView): the isView rule. */
     isView(t: Term | undefined): boolean {
-        return graphRules.isView(this, t);
+        return this.rules.isView(this, t);
     }
 
     protected publish(patch: Patch, dependencies: Dependencies): void {
@@ -123,10 +120,7 @@ export class ModelGraph {
         for (const listener of [...this.listeners]) listener(event);
     }
 
-    /** Throws when views.ts or vocabulary.ts is not loaded: a change event needs their rules. */
-    constructor(readonly store: QuadStore) {
-        for (const rule of Object.values(graphRules)) if (placeholders.has(rule)) (rule as () => never)();
-    }
+    constructor(readonly store: QuadStore, readonly rules: GraphRules) {}
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
         const next = [...graphs];
@@ -214,7 +208,7 @@ export class ModelGraph {
         if (!this.data) return query;
         const model = `GRAPH <${this.model.value}>`;
         if (!query.includes(model)) return query;
-        const graphs = [...new Set([...this.data, this.model, ...this.shapesGraphs(), ...graphRules.views(this), rdf.namedNode(VALIDATION_GRAPH)].map(g => g.value))];
+        const graphs = [...new Set([...this.data, this.model, ...this.shapesGraphs(), ...this.rules.views(this), rdf.namedNode(VALIDATION_GRAPH)].map(g => g.value))];
         const dataset = [...this.data, this.model].map(g => `FROM <${g.value}>`).join(' ')
             + ' ' + graphs.map(g => `FROM NAMED <${g}>`).join(' ');
         let index = 0, offset = 0;

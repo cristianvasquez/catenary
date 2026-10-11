@@ -9,6 +9,7 @@ import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { executeCommand } from '../src/commands';
 import { parseQuads, run, violationsIn } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 // A property shape with sh:or of ranges: "the value is an A or a B" (range kind "or").
 const P = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://ex/> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .`;
@@ -24,7 +25,7 @@ const FILE = '/tmp/or-shapes.ttl';
 const GRAPH = rdf.namedNode(fileGraphIri(FILE));
 
 async function load(): Promise<ModelGraph> {
-    const g = new ModelGraph(new OxigraphStore());
+    const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
     return g;

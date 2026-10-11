@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
-import { dataGraphIri, GraphChange, ModelGraph, VALIDATION_GRAPH } from '../src/graph';
+import { dataGraphIri, GraphChange, VALIDATION_GRAPH } from '../src/graph';
 import { shapeQueryScope } from '../src/shacl-targets';
 import { shapesIndexOf } from '../src/shapes-read';
 import { rdf } from '../src/terms';
+import { newModelGraph } from '../src/model-graph';
 
 const n = (s: string) => rdf.namedNode('urn:test:' + s);
-const graph = () => new ModelGraph(new OxigraphStore());
+const graph = () => newModelGraph(new OxigraphStore());
 
 describe('shared patch events', () => {
     it('law_patchEventScope: one committed transaction names its graphs and IRI elements', () => {
