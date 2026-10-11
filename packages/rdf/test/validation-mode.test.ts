@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { VALIDATION_GRAPH } from '../src/graph';
+import { REPORT_GRAPH } from '../src/graph';
 import { elementId } from '../src/ids';
 import { ModelStore } from '../src/model-store';
 import { manifestQuads, readManifest, NEAR, WS } from '../src/files';
@@ -50,7 +50,7 @@ async function opened(path: string): Promise<ModelStore> {
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
 const foci = (store: ModelStore) => store.violations.map(v => v.focus).sort();
 const reportSize = (store: ModelStore) => (store as unknown as { graph: { store: { match(...a: unknown[]): unknown[] } } })
-    .graph.store.match(null, null, null, rdf.namedNode(VALIDATION_GRAPH)).length;
+    .graph.store.match(null, null, null, rdf.namedNode(REPORT_GRAPH)).length;
 
 describe('validation mode', () => {
     it('the manifest stores off and views; all is the default and is not written', () => {

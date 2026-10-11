@@ -178,7 +178,7 @@ describe('query cost of node constraints', () => {
             const unchanged = tracer.take().spans;
             expect(unchanged.filter(s => s.kind === 'sparql' && (s.name.startsWith('construct:') || s.name.includes('SELECT DISTINCT ?g') || s.name.includes('SELECT ?node ?value')))).toHaveLength(0);
             expect(unchanged.filter(s => s.name === 'read node references')).toHaveLength(0);
-            g.add(rdf.namedNode('urn:parent'), rdf.namedNode('urn:p'), rdf.namedNode('urn:other'), g.model);
+            g.add(rdf.namedNode('urn:parent'), rdf.namedNode('urn:p'), rdf.namedNode('urn:other'), g.union);
             tracer.clear();
             expect(shapeTargetMatches(g, { nodes: [node('urn:other')] }).map(m => m.shape)).toEqual(['urn:T']);
             expect(tracer.take().spans.some(s => s.kind === 'sparql' && s.name.startsWith('construct:'))).toBe(true);

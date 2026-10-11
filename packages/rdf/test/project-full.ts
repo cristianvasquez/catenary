@@ -5,7 +5,7 @@ import {
     Doc, NS, PREFIXES as PREFIX_TABLE, emptyDoc
 } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, fileOfGraph } from '../src/graph';
+import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, cmp, fileOfGraph } from '../src/graph';
 import { elementId } from '../src/ids';
 import { Plain, Resource, Row, cardIdsOf, first, instanceRecords, key, projectView, select } from '../src/records';
 import { readShapes } from '../src/shapes-read';
@@ -38,7 +38,7 @@ const key4 = (t: Term): string => t.termType === 'Literal' ? JSON.stringify([t.v
 export function project(g: ModelGraph): Projection {
     const warnings: string[] = [];
     const doc = emptyDoc();
-    const M = `<${g.model.value}>`;
+    const M = `<${g.union.value}>`;
     doc.shapes = shapesOf(g);
 
     // Model graph: all statements, grouped by subject.
@@ -49,7 +49,7 @@ export function project(g: ModelGraph): Projection {
         if (!e) statements.set(k, e = { s: r.s, rows: [] });
         e.rows.push(r);
     }
-    const self = statements.get('NamedNode ' + MODEL_GRAPH);
+    const self = statements.get('NamedNode ' + UNION_GRAPH);
     const conformsTo = first(self?.rows.filter(r => r.p.value === CONFORMS_TO).map(r => r.o));
     if (conformsTo) doc.conformsTo = conformsTo.value;
 
@@ -78,7 +78,7 @@ export function project(g: ModelGraph): Projection {
     const graphs = new Map<string, { views: Map<string, { v: Plain; labels: Plain[] }> }>();
     for (const r of select(g, `${PREFIXES}
         SELECT ?g ?v ?l WHERE {
-            { SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${[...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ')})) } }
+            { SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${[...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(REPORT_GRAPH)].map(t => `<${t.value}>`).join(', ')})) } }
             OPTIONAL { GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l } } }
         }`)) {
         let e = graphs.get(r.g.value);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
-import { dataGraphIri, GraphChange, VALIDATION_GRAPH } from '../src/graph';
+import { dataGraphIri, GraphChange, REPORT_GRAPH } from '../src/graph';
 import { shapeQueryScope } from '../src/shacl-targets';
 import { shapesIndexOf } from '../src/shapes-read';
 import { rdf } from '../src/terms';
@@ -15,18 +15,18 @@ describe('shared patch events', () => {
         const g = graph(), events: GraphChange[] = [];
         g.onDidChange(e => events.push(e));
         const { patch } = g.transact(x => {
-            x.add(n('a'), n('p'), n('b'), x.model);
+            x.add(n('a'), n('p'), n('b'), x.union);
             x.add(n('b'), n('q'), rdf.literal('name'), n('view'));
             return { ok: true };
         });
         expect(events).toHaveLength(1);
         expect(events[0].patch).toBe(patch);
-        expect(events[0].graphs).toEqual([g.model.value, n('view').value]);
+        expect(events[0].graphs).toEqual([g.union.value, n('view').value]);
         expect(events[0].elements).toEqual([n('a').value, n('b').value]);
         expect(g.keys.data).toBe(events[0]);
         expect(g.keys.persisted).toBe(events[0]);
         g.transact(() => ({ ok: true }));
-        g.add(n('a'), n('p'), n('b'), g.model);
+        g.add(n('a'), n('p'), n('b'), g.union);
         expect(events).toHaveLength(1);
     });
 
@@ -52,8 +52,8 @@ describe('shared patch events', () => {
     it('undo and redo each publish one effective patch in application order', () => {
         const g = graph(), events: GraphChange[] = [];
         const { patch } = g.transact(x => {
-            x.add(n('a'), n('p'), n('b'), x.model);
-            x.add(n('b'), n('p'), n('c'), x.model);
+            x.add(n('a'), n('p'), n('b'), x.union);
+            x.add(n('b'), n('p'), n('c'), x.union);
             return { ok: true };
         });
         g.onDidChange(e => events.push(e));
@@ -78,8 +78,8 @@ describe('shared patch events', () => {
         expect(g.keys.shapes).toBe(before.shapes);
         expect(g.keys.persisted).not.toBe(before.persisted);
         const persisted = g.keys.persisted;
-        g.add(n('report'), n('p'), n('a'), rdf.namedNode(VALIDATION_GRAPH));
-        expect(g.change.graphs).toEqual([VALIDATION_GRAPH]);
+        g.add(n('report'), n('p'), n('a'), rdf.namedNode(REPORT_GRAPH));
+        expect(g.change.graphs).toEqual([REPORT_GRAPH]);
         expect(g.keys.persisted).toBe(persisted);
         expect(g.keys.data).toBe(before.data);
         expect(g.keys.query).toBe(before.query);
@@ -104,11 +104,11 @@ describe('shared patch events', () => {
         g.add(n('b'), n('p'), n('c'), b);
         const text = 'GRAPH <urn:name:model> { ?fake ?p ?o } WHERE';
         g.add(n('a'), n('label'), rdf.literal(text), a);
-        const count = (pattern: string) => g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.model.value}> { ${pattern} } }`)[0].n.value;
+        const count = (pattern: string) => g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.union.value}> { ${pattern} } }`)[0].n.value;
         expect(count('<urn:test:a> <urn:test:p> <urn:test:b>')).toBe('1');
         expect(count('<urn:test:a> <urn:test:p>/<urn:test:p> ?end')).toBe('1');
         expect(count(`<urn:test:a> <urn:test:label> ${JSON.stringify(text)}`)).toBe('1');
-        expect(g.select(`SELECT (${JSON.stringify(text)} AS ?text) ?end WHERE { GRAPH <${g.model.value}> { <urn:test:a> <urn:test:p>/<urn:test:p> ?end } }`)).toHaveLength(1);
+        expect(g.select(`SELECT (${JSON.stringify(text)} AS ?text) ?end WHERE { GRAPH <${g.union.value}> { <urn:test:a> <urn:test:p>/<urn:test:p> ?end } }`)).toHaveLength(1);
     });
 
 });

@@ -9,7 +9,7 @@ import {
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
-import { skolemIri } from 'rdf-core';
+import { skolemIri } from './skolem';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { shapesCardTerm, shapesIndex } from './shape-ops';
 import { jsonToTerm, mapTerm, rdf } from './terms';
@@ -245,11 +245,11 @@ export function createInstance(g: ModelGraph, classIri: string, label: string, i
     const problem = labelProblem(label);
     if (problem) return fail(problem);
     const s = rdf.namedNode(mintFree(g, label));
-    g.add(s, P.type, rdf.namedNode(classIri), g.model);
-    g.add(s, P.label, rdf.literal(label), g.model);
+    g.add(s, P.type, rdf.namedNode(classIri), g.union);
+    g.add(s, P.label, rdf.literal(label), g.union);
     if (inScheme) {
-        g.add(s, rdf.namedNode(NS.skos + 'prefLabel'), rdf.literal(label), g.model);
-        g.add(s, rdf.namedNode(NS.skos + 'inScheme'), rdf.namedNode(inScheme), g.model);
+        g.add(s, rdf.namedNode(NS.skos + 'prefLabel'), rdf.literal(label), g.union);
+        g.add(s, rdf.namedNode(NS.skos + 'inScheme'), rdf.namedNode(inScheme), g.union);
     }
     return ok(elementId(s));
 }
@@ -364,9 +364,9 @@ export function deleteInstance(g: ModelGraph, id: string): void {
     if (!s) return;
     const home = homeOf(g, s);
     removeTree(g, s, home);
-    g.removeMatches(null, null, s, g.model);
+    g.removeMatches(null, null, s, g.union);
     // A SKOS subject of a shapes file: also the statements of that file that refer to it (skos:broader, skos:member, …), not RDF list cells.
-    if (!home.equals(g.model)) for (const q of g.match(null, null, s, home)) if (!q.predicate.equals(RDF_FIRST)) g.remove(q);
+    if (!home.equals(g.union)) for (const q of g.match(null, null, s, home)) if (!q.predicate.equals(RDF_FIRST)) g.remove(q);
     for (const view of views(g)) dropFromView(g, view, s);
 }
 
@@ -465,7 +465,7 @@ export function hideEdge(g: ModelGraph, viewId: string, relationId: string, hidd
 }
 
 const isInstanceTerm = (g: ModelGraph, t: Term): t is NamedNode =>
-    t.termType === 'NamedNode' && (g.match(t as NamedNode, P.type, null, g.model).length > 0 || g.match(t as NamedNode, P.label, null, g.model).length > 0);
+    t.termType === 'NamedNode' && (g.match(t as NamedNode, P.type, null, g.union).length > 0 || g.match(t as NamedNode, P.label, null, g.union).length > 0);
 
 /** A statement of the model graph that the read model shows as a relation: both ends are instances, not rdf:type or rdfs:label. */
 function isRelation(g: ModelGraph, q: Quad): boolean {
@@ -493,7 +493,7 @@ export function placeConnectors(g: ModelGraph): void {
     }
     for (const { view, s } of placed) {
         if (!nodeOf(g, view, s)) continue;
-        const touching = [...g.match(s, null, null, g.model), ...g.match(null, null, s, g.model), ...g.match(s, V.arrow), ...g.match(null, V.arrow, s)];
+        const touching = [...g.match(s, null, null, g.union), ...g.match(null, null, s, g.union), ...g.match(s, V.arrow), ...g.match(null, V.arrow, s)];
         for (const q of touching) {
             const other = q.subject.equals(s) ? q.object : q.subject;
             if (other.termType === 'NamedNode' && nodeOf(g, view, other) && isConnector(g, q)) placeConnector(g, view, q.subject as NamedNode, q.predicate as NamedNode, q.object as NamedNode);

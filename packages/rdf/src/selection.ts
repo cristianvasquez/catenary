@@ -3,7 +3,7 @@
 import { ElementKind, ModelSelection, NS, Selected, emptySelected, searchKind } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { TextTarget } from 'rdf-files';
-import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
+import { ModelGraph, REPORT_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
@@ -183,10 +183,10 @@ export function filesOfElements(g: ModelGraph, index: () => ShapesIndex, setting
     const scan = (terms: string[], bound: 's' | 'o') => {
         const free = bound === 's' ? 'o' : 's';
         for (const r of rows(g, `SELECT ?${bound} ?g (SAMPLE(?p) AS ?p1) (SAMPLE(?${free}) AS ?${free}1) (COUNT(*) AS ?n) WHERE {
-            VALUES ?${bound} { ${terms.map(iri).join(' ')} } GRAPH ?g { ?s ?p ?o } FILTER (?g != <${VALIDATION_GRAPH}>)
+            VALUES ?${bound} { ${terms.map(iri).join(' ')} } GRAPH ?g { ?s ?p ?o } FILTER (?g != <${REPORT_GRAPH}>)
         } GROUP BY ?${bound} ?g`)) {
             const term = r[bound].value;
-            if (r.g.equals(g.model)) { fromModel.add(term); continue; }
+            if (r.g.equals(g.union)) { fromModel.add(term); continue; }
             const count = counts.get(term) ?? new Map<string, number>();
             counts.set(term, count);
             const sample = rdf.quad((bound === 's' ? r.s : r.s1) as Quad_Subject, r.p1 as NamedNode, (bound === 'o' ? r.o : r.o1) as Quad_Object, r.g as NamedNode);

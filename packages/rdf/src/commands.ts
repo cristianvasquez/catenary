@@ -68,7 +68,7 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
     if (inView.length === items.length) return alreadyInView(items.length);
     // Copy: IRI of the source instance -> its copy.
     const copies = rdf.termMap<NamedNode, NamedNode>();
-    const used = new Set(g.match(null, P.label, null, g.model).map(q => q.object.value));
+    const used = new Set(g.match(null, P.label, null, g.union).map(q => q.object.value));
     const pasted: string[] = [];
     for (const { b, id } of items.filter(i => !inView.includes(i))) {
         const place = { x: b.x + dx, y: b.y + dy };

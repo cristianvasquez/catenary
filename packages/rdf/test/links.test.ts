@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
     Doc, NS, boxes, elementLabel, findRelation, formPredicates, inView, isHidden, kindOf, predicateName, primaryClass, shortIri, viewsShowing
 } from '@catenary/model';
-import { ModelGraph, fileGraphIri } from '../src/graph';
+import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { elementId } from '../src/ids';
 import { OxigraphStore } from 'rdf-files';
 import { links, selectionLinks } from '../src/queries';
 import { readShapes } from '../src/shapes-read';
 import { scopedDoc } from '../src/scoped-doc';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
 import { shapesAndVocabulary } from '../src/shapes';
@@ -39,7 +39,7 @@ describe('links query', () => {
         const g = newModelGraph(new OxigraphStore());
         for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
             ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person ; rdfs:label "B" ; ex:knows ex:Person .`)) {
-            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
         }
         const d = doc(g);
         const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
@@ -69,7 +69,7 @@ describe('links query', () => {
             ex:Person a sh:NodeShape ; sh:targetClass ex:Person ; sh:property ex:Person-name .
             ex:Person-name sh:path ex:name .`;
         const g = newModelGraph(new OxigraphStore());
-        const shapes = rdf.namedNode(fileGraphIri('/tmp/links-shapes.ttl'));
+        const shapes = rdf.namedNode(shapesGraphIri('/tmp/links-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), shapes]);
         for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, shapes));
         const V = rdf.namedNode('urn:name:V'), node = rdf.namedNode('urn:name:V-placement');
@@ -114,7 +114,7 @@ describe('links query', () => {
 describe('selectionLinks: the Links panel data (ADR 0007)', () => {
     it('law_shapeInstances: lists distinct targets outside views with shared labels', async () => {
         const g = newModelGraph(new OxigraphStore());
-        const shapes = rdf.namedNode(fileGraphIri('/tmp/instance-links-shapes.ttl'));
+        const shapes = rdf.namedNode(shapesGraphIri('/tmp/instance-links-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), shapes]);
         const prefix = `@prefix sh: <${NS.sh}> . @prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .`;
         for (const q of await parseQuads(prefix + `
@@ -126,7 +126,7 @@ describe('selectionLinks: the Links panel data (ADR 0007)', () => {
         for (const q of await parseQuads(prefix + `
             ex:a a ex:C ; rdfs:label "Alpha" ; ex:p ex:b .
             ex:b a ex:Sub ; rdfs:label "Beta" . ex:c a ex:Other .`)) {
-            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
         }
         const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));
         const d = doc(g), idx = readShapes(shapesAndVocabulary(g)), m = await meta();
@@ -192,7 +192,7 @@ describe('selectionLinks: the Links panel data (ADR 0007)', () => {
         const g = newModelGraph(new OxigraphStore());
         for (const q of await parseQuads(`@prefix rdfs: <${NS.rdfs}> . @prefix ex: <http://ex/> .
             ex:Person rdfs:label "Person" . ex:a a ex:Person ; rdfs:label "A" . ex:b a ex:Person .`)) {
-            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+            g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
         }
         const idx = readShapes(shapesAndVocabulary(g)), m = await meta();
         const id = (name: string) => elementId(rdf.namedNode('http://ex/' + name));

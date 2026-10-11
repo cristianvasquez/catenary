@@ -3,7 +3,7 @@
 // kind, so the store compares the state before and after the patch for these terms, not for all elements.
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { Change, MODEL_GRAPH, ModelGraph } from './graph';
+import { Change, UNION_GRAPH, ModelGraph } from './graph';
 import { elementId } from './ids';
 import type { ShapesIndex } from './shapes-read';
 import { rdf, termKey, tripleKey } from './terms';
@@ -23,13 +23,13 @@ export function matchBefore(g: ModelGraph, patch: readonly Change[]): (s?: Term 
     for (const c of patch) if (!first.has(quadKey(c.quad))) first.set(quadKey(c.quad), c);
     const removed = [...first.values()].filter(c => c.op === 'remove').map(c => c.quad);
     return (s, p, o, graph) => {
-        const union = graph?.equals(g.model);
+        const union = graph?.equals(g.union);
         const matchesGraph = (q: Quad) => !graph || (union ? g.isDataGraph(q.graph) : q.graph.equals(graph));
         const found = [
             ...g.match(s, p, o).filter(q => matchesGraph(q) && first.get(quadKey(q))?.op !== 'add'),
             ...removed.filter(q => matchesGraph(q) && matches(q, s, p, o))
         ];
-        return union ? [...new Map(found.map(q => [tripleKey(q), rdf.quad(q.subject, q.predicate, q.object, g.model)])).values()] : found;
+        return union ? [...new Map(found.map(q => [tripleKey(q), rdf.quad(q.subject, q.predicate, q.object, g.union)])).values()] : found;
     };
 }
 
@@ -42,10 +42,10 @@ export function movedIds(g: ModelGraph, patch: readonly Change[], shapes?: { bef
         const gone = [...old].filter(id => !now.has(id)), added = [...now].filter(id => !old.has(id));
         if (gone.length === 1 && added.length === 1) moved[gone[0]] = added[0];
     };
-    const isInstanceIn = (match: typeof was) => (t: NamedNode) => t.value !== MODEL_GRAPH && !t.equals(g.model) && (
-        match(t, P.type, null, g.model).length > 0 || match(t, P.label, null, g.model).length > 0
+    const isInstanceIn = (match: typeof was) => (t: NamedNode) => t.value !== UNION_GRAPH && !t.equals(g.union) && (
+        match(t, P.type, null, g.union).length > 0 || match(t, P.label, null, g.union).length > 0
         || [...SKOS_TYPES.flatMap(type => match(t, P.type, type)), ...SKOS_MEMBERSHIP.flatMap(p => match(t, p))].some(q => g.isShapesGraph(q.graph)));
-    const isViewIn = (match: typeof was) => (t: NamedNode) => !t.equals(g.model) && match(null, P.type, V.View, t).length > 0;
+    const isViewIn = (match: typeof was) => (t: NamedNode) => !t.equals(g.union) && match(null, P.type, V.View, t).length > 0;
 
     const subjects = new Map<string, NamedNode>(), graphs = new Map<string, NamedNode>();
     for (const { quad: q } of patch) {

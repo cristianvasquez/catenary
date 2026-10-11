@@ -6,7 +6,7 @@ import { Doc, NS, SnapshotChange, boxes, emptyDoc } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import { OxigraphStore } from 'rdf-files';
 import { classify, keepsReads, mergeRecords, refreshes, tierOf, validates } from '../src/change';
-import { ModelGraph, VALIDATION_GRAPH, dataGraphIri } from '../src/graph';
+import { ModelGraph, REPORT_GRAPH, dataGraphIri } from '../src/graph';
 import { elementId } from '../src/ids';
 import { ModelStore } from '../src/model-store';
 import { rdf } from '../src/terms';
@@ -72,7 +72,7 @@ describe('classify', () => {
     });
     it('the report graph is in no scope and invalidates nothing', () => {
         const g = graph();
-        const { patch } = g.transact(x => { x.add(n('r'), n('p'), rdf.literal('x'), rdf.namedNode(VALIDATION_GRAPH)); return { ok: true }; });
+        const { patch } = g.transact(x => { x.add(n('r'), n('p'), rdf.literal('x'), rdf.namedNode(REPORT_GRAPH)); return { ok: true }; });
         expect(classify(g, patch, 'validation')).toMatchObject({ tier: 'data', views: [], elements: [], shapes: false, layout: false, validates: false, invalidates: { shapes: false, query: false, data: false, persisted: false } });
     });
     it('the tier follows the reason: the same patch is a Rebuild after a load or a disk read', () => {

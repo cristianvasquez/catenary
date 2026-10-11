@@ -6,7 +6,7 @@
 
 import type { NamedNode, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, emptyDoc } from '@catenary/model';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, fileOfGraph } from './graph';
+import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, cmp, fileOfGraph } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
 import { shapesIndexOf } from './shapes-read';
@@ -35,7 +35,7 @@ export function showsShapes(g: ModelGraph, view: NamedNode): boolean {
     const valueSetTypes = SKOS_TYPES.filter(t => !t.value.endsWith('#Concept'));
     return g.match(null, rdf.namedNode(NS.view + 'element'), null, view)
         .some(q => q.object.termType === 'NamedNode' && (g.match(q.object).some(x => g.isShapesGraph(x.graph))
-            || valueSetTypes.some(t => g.match(q.object as NamedNode, P.type, t, g.model).length > 0)));
+            || valueSetTypes.some(t => g.match(q.object as NamedNode, P.type, t, g.union).length > 0)));
 }
 
 /** Rows grouped by `?s`, values of `vars` once each in row order. */
@@ -74,7 +74,7 @@ export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, wa
 /** The Doc of view `view`: the view, the instances it places (and the SKOS vocabulary when it shows shapes), their relations. */
 export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string[] = [], elements?: string[]): Doc {
     const { g } = ctx;
-    const V = `<${view.value}>`, M = `<${g.model.value}>`;
+    const V = `<${view.value}>`, M = `<${g.union.value}>`;
     const doc = emptyDoc();
     doc.shapes = ctx.shapes;
     const shows = !elements && showsShapes(g, view);
@@ -187,7 +187,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
         e.rows.push({ s: r.s, p: r.p, o: r.o });
     }
     const TYPE = P.type.value, LABEL = P.label.value;
-    const subjects = [...statements.values()].filter(e => e.s.termType === 'NamedNode' && e.s.value !== MODEL_GRAPH && e.rows.some(r => r.p.value === TYPE || r.p.value === LABEL));
+    const subjects = [...statements.values()].filter(e => e.s.termType === 'NamedNode' && e.s.value !== UNION_GRAPH && e.rows.some(r => r.p.value === TYPE || r.p.value === LABEL));
     // A view with shape elements: the SKOS subjects of the shapes graphs that are not instances above (vocabulary.ts vocabularySubjects
     // on these statements), with their statements of the first such shapes graph.
     const files = new Map<string, string>();
@@ -213,7 +213,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
         if (!placedInstances.has(iri)) continue;
         if (subjectValues.has(iri)) continue;
         const home = homeOf(g, rdf.namedNode(iri));
-        if (home.equals(g.model)) continue;
+        if (home.equals(g.union)) continue;
         const rows = g.match(rdf.namedNode(iri), null, null, home).map(q => ({ s: { termType: q.subject.termType, value: q.subject.value, term: q.subject } as Plain,
             p: { termType: q.predicate.termType, value: q.predicate.value, term: q.predicate } as Plain,
             o: { termType: q.object.termType, value: q.object.value, term: q.object } as Plain }));
@@ -232,7 +232,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     const placementScope = (variable: string) => elements ? `VALUES ?${variable} { ${values(placementIds)} }` : '';
 
     // Views that the part names: this view, the targets of its view references, the graphs of the marks and arrows it places.
-    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(REPORT_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const viewRows = select(g, `${PREFIXES}
         SELECT DISTINCT ?g ?v ?l WHERE {
             { BIND(${V} AS ?g) }
@@ -303,7 +303,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
 
 /** Label of every view (view id → label): the first view:View subject of the graph; rdfs:label, else from the IRI. */
 export function viewLabels(g: ModelGraph): Record<string, string> {
-    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(REPORT_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const subjects = new Map<string, Map<string, { v: string; labels: string[] }>>();
     for (const r of select(g, `${PREFIXES}
         SELECT ?g ?v ?l WHERE { GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l FILTER (isLiteral(?l)) } } FILTER (isIRI(?g) && ?g NOT IN (${excluded})) }`)) {

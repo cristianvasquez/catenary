@@ -1,6 +1,6 @@
 import { View, boxes } from '@catenary/model';
 import type { TargetMatch } from '@catenary/shacl/common';
-import { MODEL_GRAPH } from './graph';
+import { UNION_GRAPH } from './graph';
 import { instanceLabels } from './scoped-doc';
 import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shacl-targets';
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
@@ -155,7 +155,7 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElements
         const found = g.select(`${PREFIXES}
             SELECT DISTINCT ?eid ?v ?h WHERE {
                 VALUES (?eid ?s ?p ?o) { ${relations.join(' ')} }
-                GRAPH ${iri(g.model)} { ?s ?p ?o }
+                GRAPH ${iri(g.union)} { ?s ?p ?o }
                 GRAPH ?v { ?vs a view:View . ?a view:element ?s . ?b view:element ?o }
                 BIND (NOT EXISTS { GRAPH ?v { ?edge rdf:reifies <<( ?s ?p ?o )>> } } AS ?h)
             }`);
@@ -269,7 +269,7 @@ export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes, in
         FILTER (?g IN (${graphs}) && ?o IN (${list}) && ?p NOT IN (rdf:type, rdfs:label))
     }`);
     const homes = homesAmong(g, found.flatMap(r => [r.s.value, r.o.value]));
-    const graphRows = found.filter(r => (homes.get(r.s.value) === g.model.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value)))
+    const graphRows = found.filter(r => (homes.get(r.s.value) === g.union.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value)))
         .sort((a, b) => cmp(a.s.value, b.s.value) || cmp(a.p.value, b.p.value) || cmp(a.o.value, b.o.value));
     const rows = [...new Map(graphRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()]
         .filter(r => !collected.has(r.s.value) && !collected.has(r.o.value));
@@ -283,7 +283,7 @@ export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes, in
     const literals = new Map<string, { label: string[]; pref: string[] }>();
     if (ends.length) for (const r of g.select(`${PREFIXES} SELECT ?s ?p ?l ?h WHERE { VALUES ?s { ${ends.map(iriText).join(' ')} } GRAPH ?h { ?s ?p ?l } FILTER (?p IN (rdfs:label, skos:prefLabel) && isLiteral(?l)) }`)) {
         const home = homes.get(r.s.value);
-        if (home === g.model.value ? !g.isDataGraph(r.h) : r.h.value !== home) continue;
+        if (home === g.union.value ? !g.isDataGraph(r.h) : r.h.value !== home) continue;
         const e = literals.get(r.s.value) ?? literals.set(r.s.value, { label: [], pref: [] }).get(r.s.value)!;
         (r.p.value === NS.rdfs + 'label' ? e.label : e.pref).push(r.l.value);
     }
@@ -315,8 +315,8 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     const shapeGraphs = new Set(g.shapesGraphs().map(t => t.value));
     const homes = new Map<string, string>();
     for (const [s, rows] of bySubject) {
-        if (s === g.model.value) continue;
-        if (rows.some(r => g.isDataGraph(r.g) && [NS.rdf + 'type', NS.rdfs + 'label'].includes(r.p.value))) homes.set(s, g.model.value);
+        if (s === g.union.value) continue;
+        if (rows.some(r => g.isDataGraph(r.g) && [NS.rdf + 'type', NS.rdfs + 'label'].includes(r.p.value))) homes.set(s, g.union.value);
         else {
             const graphs = rows.filter(r => shapeGraphs.has(r.g.value) &&
                 (SKOS_MEMBERSHIP.some(p => p.value === r.p.value) || r.p.value === NS.rdf + 'type' && SKOS_TYPES.some(t => t.value === r.o.value)))
@@ -344,7 +344,7 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
     const linkRows = endValues ? g.select(`${PREFIXES} SELECT ?s ?p ?o ?g WHERE {
         VALUES ?s { ${endValues} } VALUES ?o { ${endValues} } GRAPH ?g { ?s ?p ?o }
         FILTER(?p NOT IN (rdf:type, rdfs:label))
-    }`).filter(r => (homes.get(r.s.value) === g.model.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value))) : [];
+    }`).filter(r => (homes.get(r.s.value) === g.union.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value))) : [];
     const links = [...new Map(linkRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()];
     const placedLinks = new Set(viewQuads.filter(q => q.predicate.value === NS.rdf + 'reifies').map(q => termKey(q.object)));
     const hidden = links.filter(r => !members.has(r.s.value) && !members.has(r.o.value)
@@ -359,7 +359,7 @@ export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): Vie
 export function dataPredicates(g: ModelGraph): string[] {
     const labels = instanceLabels(g);
     const found = new Set<string>();
-    for (const r of g.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${g.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
+    for (const r of g.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${g.union.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
         if (labels.has(r.s.value) && r.p.value !== P.type.value && r.p.value !== P.label.value) found.add(r.p.value);
     }
     for (const [s, graph] of vocabularySubjects(g)) {
@@ -371,7 +371,7 @@ export function dataPredicates(g: ModelGraph): string[] {
 /** Metamodel classes and written instance types. */
 export function knownClasses(g: ModelGraph, meta: Classes): { iri: string; name?: string }[] {
     const types = new Set<string>();
-    for (const r of g.select(`SELECT DISTINCT ?t WHERE { GRAPH <${g.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
+    for (const r of g.select(`SELECT DISTINCT ?t WHERE { GRAPH <${g.union.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${UNION_GRAPH}>) }`)) types.add(r.t.value);
     for (const [s, graph] of vocabularySubjects(g)) for (const t of g.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
     return [...meta.classes.map(c => ({ iri: c.iri, name: c.name })), ...[...types].sort(cmp).map(iri => ({ iri }))];
 }

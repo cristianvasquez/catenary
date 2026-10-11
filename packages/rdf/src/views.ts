@@ -46,7 +46,7 @@ export const V = {
 
 /** View: a named graph (not the model graph) with a view:View subject. */
 export function isView(g: ModelGraph, t: Term | undefined): boolean {
-    return !!t && t.termType === 'NamedNode' && !t.equals(g.model) && g.match(null, P.type, V.View, t).length > 0;
+    return !!t && t.termType === 'NamedNode' && !t.equals(g.union) && g.match(null, P.type, V.View, t).length > 0;
 }
 
 /** View graph IRIs, sorted. */

@@ -5,7 +5,7 @@ import { shapeTargetMatches } from './shacl-targets';
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, View, boxes, emptyDoc } from '@catenary/model';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, fileOfGraph, cmp } from './graph';
+import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, fileOfGraph, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
 import { homesAmong, inModelAmong, instancesAmong } from './sparql';
@@ -94,7 +94,7 @@ export function neighbors(g: ModelGraph, subjects: string[]): string[] {
  */
 function records(g: ModelGraph, doc: Doc, iris: string[]): void {
     const statements = new Map<string, Statements>();
-    for (const r of select(g, `SELECT ?s ?p ?o WHERE { VALUES ?s { ${iris.map(iri).join(' ')} } GRAPH ${iri(g.model.value)} { ?s ?p ?o } }`)) {
+    for (const r of select(g, `SELECT ?s ?p ?o WHERE { VALUES ?s { ${iris.map(iri).join(' ')} } GRAPH ${iri(g.union.value)} { ?s ?p ?o } }`)) {
         let e = statements.get(key(r.s));
         if (!e) statements.set(key(r.s), e = { s: r.s, rows: [] });
         e.rows.push(r);
@@ -104,8 +104,8 @@ function records(g: ModelGraph, doc: Doc, iris: string[]): void {
     const inModel = inModelAmong(g, iris);
     for (const s of iris) {
         const t = rdf.namedNode(s);
-        const home = inModel.has(s) ? g.model : homeOf(g, t);
-        if (home.equals(g.model)) {
+        const home = inModel.has(s) ? g.union : homeOf(g, t);
+        if (home.equals(g.union)) {
             const e = statements.get('NamedNode ' + s);
             if (e) subjects.push(e);
             continue;
@@ -143,8 +143,8 @@ function viewsPlacing(g: ModelGraph, terms: string[]): string[] {
 
 /** The number of instances of the store: IRIs of the model graph with a type or a label, and the SKOS subjects of the shapes files. */
 export function instanceCount(g: ModelGraph): number {
-    const model = select(g, `${PREFIXES} SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ${iri(g.model.value)} { ?s rdf:type|rdfs:label ?o }
-        FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)} && ?s != ${iri(g.model.value)}) }`)[0];
+    const model = select(g, `${PREFIXES} SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ${iri(g.union.value)} { ?s rdf:type|rdfs:label ?o }
+        FILTER (isIRI(?s) && ?s != ${iri(UNION_GRAPH)} && ?s != ${iri(g.union.value)}) }`)[0];
     return Number(model?.n.value ?? 0) + vocabularySubjects(g).size;
 }
 
@@ -152,8 +152,8 @@ export function instanceCount(g: ModelGraph): number {
 export function instanceLabels(g: ModelGraph): Map<string, string> {
     const out = new Map<string, { label?: string; pref?: string }>();
     for (const r of select(g, `${PREFIXES} SELECT ?s ?p ?l WHERE {
-        { GRAPH ${iri(g.model.value)} { ?s rdf:type|rdfs:label ?any } FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)} && ?s != ${iri(g.model.value)}) }
-        OPTIONAL { GRAPH ${iri(g.model.value)} { ?s ?p ?l } FILTER (?p IN (rdfs:label, <${NS.skos}prefLabel>) && isLiteral(?l)) } }`)) {
+        { GRAPH ${iri(g.union.value)} { ?s rdf:type|rdfs:label ?any } FILTER (isIRI(?s) && ?s != ${iri(UNION_GRAPH)} && ?s != ${iri(g.union.value)}) }
+        OPTIONAL { GRAPH ${iri(g.union.value)} { ?s ?p ?l } FILTER (?p IN (rdfs:label, <${NS.skos}prefLabel>) && isLiteral(?l)) } }`)) {
         const e = out.get(r.s.value) ?? out.set(r.s.value, {}).get(r.s.value)!;
         if (!r.l) continue;
         if (r.p.value === P.label.value) { if (e.label === undefined || cmp(r.l.value, e.label) < 0) e.label = r.l.value; }
@@ -171,16 +171,16 @@ export function instanceLabels(g: ModelGraph): Map<string, string> {
 /** File references of all views: the view graph IRI and the stored path (view:file) of each. */
 export function fileReferences(g: ModelGraph): { view: string; file: string }[] {
     return select(g, `${PREFIXES} SELECT DISTINCT ?g ?file WHERE { GRAPH ?g { ?n a view:Placement ; view:element ?m } GRAPH ?mg { ?m a view:FileRef ; view:file ?file } }`)
-        .filter(r => r.g.termType === 'NamedNode' && r.g.value !== VALIDATION_GRAPH).map(r => ({ view: r.g.value, file: r.file.value }));
+        .filter(r => r.g.termType === 'NamedNode' && r.g.value !== REPORT_GRAPH).map(r => ({ view: r.g.value, file: r.file.value }));
 }
 
 const values = (iris: Iterable<string>) => [...iris].map(iri).join(' ');
 
 /** Subject → its warning: the subjects of the model graph with more than one rdfs:label (of `subjects`; none: all). */
 function labelWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string, string> {
-    const M = iri(g.model.value), out = new Map<string, string>();
+    const M = iri(g.union.value), out = new Map<string, string>();
     const found = select(g, `${PREFIXES} SELECT ?s (COUNT(?l) AS ?n) WHERE { ${subjects ? `VALUES ?s { ${values(subjects)} }` : ''}
-        GRAPH ${M} { ?s rdfs:label ?l } FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)}) } GROUP BY ?s HAVING (COUNT(?l) > 1)`).map(r => r.s.value);
+        GRAPH ${M} { ?s rdfs:label ?l } FILTER (isIRI(?s) && ?s != ${iri(UNION_GRAPH)}) } GROUP BY ?s HAVING (COUNT(?l) > 1)`).map(r => r.s.value);
     if (!found.length) return out;
     // The label that the card shows (instanceLabels): the first literal rdfs:label in order (a subject of the model graph is no vocabulary subject).
     const first = new Map<string, string>();
@@ -199,21 +199,21 @@ function labelWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string,
 
 /** Subject → its warning: the subjects of the model graph without rdf:type or rdfs:label (of `subjects`; none: all). */
 function untypedWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string, string> {
-    const M = iri(g.model.value);
+    const M = iri(g.union.value);
     return new Map(select(g, `${PREFIXES} SELECT DISTINCT ?s WHERE { ${subjects ? `VALUES ?s { ${values(subjects)} }` : ''} GRAPH ${M} { ?s ?p ?o }
-        FILTER (?s != ${iri(MODEL_GRAPH)} && (!isIRI(?s) || NOT EXISTS { GRAPH ${M} { ?s rdf:type|rdfs:label ?any } })) }`)
+        FILTER (?s != ${iri(UNION_GRAPH)} && (!isIRI(?s) || NOT EXISTS { GRAPH ${M} { ?s rdf:type|rdfs:label ?any } })) }`)
         .map(r => [r.s.value, `subject without rdf:type or rdfs:label kept in the file, not shown: ${r.s.value}`]));
 }
 
 /** Statements about the model graph (other than dct:conformsTo). */
 function modelGraphWarnings(g: ModelGraph): string[] {
-    return select(g, `SELECT ?p WHERE { GRAPH ${iri(g.model.value)} { ${iri(MODEL_GRAPH)} ?p ?o } }`)
+    return select(g, `SELECT ?p WHERE { GRAPH ${iri(g.union.value)} { ${iri(UNION_GRAPH)} ?p ?o } }`)
         .filter(r => r.p.value !== P.conformsTo.value).map(r => `statement about the model graph kept in the file, not shown: ${r.p.value}`);
 }
 
 /** Graphs without a role and without a view:View. */
 function graphWarnings(g: ModelGraph): string[] {
-    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => iri(t.value)).join(', ');
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(REPORT_GRAPH)].map(t => iri(t.value)).join(', ');
     return select(g, `${PREFIXES} SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${excluded}))
         FILTER NOT EXISTS { GRAPH ?g { ?v a view:View } } }`).sort((a, b) => cmp(a.g.value, b.g.value))
         .map(r => `graph ${r.g.value} has no view:View, kept in the file, not shown`);
@@ -308,8 +308,8 @@ export class DatasetWarnings {
             for (const [s, w] of labelWarnings(g, subjects)) kept.labels.set(s, w);
             for (const [s, w] of untypedWarnings(g, subjects)) kept.untyped.set(s, w);
         }
-        if (subjects.includes(MODEL_GRAPH)) kept.model = modelGraphWarnings(g);
-        const other = changes.filter(c => !g.isDataGraph(c.quad.graph) && !g.isShapesGraph(c.quad.graph) && c.quad.graph.value !== VALIDATION_GRAPH);
+        if (subjects.includes(UNION_GRAPH)) kept.model = modelGraphWarnings(g);
+        const other = changes.filter(c => !g.isDataGraph(c.quad.graph) && !g.isShapesGraph(c.quad.graph) && c.quad.graph.value !== REPORT_GRAPH);
         if (other.some(c => !isView(g, c.quad.graph) || (c.quad.predicate.value === P.type.value && c.quad.object.value === VIEW_TYPE))) kept.graphs = graphWarnings(g);
         // The terms whose change can change the read of a view that places them.
         const relevant = new Set<string>();
@@ -421,7 +421,7 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         const dir = r.dir.value as 'in' | 'out';
         // A relation is a statement of the graph of its subject (the model graph, or the shapes graph of a SKOS subject).
         const owner = homes.get(dir === 'out' ? r.s.value : r.x.value);
-        if (owner === g.model.value ? !g.isDataGraph(r.g) : r.g.value !== owner) continue;
+        if (owner === g.union.value ? !g.isDataGraph(r.g) : r.g.value !== owner) continue;
         add(r.s.value, dir, r.x.value);
     }
     for (const [self, o] of others) counts.set(self, { in: o.in.size, out: o.out.size });

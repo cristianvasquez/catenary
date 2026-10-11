@@ -30,7 +30,7 @@ async function open() {
     const ws = { graph, settings, loader, saver, filesOfSubject: (t: Parameters<typeof filesOfSubject>[1]) => filesOfSubject(graph, t) };
     /** Add a statement to the model graph, as a command does. */
     const add = (s: string, p: string, o: string) => {
-        const quad = rdf.quad(rdf.namedNode(EX + s), rdf.namedNode(p), rdf.namedNode(EX + o), ws.graph.model);
+        const quad = rdf.quad(rdf.namedNode(EX + s), rdf.namedNode(p), rdf.namedNode(EX + o), ws.graph.union);
         const { patch } = ws.graph.transact(g => {
             g.add(quad.subject, quad.predicate, quad.object, quad.graph);
             placeChanges(g, ws.settings);
@@ -61,15 +61,15 @@ describe('sync modules', () => {
         const { dir, ws } = await open();
         const n = (s: string) => rdf.namedNode(EX + s);
         const { patch, result } = ws.graph.transact(g => {
-            g.add(n('nested'), n('value'), rdf.literal('child'), g.model);
-            g.add(n('b'), n('detail'), n('nested'), g.model);
+            g.add(n('nested'), n('value'), rdf.literal('child'), g.union);
+            g.add(n('b'), n('detail'), n('nested'), g.union);
             placeChanges(g, ws.settings);
             return { ok: true };
         });
         expect(result.ok).toBe(true);
         ws.settings.track(patch);
         expect(ws.filesOfSubject(n('nested'))).toEqual([join(dir, 'b.ttl')]);
-        expect(patch.every(c => !c.quad.graph.equals(ws.graph.model))).toBe(true);
+        expect(patch.every(c => !c.quad.graph.equals(ws.graph.union))).toBe(true);
     });
 
     it('reads a file that another program changed, and a new file', async () => {

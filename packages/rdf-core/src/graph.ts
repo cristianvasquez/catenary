@@ -1,6 +1,6 @@
 // The model as quads in a QuadStore. Each model file has data and shapes graphs.
 // Each view file uses its view IRI as its graph name.
-// The role of a graph comes from the registry of this class (`model`, `setShapesGraphs`), not from its name.
+// The role of a graph comes from the registry of this class (`union`, `setShapesGraphs`), not from its name.
 // The store is the source of truth. Every change goes through `add` / `remove`, which record a patch:
 // a transaction gives one patch, undo applies the patch backwards. Element ids: see ids.ts.
 // The rules (view test, metamodel test, cache dependencies of a quad, layout-only test of a patch) come in through the constructor.
@@ -12,24 +12,18 @@ import type { QuadStore } from 'rdf-files';
 import { rdf, tripleKey } from './terms';
 
 /**
- * The model resource (subject of dct:conformsTo and the label of the model, in the data file), the graph name of the data in TriG text
- * (workspace files, test fixtures), and the model graph when there is no data file.
+ * The graph names of the host. The core owns no IRI value: the caller gives the names to the constructor.
+ * `union`: the logical union of the data graphs. `report`: the graph of the validation report (not saved).
+ * `data`, `shapes`: the store graph of the data and of the shapes of a file (its store path).
+ * `fileOf`: the store path of a data or shapes graph, or undefined for another graph.
  */
-export const MODEL_GRAPH = 'urn:name:model';
-/** The SHACL report of the last validation (ADR 0007): derived, not saved, not in undo, not in the canonical form. */
-export const VALIDATION_GRAPH = 'urn:trellis:validation';
-
-/** Store graph of a file: this prefix and the encoded absolute path. */
-export const FILE_GRAPH_PREFIX = 'urn:shapes:';
-export const DATA_GRAPH_PREFIX = 'urn:data:';
-export const dataGraphIri = (file: string) => DATA_GRAPH_PREFIX + encodeURI(file);
-export const fileGraphIri = (file: string) => FILE_GRAPH_PREFIX + encodeURI(file);
-/** File of a store graph (its path), or the graph IRI when it has no path. */
-export const fileOfGraph = (graph: string) => {
-    const prefix = [FILE_GRAPH_PREFIX, DATA_GRAPH_PREFIX, 'urn:file:'].find(p => graph.startsWith(p));
-    const rest = prefix ? graph.slice(prefix.length) : graph;
-    try { return decodeURI(rest); } catch { return rest; }
-};
+export interface GraphNames {
+    union: string;
+    report: string;
+    data(file: string): string;
+    shapes(file: string): string;
+    fileOf(graph: string): string | undefined;
+}
 
 /** The vocabulary rules of the change events and the logical data scope. The caller gives them to the constructor. */
 export interface GraphRules {
@@ -62,7 +56,7 @@ type Maybe<T> = T | null | undefined;
 /** `P`: the type of the records that the open transaction proposes (`proposed`). */
 export class ModelGraph<P = unknown> {
     /** Logical union of file data graphs; temporary additions use it until transaction placement. */
-    model: NamedNode = rdf.namedNode(MODEL_GRAPH);
+    union: NamedNode;
 
     /** The shapes graphs: the store graphs of the shapes files. */
     protected shapes: TermSet<NamedNode> = rdf.termSet<NamedNode>();
@@ -125,7 +119,9 @@ export class ModelGraph<P = unknown> {
         for (const listener of [...this.listeners]) listener(event);
     }
 
-    constructor(readonly store: QuadStore, readonly rules: GraphRules) {}
+    constructor(readonly store: QuadStore, readonly rules: GraphRules, readonly names: GraphNames) {
+        this.union = rdf.namedNode(names.union);
+    }
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
         const next = [...graphs];
@@ -141,10 +137,10 @@ export class ModelGraph<P = unknown> {
         this.invalidate({ shapes: true, query: true, data: true });
     }
 
-    dataGraphs(): NamedNode[] { return this.data ?? [this.model]; }
+    dataGraphs(): NamedNode[] { return this.data ?? [this.union]; }
 
     isDataGraph(t: Pick<Term, 'termType' | 'value'> | undefined): boolean {
-        return !!t && t.termType === 'NamedNode' && (t.value === this.model.value || !!this.data?.some(g => g.value === t.value));
+        return !!t && t.termType === 'NamedNode' && (t.value === this.union.value || !!this.data?.some(g => g.value === t.value));
     }
 
     /** Register the data graph of a model file before statements enter it. The registry, not the IRI, gives a graph its role. */
@@ -156,13 +152,13 @@ export class ModelGraph<P = unknown> {
     placePending(resolve: (q: Quad, changes: readonly Change[], fallback: boolean) => string[] | undefined): void {
         if (!this.log || !this.data) return;
         const changes = [...this.log];
-        let pending = this.store.match(null, null, null, this.model);
-        const additions = new Map(changes.filter(c => c.op === 'add' && c.quad.graph.equals(this.model)).map(c => [tripleKey(c.quad), c]));
+        let pending = this.store.match(null, null, null, this.union);
+        const additions = new Map(changes.filter(c => c.op === 'add' && c.quad.graph.equals(this.union)).map(c => [tripleKey(c.quad), c]));
         const log = this.log;
         const place = (q: Quad, files: string[]) => {
             this.store.delete(q);
-            for (const file of files) this.addDataGraph(rdf.namedNode(dataGraphIri(file)));
-            for (const file of files) this.add(q.subject, q.predicate, q.object, rdf.namedNode(dataGraphIri(file)), additions.get(tripleKey(q))?.was);
+            for (const file of files) this.addDataGraph(rdf.namedNode(this.names.data(file)));
+            for (const file of files) this.add(q.subject, q.predicate, q.object, rdf.namedNode(this.names.data(file)), additions.get(tripleKey(q))?.was);
         };
         while (pending.length) {
             const rest: Quad[] = [];
@@ -181,7 +177,7 @@ export class ModelGraph<P = unknown> {
                 pending = rest.filter(q => !q.subject.equals(root.subject));
             } else pending = rest;
         }
-        log.splice(0, log.length, ...log.filter(c => !c.quad.graph.equals(this.model)));
+        log.splice(0, log.length, ...log.filter(c => !c.quad.graph.equals(this.union)));
     }
 
     isShapesGraph(t: Term | undefined): boolean {
@@ -190,18 +186,18 @@ export class ModelGraph<P = unknown> {
 
     /** The registered data graph and shapes graph of a model file (its store path). A view file has its view graph instead. */
     graphsOfFile(file: string): NamedNode[] {
-        return [rdf.namedNode(dataGraphIri(file)), rdf.namedNode(fileGraphIri(file))].filter(g => this.isDataGraph(g) || this.isShapesGraph(g));
+        return [rdf.namedNode(this.names.data(file)), rdf.namedNode(this.names.shapes(file))].filter(g => this.isDataGraph(g) || this.isShapesGraph(g));
     }
 
     has(q: Quad): boolean {
-        return q.graph.equals(this.model) && this.data ? this.match(q.subject, q.predicate, q.object, this.model).length > 0 : this.store.has(q);
+        return q.graph.equals(this.union) && this.data ? this.match(q.subject, q.predicate, q.object, this.union).length > 0 : this.store.has(q);
     }
 
     match(s?: Maybe<Term>, p?: Maybe<Term>, o?: Maybe<Term>, g?: Maybe<Term>): Quad[] {
-        if (!g?.equals(this.model) || !this.data) return this.store.match(s, p, o, g);
+        if (!g?.equals(this.union) || !this.data) return this.store.match(s, p, o, g);
         const found = new Map<string, Quad>();
-        for (const graph of [...this.data, this.model]) for (const q of this.store.match(s, p, o, graph)) {
-            found.set(tripleKey(q), rdf.quad(q.subject, q.predicate, q.object, this.model));
+        for (const graph of [...this.data, this.union]) for (const q of this.store.match(s, p, o, graph)) {
+            found.set(tripleKey(q), rdf.quad(q.subject, q.predicate, q.object, this.union));
         }
         return [...found.values()];
     }
@@ -211,10 +207,10 @@ export class ModelGraph<P = unknown> {
      */
     protected scopedQuery(query: string): string {
         if (!this.data) return query;
-        const model = `GRAPH <${this.model.value}>`;
-        if (!query.includes(model)) return query;
-        const graphs = [...new Set([...this.data, this.model, ...this.shapesGraphs(), ...this.rules.views(this), rdf.namedNode(VALIDATION_GRAPH)].map(g => g.value))];
-        const dataset = [...this.data, this.model].map(g => `FROM <${g.value}>`).join(' ')
+        const union = `GRAPH <${this.union.value}>`;
+        if (!query.includes(union)) return query;
+        const graphs = [...new Set([...this.data, this.union, ...this.shapesGraphs(), ...this.rules.views(this), rdf.namedNode(this.names.report)].map(g => g.value))];
+        const dataset = [...this.data, this.union].map(g => `FROM <${g.value}>`).join(' ')
             + ' ' + graphs.map(g => `FROM NAMED <${g}>`).join(' ');
         let index = 0, offset = 0;
         // Quotes inside IRI tokens are not string delimiters.
@@ -222,10 +218,10 @@ export class ModelGraph<P = unknown> {
         while (offset < query.length) {
             graphTokens.lastIndex = offset;
             let graph = graphTokens.exec(query);
-            while (graph && graph[0] !== model) graph = graphTokens.exec(query);
+            while (graph && graph[0] !== union) graph = graphTokens.exec(query);
             if (!graph) break;
             offset = graph.index;
-            const start = query.indexOf('{', offset + model.length);
+            const start = query.indexOf('{', offset + union.length);
             const tokens = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|<[^\s<>]*>|\?[A-Za-z_][A-Za-z_0-9]*|[{}]/g;
             tokens.lastIndex = start;
             const variables = new Set<string>();
@@ -256,7 +252,7 @@ export class ModelGraph<P = unknown> {
     quads(): Quad[] { return this.store.match(); }
 
     /** `was`: the statement that this one replaces (see Change.was). */
-    // g is the target graph. g.model is the union: placePending gives such a quad its file graph before the transaction commits.
+    // g is the target graph. g.union is the union: placePending gives such a quad its file graph before the transaction commits.
     add(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object, g: Quad_Graph, was?: Quad): void {
         const q = rdf.quad(s, p, o, g);
         if (this.has(q)) return;
@@ -268,10 +264,10 @@ export class ModelGraph<P = unknown> {
     }
 
     remove(q: Quad): void {
-        if (q.graph.equals(this.model) && this.data) {
+        if (q.graph.equals(this.union) && this.data) {
             this.update(() => {
-                for (const graph of [...this.data!, this.model]) for (const copy of this.store.match(q.subject, q.predicate, q.object, graph)) {
-                    if (graph.equals(this.model)) this.removeStored(copy);
+                for (const graph of [...this.data!, this.union]) for (const copy of this.store.match(q.subject, q.predicate, q.object, graph)) {
+                    if (graph.equals(this.union)) this.removeStored(copy);
                     else this.remove(copy);
                 }
             });
@@ -296,7 +292,7 @@ export class ModelGraph<P = unknown> {
     /** Replace the objects of (s, p) in graph g. Undefined removes them. */
     set(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object | undefined, g: Quad_Graph): void {
         this.update(() => {
-            const copies = g.equals(this.model) && this.data
+            const copies = g.equals(this.union) && this.data
                 ? this.store.match(s, p).filter(q => this.isDataGraph(q.graph)) : this.match(s, p, null, g);
             const graphs = copies.length ? [...new Map(copies.map(q => [q.graph.value, q.graph])).values()] : [g];
             for (const q of copies) if (!o || !q.object.equals(o)) this.remove(q);
@@ -367,16 +363,16 @@ export class ModelGraph<P = unknown> {
         });
     }
 
-    objects(s: Term, p: Term, g: Maybe<Term> = this.model): Quad_Object[] {
+    objects(s: Term, p: Term, g: Maybe<Term> = this.union): Quad_Object[] {
         return [...this.match(s, p, null, g)].map(q => q.object);
     }
 
     /** The first object in term order: a stable choice when there are several. */
-    object(s: Term, p: Term, g: Maybe<Term> = this.model): Quad_Object | undefined {
+    object(s: Term, p: Term, g: Maybe<Term> = this.union): Quad_Object | undefined {
         return this.objects(s, p, g).sort((a, b) => cmp(a.value, b.value))[0];
     }
 
-    subjects(p: Term, o: Maybe<Term>, g: Maybe<Term> = this.model): Quad_Subject[] {
+    subjects(p: Term, o: Maybe<Term>, g: Maybe<Term> = this.union): Quad_Subject[] {
         return [...this.match(null, p, o, g)].map(q => q.subject);
     }
 

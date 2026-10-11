@@ -5,7 +5,7 @@
 import { Classes, NS, Violation, localName, predicateName } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
 import { Validator } from 'shacl-engine';
-import { skolemize } from 'rdf-core';
+import { skolemize } from './skolem';
 import { rdf } from './terms';
 
 /** A result of a SHACL report as plain values (a worker thread can send it): IRIs and literal values, not terms. */

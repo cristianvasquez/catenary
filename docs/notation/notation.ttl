@@ -98,7 +98,7 @@ nt:style a rdf:Property ; rdfs:comment "A style key. On a property shape with nt
 
 # --- badges ---
 #
-#   Validation is not part of the model. Catenary computes the report into the named graph urn:trellis:validation.
+#   Validation is not part of the model. Catenary computes the report into the named graph urn:catenary:report.
 #   The renderer draws a badge on every shown figure, row or line whose element IRI is a sh:focusNode of a result.
 
 # --- text rule ---

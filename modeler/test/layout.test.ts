@@ -9,6 +9,7 @@ import { ModelStore } from '@catenary/rdf';
 import { layoutView } from '../src/node/glsp/layout';
 import { docOf, load, run } from '../../packages/rdf/test/helpers';
 import { project } from '../../packages/rdf/test/project-full';
+import { shapesGraphIri } from '../../packages/rdf/src/graph';
 import { readNotations, storeIndex } from '../../packages/rdf/src/notations';
 import { viewFigures, idIri } from '@catenary/model';
 
@@ -206,7 +207,7 @@ it('layered: if ELK layered fails, ELK box places the cards (no overlap)', async
 
 it('uses targeting connectors for layout without persisting their sides', async () => {
     const g = await load(`@prefix sh: <http://www.w3.org/ns/shacl#> .
-        <urn:file:/tmp/targeting.ttl> {
+        <${shapesGraphIri('/tmp/targeting.ttl')}> {
             <urn:source> a sh:NodeShape ; sh:property <urn:property> .
             <urn:property> sh:path <urn:status> .
             <urn:target> a sh:NodeShape ; sh:targetSubjectsOf <urn:status> .

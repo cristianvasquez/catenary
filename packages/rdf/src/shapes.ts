@@ -31,8 +31,8 @@ export function shapesQuads(g: ModelGraph): Quad[] {
  */
 export function vocabularyQuads(g: ModelGraph): Quad[] {
     const subjects = rdf.termSet<Term>();
-    for (const t of SKOS_TYPES) for (const q of g.match(null, P.type, t, g.model)) subjects.add(q.subject);
-    return [...subjects].flatMap(s => g.match(s as Quad_Subject, null, null, g.model));
+    for (const t of SKOS_TYPES) for (const q of g.match(null, P.type, t, g.union)) subjects.add(q.subject);
+    return [...subjects].flatMap(s => g.match(s as Quad_Subject, null, null, g.union));
 }
 
 /** Shapes quads and the SKOS vocabulary of the model graph. */

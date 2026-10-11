@@ -36,7 +36,7 @@ ex:core a ex:Team ; rdfs:label "Core team" .
 
 async function rules(text = ONTOLOGY) {
     const g = emptyGraph();
-    for (const q of await parseQuads(text)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+    for (const q of await parseQuads(text)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
     return rdfsRules(queryPort(g));
 }
 const ofPredicate = (rs: Awaited<ReturnType<typeof rules>>, p: string) => rs.rules.filter(r => r.predicate === EX + p).map(r => `${r.domain.slice(EX.length)} ${JSON.stringify(r.range)}`);
@@ -157,19 +157,19 @@ describe('ModelGraph.keys.shapes', () => {
         const g = emptyGraph(), n = (local: string) => rdf.namedNode(EX + local), p = (local: string) => rdf.namedNode(NS.rdfs + local);
         let revision = g.keys.shapes;
         const changed = () => { const c = g.keys.shapes !== revision; revision = g.keys.shapes; return c; };
-        g.add(n('bob'), n('age'), rdf.literal('40'), g.model);
+        g.add(n('bob'), n('age'), rdf.literal('40'), g.union);
         expect(changed()).toBe(false);
-        g.add(n('age'), p('domain'), n('Person'), g.model);
+        g.add(n('age'), p('domain'), n('Person'), g.union);
         expect(changed()).toBe(true);
-        g.add(n('age'), p('label'), rdf.literal('age'), g.model);
+        g.add(n('age'), p('label'), rdf.literal('age'), g.union);
         expect(changed()).toBe(true);
-        g.add(n('Person'), p('comment'), rdf.literal('A human.'), g.model);
+        g.add(n('Person'), p('comment'), rdf.literal('A human.'), g.union);
         expect(changed()).toBe(true);
-        g.add(n('bob'), p('label'), rdf.literal('Bob'), g.model);
+        g.add(n('bob'), p('label'), rdf.literal('Bob'), g.union);
         expect(changed()).toBe(false);
-        g.add(n('Employee'), p('subClassOf'), n('Person'), g.model);
+        g.add(n('Employee'), p('subClassOf'), n('Person'), g.union);
         expect(changed()).toBe(true);
-        g.add(n('Employee'), p('label'), rdf.literal('Employee'), g.model);
+        g.add(n('Employee'), p('label'), rdf.literal('Employee'), g.union);
         expect(changed()).toBe(true);
     });
 });

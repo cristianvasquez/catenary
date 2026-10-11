@@ -10,7 +10,7 @@ import { elementId } from './ids';
 import { Result, fail, ok } from './ops';
 import { mintShapeIri } from './shape-ops';
 import { S } from './shapes-read';
-import { skolemize } from 'rdf-core';
+import { skolemize } from './skolem';
 import { rdf } from './terms';
 import { shapesQuads, shapesTarget } from './shapes';
 import { modelTriples, usedIris, label, P } from './vocabulary';
@@ -27,7 +27,7 @@ export function shapedClasses(g: ModelGraph): Set<string> {
 /** The IRI types of the model graph that no node shape targets, sorted. */
 export function unshapedClasses(g: ModelGraph): string[] {
     const shaped = shapedClasses(g);
-    const quads = g.match(null, P.type, null, g.model);
+    const quads = g.match(null, P.type, null, g.union);
     const classes = new Set(quads.filter(q => q.object.termType === 'NamedNode').map(q => q.object.value));
     return [...classes].filter(c => !shaped.has(c) && shapeable(c)).sort();
 }
@@ -41,7 +41,7 @@ export function unshapedClassesOf(g: ModelGraph, shaped: Set<string>, subjects: 
     const values = [...new Set(subjects)];
     if (!values.length) return out;
     const types = new Map<string, Set<string>>();
-    for (const r of g.select(`SELECT DISTINCT ?s ?c WHERE { VALUES ?s { ${values.map(s => `<${s}>`).join(' ')} } GRAPH <${g.model.value}> { ?s <${P.type.value}> ?c } FILTER (isIRI(?c)) }`)) {
+    for (const r of g.select(`SELECT DISTINCT ?s ?c WHERE { VALUES ?s { ${values.map(s => `<${s}>`).join(' ')} } GRAPH <${g.union.value}> { ?s <${P.type.value}> ?c } FILTER (isIRI(?c)) }`)) {
         (types.get(r.s.value) ?? types.set(r.s.value, new Set()).get(r.s.value)!).add(r.c.value);
     }
     for (const s of values) out.set(s, [...types.get(s) ?? []].filter(c => !shaped.has(c) && shapeable(c)).sort());

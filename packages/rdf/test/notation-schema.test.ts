@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { ElementSchema, TYPES, elementOfId, idIri, iriId, memberListHeight, toSchema, viewFigures } from '@catenary/model';
-import { ModelGraph } from '../src/graph';
+import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { readNotations, storeIndex } from '../src/notations';
 import { project } from './project-full';
 import { load, run } from './helpers';
@@ -14,7 +14,7 @@ const SHAPES = `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix skos: <http:
 
 /** A model with shapes (the graph of a shapes file) and data, and a view with the node shapes `cards`. */
 async function setup(shapes: string, data = '', cards: string[] = []) {
-    const g = await load(`${SHAPES}\n<urn:file:/tmp/s.ttl> { ${shapes} }\n<urn:name:model> { ${data} }`);
+    const g = await load(`${SHAPES}\n<${shapesGraphIri('/tmp/s.ttl')}> { ${shapes} }\n<urn:name:model> { ${data} }`);
     const view = run(g, meta, { kind: 'createView', label: 'V' }) as string;
     cards.forEach((c, i) => run(g, meta, { kind: 'addToView', view, ids: [iriId(c)], at: { x: i * 600, y: 0 } }));
     return { g, view };

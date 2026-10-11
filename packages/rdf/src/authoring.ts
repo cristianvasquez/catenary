@@ -6,7 +6,7 @@ import { Classes, mergeContributions } from '@catenary/model';
 import { rdfsFields, rdfsLinks, rdfsPalette } from '@catenary/rdfs';
 import { shaclFields, shaclLinks, shaclPalette } from '@catenary/shacl/backend';
 import type { Term } from '@rdfjs/types';
-import { ModelGraph, VALIDATION_GRAPH } from './graph';
+import { ModelGraph, REPORT_GRAPH } from './graph';
 import { labels } from './sparql';
 
 /** A vocabulary plugin: the graphs it reads and the contracts it gives. A plugin gives the contracts it can. */
@@ -28,7 +28,7 @@ export const AUTHORING_PLUGINS: readonly AuthoringPlugin[] = [
 export function queryPort(g: ModelGraph, graphs?: readonly string[]): QueryPort {
     // `graphs`: VALUES binds the graph first, so the store reads only those graphs (a FILTER would scan the data graphs too).
     const graph = (pattern: string, v = '?g') => graphs ? `VALUES ${v} { ${graphs.map(x => `<${x}>`).join(' ')} } GRAPH ${v} { ${pattern} }`
-        : `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`;
+        : `GRAPH ${v} { ${pattern} } FILTER (${v} != <${REPORT_GRAPH}>)`;
     return {
         select: query => g.select(query) as unknown as Record<string, Term>[],
         graph,

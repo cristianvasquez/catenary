@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { executeCommand } from '../src/commands';
-import { FILE_GRAPH_PREFIX, ModelGraph } from '../src/graph';
+import { SHAPES_GRAPH_PREFIX, ModelGraph } from '../src/graph';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { Metamodel, metamodelFromQuads } from '../src/shapes';
 import { Classes, Doc, EditCommand, Violation } from '@catenary/model';
@@ -11,7 +11,7 @@ import { project } from './project-full';
 import type { ModelStore } from '../src/model-store';
 import { parseTrig } from '../src/trig';
 import { OxigraphStore } from 'rdf-files';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { newModelGraph } from '../src/model-graph';
 
@@ -44,11 +44,11 @@ export const PROV = 'http://www.w3.org/ns/prov#';
 export const DPM = 'osg://vocab/data-product-draft#';
 
 export const meta = (): Promise<Metamodel> => parseShapes(SHAPES, 'shapes.ttl');
-/** A TriG as the store reads it: blank nodes replaced by IRIs (skolem.ts). A graph `urn:file:<path>` is a shapes file. */
+/** A TriG as the store reads it: blank nodes replaced by IRIs (skolem.ts). A graph with the prefix SHAPES_GRAPH_PREFIX is a shapes file. */
 export async function load(text = MODEL): Promise<ModelGraph> {
     const quads = skolemize((await parseTrig(text)).quads).quads;
     const g = newModelGraph(new OxigraphStore(quads));
-    g.setShapesGraphs(quads.map(q => q.graph).filter((t): t is NamedNode => t.termType === 'NamedNode' && (t.value.startsWith(FILE_GRAPH_PREFIX) || t.value.startsWith('urn:file:'))));
+    g.setShapesGraphs(quads.map(q => q.graph).filter((t): t is NamedNode => t.termType === 'NamedNode' && t.value.startsWith(SHAPES_GRAPH_PREFIX)));
     return g;
 }
 export const emptyGraph = (): ModelGraph => newModelGraph(new OxigraphStore());

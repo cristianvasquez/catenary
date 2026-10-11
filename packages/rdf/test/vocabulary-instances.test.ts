@@ -2,19 +2,19 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { executeCommand } from '../src/commands';
-import { ModelGraph, fileGraphIri } from '../src/graph';
+import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { formData } from '../src/queries';
 import { emptyMetamodel } from '../src/shapes';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { DCAT, parseQuads, run } from './helpers';
 import { newModelGraph } from '../src/model-graph';
 
 const TTL = readFileSync(new URL('./fixtures/dcat-shapes.ttl', import.meta.url), 'utf8');
 const FILE = '/tmp/dcat-shapes.ttl';
-const GRAPH = rdf.namedNode(fileGraphIri(FILE));
+const GRAPH = rdf.namedNode(shapesGraphIri(FILE));
 const VOC = 'http://example.org/vocab#';
 const SKOS = 'http://www.w3.org/2004/02/skos/core#';
 const productAnalytics = rdf.namedNode(VOC + 'product-analytics');
@@ -23,7 +23,7 @@ async function load(): Promise<ModelGraph> {
     const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
-    for (const q of await parseQuads(`<urn:d1> a <${DCAT}Dataset> ; <${DCAT}theme> <${VOC}product-analytics> .`)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+    for (const q of await parseQuads(`<urn:d1> a <${DCAT}Dataset> ; <${DCAT}theme> <${VOC}product-analytics> .`)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
     return g;
 }
 const exec = (g: ModelGraph, c: Parameters<typeof executeCommand>[2]) => run(g, emptyMetamodel(), c);
@@ -51,7 +51,7 @@ describe('SKOS subjects of a shapes file', () => {
         expect(values(g, VOC + 'product-analytics', SKOS + 'prefLabel')).toEqual(['Money']);
         // Only skos:prefLabel in the file: no rdfs:label is added.
         expect(values(g, VOC + 'product-analytics', 'http://www.w3.org/2000/01/rdf-schema#label')).toEqual([]);
-        expect(g.match(productAnalytics, null, null, g.model)).toEqual([]);
+        expect(g.match(productAnalytics, null, null, g.union)).toEqual([]);
 
         exec(g, { kind: 'setStatements', id, values: { [SKOS + 'definition']: [{ termType: 'Literal', value: 'Funds' }] } });
         expect(values(g, VOC + 'product-analytics', SKOS + 'definition')).toEqual(['Funds']);

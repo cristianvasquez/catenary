@@ -3,7 +3,7 @@
 
 import { Classes, NS, Problem, Violation, localName, predicateName, primaryClass } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
+import { ModelGraph, REPORT_GRAPH, cmp } from './graph';
 import { elementId } from './ids';
 import { NOT_REPORT, construct, iri, labels, things } from './sparql';
 import { defaultMessage } from './validate';
@@ -31,7 +31,7 @@ export function reportProblems(g: ModelGraph, meta: Classes, shapeId: (shape: Te
  */
 export function readResults(g: ModelGraph, meta: Classes, pattern = '?r sh:focusNode ?f .',
     shapeId: (shape: Term) => string | undefined = () => undefined): Problem[] {
-    const quads = construct(g, `CONSTRUCT { ?r ?p ?o } WHERE { GRAPH <${VALIDATION_GRAPH}> {
+    const quads = construct(g, `CONSTRUCT { ?r ?p ?o } WHERE { GRAPH <${REPORT_GRAPH}> {
         ${pattern} ?r sh:focusNode ?focus ; ?p ?o .
         OPTIONAL { ?r sh:resultPath ?path ${PREDICATE_PATH('?path')} }
         FILTER (?p != sh:resultPath || ?o = ?path)

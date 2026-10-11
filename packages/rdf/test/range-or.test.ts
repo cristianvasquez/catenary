@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { classDef, permittedRelations, verbalizeProperty } from '@catenary/model';
-import { ModelGraph, fileGraphIri } from '../src/graph';
+import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { emptyMetamodel, metamodelFromQuads } from '../src/shapes';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { executeCommand } from '../src/commands';
@@ -22,7 +22,7 @@ ex:Series a sh:NodeShape ; sh:targetClass ex:Series .
 ex:GraphShape a sh:NodeShape ; sh:targetClass ex:Graph .`;
 const EX = 'http://ex/';
 const FILE = '/tmp/or-shapes.ttl';
-const GRAPH = rdf.namedNode(fileGraphIri(FILE));
+const GRAPH = rdf.namedNode(shapesGraphIri(FILE));
 
 async function load(): Promise<ModelGraph> {
     const g = newModelGraph(new OxigraphStore());

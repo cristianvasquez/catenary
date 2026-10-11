@@ -6,7 +6,7 @@ import {
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import type { TermMap } from 'rdf-ext';
-import { MODEL_GRAPH, ModelGraph, cmp, sorted } from '../src/graph';
+import { UNION_GRAPH, ModelGraph, cmp, sorted } from '../src/graph';
 import { elementId, relationId } from '../src/ids';
 import { rdf } from '../src/terms';
 import { label as labelOf, P } from '../src/vocabulary';
@@ -19,7 +19,7 @@ const byTriple = (a: Quad, b: Quad) => cmp(a.subject.value, b.subject.value) || 
 export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] } {
     const warnings: string[] = [];
     const doc = emptyDoc();
-    const conformsTo = g.object(g.model, P.conformsTo);
+    const conformsTo = g.object(g.union, P.conformsTo);
     if (conformsTo) doc.conformsTo = conformsTo.value;
 
     const instanceIds = rdf.termMap<NamedNode, string>(instances(g).map(t => [t, elementId(t)]));
@@ -31,7 +31,7 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
             fields: {}
         };
         if (g.objects(s, P.label).length > 1) warnings.push(`${s.value}: more than one rdfs:label, shows "${inst.label}"`);
-        for (const q of g.match(s, null, null, g.model)) {
+        for (const q of g.match(s, null, null, g.union)) {
             if (q.predicate.equals(P.type) || q.predicate.equals(P.label)) continue;
             if (instanceIds.has(q.object)) {
                 relations.push(q);
@@ -52,8 +52,8 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
         doc.relations[id] = { id, subject: instanceIds.get(s)!, predicate: p.value, object: instanceIds.get(o)! };
     }
 
-    for (const q of g.match(null, null, null, g.model)) {
-        if (q.subject.equals(g.model)) {
+    for (const q of g.match(null, null, null, g.union)) {
+        if (q.subject.equals(g.union)) {
             if (!q.predicate.equals(P.conformsTo)) warnings.push(`statement about the model graph kept in the file, not shown: ${q.predicate.value}`);
         } else if (!instanceIds.has(q.subject)) {
             warnings.push(`subject without rdf:type or rdfs:label kept in the file, not shown: ${q.subject.value}`);
@@ -61,7 +61,7 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
     }
 
     for (const graph of graphs(g)) {
-        if (graph.equals(g.model)) continue;
+        if (graph.equals(g.union)) continue;
         if (!isView(g, graph)) {
             warnings.push(`graph ${graph.value} has no view:View, kept in the file, not shown`);
             continue;
@@ -131,8 +131,8 @@ function projectView(
 /** Instance IRIs, sorted (was ModelGraph.instances). */
 function instances(g: ModelGraph): NamedNode[] {
     const seen = rdf.termSet<NamedNode>();
-    for (const q of [...g.match(null, P.type, null, g.model), ...g.match(null, P.label, null, g.model)]) {
-        if (q.subject.termType === 'NamedNode' && q.subject.value !== MODEL_GRAPH) seen.add(q.subject);
+    for (const q of [...g.match(null, P.type, null, g.union), ...g.match(null, P.label, null, g.union)]) {
+        if (q.subject.termType === 'NamedNode' && q.subject.value !== UNION_GRAPH) seen.add(q.subject);
     }
     return sorted(seen);
 }
@@ -141,6 +141,6 @@ function instances(g: ModelGraph): NamedNode[] {
 function graphs(g: ModelGraph): NamedNode[] {
     const seen = rdf.termSet<NamedNode>();
     for (const q of g.match()) if (q.graph.termType === 'NamedNode') seen.add(q.graph);
-    seen.delete(g.model);
-    return [g.model, ...sorted(seen)];
+    seen.delete(g.union);
+    return [g.union, ...sorted(seen)];
 }

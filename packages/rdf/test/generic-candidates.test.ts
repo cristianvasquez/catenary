@@ -9,6 +9,7 @@ import { freeUnnamedLabel, linkChoices } from '../src/link-choices';
 import { formCandidates, formStatements } from '../src/queries';
 import { thingHead } from '../src/sparql';
 import { rdf } from '../src/terms';
+import { REPORT_GRAPH } from '../src/graph';
 
 const prefixes = `@prefix rdfs: <${NS.rdfs}> . @prefix sh: <${NS.sh}> . @prefix view: <${NS.view}> .`;
 const fixture = `${prefixes}
@@ -32,7 +33,7 @@ const fixture = `${prefixes}
     <urn:ps> sh:path <urn:connect> ; sh:class <urn:Target> .
 }
 <urn:view> { <urn:view> a view:View . <urn:placement> a view:Placement ; view:element <urn:c> . }
-<urn:trellis:validation> {
+<${REPORT_GRAPH}> {
     <urn:report-only> a <urn:Target> ; rdfs:label "Report" .
     <urn:untyped> a <urn:Target> .
     <urn:c> <urn:connect> <urn:a> .
@@ -120,7 +121,7 @@ describe('generic thing reads for pickers and forms', () => {
 
     it('Problems and Properties share report reads and data labels', async () => {
         const g = await load(fixture);
-        const graph = rdf.namedNode('urn:trellis:validation');
+        const graph = rdf.namedNode(REPORT_GRAPH);
         const result = rdf.namedNode('urn:result');
         for (const [p, o] of [
             ['focusNode', rdf.namedNode('urn:b')], ['resultSeverity', rdf.namedNode(NS.sh + 'Violation')],

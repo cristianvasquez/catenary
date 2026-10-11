@@ -452,22 +452,23 @@ law_sourceTriplesPreserved :: (Eq s, Eq p, Eq o) => [(s, p, o, g)] -> Bool
 law_sourceTriplesPreserved qs = all (\(s, p, o, _) -> (s, p, o) `elem` sourceTriples qs) qs
 data GraphName
   = ViewGraph Iri          -- the statements of one view file
-  | FileGraph FilePath     -- shape subjects and their nested nodes, per source file
+  | ShapesGraph FilePath   -- shape subjects and their nested nodes, per source file
   | DataGraph FilePath     -- other statements, per source file
-  | ModelGraph             -- the logical union of data graphs, never a stored workspace graph
-  | ValidationGraph        -- the SHACL report (§9)
+  | UnionGraph             -- the logical union of data graphs, never a stored workspace graph
+  | ReportGraph            -- the SHACL report (§9)
   deriving Eq
+-- | The host gives these values to rdf-core ModelGraph (GraphNames, packages/rdf/src/graph-names.ts). rdf-core owns no IRI value.
 graphIri :: GraphName -> Iri
 graphIri (ViewGraph v) = v
-graphIri (FileGraph f) = "urn:shapes:" ++ encodePath f
+graphIri (ShapesGraph f) = "urn:shapes:" ++ encodePath f
 graphIri (DataGraph f) = "urn:data:" ++ encodePath f
-graphIri ModelGraph = "urn:name:model"
-graphIri ValidationGraph = "urn:trellis:validation"
+graphIri UnionGraph = "urn:name:model"
+graphIri ReportGraph = "urn:catenary:report"
 encodePath :: FilePath -> String
 data SourceStatement = InViewFile Iri | ShapeStatement | OtherStatement   -- what a read finds in a file
 mountGraph :: FilePath -> SourceStatement -> GraphName
 mountGraph _ (InViewFile v) = ViewGraph v
-mountGraph f ShapeStatement = FileGraph f
+mountGraph f ShapeStatement = ShapesGraph f
 mountGraph f OtherStatement = DataGraph f
 law_readOwnWrites :: Backend -> Quad -> Bool
 law_readOwnWrites b q = q `elem` storeQuads (snd (runTx b (addQuad q >> pure ())))
@@ -476,10 +477,10 @@ addQuad :: Quad -> Tx ()
 -- | Data reads use the union of file data graphs with duplicate triples removed. Views keep their saved IRIs.
 -- Reason: the graph records each file copy while readers see one statement.
 law_fileRoleGraphs :: FilePath -> Bool
-law_fileRoleGraphs f = graphIri (DataGraph f) /= graphIri (FileGraph f)
+law_fileRoleGraphs f = graphIri (DataGraph f) /= graphIri (ShapesGraph f)
 dataGraphNames :: Backend -> [Iri]
 modelStatements :: Backend -> [Quad]
-modelStatements b = nub [Quad s p o (graphIri ModelGraph) | Quad s p o g <- storeQuads b, g `elem` dataGraphNames b]
+modelStatements b = nub [Quad s p o (graphIri UnionGraph) | Quad s p o g <- storeQuads b, g `elem` dataGraphNames b]
 
 -- 3.2 Statement origin ------------------------------------------------------------
 
@@ -525,8 +526,8 @@ originIn b q = fst (runTx b (origin q))
 -- Reason: a layout or membership edit must not repeat the checked-node walk for an unchanged instance.
 targetDataRevision :: GraphName -> Bool
 targetDataRevision (DataGraph _) = True
-targetDataRevision ModelGraph = True
-targetDataRevision (FileGraph _) = True
+targetDataRevision UnionGraph = True
+targetDataRevision (ShapesGraph _) = True
 targetDataRevision _ = False
 law_viewPlacementKeepsTargetData :: Iri -> Bool
 law_viewPlacementKeepsTargetData v = not (targetDataRevision (ViewGraph v))
@@ -635,7 +636,7 @@ law_onePlacementPerTerm :: [PlacementRecord] -> Bool   -- the placements of one 
 law_onePlacementPerTerm ps = unique (map placed ps)
 law_noLineGeometry :: PlacementRecord -> Bool
 law_noLineGeometry p = placedKind p == LinePlacement ==> isNothing (bounds p)
--- | Figures are derived in memory for each view read, like urn:trellis:validation. They are never written.
+-- | Figures are derived in memory for each view read, like the report graph urn:catenary:report. They are never written.
 -- A placement never names a list cell: commands rewrite list cells.
 
 -- 4.2 Derived IRIs ----------------------------------------------------------------
@@ -991,7 +992,7 @@ permitted :: Backend -> Iri -> Iri -> Iri -> Bool    -- a link of the metamodel 
 relationProblem :: Backend -> Iri -> Iri -> Iri -> Maybe Error
 relationProblem b s p o
   | s == o = Just "A relation from an element to itself is not supported."
-  | Quad (NamedNode s) p (NamedNode o) (graphIri ModelGraph) `elem` modelStatements b = Just "The relation exists already."
+  | Quad (NamedNode s) p (NamedNode o) (graphIri UnionGraph) `elem` modelStatements b = Just "The relation exists already."
   | not (permitted b s p o) = Just "No shape or RDFS rule permits this relation."
   | otherwise = Nothing
 law_relationRejected :: Backend -> Iri -> Iri -> Iri -> Bool
@@ -1320,7 +1321,7 @@ law_domainSubclasses pairs c = take 1 (subclassesOf pairs c) == [c] && all (`ele
 -- | Validate model triples and the relevant shapes vocabulary 250 ms after a data or shape change.
 -- Layout-only changes do not validate. SKOS changes rebuild the metamodel. A run made stale by a newer edit is discarded.
 -- The bundled backend runs shacl-engine in a worker thread. Without the worker file, validation runs in the backend thread.
--- The report goes to urn:trellis:validation: derived, not saved, not in undo, not in the dirty comparison.
+-- The report goes to urn:catenary:report (ReportGraph): derived, not saved, not in undo, not in the dirty comparison.
 -- A result keeps focus, source shape, path, severity, component and message. A complex path can have no simple path field.
 -- Explorer plugin queries and ordinary reads exclude the report graph.
 validate :: IO ()
@@ -1433,7 +1434,7 @@ isChangeOp Undo = True
 isChangeOp Redo = True
 isChangeOp _ = False
 law_reportNotInPatch :: Backend -> EditCommand -> Bool
-law_reportNotInPatch b c = all ((/= graphIri ValidationGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
+law_reportNotInPatch b c = all ((/= graphIri ReportGraph) . graphOf . changed) (lastPatch (snd (step b (Execute c))))
   where
     changed (Add q) = q
     changed (Remove q) = q

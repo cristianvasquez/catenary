@@ -8,7 +8,7 @@ import { ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import * as ops from '../src/ops';
 import { OxigraphStore } from 'rdf-files';
-import { SKOLEM_BASE, skolemize } from 'rdf-core';
+import { SKOLEM_BASE, skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { parseTrig } from '../src/trig';
 import { SHAPES, value, writeWorkspace } from './helpers';
@@ -43,7 +43,7 @@ describe('no blank nodes in the dataset (AGENTS.md)', () => {
         expect(copied.value.startsWith(SKOLEM_BASE) && !copied.equals(address)).toBe(true);
         const geo = g.objects(copied, n('geo'))[0];
         expect(geo.value.startsWith(SKOLEM_BASE)).toBe(true);
-        g.add(n('other'), n('near'), address, g.model);
+        g.add(n('other'), n('near'), address, g.union);
         ops.deleteInstance(g, 'n-http_3a_2f_2fex_2fa');
         expect(g.match(address).length).toBeGreaterThan(0);
         ops.deleteInstance(g, copy);

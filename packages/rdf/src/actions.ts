@@ -7,7 +7,7 @@ import {
     ActionTarget, Doc, ElementKind, ItemFacts, NS, SelectionActions, SelectionFacts, ShapesModel, View, applicableActions, boxOf, displayCards, elementOfId,
     lineProblem, isTakenOut
 } from '@catenary/model';
-import { ModelGraph, VALIDATION_GRAPH } from './graph';
+import { ModelGraph, REPORT_GRAPH } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { shapeable, unshapedClassesOf } from './shape-proposal';
 import { termKey } from './terms';
@@ -88,7 +88,7 @@ function classFactsOf(ctx: ActionContext, terms: NamedNode[]): Map<string, Class
     const facts = new Map<string, ClassFacts>();
     if (!terms.length) return facts;
     const values = [...new Set(terms.map(t => `<${t.value}>`))].join(' ');
-    const report = `<${VALIDATION_GRAPH}>`;
+    const report = `<${REPORT_GRAPH}>`;
     const group = (rows: Record<string, Term>[], s: string, c: string) => {
         const out = new Map<string, string[]>();
         for (const r of rows) {

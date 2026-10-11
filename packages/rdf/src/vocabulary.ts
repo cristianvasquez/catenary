@@ -5,8 +5,8 @@
 import { NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { nameFromURI, nameToURI } from 'canonical-md';
-import { MODEL_GRAPH, ModelGraph, cmp, sorted } from './graph';
-import { isSkolem } from 'rdf-core';
+import { UNION_GRAPH, ModelGraph, cmp, sorted } from './graph';
+import { isSkolem } from './skolem';
 import { rdf } from './terms';
 
 export const P = {
@@ -36,7 +36,7 @@ export const isRdfsQuad = (q: Quad) => RDFS_PREDICATES.has(q.predicate.value) ||
  */
 export function metamodelQuad(g: ModelGraph, q: Quad): boolean {
     return isVocabularyQuad(q) || isRdfsQuad(q)
-        || SKOS_TYPES.some(t => g.match(q.subject, P.type, t, g.model).length > 0)
+        || SKOS_TYPES.some(t => g.match(q.subject, P.type, t, g.union).length > 0)
         || (RDFS_TEXT.has(q.predicate.value) && inRdfsRule(g, q.subject));
 }
 
@@ -47,7 +47,7 @@ export function metamodelQuad(g: ModelGraph, q: Quad): boolean {
 function inRdfsRule(g: ModelGraph, t: Term): boolean {
     if (t.termType !== 'NamedNode') return false;
     return ['domain', 'range', 'subClassOf'].map(p => rdf.namedNode(NS.rdfs + p))
-        .some(p => g.match(t as NamedNode, p, null, g.model).length > 0 || g.match(null, p, t as NamedNode, g.model).length > 0);
+        .some(p => g.match(t as NamedNode, p, null, g.union).length > 0 || g.match(null, p, t as NamedNode, g.union).length > 0);
 }
 
 /**
@@ -55,12 +55,12 @@ function inRdfsRule(g: ModelGraph, t: Term): boolean {
  * graph (concept scheme, concept, collection). A resource is an instance whatever file holds it; `homeOf` gives the graph to edit.
  */
 export function isInstance(g: ModelGraph, t: Term | undefined): t is NamedNode {
-    return !!t && t.termType === 'NamedNode' && t.value !== MODEL_GRAPH && !t.equals(g.model) && (inModel(g, t) || !!vocabularyGraph(g, t));
+    return !!t && t.termType === 'NamedNode' && t.value !== UNION_GRAPH && !t.equals(g.union) && (inModel(g, t) || !!vocabularyGraph(g, t));
 }
 
 /** An IRI with an rdf:type or an rdfs:label in the model graph. */
 function inModel(g: ModelGraph, t: Term): boolean {
-    return g.match(t, P.type, null, g.model).length > 0 || g.match(t, P.label, null, g.model).length > 0;
+    return g.match(t, P.type, null, g.union).length > 0 || g.match(t, P.label, null, g.union).length > 0;
 }
 
 /** The shapes graph in which `t` is a SKOS subject (a SKOS type, skos:inScheme or skos:topConceptOf), first in order. */
@@ -73,7 +73,7 @@ function vocabularyGraph(g: ModelGraph, t: Term): NamedNode | undefined {
 
 /** The graph that holds the statements of an instance: the model graph, or the shapes graph of a SKOS subject of a shapes file. */
 export function homeOf(g: ModelGraph, t: Term): NamedNode {
-    return inModel(g, t) ? g.model : vocabularyGraph(g, t) ?? g.model;
+    return inModel(g, t) ? g.union : vocabularyGraph(g, t) ?? g.union;
 }
 
 /** SKOS subjects of the shapes graphs that are not instances of the model graph: IRI → its graph. Shapes graphs in order. */
@@ -89,7 +89,7 @@ export function vocabularySubjects(g: ModelGraph): Map<string, NamedNode> {
 }
 
 /** Label of an instance (graph: model) or a view (graph: the view). Several labels: the first in order. */
-export function label(g: ModelGraph, t: Term, graph: Term = g.model): string {
+export function label(g: ModelGraph, t: Term, graph: Term = g.union): string {
     const labels = g.objects(t, P.label, graph).filter(o => o.termType === 'Literal').map(o => o.value).sort(cmp);
     return labels[0] ?? labelFromIri(t.value);
 }
@@ -110,7 +110,7 @@ export function usedIris(g: ModelGraph, except?: Term): UsedIris {
 
 /** Quads of the model graph in the default graph (for validation and the SHACL form). */
 export function modelTriples(g: ModelGraph): Quad[] {
-    return [...g.match(null, null, null, g.model)].map(q => rdf.quad(q.subject, q.predicate, q.object));
+    return [...g.match(null, null, null, g.union)].map(q => rdf.quad(q.subject, q.predicate, q.object));
 }
 
 /**
@@ -125,7 +125,7 @@ export class UsedIris {
     has(iri: string): boolean {
         if (this.added.has(iri)) return true;
         if (this.except?.termType === 'NamedNode' && this.except.value === iri) return false;
-        if (iri === MODEL_GRAPH || iri === this.g.model.value) return true;
+        if (iri === UNION_GRAPH || iri === this.g.union.value) return true;
         const t = rdf.namedNode(iri);
         // The GraphFacts method (the isView rule): views.ts imports this module, not the reverse.
         return this.g.isView(t) || this.g.store.match(t).some(q => this.g.isDataGraph(q.graph) || this.g.isShapesGraph(q.graph));

@@ -9,11 +9,11 @@ import * as path from 'path';
 import { OwnWrites, SerialQueue, StatementDiff, commitFiles, gitChanges, parseTurtleText, patchTurtle, patchTurtleDiff, pathKey, portableRelative, readUnchanged, termKey, tripleKey, writeAll } from 'rdf-files';
 import type { Change } from './graph';
 import { IMPORT_FOLDER, manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
-import { ModelGraph, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
+import { ModelGraph, dataGraphIri, shapesGraphIri, fileOfGraph } from './graph';
 import { OnDisk, Saved, Settings } from './settings';
 import { rdf } from './terms';
 import { canonical, writeTrig } from './trig';
-import { skolemize } from 'rdf-core';
+import { skolemize } from './skolem';
 import { tracer } from './trace';
 import { views } from './views';
 
@@ -274,7 +274,7 @@ export class Saver {
 
     /** The data and shapes triples of each requested file (store form). */
     protected filesTriples(files: string[]): Map<string, Quad[]> {
-        return new Map(files.map(f => [f, [...this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).map(toTriple), ...this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(f))).map(toTriple)]]));
+        return new Map(files.map(f => [f, [...this.graph.match(null, null, null, rdf.namedNode(shapesGraphIri(f))).map(toTriple), ...this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(f))).map(toTriple)]]));
     }
 
     protected viewTriples(view: NamedNode): Quad[] {

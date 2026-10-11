@@ -69,7 +69,7 @@ describe('Model properties by SPARQL (ADR 0007 step 2)', () => {
         const predicate = rdf.namedNode('urn:test:status');
         g.add(shape, S.targetSubjectsOf, rdf.namedNode('urn:test:first'), g.shapesGraphs()[0]);
         g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
-        g.add(rdf.namedNode(inst.uri), predicate, rdf.literal('active'), g.model);
+        g.add(rdf.namedNode(inst.uri), predicate, rdf.literal('active'), g.union);
 
         const p = store.reads.properties(inst.id) as InstanceProperties;
         expect(p.shapes).toContainEqual({ id: expect.any(String), uri: shape.value, label: 'SubjectShape', predicates: [], reasons: [{ kind: 'targetSubjectsOf', target: { termType: 'NamedNode', value: predicate.value } }] });

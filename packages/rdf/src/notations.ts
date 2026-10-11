@@ -6,8 +6,8 @@ import path from 'path';
 import type { Quad, Term } from '@rdfjs/types';
 import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, nkey, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
 import { parseRdfSync } from 'rdf-files';
-import { ModelGraph, VALIDATION_GRAPH } from './graph';
-import { skolemize } from 'rdf-core';
+import { ModelGraph, REPORT_GRAPH } from './graph';
+import { skolemize } from './skolem';
 import { jsonToTerm, rdf } from './terms';
 
 /** The folder of the built-in notation files: next to the package source or build, or next to the backend bundle. */
@@ -47,7 +47,7 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     return n;
 }
 
-const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
+const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === REPORT_GRAPH;
 
 /** An engine term as a store term. Undefined: a term that no statement of the store can have. */
 function storeTerm(t: NTerm): Term | undefined {

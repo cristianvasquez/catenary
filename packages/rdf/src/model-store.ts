@@ -18,7 +18,7 @@ import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
-import { ChangeScope, Classified, VALIDATION_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
+import { ChangeScope, Classified, REPORT_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
 import { GraphChange, ModelGraph, Patch } from './graph';
 import { History } from 'rdf-core';
 import { elementId, elementTerm } from './ids';
@@ -313,7 +313,7 @@ export class ModelStore {
             cache.event = undefined;
             g.onDidChange(e => {
                 if (cache.graph !== g || (!e.data && !e.shapes)) return;
-                const quads = e.patch.filter(c => c.quad.graph.value !== VALIDATION_GRAPH);
+                const quads = e.patch.filter(c => c.quad.graph.value !== REPORT_GRAPH);
                 if (e.shapes || !quads.length || !cache.changed || quads.length > NEIGHBOR_PATCH_LIMIT || quads.some(c => !g.isDataGraph(c.quad.graph))) { cache.changed = undefined; return; }
                 for (const { quad: q } of quads) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') cache.changed.add(t.value);
             });

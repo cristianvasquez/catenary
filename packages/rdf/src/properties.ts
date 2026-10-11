@@ -7,7 +7,7 @@ import {
     Classes, ElementProperties, InstanceProperties, NS, PropertyShapeProperties, RelationEnd, ResultRow, TermJSON,
     lockedKey, pluginForms, searchKind, termKey as jsonKey, termToJSON
 } from '@catenary/model';
-import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
+import { ModelGraph, REPORT_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { formCandidates } from './queries';
 import type { ShapesIndex } from './shapes-read';
@@ -83,7 +83,7 @@ function instance(ctx: PropertiesContext, t: NamedNode): InstanceProperties {
     const file = ctx.fileOf(t);
     const locked: string[] = [], importedFiles = new Set<string>();
     for (const q of own) {
-        const files = ctx.importedFiles(rdf.quad(q.subject, q.predicate, q.object, g.model));
+        const files = ctx.importedFiles(rdf.quad(q.subject, q.predicate, q.object, g.union));
         if (!files.length) continue;
         files.forEach(f => importedFiles.add(f));
         const v = termToJSON(q.object);
@@ -121,6 +121,6 @@ function workspace(ctx: PropertiesContext): ElementProperties {
         instances: [...types.values()].filter(ts => { const k = searchKind(ts); return k === 'instance' || k === 'valueSet'; }).length,
         relations: construct(g, `CONSTRUCT { ?s ?p ?o } WHERE { ${connections()} }`).length,
         views: count(`SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s a view:View } FILTER (?g != ${NOT_REPORT}) }`),
-        violations: count(`SELECT (COUNT(DISTINCT ?r) AS ?n) WHERE { GRAPH <${VALIDATION_GRAPH}> { ?r sh:resultSeverity sh:Violation } }`)
+        violations: count(`SELECT (COUNT(DISTINCT ?r) AS ?n) WHERE { GRAPH <${REPORT_GRAPH}> { ?r sh:resultSeverity sh:Violation } }`)
     };
 }

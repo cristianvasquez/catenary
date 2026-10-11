@@ -254,7 +254,7 @@ multiplicity mn mx = "[" ++ cardinalityText mn mx ++ "]"
 -- 2.7 Badges ------------------------------------------------------------------------
 
 -- | Badges. Validation is not part of the figures. A shown figure, row or line whose element IRI is a sh:focusNode of a
--- result in urn:trellis:validation shows a badge. A row badge uses the IRI of the part of the row, else the badge is on its box.
+-- result in the report graph urn:catenary:report shows a badge. A row badge uses the IRI of the part of the row, else the badge is on its box.
 data BadgePlace = OnRow | OnBox deriving Eq
 badge :: [Iri] -> Maybe Iri -> Iri -> Maybe BadgePlace   -- focus nodes, the IRI of the part of a row, the IRI of its box
 badge foci rowPart boxIri

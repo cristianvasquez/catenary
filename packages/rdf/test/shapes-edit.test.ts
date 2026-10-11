@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { cardinalityText, formatPath, nextCardinality, parsePath, propertyNodeId, termIri, toSchema, verbalizeConstraint, verbalizeProperty, boxes, elementOfId, idIri, iriId, viewFigures } from '@catenary/model';
 import { readNotations, storeIndex } from '../src/notations';
 import { executeCommand } from '../src/commands';
-import { ModelGraph, fileGraphIri } from '../src/graph';
+import { ModelGraph, SHAPES_GRAPH_PREFIX, shapesGraphIri } from '../src/graph';
 import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { viewRead } from '../src/view-read';
 import { migrationCount } from '../src/shape-ops';
-import { SKOLEM_BASE, skolemize } from 'rdf-core';
+import { SKOLEM_BASE, skolemize } from '../src/skolem';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { emptyMetamodel, metamodelFromQuads, shapesTriples, vocabularyQuads } from '../src/shapes';
@@ -21,14 +21,14 @@ import { newModelGraph } from '../src/model-graph';
 const TTL = readFileSync(new URL('./fixtures/dcat-shapes.ttl', import.meta.url), 'utf8');
 const FILE = '/tmp/dcat-shapes.ttl';
 const EX = 'http://example.org/shapes#';
-const GRAPH = rdf.namedNode(fileGraphIri(FILE));
+const GRAPH = rdf.namedNode(shapesGraphIri(FILE));
 
 /** The shapes file as the store reads it: blank nodes replaced by IRIs (see skolem.ts). */
 async function load(data = ''): Promise<ModelGraph> {
     const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
-    for (const q of data ? await parseQuads(data) : []) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
+    for (const q of data ? await parseQuads(data) : []) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.union));
     return g;
 }
 const shapesOf = (g: ModelGraph) => project(g).doc.shapes;
@@ -47,7 +47,7 @@ const shapesCanonical = (g: ModelGraph) => canonical(g.match(null, null, null, G
 describe('shapes graphs to the shapes read model', () => {
     it('replaces subject targets across source graphs without copying retained values', async () => {
         const g = await load();
-        const second = rdf.namedNode(fileGraphIri('/tmp/extra-shapes.ttl'));
+        const second = rdf.namedNode(shapesGraphIri('/tmp/extra-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), second]);
         const shape = rdf.namedNode(EX + 'Dataset');
         const first = rdf.namedNode(EX + 'first'), kept = rdf.namedNode(EX + 'kept');
@@ -125,7 +125,7 @@ describe('shapes graphs to the shapes read model', () => {
         const g = await load();
         const p = project(g);
         expect(Object.keys(p.doc.views)).toEqual([]);
-        expect(p.warnings.filter(w => w.includes('urn:file:'))).toEqual([]);
+        expect(p.warnings.filter(w => w.includes(SHAPES_GRAPH_PREFIX))).toEqual([]);
     });
 });
 
@@ -589,7 +589,7 @@ describe('shape edits', () => {
         const { result, patch } = g.transact(x => executeCommand(x, emptyMetamodel(), command));
         expect(result.ok).toBe(true);
         expect(parents()).toEqual([parent]);
-        expect(patch.every(q => q.quad.graph.equals(g.model))).toBe(true);
+        expect(patch.every(q => q.quad.graph.equals(g.union))).toBe(true);
         g.undo(patch);
         expect(parents()).toEqual([]);
         g.redo(patch);
@@ -610,7 +610,7 @@ describe('shape edits', () => {
         const c = exec(g, { kind: 'addConcept', set, label: 'C' }) as string;
         exec(g, { kind: 'setConceptBroader', uri: a, broader: b });
         // b -> c expressed with skos:narrower in a second shapes file.
-        const other = rdf.namedNode(fileGraphIri('/tmp/other-shapes.ttl'));
+        const other = rdf.namedNode(shapesGraphIri('/tmp/other-shapes.ttl'));
         g.setShapesGraphs([...g.shapesGraphs(), other]);
         g.store.add(rdf.quad(rdf.namedNode(c), rdf.namedNode('http://www.w3.org/2004/02/skos/core#narrower'), rdf.namedNode(b), other));
         for (const [uri, broader] of [[a, a], [b, a], [c, a], [a, 'urn:missing'], ['urn:missing', a]]) {
@@ -651,7 +651,7 @@ describe('shape edits', () => {
         const statusUri = shapesOf(g).valueSets[status].uri;
         // In the model graph, not in the shapes graph; the concept is an instance labelled by skos:prefLabel.
         expect(g.match(rdf.namedNode(draft), null, null, GRAPH)).toEqual([]);
-        expect(g.match(rdf.namedNode(draft), null, null, g.model).length).toBe(3);
+        expect(g.match(rdf.namedNode(draft), null, null, g.union).length).toBe(3);
         const doc = project(g).doc;
         expect(Object.values(doc.instances).find(i => i.uri === draft)).toMatchObject({ label: 'Draft', types: [NS_SKOS + 'Concept'] });
         // A scheme property of Dataset; the metamodel (shapes + vocabulary of the data) has a relation to the concepts of Status.
@@ -675,7 +675,7 @@ describe('shape edits', () => {
         expect(shapesOf(g).valueSets[status].members.map(m => m.label)).toEqual(['Draft', 'Final']);
         // Removing a concept from its scheme deletes it and the statements that refer to it.
         exec(g, { kind: 'removeConcept', set: status, uri: draft });
-        expect(g.match(null, null, rdf.namedNode(draft), g.model)).toEqual([]);
+        expect(g.match(null, null, rdf.namedNode(draft), g.union)).toEqual([]);
     });
 
     it('link drag to empty canvas: a new node shape or value set and an unnamed property to it, one undo step', async () => {

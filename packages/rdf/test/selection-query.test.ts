@@ -4,6 +4,7 @@ import { load } from './helpers';
 import { selected } from '../src/selection';
 import { readShapes } from '../src/shapes-read';
 import { rdf } from '../src/terms';
+import { REPORT_GRAPH } from '../src/graph';
 
 const text = `
 <urn:data> { <urn:a> a <urn:Type> . <urn:b> a <urn:Type> . <urn:c> a <urn:Type> . }
@@ -18,7 +19,7 @@ const text = `
     <urn:p4> a <${NS.view}Placement> ; <${NS.view}element> <urn:a> .
     <urn:p5> a <${NS.view}Placement> ; <${NS.view}element> <urn:c> .
 }
-<urn:trellis:validation> { <urn:ghost> a <urn:Type> . }
+<${REPORT_GRAPH}> { <urn:ghost> a <urn:Type> . }
 `;
 
 it('resolves three placements to elements, and two placements of another view to the same elements', async () => {

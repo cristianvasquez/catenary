@@ -7,7 +7,7 @@
 import { Violation } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { Worker } from 'worker_threads';
-import { ModelGraph, Patch, VALIDATION_GRAPH } from './graph';
+import { ModelGraph, Patch, REPORT_GRAPH } from './graph';
 import { PlainTerm, plainToQuads, quadsToPlain } from 'rdf-core';
 import { rdf } from './terms';
 import { tracer } from './trace';
@@ -142,7 +142,7 @@ export class ValidationRunner {
     /** Replace the report graph (the triples of `triples`) and the violations, unless a newer run made this one stale. */
     protected publish(run: number, g: ModelGraph, violations: Violation[], triples: Quad[], stamp: string): void {
         if (run !== this.run) return discarded(run);
-        const graph = rdf.namedNode(VALIDATION_GRAPH);
+        const graph = rdf.namedNode(REPORT_GRAPH);
         const report = triples.map(q => rdf.quad(q.subject, q.predicate, q.object, graph));
         const patch = g.update(() => {
             const next = rdf.dataset(report);

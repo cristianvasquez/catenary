@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Classes, NS } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { OxigraphStore } from 'rdf-files';
-import { MODEL_GRAPH, VALIDATION_GRAPH, cmp } from '../src/graph';
+import { UNION_GRAPH, REPORT_GRAPH, cmp } from '../src/graph';
 import { elementId } from '../src/ids';
 import { readResults, reportProblems } from '../src/report-read';
 import { TracedStore, tracer } from '../src/trace';
@@ -21,7 +21,7 @@ const meta: Classes = { classes: [{ iri: CLASS, name: 'Thing', shapes: [SHAPE], 
  * alternating a MinCount result on the path (with two messages) and a Class result without a path (sh:value, no message).
  */
 function dataset(instances: number, results: number): Quad[] {
-    const model = n(MODEL_GRAPH), report = n(VALIDATION_GRAPH), out: Quad[] = [];
+    const model = n(UNION_GRAPH), report = n(REPORT_GRAPH), out: Quad[] = [];
     const focus = (i: number) => n(`urn:x:i${String(i).padStart(4, '0')}`);
     for (let i = 0; i < instances; i++) {
         out.push(rdf.quad(focus(i), n(NS.rdf + 'type'), n(CLASS), model), rdf.quad(focus(i), n(NS.rdfs + 'label'), rdf.literal(`Thing ${i}`), model));

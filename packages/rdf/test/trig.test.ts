@@ -136,7 +136,7 @@ describe('validation', () => {
         const g = await example();
         const dp = byLabel(g, 'Product usage data');
         const owner = ops.instanceTerm(g, byLabel(g, 'Data Product Owner'))!;
-        g.set(owner, rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('http://ex.org/Other'), g.model);
+        g.set(owner, rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('http://ex.org/Other'), g.union);
         const v = await validateGraph(g, m);
         expect(v.some(x => x.instance === dp && x.component === 'Class')).toBe(true);
     });

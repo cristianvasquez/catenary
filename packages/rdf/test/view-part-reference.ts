@@ -19,13 +19,13 @@ const iri = (t: NamedNode) => `<${t.value}>`;
  * shapes graphs and the SKOS vocabulary of the data file (small; an edge can point to any shape, a value set card lists its concepts).
  */
 export function viewPart(g: ModelGraph, view: NamedNode): Quad[] {
-    const V = iri(view), M = iri(g.model);
+    const V = iri(view), M = iri(g.union);
     const element = rdf.namedNode(NS.view + 'element');
     // A shape element: a subject of a shapes graph, or a concept scheme or collection of the data file (a value set card).
     const valueSetTypes = SKOS_TYPES.filter(t => !t.value.endsWith('#Concept'));
     const showsShapes = g.match(null, element, null, view)
         .some(q => q.object.termType === 'NamedNode' && (g.match(q.object).some(x => g.isShapesGraph(x.graph))
-            || valueSetTypes.some(t => g.match(q.object as NamedNode, P.type, t, g.model).length > 0)));
+            || valueSetTypes.some(t => g.match(q.object as NamedNode, P.type, t, g.union).length > 0)));
     // A member of an entity group of the view counts as placed (ADR 0014, C1).
     const member = (x: string, n: string) => `{ GRAPH ${V} { ?${n} a view:Placement ; view:element ?${n}g } GRAPH ?${n}mg { ?${n}g a view:EntityGroup ; view:member ?${x} } }`;
     const inView = (x: string) => `EXISTS { { GRAPH ${V} { ?n_${x} a view:Placement ; view:element ?${x} } } UNION ${member(x, `m_${x}`)} }`;

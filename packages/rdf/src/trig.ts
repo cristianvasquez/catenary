@@ -7,7 +7,7 @@ import type { Quad } from '@rdfjs/types';
 import { triplify } from 'rdf-serialization';
 import { canonical } from 'rdf-files';
 import { MANIFEST_GRAPH } from './files';
-import { MODEL_GRAPH } from './graph';
+import { UNION_GRAPH } from './graph';
 import { PREFIXES, rdf } from './terms';
 
 export { canonical };
@@ -17,7 +17,7 @@ export interface ParseResult { quads: Quad[]; warnings: string[] }
 /** Parse TriG. Default graph triples go to the model graph. */
 export async function parseTrig(text: string): Promise<ParseResult> {
     const dataset = await rdf.io.dataset.fromText('application/trig', text);
-    const model = rdf.namedNode(MODEL_GRAPH);
+    const model = rdf.namedNode(UNION_GRAPH);
     const warnings: string[] = [];
     const quads = [...dataset].map(q => {
         if (q.graph.termType !== 'DefaultGraph') return q;
@@ -29,7 +29,7 @@ export async function parseTrig(text: string): Promise<ParseResult> {
 
 export async function writeTrig(quads: Iterable<Quad>): Promise<string> {
     const dataset = await rdf.io.dataset.fromText('application/n-quads', canonical(quads));
-    const rank = (q: Quad) => (q.graph.value === MANIFEST_GRAPH ? '0' : q.graph.value === MODEL_GRAPH ? '1' : '2' + q.graph.value);
+    const rank = (q: Quad) => (q.graph.value === MANIFEST_GRAPH ? '0' : q.graph.value === UNION_GRAPH ? '1' : '2' + q.graph.value);
     const sorted = [...dataset].sort((a, b) => (rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0));
     return triplify(sorted, PREFIXES);
 }

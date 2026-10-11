@@ -5,9 +5,9 @@ import type { Quad } from '@rdfjs/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseRdf, serializeRdf } from '../src/files';
 import { ModelStore } from '../src/model-store';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { canonical, parseTrig, writeTrig } from '../src/trig';
-import { MODEL_GRAPH } from '../src/graph';
+import { UNION_GRAPH } from '../src/graph';
 import { docOf } from './helpers';
 
 // RDF 1.2: triple terms, reified triples, annotations (readme → Known problems and limits → RDF 1.2).
@@ -58,7 +58,7 @@ describe('RDF 1.2 terms', () => {
     });
 
     it('writeTrig keeps triple terms and the blank node inside them', async () => {
-        const { quads } = await parseTrig(`@prefix ex: <http://ex/> .\n<${MODEL_GRAPH}> {\n${TTL.split('\n').slice(1).join('\n')}}\n`);
+        const { quads } = await parseTrig(`@prefix ex: <http://ex/> .\n<${UNION_GRAPH}> {\n${TTL.split('\n').slice(1).join('\n')}}\n`);
         const text = await writeTrig(quads);
         expect(canonical((await parseTrig(text)).quads)).toBe(canonical(quads));
     });

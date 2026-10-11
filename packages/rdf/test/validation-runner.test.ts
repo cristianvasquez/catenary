@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NS, type Violation } from '@catenary/model';
 import * as validation from '../src/validate';
 import { ValidationRunner, ValidationSource, useValidationWorker } from '../src/validation-runner';
-import { ModelGraph, VALIDATION_GRAPH } from '../src/graph';
+import { ModelGraph, REPORT_GRAPH } from '../src/graph';
 import { elementId } from '../src/ids';
 import { Metamodel } from '../src/shapes';
 import { skosProjection, validationInput } from '../src/validation-data';
@@ -82,12 +82,12 @@ describe('validation in a worker thread', () => {
         const g = await load();
         const metamodel = await meta();
         // A data product without its required owner: a violation.
-        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(DPROD + 'DataProduct'), g.model);
-        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdfs + 'label'), rdf.literal('Product'), g.model);
+        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(DPROD + 'DataProduct'), g.union);
+        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdfs + 'label'), rdf.literal('Product'), g.union);
         const run = async () => {
             let r!: ValidationRunner;
             await new Promise<void>(done => { r = new ValidationRunner(() => sourceOf(g, metamodel), () => done()); void r.now().then(() => done()); });
-            return { violations: r.violations, report: g.match(null, null, null, rdf.namedNode(VALIDATION_GRAPH)).length };
+            return { violations: r.violations, report: g.match(null, null, null, rdf.namedNode(REPORT_GRAPH)).length };
         };
         useValidationWorker(undefined);
         const here = await run();
@@ -105,7 +105,7 @@ describe('report patch events', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('publishes a changed report through the patch path even when violation counts stay the same', async () => {
-        const g = emptyGraph(), reportGraph = rdf.namedNode(VALIDATION_GRAPH);
+        const g = emptyGraph(), reportGraph = rdf.namedNode(REPORT_GRAPH);
         const quad = (value: string) => rdf.quad(rdf.namedNode('urn:report'), rdf.namedNode('urn:message'), rdf.literal(value), reportGraph);
         vi.spyOn(validation, 'validate')
             .mockResolvedValueOnce({ results: [result('same')], report: [quad('first')] })
@@ -121,7 +121,7 @@ describe('report patch events', () => {
         expect(events).toHaveLength(2);
         expect(notifications).toHaveLength(2);
         expect(notifications[1].map(c => c.op)).toEqual(['remove', 'add']);
-        expect(events.every(e => e.graphs.length === 1 && e.graphs[0] === VALIDATION_GRAPH)).toBe(true);
+        expect(events.every(e => e.graphs.length === 1 && e.graphs[0] === REPORT_GRAPH)).toBe(true);
         expect(g.keys).toEqual(keys);
         expect(g.match(null, null, null, reportGraph).map(q => q.object.value)).toEqual(['second']);
     });
@@ -133,7 +133,7 @@ describe('the validator (spec/manifest.hs §9 validator)', () => {
 
     it('is pure: it imports nothing from the store or the workspace', () => {
         const src = readFileSync(join(__dirname, '..', 'src', 'validate.ts'), 'utf8');
-        expect([...src.matchAll(/from '\.\/([\w-]+)'/g)].map(x => x[1]).sort()).toEqual(['terms']); // skolemize comes from rdf-core
+        expect([...src.matchAll(/from '\.\/([\w-]+)'/g)].map(x => x[1]).sort()).toEqual(['skolem', 'terms']); // skolem.ts and terms.ts import only rdf-core
     });
 
     it('without shapes gives an empty report (law_validatorNoShapes)', async () => {

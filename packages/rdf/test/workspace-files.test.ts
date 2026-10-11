@@ -5,7 +5,7 @@ import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFIXES, Doc, PREFIXES, compactIri, emptyShapes, boxes } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { ModelGraph, fileGraphIri } from '../src/graph';
+import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { parseTrig } from '../src/trig';
 import { DATA, MODEL, SHAPES, WORKSPACE, doc, example, parseQuads, writeWorkspace, docOf } from './helpers';
 
@@ -73,8 +73,8 @@ describe('workspace files', () => {
         writeFileSync(join(f.dir, 'nested', 'n.ttl'), '<urn:x:n> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Nested" .\n');
         const store = await opened(f.ws);
         const graphs = () => new Set((store as unknown as { graph: ModelGraph }).graph.quads().map(q => q.graph.value));
-        expect(graphs().has(fileGraphIri(f.shapes))).toBe(true);
-        expect(graphs().has(fileGraphIri(f.data))).toBe(false);
+        expect(graphs().has(shapesGraphIri(f.shapes))).toBe(true);
+        expect(graphs().has(shapesGraphIri(f.data))).toBe(false);
         expect(store.files.files.map(x => [x.path.slice(f.dir.length + 1).split(sep).join('/'), x.kinds])).toEqual([['data.ttl', ['instances']], ['shapes.ttl', ['shapes']], ['sub/more.ttl', ['instances']]]);
         const labels = Object.values(docOf(store).instances).map(i => i.label);
         expect(labels).toContain('More');

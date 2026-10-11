@@ -6,10 +6,10 @@ import type { Quad, Term } from '@rdfjs/types';
 import { ChangeReason, ChangeTier, Doc, NS, SnapshotChange } from '@catenary/model';
 import { elementId } from './ids';
 
-import { VALIDATION_GRAPH } from 'rdf-core';
+import { REPORT_GRAPH } from './graph-names';
 
 /** The SHACL report of the last validation (rdf-core graph.ts). */
-export { VALIDATION_GRAPH };
+export { REPORT_GRAPH };
 /** Placement geometry and style do not change figure derivation. */
 export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
 
@@ -32,7 +32,7 @@ export interface Dependencies { shapes: boolean; query: boolean; data: boolean; 
 export type QuadKind = 'report' | 'shapes' | 'metamodel' | 'data' | 'layout' | 'view' | 'other';
 
 export function quadKind(facts: GraphFacts, q: Quad): QuadKind {
-    if (q.graph.value === VALIDATION_GRAPH) return 'report';
+    if (q.graph.value === REPORT_GRAPH) return 'report';
     if (facts.isShapesGraph(q.graph)) return 'shapes';
     if (facts.isDataGraph(q.graph)) return facts.metamodelQuad(q) ? 'metamodel' : 'data';
     if (!facts.isView(q.graph)) return 'other';

@@ -8,9 +8,9 @@ import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { OxigraphStore, absolutePath, hasAnnotation, knownPath, portableRelative } from 'rdf-files';
 import { MANIFEST_GRAPH, NEAR, WORKSPACE_FILE, isViewFile, listModelFiles, parseRdf, readManifest, workspaceFileOf } from './files';
-import { ModelGraph, cmp, dataGraphIri, fileGraphIri } from './graph';
+import { ModelGraph, cmp, dataGraphIri, shapesGraphIri } from './graph';
 import { FileRead, PLACE_KINDS, Settings } from './settings';
-import { isSkolem, skolemize } from 'rdf-core';
+import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { canonical, parseTrig } from './trig';
 import { isView, V } from './views';
@@ -124,7 +124,7 @@ export class Loader {
         // A file that Catenary does not write keeps its blank nodes on disk: its saved form is the read with IRIs.
         const keep = !this.settings.readOnlyReason(r.path);
         if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
-        const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path)), data = rdf.namedNode(dataGraphIri(r.path));
+        const shapes = shapePart(quads), graph = rdf.namedNode(shapesGraphIri(r.path)), data = rdf.namedNode(dataGraphIri(r.path));
         this.graph.addDataGraph(data);
         for (const q of quads) {
             if (shapes.has(termKey(q.subject))) { this.graph.add(q.subject, q.predicate, q.object, graph); continue; }
@@ -147,7 +147,7 @@ export class Loader {
             this.settings.viewFiles.delete(iri);
         }
         if (!this.settings.modelFiles.has(file)) return;
-        for (const q of this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(file)))) this.graph.remove(q);
+        for (const q of this.graph.match(null, null, null, rdf.namedNode(shapesGraphIri(file)))) this.graph.remove(q);
         for (const q of this.graph.match(null, null, null, rdf.namedNode(dataGraphIri(file)))) this.graph.remove(q);
         this.settings.modelFiles.delete(file);
     }

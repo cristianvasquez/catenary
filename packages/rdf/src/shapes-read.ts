@@ -18,7 +18,7 @@ import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/ty
 import type { Dataset } from 'rdf-ext';
 import { GraphChange, ModelGraph, cmp, fileOfGraph } from './graph';
 import { constraintId, elementId, propertyShapeId } from './ids';
-import { isSkolem } from 'rdf-core';
+import { isSkolem } from './skolem';
 import { rdf, termKey } from './terms';
 import { shapesAndVocabulary } from './shapes';
 import { labelFromIri } from './vocabulary';

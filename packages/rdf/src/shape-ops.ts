@@ -13,7 +13,7 @@ import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
 import { Result, dropFromView, fail, gone, iriProblem, ok, replaceTerm } from './ops';
 import { S, ShapesIndex, shapesIndexOf } from './shapes-read';
-import { isSkolem } from 'rdf-core';
+import { isSkolem } from './skolem';
 import { rdf } from './terms';
 import { usedIris, P, UsedIris, mint } from './vocabulary';
 import { views, edgeOf } from './views';
@@ -214,12 +214,12 @@ function writeSimpleRange(g: ModelGraph, idx: ShapesIndex, ps: Quad_Subject, ran
 
 /** Statements of the model graph that a migration changes now. */
 export function migrationCount(g: ModelGraph, m: MigrationChange): number {
-    if (m.kind === 'renameClass') return g.match(null, P.type, rdf.namedNode(m.from), g.model).length;
+    if (m.kind === 'renameClass') return g.match(null, P.type, rdf.namedNode(m.from), g.union).length;
     const from = rdf.namedNode(m.from);
-    const quads = g.match(null, from, null, g.model);
+    const quads = g.match(null, from, null, g.union);
     if (!m.classIri) return quads.length;
     const cls = rdf.namedNode(m.classIri);
-    return quads.filter(q => g.has(rdf.quad(q.subject, P.type, cls, g.model))).length;
+    return quads.filter(q => g.has(rdf.quad(q.subject, P.type, cls, g.union))).length;
 }
 
 /** Apply a migration to the data. Edge layouts of renamed relations follow in every view. */
@@ -227,18 +227,18 @@ export function migrate(g: ModelGraph, m: MigrationChange): Result<number> {
     const count = migrationCount(g, m);
     if (count === 0) return fail('The data has no statements that this change applies to.');
     if (m.kind === 'renameClass') {
-        for (const q of [...g.match(null, P.type, rdf.namedNode(m.from), g.model)]) {
+        for (const q of [...g.match(null, P.type, rdf.namedNode(m.from), g.union)]) {
             g.remove(q);
-            g.add(q.subject, P.type, rdf.namedNode(m.to), g.model);
+            g.add(q.subject, P.type, rdf.namedNode(m.to), g.union);
         }
         return ok(count);
     }
     const from = rdf.namedNode(m.from), to = rdf.namedNode(m.to);
     const cls = m.classIri ? rdf.namedNode(m.classIri) : undefined;
-    for (const q of [...g.match(null, from, null, g.model)]) {
-        if (cls && !g.has(rdf.quad(q.subject, P.type, cls, g.model))) continue;
+    for (const q of [...g.match(null, from, null, g.union)]) {
+        if (cls && !g.has(rdf.quad(q.subject, P.type, cls, g.union))) continue;
         g.remove(q);
-        g.add(q.subject, to, q.object, g.model);
+        g.add(q.subject, to, q.object, g.union);
         for (const view of views(g)) {
             const e = edgeOf(g, view, q.subject, from, q.object);
             if (e) g.set(e, P.reifies, rdf.quad(q.subject, to, q.object), view);
@@ -607,7 +607,7 @@ export function shapesCardTerm(g: ModelGraph, id: string): NamedNode | undefined
 export function createValueSet(g: ModelGraph, kind: 'scheme' | 'collection', label: string): Result<string> {
     const problem = labelProblem(label);
     if (problem) return fail(problem);
-    const graph = g.model;
+    const graph = g.union;
     const s = newIri(g, mint(label));
     g.add(s, S.type, kind === 'scheme' ? S.ConceptScheme : S.Collection, graph);
     g.add(s, S.prefLabel, rdf.literal(label), graph);
@@ -683,7 +683,7 @@ export function removeConcept(g: ModelGraph, setId: string, uri: string): Result
         else {
             const touched = rdf.termSet<NamedNode>();
             // Its statements and the statements that refer to it, also in the data (an instance that has this concept as a value).
-            const refs = [...shapesQuads(g), ...g.match(null, null, null, g.model)].filter(q => q.subject.equals(c) || q.object.equals(c));
+            const refs = [...shapesQuads(g), ...g.match(null, null, null, g.union)].filter(q => q.subject.equals(c) || q.object.equals(c));
             for (const q of refs) {
                 if (q.subject.termType === 'NamedNode' && !q.subject.equals(c)) touched.add(q.subject);
                 g.remove(q);
@@ -713,7 +713,7 @@ export function deleteValueSet(g: ModelGraph, id: string): Result {
         if (h && graph) removeOwned(g, h, graph);
     }
     removeOwned(g, set.term, set.graph);
-    for (const q of [...shapesQuads(g), ...g.match(null, null, null, g.model)].filter(q => q.object.equals(set.term))) g.remove(q);
+    for (const q of [...shapesQuads(g), ...g.match(null, null, null, g.union)].filter(q => q.object.equals(set.term))) g.remove(q);
     for (const view of views(g)) dropFromView(g, view, set.term);
     return ok(undefined);
 }

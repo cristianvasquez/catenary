@@ -44,7 +44,7 @@ function byProjection(viewId: string): Doc {
     const g = store['graph'];
     const view = docOf(store).views[viewId];
     const part = newModelGraph(new OxigraphStore(viewPart(g, rdf.namedNode(view.uri))));
-    part.model = g.model;
+    part.union = g.union;
     part.setShapesGraphs(g.shapesGraphs());
     part.primaryShapes = g.primaryShapes;
     return store['decorate'](project(part).doc);

@@ -127,14 +127,14 @@ it('law_originKept and law_undoKeepsOrigin: duplicate triples stay in separate f
     const graphs = () => g.store.match(subject, predicate).map(q => q.graph.value).sort();
     const expected = [dataGraphIri(file('a')), dataGraphIri(file('c'))].sort();
     expect(graphs()).toEqual(expected);
-    expect(g.match(subject, predicate, null, g.model)).toHaveLength(1);
-    expect(g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.model.value}> { <urn:test:a> a <urn:test:Thing> } }`)[0].n.value).toBe('1');
+    expect(g.match(subject, predicate, null, g.union)).toHaveLength(1);
+    expect(g.select(`SELECT (COUNT(*) AS ?n) WHERE { GRAPH <${g.union.value}> { <urn:test:a> a <urn:test:Thing> } }`)[0].n.value).toBe('1');
     const events: typeof g.change[] = [];
     g.onDidChange(event => events.push(event));
     expect(move().ok).toBe(true);
     expect(events).toHaveLength(1);
     expect(events[0].graphs.sort()).toEqual([dataGraphIri(file('a')), dataGraphIri(file('b'))].sort());
-    expect(events[0].patch.every(c => !c.quad.graph.equals(g.model))).toBe(true);
+    expect(events[0].patch.every(c => !c.quad.graph.equals(g.union))).toBe(true);
     expect(graphs()).toEqual([dataGraphIri(file('b')), dataGraphIri(file('c'))].sort());
     expect(store.undo().ok).toBe(true);
     expect(graphs()).toEqual(expected);

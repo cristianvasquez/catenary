@@ -9,7 +9,7 @@ import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { absolutePath, isInside, knownPath, pathKey, portableRelative } from 'rdf-files';
 import { Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, defaultViewsFolder, globRegExp, manifestQuads, serializeRdf, writeProblem } from './files';
-import { Change, ModelGraph, cmp, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
+import { Change, ModelGraph, cmp, dataGraphIri, shapesGraphIri, fileOfGraph } from './graph';
 import { elementTerm } from './ids';
 import { rdf, termKey, tripleKey } from './terms';
 import { canonical, writeTrig } from './trig';
@@ -92,7 +92,7 @@ export class Settings {
 
     /** The names of the files with shapes (the sources of the metamodel). */
     shapeSources(): string[] {
-        return [...this.modelFiles.keys()].filter(f => this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).length).map(f => path.basename(f));
+        return [...this.modelFiles.keys()].filter(f => this.graph.match(null, null, null, rdf.namedNode(shapesGraphIri(f))).length).map(f => path.basename(f));
     }
 
     /** The files of the workspace and their state; `views`: the view ids of the read model; `saved`: what differs from the files (saver.ts). */
@@ -119,7 +119,7 @@ export class Settings {
 
     /** A concrete quad names its file. A logical data triple names each file graph that contains it. */
     filesOfQuad(q: Quad): string[] {
-        if (q.graph.equals(this.graph.model)) return [...new Set(this.graph.dataGraphs().filter(g => this.graph.match(q.subject, q.predicate, q.object, g).length).map(g => fileOfGraph(g.value)))];
+        if (q.graph.equals(this.graph.union)) return [...new Set(this.graph.dataGraphs().filter(g => this.graph.match(q.subject, q.predicate, q.object, g).length).map(g => fileOfGraph(g.value)))];
         if (this.graph.isDataGraph(q.graph) || this.graph.isShapesGraph(q.graph)) return [fileOfGraph(q.graph.value)];
         const f = this.viewFiles.get(q.graph.value)?.path;
         return f ? [f] : [];
@@ -132,7 +132,7 @@ export class Settings {
         const kinds = new Map<string, Set<FileKind>>();
         this.kindsCache = { event, kinds };
         const add = (file: string, k: FileKind) => (kinds.get(file) ?? kinds.set(file, new Set()).get(file)!).add(k);
-        for (const f of this.modelFiles.keys()) if (this.graph.match(null, null, null, rdf.namedNode(fileGraphIri(f))).length) add(f, 'shapes');
+        for (const f of this.modelFiles.keys()) if (this.graph.match(null, null, null, rdf.namedNode(shapesGraphIri(f))).length) add(f, 'shapes');
         // Each data graph once: its file is the graph (a read of the logical model graph loses it, and filesOfQuad per quad costs one
         // match per file and quad).
         for (const g of this.graph.dataGraphs()) {
@@ -181,14 +181,14 @@ export class Settings {
     syncShapesTarget(): void {
         let target = this.placeFile(this.placement.shapes === NEAR ? undefined : this.placement.shapes);
         if (this.placement.shapes === NEAR) {
-            const count = (f: string) => this.graph.match(null, P.type, rdf.namedNode(NS.sh + 'NodeShape'), rdf.namedNode(fileGraphIri(f))).length;
+            const count = (f: string) => this.graph.match(null, P.type, rdf.namedNode(NS.sh + 'NodeShape'), rdf.namedNode(shapesGraphIri(f))).length;
             const best = [...this.modelFiles.keys()].filter(f => !this.readOnlyReason(f)).map(f => [f, count(f)] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0];
             if (best) target = best[0];
         }
         this.modelFile(target);
         this.graph.setDataGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(dataGraphIri(f))));
-        this.graph.setShapesGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(fileGraphIri(f))));
-        this.graph.primaryShapes = rdf.namedNode(fileGraphIri(target));
+        this.graph.setShapesGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(shapesGraphIri(f))));
+        this.graph.primaryShapes = rdf.namedNode(shapesGraphIri(target));
     }
 
     /**
@@ -277,7 +277,7 @@ export class Settings {
         const files = new Set<string>();
         for (const [k, c] of last) {
             if (first.get(k)!.op !== c.op) continue;
-            if (c.quad.graph.equals(this.graph.model) && c.op === 'add') continue;
+            if (c.quad.graph.equals(this.graph.union) && c.op === 'add') continue;
             for (const f of this.filesOfQuad(c.quad)) if (this.isImported(f)) files.add(f);
         }
         return [...files].sort(cmp);
@@ -285,7 +285,7 @@ export class Settings {
 
     /** The files of the data graphs that a committed patch touched are files of the workspace (a new file of a placement). */
     track(changes: readonly Change[]): void {
-        for (const c of changes) if (this.graph.isDataGraph(c.quad.graph) && !c.quad.graph.equals(this.graph.model)) this.modelFile(fileOfGraph(c.quad.graph.value));
+        for (const c of changes) if (this.graph.isDataGraph(c.quad.graph) && !c.quad.graph.equals(this.graph.union)) this.modelFile(fileOfGraph(c.quad.graph.value));
         this.graph.setDataGraphs([...this.modelFiles.keys()].map(f => rdf.namedNode(dataGraphIri(f))));
     }
 

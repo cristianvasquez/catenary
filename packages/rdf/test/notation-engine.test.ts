@@ -7,11 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Join, LazyTripleIndex, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
-import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
+import { REPORT_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
 import { keyTerm, nquads, readNotations, storeIndex, storeInput, viewFiguresOf } from '../src/notations';
-import { skolemize } from 'rdf-core';
+import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { fileURLToPath } from 'node:url';
 
@@ -33,7 +33,7 @@ beforeAll(async () => {
     expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
     const graph = (store as unknown as { graph: ModelGraph }).graph;
     data = storeIndex(graph);
-    base = nquads(graph.quads().filter(q => q.graph.value !== VALIDATION_GRAPH));
+    base = nquads(graph.quads().filter(q => q.graph.value !== REPORT_GRAPH));
     notes = readNotations();
 });
 afterAll(async () => {

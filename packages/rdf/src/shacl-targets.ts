@@ -5,7 +5,7 @@ import { applicableMatches, focus, readNodeReferences, NodeReference, TargetScop
 import type { FocusNode, TargetMatch } from '@catenary/shacl/common';
 import type { Quad } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
-import { GraphChange, ModelGraph, VALIDATION_GRAPH } from './graph';
+import { GraphChange, ModelGraph, REPORT_GRAPH } from './graph';
 import { jsonToTerm, rdf, termKey } from './terms';
 import { tracer } from './trace';
 import { isView } from './views';
@@ -56,7 +56,7 @@ function changed(g: ModelGraph, s: TargetState, e: GraphChange): void {
     if (!e.query && !e.shapes) return;
     if (e.shapes || !e.patch.length || e.patch.length > PATCH_LIMIT || !s.scope) return reset(s);
     for (const { quad: q } of e.patch) {
-        if (q.graph.value === VALIDATION_GRAPH || isView(g, q.graph)) continue;
+        if (q.graph.value === REPORT_GRAPH || isView(g, q.graph)) continue;
         if (!s.scope.data.includes(q.graph.value) || shaclQuad(q)) return reset(s);
         for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') s.frontiers.delete(iri(t.value));
         // A literal is a focus node too (a value of a path): its frontier has the statements with it as object.
@@ -122,11 +122,11 @@ function materialize(g: ModelGraph, scope: TargetScope, nodes: readonly FocusNod
 function readScope(g: ModelGraph): TargetScope {
     const data = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
-        FILTER (?g != <${VALIDATION_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
+        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
     }`).map(r => r.g.value);
     const shapes = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
-        FILTER (?g != <${VALIDATION_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
+        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
         FILTER (STRSTARTS(STR(?p), "http://www.w3.org/ns/shacl#") || ?o IN (<http://www.w3.org/ns/shacl#NodeShape>, <http://www.w3.org/ns/shacl#PropertyShape>))
     }`).map(r => r.g.value);
     return { shapes: [...new Set([...g.shapesGraphs().map(t => t.value), ...shapes])], data };

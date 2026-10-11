@@ -3,7 +3,7 @@
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
+import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, cmp } from './graph';
 import { rdf } from './terms';
 import { labelFromIri } from './vocabulary';
 
@@ -12,7 +12,7 @@ export const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFI
 export const iri = (value: string) => `<${value}>`;
 
 /** The report graph (derived; not data). */
-export const NOT_REPORT = `<${VALIDATION_GRAPH}>`;
+export const NOT_REPORT = `<${REPORT_GRAPH}>`;
 
 /** A SPARQL string literal. */
 export const str = (s: string) => JSON.stringify(s);
@@ -63,7 +63,7 @@ export function statements(g: ModelGraph, subjects: string[]): Quad[] {
 
 /** Statements of one data graph. View readers use this query for placement metadata. */
 export function graphStatements(g: ModelGraph, graph: string): Quad[] {
-    if (graph === VALIDATION_GRAPH) return [];
+    if (graph === REPORT_GRAPH) return [];
     return construct(g, `CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ${iri(graph)} { ?s ?p ?o } }`);
 }
 
@@ -130,9 +130,9 @@ export const compareLabels = (a: string, b: string) => {
 
 /** The IRIs of `iris` with an rdf:type or an rdfs:label in the model graph (vocabulary.ts inModel), in one query. */
 export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
-    const values = [...new Set(iris)].filter(s => s !== g.model.value);
+    const values = [...new Set(iris)].filter(s => s !== g.union.value);
     if (!values.length) return new Set();
-    return new Set(rows(g, `SELECT DISTINCT ?s WHERE { VALUES ?s { ${values.map(iri).join(' ')} } GRAPH ${iri(g.model.value)} { ?s rdf:type|rdfs:label ?x } }`).map(r => r.s.value));
+    return new Set(rows(g, `SELECT DISTINCT ?s WHERE { VALUES ?s { ${values.map(iri).join(' ')} } GRAPH ${iri(g.union.value)} { ?s rdf:type|rdfs:label ?x } }`).map(r => r.s.value));
 }
 
 /**
@@ -140,7 +140,7 @@ export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string>
  * two queries. Reason: isInstance reads the store once per data graph and term (§11.3 readBudgetMs).
  */
 export function instancesAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
-    const values = [...new Set(iris)].filter(s => s !== g.model.value && s !== MODEL_GRAPH);
+    const values = [...new Set(iris)].filter(s => s !== g.union.value && s !== UNION_GRAPH);
     const found = inModelAmong(g, values);
     const rest = values.filter(s => !found.has(s)), shapes = g.shapesGraphs();
     if (rest.length && shapes.length) for (const r of rows(g, `SELECT DISTINCT ?s WHERE { VALUES ?s { ${rest.map(iri).join(' ')} }
@@ -166,7 +166,7 @@ export function homesAmong(g: ModelGraph, iris: Iterable<string>): Map<string, s
         const was = vocabulary.get(r.s.value);
         if (was === undefined || cmp(r.sg.value, was) < 0) vocabulary.set(r.s.value, r.sg.value);
     }
-    for (const s of values) out.set(s, inModel.has(s) ? g.model.value : vocabulary.get(s) ?? g.model.value);
+    for (const s of values) out.set(s, inModel.has(s) ? g.union.value : vocabulary.get(s) ?? g.union.value);
     return out;
 }
 

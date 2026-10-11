@@ -212,7 +212,7 @@ describe('arrows', () => {
         const arrow = run(g, meta, { kind: 'createArrow', view, from: note, to: card }) as string;
         const v = views(g)[0];
         const mark = g.object(g.match(null, V.element).find(q => elementIdOf(q.subject) === note)!.subject, V.element, v)!;
-        const instance = g.match(null, null, null, g.model).find(q => elementIdOf(q.subject) === card)!.subject;
+        const instance = g.match(null, null, null, g.union).find(q => elementIdOf(q.subject) === card)!.subject;
         expect(g.match(mark, V.arrow, instance, v)).toHaveLength(1);
         expect(elementIdOf(arrows(g, v)[0])).toBe(arrow);
         const t = connectorOf(g, arrows(g, v)[0], v)!;

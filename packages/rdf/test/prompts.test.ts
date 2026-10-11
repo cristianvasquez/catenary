@@ -126,7 +126,7 @@ describe('dialogs and pickers of the user actions', () => {
         const previous = store.hiddenNeighborCounts(view).get(instance)?.targets ?? 0;
         g.add(shape, S.targetSubjectsOf, rdf.namedNode('urn:test:first'), g.shapesGraphs()[0]);
         g.add(shape, S.targetSubjectsOf, predicate, g.shapesGraphs()[0]);
-        g.add(uri, predicate, rdf.literal('active'), g.model);
+        g.add(uri, predicate, rdf.literal('active'), g.union);
 
         expect(store.hiddenNeighborCounts(view).get(instance)?.targets).toBe(previous + 1);
         expect(store.reads.shapeTargetChoices(view.id, card.id)).toMatchObject({

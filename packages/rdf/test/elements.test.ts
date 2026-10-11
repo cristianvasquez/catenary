@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NS, iriId } from '@catenary/model';
 import { executeCommand } from '../src/commands';
+import { shapesGraphIri } from '../src/graph';
 
 import { relationId } from '../src/ids';
 import { rdf } from '../src/terms';
@@ -21,7 +22,7 @@ const TEXT = `
     ex:both a ex:C; rdfs:label "Both"; skos:prefLabel "Both".
     ex:s a skos:ConceptScheme; skos:prefLabel "S"; skos:hasTopConcept ex:row.
 }
-<urn:file:/s.ttl> { ex:CShape a sh:NodeShape; sh:targetClass ex:C; sh:name "C shape". }
+<${shapesGraphIri('/s.ttl')}> { ex:CShape a sh:NodeShape; sh:targetClass ex:C; sh:name "C shape". }
 <urn:v:1> { <urn:v:1> a view:View; rdfs:label "V". <urn:v:1-node> a view:Placement; view:element ex:a. <urn:v:1-node-2> a view:Placement; view:element ex:CShape. }
 <urn:v:2> { <urn:v:2> a view:View; rdfs:label "W". <urn:v:2-ref> a view:Placement; view:element <urn:v:1>; view:x 0; view:y 0. }
 `;

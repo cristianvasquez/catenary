@@ -4,7 +4,7 @@
 import { CommandResult, NS } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
 import { NEAR, Placement } from './files';
-import { ModelGraph, cmp, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
+import { ModelGraph, cmp, dataGraphIri, shapesGraphIri, fileOfGraph } from './graph';
 import { elementTerm, relationTriple } from './ids';
 import type { Settings } from './settings';
 import { shapesIndexOf } from './shapes-read';
@@ -16,7 +16,7 @@ export function filesOfSubject(g: ModelGraph, t: Term): string[] {
     const count = new Map<string, number>();
     const add = (f: string) => count.set(f, (count.get(f) ?? 0) + 1);
     for (const q of g.match(t)) {
-        if (g.isDataGraph(q.graph) && !q.graph.equals(g.model) || g.isShapesGraph(q.graph)) add(fileOfGraph(q.graph.value));
+        if (g.isDataGraph(q.graph) && !q.graph.equals(g.union) || g.isShapesGraph(q.graph)) add(fileOfGraph(q.graph.value));
     }
     return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
 }
@@ -31,7 +31,7 @@ export function filesOfSubjects(g: ModelGraph, subjects: Iterable<string>): Map<
     if (!values.length) return out;
     const counts = new Map<string, Map<string, number>>();
     for (const r of g.select(`SELECT ?s ?g (COUNT(*) AS ?n) WHERE { VALUES ?s { ${values.map(s => `<${s}>`).join(' ')} } GRAPH ?g { ?s ?p ?o } } GROUP BY ?s ?g`)) {
-        if (!(g.isDataGraph(r.g) && !r.g.equals(g.model) || g.isShapesGraph(r.g))) continue;
+        if (!(g.isDataGraph(r.g) && !r.g.equals(g.union) || g.isShapesGraph(r.g))) continue;
         const count = counts.get(r.s.value) ?? counts.set(r.s.value, new Map()).get(r.s.value)!;
         const f = fileOfGraph(r.g.value);
         count.set(f, (count.get(f) ?? 0) + Number(r.n.value));
@@ -45,7 +45,7 @@ export function nearFiles(g: ModelGraph, s: Term): Set<string> | undefined {
     const own = filesOfSubject(g, s);
     if (own.length) return new Set([own[0]]);
     for (const q of g.match(null, null, s)) {
-        if (g.isDataGraph(q.graph) && !q.graph.equals(g.model) || g.isShapesGraph(q.graph)) return new Set([fileOfGraph(q.graph.value)]);
+        if (g.isDataGraph(q.graph) && !q.graph.equals(g.union) || g.isShapesGraph(q.graph)) return new Set([fileOfGraph(q.graph.value)]);
     }
     return undefined;
 }
@@ -56,16 +56,16 @@ export function nearFiles(g: ModelGraph, s: Term): Set<string> | undefined {
  * most subjects of its class. `placeFile` turns the result (undefined: none found) into a file that can be written.
  */
 export function placeOf(g: ModelGraph, placement: Placement, placeFile: (file: string | undefined) => string, s: Term): string {
-    const types = g.match(s, P.type, null, g.model).map(q => q.object);
-    const skos = types.some(t => SKOS_TYPES.some(k => k.equals(t))) || g.match(s, null, null, g.model).some(isVocabularyQuad);
+    const types = g.match(s, P.type, null, g.union).map(q => q.object);
+    const skos = types.some(t => SKOS_TYPES.some(k => k.equals(t))) || g.match(s, null, null, g.union).some(isVocabularyQuad);
     const place = skos ? placement.concepts : placement.instances;
     return placeFile(place !== NEAR ? place : skos ? nearScheme(g, s) : nearClass(g, types));
 }
 
 function nearScheme(g: ModelGraph, s: Term): string | undefined {
-    const schemes = g.match(s, null, null, g.model)
+    const schemes = g.match(s, null, null, g.union)
         .filter(q => [NS.skos + 'inScheme', NS.skos + 'topConceptOf'].includes(q.predicate.value)).map(q => q.object);
-    const collections = g.match(null, rdf.namedNode(NS.skos + 'member'), s, g.model).map(q => q.subject);
+    const collections = g.match(null, rdf.namedNode(NS.skos + 'member'), s, g.union).map(q => q.subject);
     for (const t of [...schemes, ...collections]) {
         const f = filesOfSubject(g, t)[0];
         if (f) return f;
@@ -76,7 +76,7 @@ function nearScheme(g: ModelGraph, s: Term): string | undefined {
 function nearClass(g: ModelGraph, types: Term[]): string | undefined {
     const count = new Map<string, number>();
     for (const t of types) {
-        for (const q of g.match(null, P.type, t).filter(q => g.isDataGraph(q.graph) && !q.graph.equals(g.model))) {
+        for (const q of g.match(null, P.type, t).filter(q => g.isDataGraph(q.graph) && !q.graph.equals(g.union))) {
             const f = fileOfGraph(q.graph.value);
             count.set(f, (count.get(f) ?? 0) + 1);
         }
@@ -87,7 +87,7 @@ function nearClass(g: ModelGraph, types: Term[]): string | undefined {
 /** Assign every new data statement its final file graph inside the command transaction. */
 export function placeChanges(g: ModelGraph, settings: Settings): void {
     g.placePending((q, changes, fallback) => {
-        const added = changes.find(c => c.op === 'add' && c.quad.graph.equals(g.model) && tripleKey(c.quad) === tripleKey(q));
+        const added = changes.find(c => c.op === 'add' && c.quad.graph.equals(g.union) && tripleKey(c.quad) === tripleKey(q));
         const prior = changes.filter(c => c.op === 'remove' && g.isDataGraph(c.quad.graph)
             && tripleKey(c.quad) === tripleKey(added?.was ?? q)).flatMap(c => settings.filesOfQuad(c.quad));
         const files = prior.length ? prior : [...nearFiles(g, q.subject) ?? []];
@@ -114,7 +114,7 @@ export function transfer(g: ModelGraph, settings: Settings, source: string, dest
             subjects.add(term.value);
         }
     }
-    const fromGraph = rdf.namedNode(fileGraphIri(source)), toGraph = rdf.namedNode(fileGraphIri(destination));
+    const fromGraph = rdf.namedNode(shapesGraphIri(source)), toGraph = rdf.namedNode(shapesGraphIri(destination));
     const shapes = g.match(null, null, null, fromGraph);
     // Structural shape nodes travel with their selected parent. Referenced classes and named target shapes do not.
     const structural = new Set(['property', 'or', 'and', 'xone', 'not', 'qualifiedValueShape', 'path', 'inversePath', 'alternativePath', 'zeroOrMorePath', 'oneOrMorePath', 'zeroOrOnePath', 'in', 'languageIn', 'ignoredProperties'].map(p => NS.sh + p));

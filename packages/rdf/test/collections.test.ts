@@ -38,7 +38,7 @@ describe('collections (view only)', () => {
         const { g, view, ids } = setup();
         const col = run(g, meta, { kind: 'collect', view, ids: ids.slice(0, 2) }) as string;
         // A data change: C urn:rel A (the shapes of this fixture permit no relation, so the statement is added directly).
-        g.transact(x => { x.add(rdf.namedNode(idIri(ids[2])!), rdf.namedNode('urn:rel'), rdf.namedNode(idIri(ids[0])!), x.model); return { ok: true }; });
+        g.transact(x => { x.add(rdf.namedNode(idIri(ids[2])!), rdf.namedNode('urn:rel'), rdf.namedNode(idIri(ids[0])!), x.union); return { ok: true }; });
         expect(g.match(null, rdf.namedNode(NS.rdf + 'reifies'))).toEqual([]);
         const children = toSchema(doc(g), meta, view, { showHidden: false, violations: [] }).children ?? [];
         expect(children.filter(e => e.type === TYPES.BUNDLE)).toMatchObject([{ sourceId: cardOf(doc(g).views[view], ids[2])!.id, targetId: col, count: 1 }]);
