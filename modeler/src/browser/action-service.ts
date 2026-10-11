@@ -7,7 +7,7 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import { ActionState, ActionTarget, ItemFacts, SelectionActions, targetKey, panelsUnchanged } from '@catenary/model';
 import { ViewEditors } from './diagram/view-editors';
 import { ModelFrontend } from './model-client';
-import { SelectionModel } from './selection-model';
+import { SELECTION_QUIET_MS, SelectionModel } from './selection-model';
 
 const EMPTY: SelectionActions = { actions: [], items: [], cards: [] };
 
@@ -15,9 +15,6 @@ const EMPTY: SelectionActions = { actions: [], items: [], cards: [] };
 export function isActionTarget(arg: unknown): arg is ActionTarget {
     return !!arg && typeof arg === 'object' && Array.isArray((arg as ActionTarget).ids) && !('node' in (arg as object));
 }
-
-/** The quiet time after a change of the window selection before its read (spec/ui-manifest.hs §4.2 selectionQuietMs). */
-export const SELECTION_QUIET_MS = 100;
 
 /** Actions that act on the view itself when nothing is selected on its canvas (spec/ui-manifest.hs §4). */
 const VIEW_AS_ITEM = ['catenary.openIn'];

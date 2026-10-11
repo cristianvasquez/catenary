@@ -103,7 +103,7 @@ export class ViewOutline implements FrontendApplicationContribution {
         this.shell.onDidChangeCurrentWidget(() => this.update());
         this.shell.onDidChangeActiveWidget(() => this.update());
         // The outline shows the containment of boxes in groups: a move in the current view changes it, a write does not.
-        this.model.onDidChange(s => s.change?.reason === 'save' || (panelsUnchanged(s.change) && !s.change?.views?.includes(this.editors.currentViewId() ?? '')) || this.update());
+        this.model.onDidChange(s => (panelsUnchanged(s.change) && !s.change?.views?.includes(this.editors.currentViewId() ?? '')) || this.update());
         this.selection.onDidChange(() => this.update());
         this.outline.onDidChangeOpenState(open => open && this.update());
         this.outline.onDidSelect(() => this.select());

@@ -18,7 +18,7 @@ import { edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrom
 import { Rect, Route, RouteRequest, routeEdges } from './edge-route';
 import { edgeStyle } from './edge-preferences';
 
-export { COLOR_NAMES, COLOR_ORDER, PRESETS, colorValue, colorVars } from './card-chrome';
+export { COLOR_NAMES, COLOR_ORDER, PRESETS } from './card-chrome';
 
 // No boundsFeature: the size comes from the model only. With it, the hidden DOM measurement would
 // return the SVG bounding box (badge, handle, long names) and the size would grow on each move.

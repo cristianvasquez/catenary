@@ -268,9 +268,6 @@ export class ViewEditors implements FrontendApplicationContribution {
     /** The selected element (one instance or one relation) and the views that show it, from the backend (RPC `occurrence`). */
     occurrence?: Occurrence;
     protected occurrenceSequence = 0;
-    protected readonly onDidChangeOccurrenceEmitter = new Emitter<Occurrence | undefined>();
-    /** Fires when the occurrence of the selection is known (after each selection or model change). */
-    readonly onDidChangeOccurrence = this.onDidChangeOccurrenceEmitter.event;
     /** Resolves when the last occurrence request is done. */
     occurrenceKnown: Promise<void> = Promise.resolve();
 
@@ -297,7 +294,6 @@ export class ViewEditors implements FrontendApplicationContribution {
         const found = this.model.isOpen && ids.length ? await this.model.service.occurrence(ids, view).catch(() => undefined) : undefined;
         if (n !== this.occurrenceSequence) return;
         this.occurrence = found;
-        this.onDidChangeOccurrenceEmitter.fire(found);
         const views = found?.views ?? [];
         if (!found || !views.length) {
             this.statusBar.removeElement(OCCURRENCE_ENTRY);

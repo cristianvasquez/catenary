@@ -3,9 +3,10 @@ import type { ActionTarget, SelectionActions } from '@catenary/model';
 
 vi.mock('../src/browser/model-client', () => ({ ModelFrontend: class {} }));
 vi.mock('../src/browser/diagram/view-editors', () => ({ ViewEditors: class {} }));
-vi.mock('../src/browser/selection-model', () => ({ SelectionModel: class {} }));
+vi.mock('../src/browser/selection-model', async importOriginal => ({ ...await importOriginal<object>(), SelectionModel: class {} }));
 
-import { ActionService, SELECTION_QUIET_MS } from '../src/browser/action-service';
+import { ActionService } from '../src/browser/action-service';
+import { SELECTION_QUIET_MS } from '../src/browser/selection-model';
 
 afterEach(() => vi.useRealTimers());
 const settle = () => vi.advanceTimersByTimeAsync(0);

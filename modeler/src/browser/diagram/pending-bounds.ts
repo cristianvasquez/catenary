@@ -34,8 +34,8 @@ export class PendingBounds implements IActionHandler {
     protected record(action: ChangeBoundsOperation): void {
         const at = Date.now();
         for (const b of action.newBounds) {
-            const bounds = { x: b.newPosition?.x ?? 0, y: b.newPosition?.y ?? 0, width: b.newSize.width, height: b.newSize.height };
             if (!b.newPosition) continue;
+            const bounds = { x: b.newPosition.x, y: b.newPosition.y, width: b.newSize.width, height: b.newSize.height };
             const entry = this.state.sent.get(b.elementId);
             if (entry) {
                 entry.bounds.push(bounds);

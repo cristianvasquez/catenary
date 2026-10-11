@@ -128,12 +128,6 @@ export function IriInput(p: { value: string; onCommit: (iri: string | undefined)
     </>;
 }
 
-export function Select(p: { value: string; options: [string, string][]; onChange: (v: string) => void }) {
-    return <select className='theia-select' value={p.value} onChange={e => p.onChange(e.currentTarget.value)}>
-        {p.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-    </select>;
-}
-
 /** Color presets of `Swatches`: '' (default, no stored color), then the stored presets. */
 const SWATCHES = ['', ...COLOR_ORDER];
 const colorName = (c: string) => (c === '' ? 'default' : c === 'none' ? 'none (transparent)' : COLOR_NAMES[c] ?? c);

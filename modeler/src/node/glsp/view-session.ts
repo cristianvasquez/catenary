@@ -33,7 +33,7 @@ export class ViewState {
     /** Read model of this view: the view, its instances and the relations between them. */
     part: Doc = emptyDoc();
 
-    /** Edge IDs removed from the displayed graph by a committed placement-only patch. */
+    /** Edge ids that the next build removes from the displayed root, without a new schema (law_edgeRemovalUpdatesDisplay). */
     removedEdges?: Set<string>;
     /** A layout patch went into the part after the last build: the displayed root is behind the part. */
     rootBehind = false;
@@ -115,7 +115,7 @@ export class ViewState {
             return e.id && r && !view.boxes.some(b => b.kind === 'collection' && [r.subject, r.object].some(id => b.members.includes(id)));
         }).map(e => e.id!));
         const removed = new Set(patch.filter(c => c.op === 'remove' && c.quad.predicate.value === NS.rdf + 'reifies').map(c => placementId(c.quad.subject.value)));
-        // Hubs, lines, arrows, boxes and additions use the full projection and its cascade rules.
+        // Other patches (hubs, lines, arrows, boxes, additions) go to the scoped read in `accept`.
         if (this.showHidden || patch.some(c => c.op !== 'remove'
             || c.quad.graph.value !== view.uri || !edges.has(placementId(c.quad.subject.value)) || !removed.has(placementId(c.quad.subject.value)))) return false;
         view.edges = view.edges.map(e => e.id && removed.has(e.id) ? { relation: e.relation, hidden: true } : e);

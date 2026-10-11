@@ -14,8 +14,8 @@ import { PropertyViewWidget } from '@theia/property-view/lib/browser/property-vi
 import { DefaultPropertyViewWidgetProvider } from '@theia/property-view/lib/browser/property-view-widget-provider';
 import type { ShaclForm } from '@ulb-darmstadt/shacl-form';
 import {
-    ACTIONS, ClassDef, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
-    ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formPredicates, formatPath, inside,
+    ACTIONS, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
+    ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formatPath, inside,
     parseCardinality, parsePath, permittedRelations, predicateName, primaryClass, rangeText, verbalizeConstraint, verbalizeProperty, verbalizeShape, alternativesOf,
     rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged
 } from '@catenary/model';
