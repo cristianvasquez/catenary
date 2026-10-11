@@ -1706,7 +1706,7 @@ displayRefreshAfterEdit completed started = completed <= started
 violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
 violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
 -- | A ViewPatch and a save keep the reads that do not read the geometry: the figures, hidden neighbor counts and shape
--- applicability of each view, the explorer, the instance count, the file kinds, the file references and the dataset warnings. The
+-- applicability of each view, the instance count, the file kinds, the file references and the dataset warnings. The
 -- figures of a view read the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
 -- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
 -- The per-quad form of the rule: a quad of placement geometry or style moves no data key of the graph (change.ts quadDependencies).
