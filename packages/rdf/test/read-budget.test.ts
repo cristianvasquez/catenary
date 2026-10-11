@@ -67,7 +67,9 @@ const DATA = [
     ...[...Array(PEOPLE).keys()].map(i => `<${person(i)}> a <${B}Person> ; <${NS.rdfs}label> "Person ${i}" ; <${B}memberOf> <${team(i % TEAMS)}>${i + 1 < PEOPLE ? ` ; <${B}knows> <${person(i + 1)}>` : ''} .`),
     ...[...Array(TEAMS).keys()].map(i => `<${team(i)}> a <${B}Team> ; <${NS.rdfs}label> "Team ${i}" ; <${B}worksOn> <${project(i % PROJECTS)}> .`),
     ...[...Array(PROJECTS).keys()].map(i => `<${project(i)}> a <${B}Project> ; <${NS.rdfs}label> "Project ${i}" .`),
-    `<${B}untyped> <${B}note> "kept in the file" .`
+    `<${B}untyped> <${B}note> "kept in the file" .`,
+    // A placed card with two labels: a subject warning, and a warning of the view read.
+    `<${person(11)}> <${NS.rdfs}label> "Alias 11" .`
 ].join('\n');
 const placement = (view: string, i: number) => `${view}/p/${String(i).padStart(4, '0')}`;
 const viewFile = (view: string, label: string, cards: string[], edges: [string, string, string][]) => `<${view}> {
@@ -229,6 +231,8 @@ describe('kept reads after data patches equal the reads of a new store (§11.3 l
         const knows = `${B}knows`, memberOf = `${B}memberOf`, iriTerm = (value: string) => ({ termType: 'NamedNode' as const, value });
         const steps: (() => { ok: boolean })[] = [
             () => store.execute({ kind: 'rename', id: elements[7], label: 'Renamed seven' }),
+            // The two labels of a placed card become one: its warning goes (the view is not read again).
+            () => store.execute({ kind: 'rename', id: elements[11], label: 'Renamed eleven' }),
             // A statement on a path of sh:node: the walk from person 7 reaches another team and its project.
             () => store.execute({ kind: 'setStatements', id: elements[7], values: { [memberOf]: [iriTerm(team(150))] } }),
             // Team 50 loses its members one by one: with the last one it is no target of TeamShape any more, and project 50 (a card

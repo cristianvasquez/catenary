@@ -240,3 +240,28 @@ describe('query cost of node constraints', () => {
         for (const m of few.matches) expect(many.matches).toContainEqual(m);
     });
 });
+
+describe('kept target matches (§11.3 law_keptReadsEqualRead)', () => {
+    const fresh = (g: ModelGraph) => new ModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
+    const L = 'http://www.w3.org/2000/01/rdf-schema#label';
+
+    it('a path through a shared literal: a rename of one end drops the kept match of the other end', () => {
+        // S targets A; its property (rdfs:label / ^rdfs:label) has sh:node T: T applies to each node with a label of A.
+        const g = new ModelGraph(new TracedStore(store(`<urn:shapes> {
+                <urn:S> sh:targetNode <urn:a> ; sh:property <urn:P> .
+                <urn:P> sh:path <urn:path1> ; sh:node <urn:T> .
+                <urn:path1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> rdfs:label ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <urn:path2> .
+                <urn:path2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <urn:inverse> ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
+                <urn:inverse> sh:inversePath rdfs:label .
+            }
+            <urn:data> { <urn:a> rdfs:label "shared" . <urn:b> rdfs:label "shared" . }`)));
+        const b = [node('urn:b')];
+        expect(shapeTargetMatches(g, { nodes: b }).map(m => m.shape)).toEqual(['urn:T']);
+        g.update(() => {
+            g.remove(rdf.quad(rdf.namedNode('urn:a'), rdf.namedNode(L), rdf.literal('shared'), rdf.namedNode('urn:data')));
+            g.add(rdf.namedNode('urn:a'), rdf.namedNode(L), rdf.literal('renamed'), rdf.namedNode('urn:data'));
+        });
+        expect(shapeTargetMatches(g, { nodes: b })).toEqual(shapeTargetMatches(fresh(g), { nodes: b }));
+        expect(shapeTargetMatches(g, { nodes: b })).toEqual([]);
+    });
+});

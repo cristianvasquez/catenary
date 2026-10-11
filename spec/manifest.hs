@@ -1714,11 +1714,12 @@ keepsReads :: SnapshotChange -> Bool
 keepsReads c = reason c == SaveChange || tierOf c == ViewPatch
 -- | A DataPatch keeps the reads that follow from its statements and brings them up to date from the patch. The target matches of
 -- each node (shacl-targets.ts): a patch drops the matches of the nodes that the paths of the node references reach from an end of a
--- changed statement of a relevant predicate (rdf:type, a target predicate, a path predicate); a shapes change, a new graph or a patch
--- without quads drops all. The engine input of the figures (notations.ts keptStoreInput) forgets the subjects, objects and predicates
+-- changed statement of a relevant predicate (rdf:type, a target predicate, a path predicate); a changed literal of a path predicate (a
+-- path can pass through a shared literal), a shapes change, a new graph or a patch without quads drops all. The engine input of the figures (notations.ts keptStoreInput) forgets the subjects, objects and predicates
 -- of the patch; the figures are derived again. The hidden neighbor counts of a view (scoped-doc.ts updateHiddenNeighborCounts) read
 -- again the cards of the changed statements and the cards related to them; a change of a view graph reads all. The dataset warnings
--- (DatasetWarnings) read again the subjects of the patch and the views whose read it can change. Reason: these reads scanned the
+-- (DatasetWarnings) read again the subjects of the patch and the views whose read it can change; the several labels of a subject
+-- of the model graph are a subject warning only, not a warning of a view read. Reason: these reads scanned the
 -- whole store after each edit (about 1 s for a rename on a view of 600 cards, spec/open.md REFRESH1).
 -- Oracle: after any change, each kept read equals the same read of a store opened from the files (read-budget.test.ts).
 data KeptRead = KeptTargetMatches | KeptNeighborCounts | KeptApplicability | KeptFigures | KeptWarnings deriving (Eq, Enum, Bounded)

@@ -221,8 +221,13 @@ function graphWarnings(g: ModelGraph): string[] {
 interface ViewWarnings { warnings: string[]; terms: Set<string> }
 
 function viewWarnings(g: ModelGraph, view: NamedNode, shapes: ShapesModel): ViewWarnings {
-    const warnings: string[] = [];
-    readView(g, elementId(view), shapes, warnings);
+    const all: string[] = [];
+    readView(g, elementId(view), shapes, all);
+    // The several labels of a subject of the model graph are a subject warning (labelWarnings), kept by subject: the copy of the view
+    // read would stay when a rename changes the labels and the view is not read again.
+    const several = new Map(all.flatMap(w => { const m = /^(\S+): more than one rdfs:label, /.exec(w); return m ? [[w, m[1]] as const] : []; }));
+    const inModel = several.size ? inModelAmong(g, [...new Set(several.values())]) : new Set<string>();
+    const warnings = all.filter(w => !inModel.has(several.get(w) ?? ''));
     // What the projection of the view reads besides its view graph: the placed elements (cards, marks, referenced views), the ends of
     // the placed statements (relations, arrows), and the members of the placed collections.
     const terms = new Set(select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE {

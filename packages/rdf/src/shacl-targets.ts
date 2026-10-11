@@ -1,7 +1,7 @@
 // Graph and RDF adapters only. SHACL matching lives in @catenary/shacl/backend.
 // The target matches of each node are kept between changes (spec/open.md PERF3, manifest §11.3): a data patch drops the matches of
 // the nodes that it can change, and only those are walked again. A shapes change, a new graph or a patch without quads drops all.
-import { applicableMatches, readNodeReferences, NodeReference, TargetScope, TargetSelection, iri, term } from '@catenary/shacl/backend';
+import { applicableMatches, focus, readNodeReferences, NodeReference, TargetScope, TargetSelection, iri, term } from '@catenary/shacl/backend';
 import type { FocusNode, TargetMatch } from '@catenary/shacl/common';
 import type { Quad } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
@@ -58,10 +58,24 @@ function changed(g: ModelGraph, s: TargetState, e: GraphChange): void {
         if (q.graph.value === VALIDATION_GRAPH || g.isView(q.graph)) continue;
         if (!s.scope.data.includes(q.graph.value) || shaclQuad(q)) return reset(s);
         for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') s.frontiers.delete(iri(t.value));
+        // A literal is a focus node too (a value of a path): its frontier has the statements with it as object.
+        if (q.object.termType === 'Literal') s.frontiers.delete(literalKey(q.object));
         // Without references nothing is kept yet; a statement of another predicate changes no match.
         if (!s.relevant?.has(q.predicate.value)) continue;
+        // A path can pass through a literal (a shared label: rdfs:label / ^rdfs:label). The walk of `affected` follows IRIs only, so a
+        // changed literal on a path predicate drops all kept matches.
+        if (q.object.termType === 'Literal' && (s.paths?.forward.includes(q.predicate.value) || s.paths?.inverse.includes(q.predicate.value))) {
+            s.byNode.clear();
+            s.pending.clear();
+            continue;
+        }
         for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') s.pending.add(t.value);
     }
+}
+
+/** The frontier key (term) of a literal of the store, as the walk names it (focus). */
+function literalKey(t: Quad['object']): string {
+    try { return term(focus(t as Parameters<typeof focus>[0])); } catch { return ''; }
 }
 
 /** The kept state of `g`. Undefined inside a transaction with changes: the store is ahead of the kept state, nothing is kept. */
