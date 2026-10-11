@@ -425,8 +425,9 @@ startupDocument Nothing _ restored = restored
 
 -- | Canvas updates (manifest §11.3, the tiers of a change). The canvas of a view keeps the read model of its view (the part) between changes. A layout-only change of the
 -- view (position, size, style of its placements) goes into the kept part: no view read. A new validation report: the counts come
--- from the report, no view read. A change of the content (the elements shown, their statements, the shapes, a disk read) reads
--- the view again. A layout-only change of a view updates no canvas of another view. A hidden canvas (a tab behind another one)
+-- from the report, no view read. A change of the statements of shown elements merges the changed elements into the part when
+-- the merge can give the read (manifest §11.3 merges). Otherwise a change of the content (the placements, the shapes, a disk read)
+-- reads the view again: Content below. A layout-only change of a view updates no canvas of another view. A hidden canvas (a tab behind another one)
 -- sends nothing while hidden and refreshes once when it is shown. Reason: a move of a card on a large view read the whole view
 -- again for each open canvas, hidden ones too (view-session.ts ViewState.accept, ViewSession.setVisible).
 data CanvasChange = LayoutOnly | Report | Content deriving Eq
@@ -442,6 +443,13 @@ updatesAtShow :: Int -> Int                        -- changes while hidden -> up
 updatesAtShow changes = if changes > 0 then 1 else 0
 law_hiddenCanvasRefreshesOnce :: Int -> Bool
 law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
+-- | A reveal (Open in… Canvas, Go to) on a canvas that was hidden selects and centers the element after the update of the show.
+-- The show is a request: its answer gives the model revision after that update, and the reveal waits for it (at most 2 s).
+-- Reason: the center used the model of before the hide. A card placed while hidden was not in it, and a card moved while hidden
+-- had its old position (view-widget.ts whenShowUpdated, handlers.ts VisibleSetAction).
+revealWaitsFor :: Int -> Int                       -- changes while hidden -> updates that the reveal waits for
+law_revealAfterShowUpdate :: Int -> Bool
+law_revealAfterShowUpdate changes = revealWaitsFor changes == updatesAtShow changes
 
 -- 3.3 Selection and highlights ------------------------------------------------------
 
@@ -472,7 +480,8 @@ law_canvasSelectsPlacements s = source s == OnCanvas ==> all onCanvas (items s)
     onCanvas (SelPart _) = True
 
 -- | Tree and Results highlight selected elements, their placements and the elements of selected placements.
--- A closed folder that contains a highlight is marked, not opened. Placements highlight on the active canvas only (open.md D2).
+-- A closed folder that contains a highlight is marked, not opened. A canvas highlights the selected elements that it shows when it is
+-- not the origin of the selection (law_oneSelectionPerWindow).
 -- A selected part highlights its resource in Tree when Tree contains it.
 highlight :: UiSelection -> Pane -> [Highlighted]
 data Highlighted = Row Element | ClosedFolder String | OnActiveCanvas Element deriving Eq
@@ -481,6 +490,42 @@ highlightedElements s = nub (concat [selfAndRelated e | SelElement e <- items s]
   where selfAndRelated e = e : placements e ++ [elementOf e | isPlacement e]
 law_highlightRows :: UiSelection -> Listing -> Element -> Bool
 law_highlightRows s l e = (Row e `elem` highlight s (InListing l)) ==> e `elem` highlightedElements s
+
+-- | One selection per window. A canvas gesture makes its canvas the origin: the selection holds placements of that view.
+-- The origin shows the selection as its canvas selection. Canvases of other views highlight the same elements, never select.
+-- A listing selection has no origin: each canvas highlights. A highlight sends no select and gives no selection event.
+-- A select goes to the origin canvas only, when its canvas selection differs. The old origin gets one empty select, which clears it.
+-- Reason: one click selected in every open canvas, and each model change sent one select per canvas.
+-- Code: diagram-ids.ts canvasSelection, selection-sync.ts, diagram-configuration.ts FocusedSelectionForwarder.
+originOf :: UiSelection -> Maybe Element          -- the view of the canvas that made the selection
+originOf s = case (source s, [viewOf e | SelElement e <- items s, isPlacement e]) of
+  (OnCanvas, v : _) -> Just v
+  _ -> Nothing
+data CanvasShows = CanvasShows { canvasSelected :: [Element], canvasHighlighted :: [Element] } deriving Eq
+canvasShows :: UiSelection -> Element -> CanvasShows   -- selection, view of the canvas
+canvasShows s v
+  | originOf s == Just v = CanvasShows shown []
+  | otherwise = CanvasShows [] shown
+  where shown = nub [p | e <- highlightedElements s, p <- e : placements e, isPlacement p, viewOf p == v]
+selects :: (Element -> [Element]) -> UiSelection -> [Element] -> [(Element, [Element])]   -- held canvas selections, selection, open views
+selects held s views = [(v, want) | v <- views, let want = canvasSelected (canvasShows s v), want /= held v]
+law_oneSelectionPerWindow :: UiSelection -> (Element -> [Element]) -> [Element] -> Bool
+law_oneSelectionPerWindow s held views =
+  all (\v -> null (canvasSelected (canvasShows s v)) || originOf s == Just v) views
+    && all (\v -> null (canvasHighlighted (canvasShows s v)) || originOf s /= Just v) views
+    && all (\(v, ids) -> null ids || originOf s == Just v) (selects held s views)
+-- | A Ctrl, Meta or Shift click on an element of a canvas with a highlight: that canvas becomes the origin, with the highlight plus
+-- the element, or minus it when it is highlighted. The click acts on the highlight, not on a canvas selection that is not set yet.
+-- Keys in a canvas that is not the origin: Ctrl+C copies its highlight. Ctrl+X and Del remove from the view: they need the origin
+-- (law_delNeedsPlacements). Ctrl+Del deletes the elements of the window selection. Code: diagram-ids.ts canvasKeyTargets.
+modifierClick :: [Element] -> Element -> [Element]   -- highlight, clicked element -> the selection of the new origin
+modifierClick hs e = if e `elem` hs then filter (/= e) hs else hs ++ [e]
+canvasKeyTargets :: CanvasShows -> Key -> [Element]
+canvasKeyTargets c k = if k == CtrlC && null (canvasSelected c) then canvasHighlighted c else canvasSelected c
+law_highlightKeys :: CanvasShows -> Element -> Bool
+law_highlightKeys c e =
+  (null (canvasSelected c) ==> (null (canvasKeyTargets c Del) && null (canvasKeyTargets c CtrlX)))
+    && ((e `elem` canvasHighlighted c) ==> notElem e (modifierClick (canvasHighlighted c) e))
 
 -- 4. Actions and keys --------------------------------------------------------
 
@@ -528,6 +573,21 @@ applicable a xs = case arity a of
   AtLeast n -> length xs >= n && all (appliesTo a) xs
   EmptySelection -> null xs
 commandsOf :: Action -> [Element] -> [EditCommand]   -- what one run of an applicable action sends
+-- | The reads of the window selection (RPC selected and selectionActions) wait for a quiet time after its last change: a marquee or
+-- a shift-click sequence sends one read of each, of the last selection. A read for a menu or an action goes at once. Reason: each
+-- change sent two reads, and they queued up on the backend thread for seconds in a large view (manifest §11.3 readBudgetMs).
+selectionQuietMs :: Int
+selectionQuietMs = 100
+selectionReads :: [[Element]] -> [[Element]]     -- the changes of the selection within one quiet time; the selections read
+law_selectionReadsLastOnly :: [[Element]] -> Bool
+law_selectionReadsLastOnly changes = null changes || selectionReads changes == [last changes]
+-- | A gesture (a double-click, Enter, F12) does not wait for the quiet time. Before the answer arrives, its command is enabled.
+-- The run then asks at once. When the action does not apply, the run shows the reason. Reason: a double-click in the quiet time
+-- found no answer, and the command did not run (action-service.ts ActionService.enabled).
+commandEnabled :: Maybe Bool -> Bool               -- the answer for the action (enabled or not), or no answer yet
+commandEnabled = fromMaybe True
+law_gestureNoQuietWait :: Bool
+law_gestureNoQuietWait = commandEnabled Nothing
 law_oneCommandPerAction :: Action -> [Element] -> Bool
 law_oneCommandPerAction a xs = applicable a xs ==> length (commandsOf a xs) <= 1
 
@@ -719,6 +779,40 @@ law_referencesCountTwice vs = sum (map snd (referenceCounts vs)) == length vs
 --------------------------------------------------------------------------------
 -- Part III. Canvas
 --------------------------------------------------------------------------------
+
+-- 4.9 Canvas edit path ------------------------------------------------------------
+
+-- | A canvas operation (a GLSP operation handler, modeler/src/node/glsp/handlers.ts) sends one EditCommand to the shared store
+-- through ViewSession.edit and returns no GLSP command. The store is the one undo stack and the one dirty state of every canvas
+-- and every panel. The GLSP command stack of a session delegates undo, redo and the dirty state to the store and holds no command
+-- (StoreCommandStack); the undo and redo actions of a canvas go to the store (StoreUndoRedoHandler).
+-- Reason: a GLSP command per session would be a second undo stack next to the store, and its undo would never run.
+-- The update after an edit comes from the change event of the store (§3.2 Canvas updates), not from the operation: the session of
+-- the edit sends its update first, then the follow-up actions (§4.6).
+-- An error of an edit, thrown or refused, reaches the client as one warning with the command kind and the message, and the backend
+-- logs it no second time (ViewSession.edit). A refused edit sends the current model with the warning: the canvas shows the store
+-- again. An error outside the edit (a handler bug, an unknown action) takes the GLSP error path: one error message with the action
+-- kind and one log line with the action and the stack (LoggingGLSPServer).
+-- Other differences from the GLSP workflow example, with their reasons: no PopupModelFactory and no popup feature on a card, so a
+-- hover sends no popup request (hover popups are not a requirement, open.md); no ModelValidator, the violations show as counts on
+-- the cards and in Problems (§8.10); no LabelEditValidator, a name is edited in the Catenary name editor (§4.5); no server layout,
+-- the positions come from the view graph and ELK runs on request (§7.5); no ContextActionsProvider, the menus are Theia menus (§4).
+data EditOutcome = Applied | Refused String | Threw String
+data ClientMessage = Warning String | Error String deriving Eq
+glspCommands :: EditCommand -> Int             -- the GLSP commands a handler returns for one edit
+glspCommands _ = 0
+law_canvasEditReturnsNoCommand :: EditCommand -> Bool
+law_canvasEditReturnsNoCommand c = glspCommands c == 0
+editMessages :: String -> EditOutcome -> [ClientMessage]   -- the command kind, the outcome -> the messages sent to the client
+editMessages _ Applied = []
+editMessages kind (Refused why) = [Warning (show kind ++ " refused: " ++ why)]
+editMessages kind (Threw why) = [Warning (show kind ++ " failed in the backend: " ++ why)]
+law_canvasEditErrorsOnce :: String -> EditOutcome -> Bool
+law_canvasEditErrorsOnce kind o = length (editMessages kind o) <= 1 && all isWarning (editMessages kind o)
+  where isWarning (Warning _) = True
+        isWarning _ = False
+popupRequestsPerHover :: Int
+popupRequestsPerHover = 0
 
 -- 5. Canvas gestures -----------------------------------------------------------
 
@@ -1375,14 +1469,15 @@ editorFor f Nothing = AsText f
 -- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/explorer). The core has no section rules.
 -- Reason: a new vocabulary (SKOS) adds a plugin, not a special case in the explorer.
 -- A plugin query runs only when a folder opens. A folder shows its child count and reads pages of 100. A last "Show more" row reads the next page.
--- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in scope is not shown.
--- Classes: each object of rdf:type in scope, nested by written rdfs:subClassOf, then its direct instances. No inference, no hidden types.
--- Shapes: each node shape (typed sh:NodeShape, or a subject of sh:property), then its property shapes in sh:order, then by name.
--- A property shape row needs the node shape and the property shape in scope. Their statements can be in different files.
--- Reason: a property shape that another file states is a reference in this file (the scope rule below).
--- Classes include the vocabulary of view files (view:Placement). A data file has none: only its own subjects are in scope.
+-- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in the file is not shown.
+-- Classes: each object of an rdf:type statement of the file, nested by the rdfs:subClassOf statements of the file, then its direct
+-- instances. No inference, no hidden types.
+-- Shapes: each node shape of the file (typed sh:NodeShape, or a subject of sh:property), then the property shapes that the file
+-- states, in sh:order, then by name. A property shape that another file states has no row.
+-- Classes include the vocabulary of view files (view:Placement) in the document of a view file.
 -- An IRI has a row in each section that has it (a node shape is also an instance of sh:NodeShape). Reason: the data shows as written.
--- A class row and a node shape row are also elements: their selection is the class or the shape.
+-- A node shape row is also an element. A class row is an element only when the file has a statement about the class.
+-- Else it is a folder label: the type statement is in the file, the class statements are not.
 -- Rows have no view state and no violation counts. Properties shows the violations of the selected element.
 -- Open in → Model reveals a chosen path. Ordinary selection opens no folder. A repeated ancestor key stops expansion.
 -- Delete Elements Not Placed in a View walks the elements of a folder at all depths. It tests own placements and confirms first.
@@ -1400,12 +1495,22 @@ notPlaced :: Element -> Bool                        -- Delete Elements Not Place
 notPlaced e = null (placements e)
 
 -- | Model opens a document tree for a file. Reopening that presentation focuses the same tree.
--- No global Model explorer appears in the default layout. Find Element (§8.6) remains workspace-wide.
+-- No workspace-wide Model document exists. Find Element (§8.6) remains workspace-wide.
 -- Open in… goes between the Model document, the Source and the Canvas of an element (§4.7).
--- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
--- Reason: presentation navigation must not change storage or explorer contents in this phase.
--- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
--- The filter shows one flat list of the element rows in scope whose name matches, best first, at most one page.
+-- Workspace metadata stays outside the model index. The workspace file is not a model file: its Model document has no rows.
+-- | The file rule: a Model document reads the store graphs of its file only. A model file has a data graph and a shapes graph.
+-- A view file has its view graphs. Each plugin query runs over these graphs. There is no subject filter and no cross-file exception.
+-- Every element row is a subject with a statement in that file. A subject that the file only refers to has no row.
+-- Reason: the document exists to move statements between files and onto canvases, and only the statements of the file can move from it.
+-- The labels of the rows come from the label rule over all files. A label is not a statement of the file.
+-- A Model document needs a file. A request without a file, or for a file that is not a model or view file, has no rows.
+-- Find Element (§8.6) is the workspace-wide list.
+fileRows :: [(Iri, FilePath)] -> FilePath -> [Iri]   -- statements as (subject, file), the file of the document
+fileRows stmts f = nub [s | (s, g) <- stmts, g == f]
+law_fileRowsOwnSubjects :: [(Iri, FilePath)] -> FilePath -> [Iri] -> Bool   -- the element rows of the document
+law_fileRowsOwnSubjects stmts f rowsShown = all (`elem` fileRows stmts f) rowsShown
+
+-- The filter shows one flat list of the element rows of the file whose name matches, best first, at most one page.
 -- Each row says where it is (its classes, its node shape). Reason: a filtered tree must read every folder of the file.
 -- Fuzzy matching takes characters in order, ranks word starts and consecutive matches, and highlights matching characters.
 -- Clearing the filter restores the tree and its expansion state. The filter does not change drag membership.
@@ -1418,7 +1523,8 @@ explorerFilterText (FilterTyping text) = text
 law_typeToFilter :: String -> Bool
 law_typeToFilter text = explorerFilterText (RowTyping text) == explorerFilterText (FilterTyping text)
 
--- A folder drag carries all descendant elements, including hidden rows, with duplicates removed.
+-- A folder drag carries all descendant elements, including hidden rows, with duplicates removed. These are subjects of the file:
+-- the drag has no second file test.
 -- A canvas drop places existing elements in one undo step. A folder drag never creates an instance.
 -- A file-tree drop confirms the total count and destination, then moves source statements in one undo step (§2.4).
 -- A same-file drop does nothing. File transfers require a file-scoped source tree.
@@ -1758,6 +1864,8 @@ openInPane = manifestOnly
 arity = manifestOnly
 appliesTo = manifestOnly
 commandsOf = manifestOnly
+selectionReads = manifestOnly
+revealWaitsFor = manifestOnly
 controlTarget = manifestOnly
 controlCommand = manifestOnly
 isTextKey = manifestOnly

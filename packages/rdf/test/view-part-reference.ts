@@ -1,5 +1,5 @@
 // Reference for test/view-read.test.ts: the view part query before ADR 0007 step 5. The view editor read this part into a store
-// and projected it (project.ts); view-read.ts now builds the same Doc from SPARQL rows. Test only.
+// and projected it (project.ts, removed); view-read.ts now builds the same Doc from SPARQL rows. Test only.
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';

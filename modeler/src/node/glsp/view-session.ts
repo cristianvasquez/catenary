@@ -9,10 +9,10 @@ import { Command } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { viewIdOfUri } from '../../common/protocol';
 import {
-    CommandResult, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EditCommand, GROUP_SIZE, NS, SIDES, Side, TYPES, View,
+    ChangeReason, CommandResult, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EditCommand, GROUP_SIZE, NS, SIDES, Side, TYPES, View,
     ViewBox, edgeLanes, iriId, emptyDoc, hiddenShapeSources, placementOfId, toSchema
 } from '@catenary/model';
-import { ChangeScope, ModelChange, ModelStore, tracer } from '@catenary/rdf';
+import { ChangeScope, ModelChange, ModelStore, refreshes, tierOf, tracer } from '@catenary/rdf';
 
 const placementId = iriId;
 type Patch = NonNullable<ModelChange['patch']>;
@@ -33,7 +33,7 @@ export class ViewState {
     /** Read model of this view: the view, its instances and the relations between them. */
     part: Doc = emptyDoc();
 
-    /** Edge IDs removed from the displayed graph by a committed placement-only patch. */
+    /** Edge ids that the next build removes from the displayed root, without a new schema (law_edgeRemovalUpdatesDisplay). */
     removedEdges?: Set<string>;
     /** A layout patch went into the part after the last build: the displayed root is behind the part. */
     rootBehind = false;
@@ -42,21 +42,28 @@ export class ViewState {
     readDue = true;
 
     /**
-     * Keep `part` in step with a change (law_layoutChangeReadsNoView). A validation run: the schema reads the new counts from the
-     * store. A layout-only patch of this view: its values go to the boxes and edges of the kept part. A removal of placed instance
-     * edges: the edges leave the kept part (law_edgeRemovalUpdatesDisplay). Any other change: the next build reads the view again.
+     * Keep `part` in step with a change, by its tier (§11.3 keptDoc, law_keptDocEqualsRead). A validation run: the schema reads the new
+     * counts from the store. A ViewPatch of this view: its values go to the boxes and edges of the kept part (law_layoutChangeReadsNoView).
+     * A DataPatch: a removal of placed instance edges leaves the kept part (law_edgeRemovalUpdatesDisplay); a change of a view graph the
+     * part holds (placements) reads the view again; else the changed elements the part holds are read again with the scoped read and merged
+     * (ModelStore.mergeChanged). A Rebuild, or a merge that cannot keep the part: the next build reads the view again.
      */
     accept(change: ModelChange): void {
         const { reason, scope, patch } = change, view = this.view;
         if (reason === 'validation') return;
-        if (!view || !scope || !patch?.length || !(reason === 'edit' || reason === 'undo' || reason === 'redo')) { this.invalidate(); return; }
-        if (scope.layout) {
-            if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch, view))) this.invalidate();
+        const tier = scope && patch?.length ? tierOf({ reason, ...scope }) : 'rebuild';
+        if (!view || tier === 'rebuild') { this.invalidate(); return; }
+        if (tier === 'view') {
+            if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch!, view))) this.invalidate();
             // A pending edge removal is already in the part (hidden edges): the next build from the part shows both changes.
             else { this.removedEdges = undefined; this.rootBehind = true; }
             return;
         }
-        if (!this.acceptRemovedEdges(patch, view)) this.invalidate();
+        if (this.acceptRemovedEdges(patch!, view)) return;
+        // A changed view graph that the part holds (its placements, label or description; a referenced view): read again.
+        if (scope!.views.some(id => !!this.part.views[id]) || !tracer.span('refresh', 'data patch', () => this.store.mergeChanged(this.part, this.viewId, scope!.elements))) { this.invalidate(); return; }
+        this.removedEdges = undefined;
+        this.rootBehind = true;
     }
 
     protected invalidate(): void {
@@ -108,7 +115,7 @@ export class ViewState {
             return e.id && r && !view.boxes.some(b => b.kind === 'collection' && [r.subject, r.object].some(id => b.members.includes(id)));
         }).map(e => e.id!));
         const removed = new Set(patch.filter(c => c.op === 'remove' && c.quad.predicate.value === NS.rdf + 'reifies').map(c => placementId(c.quad.subject.value)));
-        // Hubs, lines, arrows, boxes and additions use the full projection and its cascade rules.
+        // Other patches (hubs, lines, arrows, boxes, additions) go to the scoped read in `accept`.
         if (this.showHidden || patch.some(c => c.op !== 'remove'
             || c.quad.graph.value !== view.uri || !edges.has(placementId(c.quad.subject.value)) || !removed.has(placementId(c.quad.subject.value)))) return false;
         view.edges = view.edges.map(e => e.id && removed.has(e.id) ? { relation: e.relation, hidden: true } : e);
@@ -130,18 +137,15 @@ export class ViewState {
         this.part = tracer.span('refresh', 'read view', () => this.store.viewDoc(this.viewId));
     }
 
-    /**
-     * A change with this scope can change what the view shows. A shapes change: shape cards, and class names on instance cards. An
-     * element: an instance, or a property shape of a shape card (a validation run changes its count of violations). A layout-only
-     * change: only the sessions of the changed views (law_layoutChangeStaysInView).
-     */
-    affectedBy(scope?: ChangeScope): boolean {
-        if (!scope) return true;
-        if (scope.layout) return scope.views.includes(this.viewId);
-        return scope.shapes || scope.views.some(id => !!this.part.views[id])
-            || scope.elements.some(id => !!this.part.instances[id] || !!this.part.shapes.properties[id]);
+    /** A change with this scope can change what the view shows (§11.3 refreshes, change.ts: the one rule). */
+    affectedBy(reason: ChangeReason, scope?: ChangeScope): boolean {
+        return refreshes(this.part, this.viewId, scope && { reason, ...scope });
     }
 }
+
+/** The one message of a failed canvas edit: the command kind, what happened, the reason (law_canvasEditErrorsOnce). */
+const editWarning = (kind: string, what: string, reason: string): MessageAction =>
+    MessageAction.create(`"${kind}" ${what}: ${reason}`, { severity: 'WARNING' });
 
 /** Sends updates to the client. One per session. */
 @injectable()
@@ -151,6 +155,7 @@ export class ViewSession {
     @inject(ActionDispatcher) protected readonly dispatcher: ActionDispatcher;
     @inject(ClientSessionManager) protected readonly sessions: ClientSessionManager;
     @inject(ClientId) protected readonly clientId: string;
+    @inject(ModelState) protected readonly modelState: ModelState;
 
     protected muted = false;
     protected started = false;
@@ -175,7 +180,7 @@ export class ViewSession {
                 if (!this.muted) this.dispatcher.dispatch(SetDirtyStateAction.create(false, { reason: 'save' }));
                 return;
             }
-            if (!this.state.affectedBy(e.scope)) return;
+            if (!this.state.affectedBy(e.reason, e.scope)) return;
             this.state.accept(e);
             if (this.muted) return;
             if (this.visible) this.refresh(); else this.refreshDue = true;
@@ -190,12 +195,17 @@ export class ViewSession {
         this.sessions.addListener(sessionListener, this.clientId);
     }
 
-    /** The client shows or hides the canvas. A show after changes sends one update. */
-    setVisible(visible: boolean): Promise<void> {
+    /**
+     * The client shows or hides the canvas. A show after changes sends one update. Resolves with the revision of the model that the
+     * client has after the show: a reveal centers after that revision (ui-manifest §3.2 law_revealAfterShowUpdate).
+     */
+    async setVisible(visible: boolean): Promise<number> {
         this.visible = visible;
-        if (!visible || !this.refreshDue) return Promise.resolve();
-        this.refreshDue = false;
-        return this.refresh();
+        if (visible && this.refreshDue) {
+            this.refreshDue = false;
+            await this.refresh();
+        }
+        return this.modelState.root?.revision ?? 0;
     }
 
     /** Send the current graph and dirty state to the client. */
@@ -213,19 +223,25 @@ export class ViewSession {
     }
 
     /**
-     * Run an edit for this session. The session sends its own update first, then `followUp`
-     * (for example a selection of the created element). Errors go to the client as a message.
+     * Run an edit for this session: the one edit path of a canvas operation (spec/ui-manifest.hs §4.9). The session sends its own
+     * update first, then `followUp` (for example a selection of the created element). An error of the edit reaches the client as
+     * one warning with the command kind and the message, and nothing is logged here (law_canvasEditErrorsOnce): a refused command
+     * with the model (the canvas shows the store again), a command that threw (for example a trap of the store, manifest §3.4)
+     * without a model (the store may be unreadable).
      */
     async edit(command: EditCommand, followUp?: (r: CommandResult & { ok: true }) => Action[]): Promise<void> {
         this.muted = true;
         let r: CommandResult;
         try {
             r = this.store.execute(command);
+        } catch (e) {
+            await this.dispatcher.dispatchAll([editWarning(command.kind, 'failed in the backend', e instanceof Error ? e.message : String(e))]);
+            return;
         } finally {
             this.muted = false;
         }
         if (!r.ok) {
-            await this.dispatcher.dispatchAll([MessageAction.create(r.error, { severity: 'WARNING' }), ...await this.submission.submitModel('operation')]);
+            await this.dispatcher.dispatchAll([editWarning(command.kind, 'refused', r.error), ...await this.submission.submitModel('operation')]);
             return;
         }
         const actions = await this.submission.submitModel('operation');
@@ -298,8 +314,9 @@ export class ViewGModelFactory implements GModelFactory {
 }
 
 /**
- * Undo, redo and dirty state belong to the shared store, not to the session:
- * one undo stack for all views, the tree and the properties panel.
+ * Undo, redo and dirty state belong to the shared store, not to the session: one undo stack for all views, the tree and the
+ * properties panel (spec/ui-manifest.hs §4.9, law_canvasEditReturnsNoCommand). The handlers return no command, so `execute` never
+ * runs: it stays for the CommandStack contract.
  */
 @injectable()
 export class StoreCommandStack implements CommandStack {

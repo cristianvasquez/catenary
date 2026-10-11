@@ -221,7 +221,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
         logic.push({ type: TYPES.LOGIC, id: c.id, position: { x: 0, y: 0 }, size: { width: 0, height: 0 }, operator: c.operator, members: c.members.filter(m => drawn.has(m)) });
     }
     // Property placements of the view are drawn as lines, not as instance cards.
-    for (const [k, p] of vf.placed) if (k.startsWith('<')) { const id = iriId(k.slice(1, -1)); if (shapes.properties[id] || Object.values(shapes.properties).some(x => x.uri === k.slice(1, -1))) ids.add(id); }
+    for (const [k] of vf.placed) if (k.startsWith('<')) { const id = iriId(k.slice(1, -1)); if (shapes.properties[id] || Object.values(shapes.properties).some(x => x.uri === k.slice(1, -1))) ids.add(id); }
     // A private pill has no placement: the layout moves it with its card, a move of it changes nothing.
     for (const l of leaves) if (l.privateOf) { delete l.privateOf; l.private = true; }
     return { edges, cards: [...cards, ...sets, ...lists], overlays: [...leaves, ...logic], ids };

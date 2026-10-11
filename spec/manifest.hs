@@ -543,6 +543,25 @@ law_readsChangeNothing :: Backend -> Iri -> Bool
 law_readsChangeNothing b v = storeQuads (snd (runRead b (viewDoc v))) == storeQuads b
 runRead :: Backend -> IO a -> (a, Backend)
 
+-- 3.4 Store failure ---------------------------------------------------------------
+
+-- | Oxigraph runs as WebAssembly. A trap (RuntimeError "unreachable", also after a Rust panic) leaves the store locked: each later
+-- call of that store panics. The trap guard (rdf-files trap.ts) is the one place that detects a trap. It answers each later call
+-- with the same StoreTrap and makes no call of the store. The failing call fails with that error, shown to the client as one warning.
+-- After the first trap, ModelStore builds a new store and reads the workspace again from the files, once, in the file queue, as an
+-- open does (law_openClearsHistory). One warning of the snapshot says it. A trap during that read stops with one error: no further
+-- read, no retry on a later call, and the watcher stops. Reason: the files are the source of truth (ADR 0003), and a retry on each
+-- call would loop. At most the unwritten write queue is lost (§10.1: each edit is written at once).
+data StoreHealth = Healthy | Reading | Down String deriving Eq   -- Down: the message of each later call
+storeHealth :: Backend -> StoreHealth
+trapCount :: Backend -> Int                                      -- traps of the store so far
+trapReads :: Backend -> Int                                      -- reads of the files after a trap so far
+storeCallsAfterTrap :: Backend -> Int                            -- calls that reached a store after its trap
+law_trapReadsFilesOnce :: Backend -> Op -> Bool
+law_trapReadsFilesOnce b op = let b' = snd (step b op) in trapReads b' <= min 1 (trapCount b')
+law_trapStopsStoreCalls :: Backend -> Op -> Bool
+law_trapStopsStoreCalls b op = storeCallsAfterTrap (snd (step b op)) == 0
+
 -- 4. Views in RDF ------------------------------------------------------------
 
 -- 4.1 Notations and placements ----------------------------------------------------
@@ -1290,9 +1309,11 @@ data ValidationResult = ValidationResult
 validator :: [Quad] -> [Quad] -> [ValidationResult]   -- the data, the shapes
 law_validatorNoShapes :: [Quad] -> Bool
 law_validatorNoShapes dataQs = null (validator dataQs [])
-data ChangeScope = ChangeScope { dataChanged, shapesChanged, layoutOnly :: Bool }
-validates :: ChangeScope -> Bool
-validates s = not (layoutOnly s) && (dataChanged s || shapesChanged s)
+-- | Validation runs after a change of data statements (a changed element: the subject of a data statement is an IRI) or of the
+-- shapes, not after a layout change. In OpenViews, a change of the placements of an open view starts a run too (validationFocus
+-- changed). One function: change.ts validates; ModelStore.contentChanged calls it.
+validates :: SnapshotChange -> [Id] -> Bool           -- the change, the open views in OpenViews (else [])
+validates c openViews = not (layoutFlag c) && (not (null (changedElements c)) || shapesFlag c || any (`elem` openViews) (changedViews c))
 -- | A run reports only when no newer edit started after it.
 reportIsCurrent :: Int -> Int -> Bool                -- the revision of the run, the current revision
 reportIsCurrent run current = run == current
@@ -1429,10 +1450,14 @@ law_viewPatchWritesOneFile b op =
 
 -- 10.2 Write form -----------------------------------------------------------------------
 
--- | Write form: a Turtle text patch where possible. It reads only the blocks of the changed subjects and keeps the
+-- | Write form: a text patch where possible. It reads only the blocks of the changed subjects and keeps the
 -- syntax tree of the last patched text of each file. Each candidate is parsed again and compared with the expected RDF.
--- Else the whole file: first in the style of the file, then the canonical writer as fallback. A fallback is reported.
--- No text patch for TriG (view files are written whole) and for a text with blank nodes.
+-- Turtle: the blocks of the file. A TriG view file (one graph block, §2.3): the blocks inside the graph block, compared with the graph.
+-- The saver keeps the net statement changes of each view since its last write: the view patch gets them and does not compare
+-- the two full statement sets. A reload of the files forgets them (the next write compares the full sets).
+-- Else the whole file: first in the style of the file (Turtle only), then the canonical writer as fallback. A fallback is reported.
+-- No text patch for a text with blank nodes, for TriG with a second graph block or a statement outside the graph block,
+-- and for a statement without a final "." inside the graph block.
 -- Limit: the fallback can change comments, prefixes and statement order.
 -- Refuse an overwrite when the disk text differs from the last read or write. A watcher reload can drop pending edits, with a warning.
 -- Prepare temporary files, then rename. A failed rename can leave earlier files written.
@@ -1443,11 +1468,26 @@ crossFileRollbackRequired = False
 data WriteForm = TextPatch | WholeInStyle | Canonical deriving Eq
 parsesTo :: Format -> String -> [Quad] -> Bool       -- the text parses to exactly these quads
 hasBlankNodes :: String -> Bool
+oneGraphBlock :: String -> Bool                      -- TriG: directives, then one graph block of statements with a final ".", nothing else
+patchable :: Format -> String -> Bool
+patchable Turtle old = not (hasBlankNodes old)
+patchable TriG old = not (hasBlankNodes old) && oneGraphBlock old
+patchable _ _ = False
 writeForm :: Format -> String -> [Quad] -> Maybe String -> Maybe String -> WriteForm
 writeForm fmt old expected patched styled
-  | fmt == Turtle, not (hasBlankNodes old), Just t <- patched, parsesTo fmt t expected = TextPatch
-  | Just t <- styled, parsesTo fmt t expected = WholeInStyle
+  | patchable fmt old, Just t <- patched, parsesTo fmt t expected = TextPatch
+  | fmt == Turtle, Just t <- styled, parsesTo fmt t expected = WholeInStyle
   | otherwise = Canonical
+-- | A text patch keeps the text outside the blocks of the changed subjects byte for byte: directives, comments and the other
+-- blocks, in their order. In a TriG view file the graph block stays, with its name.
+textOutside :: String -> [Iri] -> String             -- the text without the blocks of these subjects
+changedSubjects :: [Quad] -> [Quad] -> [Iri]         -- the subjects of the statements that differ between before and after
+law_graphPatchKeepsText :: Format -> String -> [Quad] -> [Quad] -> Maybe String -> Bool
+law_graphPatchKeepsText fmt old before after patched =
+  let changed = changedSubjects before after
+  in case patched of
+       Just t | patchable fmt old -> textOutside t changed == textOutside old changed
+       _ -> True
 -- | Any written text parses to the expected RDF.
 law_writeIsFaithful :: Format -> String -> [Quad] -> Maybe String -> Maybe String -> String -> Bool
 law_writeIsFaithful fmt old expected patched styled canonical =
@@ -1581,13 +1621,14 @@ getSnapshot :: IO Snapshot
 onDidChange :: Snapshot -> IO ()
 snapshotOf :: Backend -> Snapshot
 -- | The change cannot change what a model panel shows (explorer, search, links, problems, actions): a write of the files, a
--- move, resize or style change of placements, or a new report when the panel shows no violations (panelsUnchanged).
+-- ViewPatch (a move, resize or style change of placements, §11.3 tierOf), or a new report when the panel shows no violations
+-- (panelsUnchanged). The snapshot carries the tier that the backend computed (change.ts): the frontend repeats no rule.
 panelsUnchanged :: Maybe SnapshotChange -> Bool -> Bool   -- the change, the panel shows violations
 panelsUnchanged Nothing _ = False
 panelsUnchanged (Just c) showsViolations = case reason c of
   SaveChange -> True
   ValidationChange -> not showsViolations
-  r -> r `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c
+  _ -> tierOf c == ViewPatch
 law_snapshotMirrorsHistory :: Backend -> Bool
 law_snapshotMirrorsHistory b =
   let s = snapshotOf b
@@ -1612,6 +1653,10 @@ law_movedIdsFollowSetUri b old new =
 -- §10.1 law_viewPatchWritesOneFile). A change of data statements touches the canvases that show a changed element. A change of the
 -- shapes, a disk read or an open touches every canvas. Reason: the cost of a change must follow the size of the change, not the
 -- size of the view or the workspace.
+-- One module holds these rules (packages/rdf/src/change.ts): classify gives the tier, the scope (SnapshotChange), the cache keys
+-- to invalidate and validates; tierOf, refreshes, keepsReads and validates are one function each. ModelGraph (the keys), ModelStore
+-- (the scope, the validation trigger), ViewState (refresh and the kept Doc) and the snapshot (panelsUnchanged, by the tier it
+-- carries) call them. Reason: five copies of one rule drifted apart.
 data ChangeTier = ViewPatch | DataPatch | Rebuild deriving Eq
 tierOf :: SnapshotChange -> ChangeTier
 tierOf c
@@ -1621,13 +1666,24 @@ tierOf c
 -- | A canvas keeps the Doc of its view. It brings the Doc up to date by the tier of the change: a ViewPatch goes into the kept
 -- Doc in place; a DataPatch re-reads the changed elements that the Doc holds, with the scoped read of §3.3, and merges them; a
 -- Rebuild reads the view again. A validation report changes no Doc: the counts on the cards come from the report (violationScope).
--- Oracle: after any change, the kept Doc equals a fresh read of the view. The tests compare the two (scoped-doc.test.ts pattern).
+-- Oracle: after any change, the kept Doc equals a fresh read of the view. The tests compare the two (change.test.ts, view-session.test.ts).
 keptDoc :: Backend -> Iri -> Doc                 -- the Doc that the canvas of view v holds after the last change
 sameDoc :: Doc -> Doc -> Bool                     -- the same views, boxes, edges, instances and relations
 law_keptDocEqualsRead :: Backend -> Op -> Iri -> Bool
 law_keptDocEqualsRead b op v = let b' = snd (step b op) in sameDoc (keptDoc b' v) (fst (runRead b' (viewDoc v)))
--- | Which canvases a change refreshes (view-session.ts, affectedBy). No scope: all. A ViewPatch: the canvases of the changed views.
--- Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on a shapes change.
+-- | The merge of a DataPatch (change.ts mergeRecords, ModelStore.mergeChanged): the records of the changed instances that the Doc
+-- holds, read with their neighbors (so a statement to an instance is a relation, to another IRI a field), replace the kept records;
+-- the relations of a changed instance with both ends in the Doc stay; the hidden edges of the view follow the relations. The Doc
+-- is read again when the merge cannot give the read: a changed view graph that the Doc holds (a placement, the label or the
+-- description of the view, a referenced view), a changed element that the view places other than as a card (a node that became an
+-- instance; a mark of a data file: a note, a frame, a reference, a collection, whose box content the read projects), a held
+-- element that is no instance any more (its card goes), or a new relation that the view places (its edge shows).
+merges :: Doc -> SnapshotChange -> Bool            -- the DataPatch merges into the kept Doc; else the canvas reads the view
+merges d c = tierOf c == DataPatch && not (any (`elem` docViews d) (changedViews c)) && all (keptAfterRead d) (changedElements c)
+keptAfterRead :: Doc -> Id -> Bool                 -- the element stays as the Doc shows it: held as a card and an instance, or not placed
+-- | Which canvases a change refreshes (change.ts refreshes; view-session.ts affectedBy calls it). No scope: all. A ViewPatch: the
+-- canvases of the changed views. Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on
+-- a shapes change.
 docView :: Doc -> Id                              -- the view of the canvas
 refreshes :: Doc -> Maybe SnapshotChange -> Bool
 refreshes _ Nothing = True
@@ -1650,15 +1706,43 @@ displayRefreshAfterEdit completed started = completed <= started
 violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
 violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
 -- | A ViewPatch and a save keep the reads that do not read the geometry: the figures, hidden neighbor counts and shape
--- applicability of each view, the explorer, the instance count, the file kinds and the dataset warnings. The figures of a view read
--- the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
+-- applicability of each view, the instance count, the file kinds, the file references and the dataset warnings. The
+-- figures of a view read the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
 -- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
+-- The per-quad form of the rule: a quad of placement geometry or style moves no data key of the graph (change.ts quadDependencies).
 keepsReads :: SnapshotChange -> Bool
 keepsReads c = reason c == SaveChange || tierOf c == ViewPatch
--- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, PERF5).
+-- | A DataPatch keeps the reads that follow from its statements and brings them up to date from the patch. The target matches of
+-- each node (shacl-targets.ts): a patch drops the matches of the nodes that the paths of the node references reach from an end of a
+-- changed statement of a relevant predicate (rdf:type, a target predicate, a path predicate); a changed literal of a path predicate or a
+-- walk that meets a literal (a path can pass through a shared label), a shapes change, a new graph or a patch without quads drops all. The engine input of the figures (notations.ts keptStoreInput) forgets the subjects, objects and predicates
+-- of the patch; the figures are derived again. The hidden neighbor counts of a view (scoped-doc.ts updateHiddenNeighborCounts) read
+-- again the cards of the changed statements and the cards related to them; a change of a view graph reads all. The dataset warnings
+-- (DatasetWarnings) read again the subjects of the patch and the views whose read it can change; the several labels of a subject
+-- of the model graph are a subject warning only, not a warning of a view read. Reason: these reads scanned the
+-- whole store after each edit (about 1 s for a rename on a view of 600 cards, spec/open.md REFRESH1).
+-- Oracle: after any change, each kept read equals the same read of a store opened from the files (read-budget.test.ts).
+data KeptRead = KeptTargetMatches | KeptNeighborCounts | KeptApplicability | KeptFigures | KeptWarnings deriving (Eq, Enum, Bounded)
+keptRead :: Backend -> KeptRead -> String          -- the read that the store keeps, after the last change
+freshRead :: Backend -> KeptRead -> String         -- the same read of a store opened from the files of the backend
+law_keptReadsEqualRead :: Backend -> Op -> KeptRead -> Bool
+law_keptReadsEqualRead b op r = let b' = snd (step b op) in keptRead b' r == freshRead b' r
+-- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, open work: spec/open.md PERF7).
 -- Reason: the GLSP server and every RPC share the backend thread.
+-- The test (read-budget.test.ts): on a generated view of 600 cards, each panel read of 600 elements and each step of a content change
+-- with an open canvas is one tracer span within the budget. The reads that still exceed it are listed there with their open.md row.
 readBudgetMs :: Int
 readBudgetMs = 50
+-- | A panel read of n elements asks the store a bounded number of SPARQL queries, whatever n: one query for all elements
+-- (VALUES), not one per element; a fact of the whole store (the shaped classes, the terms of each property shape id, the files,
+-- placements and instance test of the elements) comes from one request context that PanelReads keeps on the data event
+-- (read-context.ts), never from a loop over the elements. The time of a read then follows the number of rows it returns.
+-- Reason: a read that scanned the store once per element took seconds for a few hundred selected cards.
+readQueries :: Backend -> IO a -> Int            -- the SPARQL queries that one read sends to the store (the trace counts them)
+readQueryBound :: Int
+readQueryBound = 30
+law_readQueriesBounded :: Backend -> IO a -> Bool
+law_readQueriesBounded b r = readQueries b r <= readQueryBound
 
 -- 12. CLI --------------------------------------------------------------------
 
@@ -1715,6 +1799,10 @@ manifestOnly :: a
 manifestOnly = error "signature-level manifest only"
 
 modelRdf = manifestOnly
+storeHealth = manifestOnly
+trapCount = manifestOnly
+trapReads = manifestOnly
+storeCallsAfterTrap = manifestOnly
 clipboardHasNamedGraphs = manifestOnly
 copiedDomainRdf = manifestOnly
 isPlacementQuad = manifestOnly
@@ -1758,6 +1846,7 @@ termKey = manifestOnly
 randomBase36 = manifestOnly
 isNote = manifestOnly
 fileNameOf = manifestOnly
+keptAfterRead = manifestOnly
 step = manifestOnly
 runOp = manifestOnly
 runTx = manifestOnly
@@ -1797,6 +1886,9 @@ savedContent = manifestOnly
 writeFailed = manifestOnly
 parsesTo = manifestOnly
 hasBlankNodes = manifestOnly
+oneGraphBlock = manifestOnly
+textOutside = manifestOnly
+changedSubjects = manifestOnly
 diskText = manifestOnly
 lastKnownText = manifestOnly
 isTemporary = manifestOnly
@@ -1808,7 +1900,10 @@ validationScheduled = manifestOnly
 filesWritten = manifestOnly
 viewFileOf = manifestOnly
 docView = manifestOnly
+readQueries = manifestOnly
 keptDoc = manifestOnly
 sameDoc = manifestOnly
+keptRead = manifestOnly
+freshRead = manifestOnly
 onDidChange = manifestOnly
 snapshotOf = manifestOnly

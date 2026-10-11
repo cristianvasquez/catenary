@@ -1,5 +1,5 @@
 // The notation engine (ADR 0014) on the example workspace (fixtures/notation): figures, join,
-// removal, arrival and data arrival, and the gaps G-C, G-D, G-H. The comparison with the current display: notation-compare.test.ts.
+// removal, arrival and data arrival, and the gaps G-C, G-D, G-H.
 
 import { createHash } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';

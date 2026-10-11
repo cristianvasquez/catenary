@@ -10,7 +10,7 @@ const FACTS = ['path', 'name', 'datatype', 'class', 'node', 'minCount', 'maxCoun
 interface Property { iri: string; facts: Partial<Record<typeof FACTS[number], string>> }
 
 interface Shapes {
-    /** Node shape in scope -> its property shapes. */
+    /** Node shape of the file -> its property shapes of the file. */
     shapes: Map<string, Property[]>;
     /** Property shape -> its node shapes. */
     owners: Map<string, string[]>;
@@ -21,16 +21,16 @@ function read(port: ExplorerPort): Shapes {
     return port.memo('shacl', () => {
         const shapes = new Map<string, Property[]>();
         for (const r of port.select(`${PREFIXES} SELECT DISTINCT ?s WHERE { { ${port.graph('?s rdf:type sh:NodeShape')} } UNION { ${port.graph('?s sh:property ?p')} } FILTER (isIRI(?s)) }`)) {
-            if (port.inScope(r.s.value)) shapes.set(r.s.value, []);
+            shapes.set(r.s.value, []);
         }
         const properties = new Map<string, Property>(), owners = new Map<string, string[]>();
         for (const r of port.select(`${PREFIXES} SELECT ?s ?p ?k ?v WHERE {
                 ${port.graph('?s sh:property|((sh:or|sh:xone|sh:and)/rdf:rest*/rdf:first) ?p')}
                 ${port.graph('?p sh:path ?path', '?g1')}
                 OPTIONAL { ${port.graph('?p ?k ?v', '?g2')} VALUES ?k { ${FACTS.map(f => 'sh:' + f).join(' ')} } } }`)) {
-            // Both in scope: a property shape that another file states is a reference only.
+            // The graphs of the port are the graphs of the file: a property shape that another file states has no row here.
             const list = shapes.get(r.s.value);
-            if (!list || !port.inScope(r.p.value)) continue;
+            if (!list) continue;
             let p = properties.get(r.p.value);
             if (!p) properties.set(r.p.value, p = { iri: r.p.value, facts: {} });
             if (!list.includes(p)) list.push(p);

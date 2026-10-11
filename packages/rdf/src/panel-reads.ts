@@ -7,9 +7,9 @@ import {
     occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
 import { absolutePath, pathKey } from 'rdf-files';
-import { ActionContext, placements, selectionActions } from './actions';
+import { ActionContext, selectionActions } from './actions';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
-import { ExplorerContext, ExplorerScope, elementInFile, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
+import { ExplorerContext, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
 import { enclosingWorkspace, positionIn } from './files';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
@@ -20,9 +20,10 @@ import { filesOfSubject } from './placement';
 import { properties } from './properties';
 import { dataPredicates, formData, hiddenRelations, knownClasses as readKnownClasses, selectionLinks, viewCounts, viewDescription as readViewDescription } from './queries';
 import { reportProblems } from './report-read';
+import { ReadFacts } from './read-context';
 import { DocScope, instanceLabels } from './scoped-doc';
 import { search } from './search';
-import { filesOfElement, selected, textTargets } from './selection';
+import { selected, textTargets } from './selection';
 import { Settings } from './settings';
 import { Metamodel, formShapes } from './shapes';
 import { ShapesIndex } from './shapes-read';
@@ -39,12 +40,17 @@ export interface ReadContext {
     shapesIndex(): ShapesIndex;
     scoped(scope: DocScope): Doc;
     viewDoc(view: string): Doc;
-    explorerScopes(): Map<string, ExplorerScope>;
 }
 
-/** Frontend reads. The coordinator supplies state and retains event-keyed caches. */
+/**
+ * Frontend reads. The coordinator supplies state and retains event-keyed caches. The facts that several reads share (read-context.ts)
+ * are kept here on the data event: a read of n elements asks the store a bounded number of times, not once per element (§11.3).
+ */
 export class PanelReads implements ModelQueries {
-    constructor(private readonly ctx: ReadContext) {}
+    private readonly facts: ReadFacts;
+    constructor(private readonly ctx: ReadContext) {
+        this.facts = new ReadFacts({ get graph() { return ctx.graph; }, get settings() { return ctx.settings; }, shapesIndex: () => ctx.shapesIndex() });
+    }
     private get graph() { return this.ctx.graph; }
     private get metamodel() { return this.ctx.metamodel; }
     private get settings() { return this.ctx.settings; }
@@ -63,8 +69,7 @@ export class PanelReads implements ModelQueries {
 
     private explorerContext(): ExplorerContext {
         const reads = this;
-        return { g: this.graph, get idx() { return reads.shapesIndex(); }, settings: this.settings, folder: this.folder,
-            get scopes() { return reads.ctx.explorerScopes(); } };
+        return { g: this.graph, get idx() { return reads.shapesIndex(); }, settings: this.settings, folder: this.folder };
     }
     knownClasses() { return readKnownClasses(this.graph, this.metamodel); }
     viewDescription(viewId: string) { return readViewDescription(this.graph, this.file, viewId); }
@@ -75,26 +80,28 @@ export class PanelReads implements ModelQueries {
         return t?.termType === 'NamedNode' ? formData(this.graph, t, this.metamodel) : '';
     }
 
+    /** A Model document is the document of a file (§8.5 law_fileRowsOwnSubjects). No file: no rows. */
     explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage {
-        return this.file ? explorerChildren(explorerPort(this.explorerContext(), file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
+        return this.file && file ? explorerChildren(explorerPort(this.explorerContext(), file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
     }
 
     explorerSearch(text: string, file?: string): ExplorerRow[] {
-        return this.file ? explorerSearch(explorerPort(this.explorerContext(), file), text) : [];
+        return this.file && file ? explorerSearch(explorerPort(this.explorerContext(), file), text) : [];
     }
 
     explorerPaths(id: string, file?: string): ExplorerPath[] {
         const iri = iriOf(this.shapesIndex(), id);
-        return this.file && iri ? explorerPaths(explorerPort(this.explorerContext(), file), iri) : [];
+        return this.file && file && iri ? explorerPaths(explorerPort(this.explorerContext(), file), iri) : [];
     }
 
+    /** The element ids under a folder at any depth. Every row is a subject of the file (§8.5 law_fileRowsOwnSubjects). */
     explorerElements(key: string, file?: string): string[] {
-        return this.file ? explorerElements(explorerPort(this.explorerContext(), file), key).filter(id => !file || elementInFile(this.explorerContext(), id, file)) : [];
+        return this.file && file ? explorerElements(explorerPort(this.explorerContext(), file), key) : [];
     }
 
+    /** law_folderDragAll: the selected rows and the rows under the folders, once each. */
     explorerDrag(selection: ExplorerDrag): string[] {
-        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])]
-            .filter(id => !selection.file || elementInFile(this.explorerContext(), id, selection.file));
+        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])];
     }
 
     properties(id?: string): ElementProperties | undefined {
@@ -137,7 +144,7 @@ export class PanelReads implements ModelQueries {
 
     appearance(viewId: string, ids: string[]): AppearanceData | undefined {
         const doc = this.scoped({ elements: ids, selectionViews: [viewId] }), view = doc.views[viewId];
-        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta) };
+        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta, iris => this.facts.instancesAmong(iris)) };
     }
 
     occurrence(ids: string[], view?: string): Occurrence | undefined {
@@ -150,7 +157,7 @@ export class PanelReads implements ModelQueries {
 
     links(ids: string[], view?: string): SelectionLinks {
         const idx = this.shapesIndex();
-        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view);
+        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view, iris => this.facts.instancesAmong(iris));
     }
 
     shapesText(): string {
@@ -159,7 +166,7 @@ export class PanelReads implements ModelQueries {
 
     async openTargets(id: string): Promise<OpenTarget[]> {
         if (!this.file) return [];
-        const files = filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
+        const files = this.facts.filesOf([id]).get(id) ?? [];
         const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await positionIn(path, textTargets(this.shapesIndex(), id)) })));
         const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
         const shown = this.showing(id);
@@ -172,12 +179,15 @@ export class PanelReads implements ModelQueries {
     selectionActions(target: ActionTarget): SelectionActions {
         if (!this.file) return { actions: [], items: [], cards: [] };
         const doc = this.scoped({ elements: target.ids, selectionViews: [target.view] });
+        const elements = target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id));
+        // The files and the placements of all elements from the request context: a bounded number of queries, kept on the data event.
+        const files = this.facts.filesOf(elements);
         const ctx: ActionContext = {
-            g: this.graph, shapes: this.shapesIndex().model,
-            placements: placements(this.graph, this.shapesIndex().byTerm, target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id))),
+            g: this.graph, shapes: this.shapesIndex().model, shaped: this.facts.shapedClasses(),
+            placements: this.facts.placementsOf(elements),
             doc,
             viewOf: v => doc.views[v],
-            filesOf: id => filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id)
+            filesOf: id => files.get(id) ?? this.facts.filesOf([id]).get(id) ?? []
         };
         return selectionActions(ctx, target);
     }

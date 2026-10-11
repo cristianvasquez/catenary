@@ -1,37 +1,36 @@
 import { TargetMatch } from '@catenary/shacl/common';
-import type { ExplorerScope } from './explorer';
 import { PanelReads } from './panel-reads';
 import { applicabilityOf } from './queries';
-import { filesOfElement } from './selection';
 // The model store: one RDF dataset (ModelGraph), shared by all diagram sessions and by the frontend. It coordinates the parts:
 // the files on disk and the dataset read from them (settings.ts, loader.ts, reconciler.ts, placement.ts, saver.ts), undo and the patch queue (history.ts), validation
-// (validation-runner.ts), and the read models of the panels and editors, built for each request (ADR 0012: no shared Doc).
+// (validation-runner.ts), the read models of the panels, built for each request (ADR 0012: no Doc of the whole dataset), and the
+// reads that it keeps across changes and brings up to date from each patch (change.ts, manifest §11.3).
 // All edits go through `execute` (one EditCommand = one transaction = one patch = one undo step). File operations run one at a time.
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
     ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
-    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, idIri, prefixesProblem, setPrefixes
+    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, cardOf, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
-import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
-import { OxigraphStore, SerialQueue, isInside, portableRelative } from 'rdf-files';
-import { Placements } from './actions';
+import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, oxigraphMemoryBytes, portableRelative } from 'rdf-files';
+import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
-import { GraphChange, ModelGraph, Patch, VALIDATION_GRAPH, isRdfsQuad, isVocabularyQuad } from './graph';
+import { ChangeScope, Classified, classify, keepsReads, mergeRecords, tierOf } from './change';
+import { GraphChange, ModelGraph, P, Patch, VALIDATION_GRAPH, V } from './graph';
 import { History } from './history';
 import { elementId, elementTerm } from './ids';
 import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
 import { movedIds } from './moved-ids';
-import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
+import { viewFiguresOf } from './notations';
 import { gone } from './ops';
-import { filesOfSubject, placeChanges, transfer } from './placement';
+import { filesOfSubjects, placeChanges, transfer } from './placement';
 import { Reconciler } from './reconciler';
 import { ImportCopies, Saver, Writer } from './saver';
-import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, readWarnings, scopedDoc } from './scoped-doc';
+import { DatasetWarnings, DocScope, NeighborCount, fileReferences, hiddenNeighborCounts, instanceCount, scopedDoc, updateHiddenNeighborCounts } from './scoped-doc';
 import { Settings, createWorkspace } from './settings';
 import { withCount } from './shape-ops';
 import { Metamodel, buildVocabulary, emptyMetamodel } from './shapes';
@@ -42,10 +41,14 @@ import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
 import { readView } from './view-read';
 
-export type { ChangeReason };
+/** A patch with more quads than this (a load, a file read) reads the hidden neighbor counts of each view again. */
+const NEIGHBOR_PATCH_LIMIT = 2000;
 
-/** The reads of one view for its diagram that do not depend on the geometry of its placements. */
-interface ViewReads { figures?: Derivation; neighbors?: Map<string, { in: number; out: number; targets?: number }>; applicability?: TargetMatch[] }
+/**
+ * The reads of one view for its diagram that do not depend on the geometry of its placements. `changed`: the IRIs of the data
+ * statements that changed since `neighbors` was read (a DataPatch, updateHiddenNeighborCounts).
+ */
+interface ViewReads { figures?: Derivation; neighbors?: Map<string, NeighborCount>; changed?: Set<string>; applicability?: TargetMatch[] }
 
 export interface ModelChange {
     reason: ChangeReason;
@@ -57,17 +60,8 @@ export interface ModelChange {
     patch?: Patch;
 }
 
-/** What a patch touched, as element ids. */
-export interface ChangeScope {
-    /** Views whose view graph changed. */
-    views: string[];
-    /** Instances in changed model statements, as subject or IRI object. */
-    elements: string[];
-    /** A shapes graph changed. */
-    shapes: boolean;
-    /** Only the geometry or the style of placements changed (LAYOUT_PREDICATES of view graphs). */
-    layout: boolean;
-}
+/** What a patch touched, as element ids, and its tier (change.ts, §11.3). */
+export type { ChangeScope } from './change';
 
 export type Listener = (change: ModelChange) => void;
 
@@ -86,7 +80,7 @@ export function violationScope(before: Violation[], after: Violation[]): ChangeS
     };
     const was = counts(before), now = counts(after);
     const elements = [...new Set([...was.keys(), ...now.keys()])].filter(id => was.get(id) !== now.get(id));
-    return { views: [], elements, shapes: false, layout: false };
+    return { tier: tierOf({ reason: 'validation', shapes: false, layout: false }), views: [], elements, shapes: false, layout: false };
 }
 
 /** A command refused because it changes protected files (absolute paths). */
@@ -99,8 +93,17 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
+/** The warning of a snapshot after a trap of the store and a read of the files (§3.4). */
+export const TRAP_RECOVERED = 'The model index failed and was read again from the files. Undo history was cleared.';
+
 export class ModelStore {
-    protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+    /** Builds the quad store of a graph. A test replaces it with a store that traps. */
+    newStore: () => QuadStore = () => new OxigraphStore();
+    /** The trap guard of `graph` (rdf-files trap.ts): the one place that detects a WebAssembly trap of the store. */
+    protected guard!: TrapGuard;
+    protected graph = this.newGraph().graph;
+    /** The state after a trap of the store (§3.4). `error`: the read of the files failed too; no further read. Undefined: no trap. */
+    protected trapState?: { recovering: boolean; again?: boolean; error?: string };
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
@@ -122,8 +125,10 @@ export class ModelStore {
     get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
     get revision(): number { return this.graph.change.sequence; }
     protected notified?: GraphChange;
-    /** Reads that placement geometry and reports cannot change. */
-    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope>; readWarnings?: string[] } = {};
+    /** The instance count of the current data event (ModelGraph.keys.data). */
+    protected cache: { event?: GraphChange; instances?: number } = {};
+    /** The dataset warnings of the snapshot, kept between changes (scoped-doc.ts DatasetWarnings). */
+    protected readonly datasetWarnings = new DatasetWarnings();
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -164,7 +169,62 @@ export class ModelStore {
         return { dispose: () => this.listeners.delete(listener) };
     }
 
-    protected cached<K extends 'placements' | 'instances' | 'explorer' | 'readWarnings'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
+    /** A new graph on a new quad store behind a trap guard. The guard becomes `this.guard` when the graph becomes `this.graph`. */
+    protected newGraph(): { graph: ModelGraph; guard: TrapGuard } {
+        const guard: TrapGuard = new TrapGuard(this.newStore(), trap => this.trapped(trap, guard));
+        this.guard ??= guard;
+        return { graph: new ModelGraph(new TracedStore(guard)), guard };
+    }
+
+    /**
+     * The store trapped (§3.4 law_trapReadsFilesOnce): the first trap of the current graph starts one read of the files, in the file
+     * queue. A trap of another graph (the read after a trap) ends in `recover`. The failing call throws to its caller.
+     */
+    protected trapped(trap: StoreTrap, guard: TrapGuard): void {
+        // A trap during the read after a trap, of the old or the new store (also in the listeners of the load): the read failed.
+        if (this.trapState?.recovering) { this.trapState.again = true; return; }
+        if (guard !== this.guard || this.trapState) return;
+        console.error('[catenary] the model index failed (WebAssembly trap); the files are read again:', trap.cause.stack);
+        this.trapState = { recovering: true };
+        void this.serial(() => this.recover());
+    }
+
+    /** Build a new store and read the workspace again from the files (the source of truth, ADR 0003). A second trap stops with one error. */
+    protected async recover(): Promise<void> {
+        const ws = this.settings;
+        let r: CommandResult;
+        try {
+            r = ws && !ws.gone ? await this.doOpen(ws.path, ws.workspace.text === undefined) : { ok: false, error: 'no workspace is open' };
+        } catch (e) {
+            r = { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+        // A trap during the read (also one that a listener of the load swallowed) is the failure; a file error of the read stays itself.
+        if (this.trapState?.again || (r.ok && this.guard.trap)) r = { ok: false, error: 'the model index failed again' };
+        if (r.ok) {
+            this.trapState = undefined;
+            this.warnings = [...this.warnings, TRAP_RECOVERED];
+            this.changed('files');
+            return;
+        }
+        const error = `The model index failed and the files cannot be read again (${r.error}). Restart Catenary.`;
+        console.error(`[catenary] ${error}`);
+        this.trapState = { recovering: false, error };
+        this.guard.fail(error);
+        this.close();
+        // The graph cannot be read: notify the clients without a scope. The snapshot is the trap snapshot.
+        for (const l of [...this.listeners]) l({ reason: 'files', event: this.graph.change });
+    }
+
+    /** The snapshot while the store is down: no read of the graph. */
+    protected trapSnapshot(warning: string): ModelSnapshot {
+        return {
+            revision: this.revision, file: this.file, files: { files: [], views: [] }, shapesVersion: this.shapesVersion, meta: this.meta,
+            counts: { instances: 0, results: 0, violations: 0 }, warnings: [warning], migrations: [], movedIds: {},
+            prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes }, dirty: false, canUndo: false, canRedo: false
+        };
+    }
+
+    protected cached<K extends 'instances'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
         const event = this.graph.keys.data;
         if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
@@ -176,8 +236,7 @@ export class ModelStore {
         return new PanelReads({
             get graph() { return store.graph; }, get metamodel() { return store.metamodel; },
             get settings() { return store.settings; }, get folder() { return store.folder; }, get file() { return store.file; },
-            shapesIndex: () => this.shapesIndex(), scoped: scope => this.scoped(scope), viewDoc: view => this.viewDoc(view),
-            explorerScopes: () => this.cached('explorer', () => new Map())
+            shapesIndex: () => this.shapesIndex(), scoped: scope => this.scoped(scope), viewDoc: view => this.viewDoc(view)
         });
     })();
 
@@ -216,28 +275,53 @@ export class ModelStore {
         return tracer.span('refresh', 'figures', () => {
             // A kept derivation still reads the live store on demand (its data is a LazyTripleIndex, read later by the join and the
             // labels): sound because viewReads drops it at each change of what the figures read (all but layout and the report).
-            const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures);
+            const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures, true);
             reads.figures = vf.derivation;
             return vf;
         });
     }
 
     /** For each instance card of the view: the number of related instances in and out that the view does not show (card halo). */
-    hiddenNeighborCounts(view: View): Map<string, { in: number; out: number; targets?: number }> {
-        const reads = this.viewReads(view.id);
-        return reads.neighbors ??= hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
+    hiddenNeighborCounts(view: View): Map<string, NeighborCount> {
+        const reads = this.viewReads(view.id), shapes = this.shapesIndex().model;
+        if (reads.neighbors && reads.changed) {
+            const changed = [...reads.changed];
+            tracer.note(`changed ${changed.length}`);
+            reads.neighbors = updateHiddenNeighborCounts(this.graph, shapes, view, reads.neighbors, changed);
+            reads.changed = undefined;
+        }
+        return reads.neighbors ??= hiddenNeighborCounts(this.graph, shapes, view);
     }
 
     /**
      * The reads of each view that a move or a resize keeps: they read which elements the view shows, not where. Kept while the store
      * changes only in the geometry of placements and the validation report (ModelGraph.keys.data retains the last event that affects these reads).
      */
-    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads> } = { byView: new Map() };
+    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads>; graph?: ModelGraph; changed?: Set<string> } = { byView: new Map() };
 
+    /**
+     * The kept reads of a view. A change of the data key drops them, but the hidden neighbor counts stay with the IRIs of the changed
+     * statements when each change since they were read was a patch of data graphs only (§11.3 DataPatch): no view graph, no shapes.
+     */
     protected viewReads(viewId: string): ViewReads {
-        const event = this.graph.keys.data;
-        if (this.viewReadCache.event !== event) this.viewReadCache = { event, byView: new Map() };
-        const byView = this.viewReadCache.byView;
+        const cache = this.viewReadCache, g = this.graph;
+        if (cache.graph !== g) {
+            cache.graph = g;
+            cache.event = undefined;
+            g.onDidChange(e => {
+                if (cache.graph !== g || (!e.data && !e.shapes)) return;
+                const quads = e.patch.filter(c => c.quad.graph.value !== VALIDATION_GRAPH);
+                if (e.shapes || !quads.length || !cache.changed || quads.length > NEIGHBOR_PATCH_LIMIT || quads.some(c => !g.isDataGraph(c.quad.graph))) { cache.changed = undefined; return; }
+                for (const { quad: q } of quads) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') cache.changed.add(t.value);
+            });
+        }
+        const event = g.keys.data;
+        if (cache.event !== event) {
+            const changed = cache.changed, byView = new Map<string, ViewReads>();
+            if (changed && cache.event) for (const [id, r] of cache.byView) if (r.neighbors) byView.set(id, { neighbors: r.neighbors, changed: new Set([...r.changed ?? [], ...changed]) });
+            Object.assign(cache, { event, byView, changed: new Set<string>() });
+        }
+        const byView = cache.byView;
         return byView.get(viewId) ?? byView.set(viewId, {}).get(viewId)!;
     }
 
@@ -249,35 +333,38 @@ export class ModelStore {
     protected applicabilityOf(view: View): TargetMatch[] { return applicabilityOf(this.graph, view); }
 
     /**
-     * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
-     * triple; no such triples: the triples with it as object. Most statements first.
+     * The classification of a patch (change.ts classify, §11.3): its tier, scope, and whether validation runs. In the validation mode
+     * "views", the open views count (a placement change on one of them changes what the run checks).
      */
-    filesOfElement(id: string): string[] {
-        return filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
+    protected classify(patch: Patch, reason: ChangeReason = 'edit'): Classified {
+        const open = this.settings?.validation === 'views' ? this.validationData.openViewIris().map(iri => elementId(rdf.namedNode(iri))) : [];
+        return classify(this.graph, patch, reason, open);
     }
 
-    protected scopeOf(patch: Patch): ChangeScope {
-        const views = new Set<string>(), elements = new Set<string>();
-        let shapes = this.graph.change.shapes, layout = true;
-        for (const { quad: q } of patch) {
-            if (q.graph.value === VALIDATION_GRAPH) { layout = false; continue; }
-            if (this.graph.isShapesGraph(q.graph)) {
-                shapes = true;
-                layout = false;
-                continue;
-            }
-            if (!this.graph.isDataGraph(q.graph)) {
-                if (q.graph.termType === 'NamedNode') views.add(elementId(q.graph));
-                if (!LAYOUT_PREDICATES.has(q.predicate.value)) layout = false;
-                continue;
-            }
-            layout = false;
-            // A concept scheme, concept or collection of the data file: the value set cards and the metamodel change too. An RDFS rule
-            // statement changes the metamodel.
-            if (isVocabularyQuad(q) || isRdfsQuad(q)) shapes = true;
-            for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') elements.add(elementId(t as NamedNode));
+    /**
+     * The DataPatch tier of a canvas (§11.3 keptDoc, law_keptDocEqualsRead): the records of the changed elements that `part` holds are read
+     * again with the scoped read and merged into the part (change.ts mergeRecords). False: the change needs a read of the view
+     * (keptAfterRead). A changed element that the view places other than as a card: a node that became an instance, or a mark whose
+     * statements a data file holds (a note, a frame, a reference, a collection: its box content is projected, not merged). A held
+     * element that is no instance any more (its card goes). A new relation that the view places (its edge shows).
+     */
+    mergeChanged(part: Doc, viewId: string, elements: string[]): boolean {
+        const view = part.views[viewId];
+        if (!view) return false;
+        const graph = rdf.namedNode(view.uri);
+        const held = elements.filter(id => !!part.instances[id]);
+        for (const id of elements) {
+            const t = elementTerm(id);
+            if (t && !cardOf(view, id) && this.graph.match(null, V.element, t, graph).length) return false;
         }
-        return { views: [...views], elements: [...elements], shapes, layout: layout && patch.length > 0 };
+        if (!held.length) return true;
+        const fresh = this.scoped({ elements: held, neighbors: true });
+        if (held.some(id => !fresh.instances[id])) return false;
+        for (const id of mergeRecords(part, viewId, fresh, held)) {
+            const r = part.relations[id], triple = rdf.quad(rdf.namedNode(part.instances[r.subject].uri), rdf.namedNode(r.predicate), rdf.namedNode(part.instances[r.object].uri));
+            if (this.graph.match(null, P.reifies, triple, graph).length) return false;
+        }
+        return true;
     }
 
     /** What the read of a view does not know: the file of each instance, and the path and state of each file reference. */
@@ -286,8 +373,10 @@ export class ModelStore {
         tracer.span('refresh', 'instance file origins', () => {
             const instances = Object.values(doc.instances);
             tracer.note(`instances ${instances.length}; populated views ${Object.values(doc.views).filter(v => v.boxes.length || v.edges.length || v.arrows.length).map(v => v.id).join(', ') || 'none'}`);
+            // One query for all instances (placement.ts filesOfSubjects), not one store read per instance.
+            const files = this.settings && instances.length ? filesOfSubjects(this.graph, instances.map(i => i.uri)) : undefined;
             for (const i of instances) {
-                const f = this.settings && filesOfSubject(this.graph, rdf.namedNode(i.uri))[0];
+                const f = files?.get(i.uri)?.[0];
                 if (f) i.file = f; else delete i.file;
             }
         });
@@ -321,11 +410,12 @@ export class ModelStore {
     protected lastChange?: SnapshotChange;
 
     snapshot(): ModelSnapshot {
+        if (this.trapState) return this.trapSnapshot(this.trapState.error ?? TRAP_MESSAGE);
         return {
             revision: this.revision,
             ...(this.lastChange ? { change: this.lastChange } : {}),
             file: this.file,
-            files: this.files,
+            files: tracer.span('snapshot', 'files', () => this.files),
             shapesVersion: this.shapesVersion,
             meta: this.meta,
             counts: {
@@ -334,11 +424,11 @@ export class ModelStore {
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
                 ...(this.settings?.validation === 'views' && this.validationData.validated !== undefined ? { validated: this.validationData.validated } : {})
             },
-            warnings: [...this.warnings, ...this.cached('readWarnings', () => readWarnings(this.graph, this.shapesIndex().model))],
+            warnings: [...this.warnings, ...tracer.span('snapshot', 'dataset warnings', () => this.datasetWarnings.read(this.graph, this.shapesIndex().model))],
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
             movedIds: this.movedIds,
             prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes },
-            dirty: this.dirty,
+            dirty: tracer.span('snapshot', 'dirty', () => this.dirty),
             canUndo: this.canUndo,
             canRedo: this.canRedo
         };
@@ -447,7 +537,7 @@ export class ModelStore {
     }
 
     /**
-     * The dataset changed. Validation depends on the model graph only: a layout change does not start it.
+     * The dataset changed. Validation runs by the rule of §9 validates (change.ts): a layout change does not start it.
      * `patch`: the changes in the order applied. `shapesBefore`: the shapes index before them, when they changed the shapes or the
      * vocabulary (ModelGraph.keys.shapes); no patch: anything can have changed.
      */
@@ -458,12 +548,7 @@ export class ModelStore {
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
         for (const [from, to] of Object.entries(this.movedIds)) this.settings?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
         this.settings?.assignViewFiles();
-        if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
-        // The validation mode "views": a placement on an open view changes what validation checks.
-        else if (this.settings?.validation === 'views') {
-            const open = new Set(this.validationData.openViewIris());
-            if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
-        }
+        if (!patch || this.classify(patch).validates) this.validation.invalidate();
     }
 
     /** `scope`: what a change without a patch touched (a validation run); else the scope of `patch`; neither: anything. */
@@ -473,13 +558,14 @@ export class ModelStore {
         const event = this.graph.change;
         this.notified = event;
         if (!patch && (reason === 'load' || reason === 'files')) patch = event.patch.length ? event.patch : undefined;
-        scope ??= patch && this.scopeOf(patch);
-        // A layout change or a report cannot change the file references: the state of the last content change stays.
-        if (this.settings && reason !== 'disk' && reason !== 'validation' && !scope?.layout) this.referencedState = this.referencedFiles();
+        scope ??= patch && this.classify(patch, reason);
         this.lastChange = { reason, ...scope };
+        // A ViewPatch, a save or a report cannot change the file references: the state of the last content change stays (keepsReads).
+        if (this.settings && reason !== 'disk' && reason !== 'validation' && !keepsReads(this.lastChange)) this.referencedState = this.referencedFiles();
+        const wasm = this.wasmMemory();
         if (tracer.on) {
             tracer.span('change', reason, () => {
-                tracer.note(`${this.listeners.size} listeners${scope ? `; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
+                tracer.note(`${this.listeners.size} listeners${scope ? `; tier ${scope.tier}; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}${wasm ? `; wasm ${wasm} MB` : ''}`);
                 for (const l of [...this.listeners]) l({ reason, event, scope, patch });
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
@@ -487,6 +573,24 @@ export class ModelStore {
         if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.commitNotes.push(reason);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
+    }
+
+    /** The largest WebAssembly memory of the store that the backend log reported (MB). */
+    protected wasmLogged = 0;
+
+    /**
+     * The WebAssembly memory of the Oxigraph store in MB (spec/open.md STORE3): the trace notes it at each change. The backend log gets
+     * a line each time it passes a new multiple of 256 MB (it never shrinks).
+     */
+    protected wasmMemory(): number | undefined {
+        const bytes = oxigraphMemoryBytes();
+        if (bytes === undefined) return undefined;
+        const mb = Math.round(bytes / 1048576);
+        if (Math.floor(mb / 256) > Math.floor(this.wasmLogged / 256)) {
+            this.wasmLogged = mb;
+            console.log(`[catenary] the model index uses ${mb} MB of WebAssembly memory (${this.graph.store.size} quads)`);
+        }
+        return mb;
     }
 
     /** Resolves when the queued writes are done. */
@@ -605,7 +709,7 @@ export class ModelStore {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
-        const graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+        const { graph, guard } = this.newGraph();
         const r = await openWorkspace(graph, primaryPath, ofFolder);
         if ('error' in r) return { ok: false, error: r.error };
         if (this.settings) this.settings.retired = true;
@@ -613,6 +717,9 @@ export class ModelStore {
         this.loader = r.loader;
         this.saver = new Saver(graph, r.settings, text => this.note(text));
         this.graph = graph;
+        this.guard = guard;
+        // An open after a failed recovery is a recovery: the new store answers. The recovery itself clears its state when it ends.
+        if (this.trapState && !this.trapState.recovering) this.trapState = undefined;
         this.history.clear();
         this.validation.reset();
         this.contentChanged();

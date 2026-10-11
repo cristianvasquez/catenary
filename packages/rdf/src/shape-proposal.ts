@@ -22,12 +22,28 @@ export function shapedClasses(g: ModelGraph): Set<string> {
     return new Set(g.shapesQuads().filter(q => q.predicate.equals(S.targetClass) && q.object.termType === 'NamedNode').map(q => q.object.value));
 }
 
-/** The IRI types of the model graph that no node shape targets, sorted. `of`: the types of these subjects only. */
-export function unshapedClasses(g: ModelGraph, of?: NamedNode[]): string[] {
+/** The IRI types of the model graph that no node shape targets, sorted. */
+export function unshapedClasses(g: ModelGraph): string[] {
     const shaped = shapedClasses(g);
-    const quads = of ? of.flatMap(s => g.match(s, P.type, null, g.model)) : g.match(null, P.type, null, g.model);
+    const quads = g.match(null, P.type, null, g.model);
     const classes = new Set(quads.filter(q => q.object.termType === 'NamedNode').map(q => q.object.value));
     return [...classes].filter(c => !shaped.has(c) && shapeable(c)).sort();
+}
+
+/**
+ * The IRI types in the model graph of each subject that no node shape targets (`shaped`: shapedClasses), sorted, by subject: one
+ * query for all subjects (§11.3 readBudgetMs), not one read per subject.
+ */
+export function unshapedClassesOf(g: ModelGraph, shaped: Set<string>, subjects: string[]): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    const values = [...new Set(subjects)];
+    if (!values.length) return out;
+    const types = new Map<string, Set<string>>();
+    for (const r of g.select(`SELECT DISTINCT ?s ?c WHERE { VALUES ?s { ${values.map(s => `<${s}>`).join(' ')} } GRAPH <${g.model.value}> { ?s <${P.type.value}> ?c } FILTER (isIRI(?c)) }`)) {
+        (types.get(r.s.value) ?? types.set(r.s.value, new Set()).get(r.s.value)!).add(r.c.value);
+    }
+    for (const s of values) out.set(s, [...types.get(s) ?? []].filter(c => !shaped.has(c) && shapeable(c)).sort());
+    return out;
 }
 
 /**

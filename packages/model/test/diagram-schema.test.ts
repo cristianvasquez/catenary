@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, TYPES, Violation, toSchema, emptyShapes, boxes } from '../src';
+import { Doc, TYPES, Violation, toSchema, emptyShapes } from '../src';
 
 function document(): Doc {
     const instances = Object.fromEntries(['a', 'b', 'outside'].map(id => [id, {

@@ -1,11 +1,11 @@
 // Parts of the SHACL elements of a view that do not depend on the notation engine: card and pill sizes, the row of a property, the
 // rows of a "one of" box, the class pill of a range, the halo of a node shape card. What a view draws: notation-schema.ts (ADR 0014).
 
-import { Doc, View, ViewCard, boxes, byLabel, inView } from './doc';
-import { ElementSchema, GraphOptions, LATENT_SUFFIX, LEAF_SUFFIX, TYPES, edgeLanes, memberListHeight } from './diagram-schema';
-import { NodeShape, PropertyShape, Range, ShapesModel, SimpleRange, alternativesOf, cardinalityText, formatPath, pathParts, rangeKey, rangeText, shortIri, valueSetOf } from './shapes-doc';
+import { View, byLabel, inView } from './doc';
+import { TYPES, memberListHeight } from './diagram-schema';
+import { NodeShape, PropertyShape, Range, ShapesModel, SimpleRange, alternativesOf, rangeKey, rangeText, valueSetOf } from './shapes-doc';
 import { iriId } from './ids';
-import { NS, localName } from './terms';
+import { localName } from './terms';
 
 /** Layout of a shape card: header, one row for each attribute, the "+ attribute" row. Model units. */
 export const SHAPE_CARD = { head: 84, row: 28, add: 28, pad: 8 };
@@ -79,12 +79,6 @@ export function targetCard(shapes: ShapesModel, r: Range): string | undefined {
 export function pillIri(shapes: ShapesModel, r: Range): string | undefined {
     if (r.kind === 'class' && !Object.values(shapes.nodeShapes).some(n => n.targetClass === r.class)) return r.class;
     return undefined;
-}
-
-/** The element id of the pill of a range (`pillIri`). */
-export function pillId(shapes: ShapesModel, r: Range): string | undefined {
-    const iri = pillIri(shapes, r);
-    return iri && iriId(iri);
 }
 
 /** The pill elements of the shapes: element id -> its IRI and the range that it shows (of the first property with this pill). */

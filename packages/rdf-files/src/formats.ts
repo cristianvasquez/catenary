@@ -1,6 +1,7 @@
 // RDF file formats by file extension: read, canonical form, and write. The same content gives the same bytes.
 
 import type { Quad } from '@rdfjs/types';
+import { Parser } from 'n3';
 import { canonicalNQuads, triplify } from 'rdf-serialization';
 import * as path from 'path';
 import { fileIri } from './paths';
@@ -18,7 +19,7 @@ export const RDF_FORMATS: { extensions: string[]; mediaType: string; write: bool
 ];
 
 /** File extensions of RDF_FORMATS, without the dot. */
-export const RDF_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions.map(e => e.slice(1)));
+const RDF_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions.map(e => e.slice(1)));
 
 export function formatOf(file: string) {
     const ext = path.extname(file).toLowerCase();
@@ -41,8 +42,16 @@ export async function parseRdf(text: string, file: string): Promise<Quad[]> {
     return [...dataset];
 }
 
+/**
+ * Parse a Turtle or TriG text without streams: the same N3.js parser as `parseRdf`, several times faster on a large file (the check of
+ * a text patch). `file` gives the base IRI.
+ */
+export function parseTurtleText(text: string, file: string): Quad[] {
+    return new Parser({ baseIRI: fileIri(file) }).parse(text);
+}
+
 /** The quads without duplicates (a dataset; the key keeps the direction of a literal). */
-export function uniqueQuads(quads: Iterable<Quad>): Quad[] {
+function uniqueQuads(quads: Iterable<Quad>): Quad[] {
     return [...new Map([...quads].map(q => [`${tripleKey(q)} ${termKey(q.graph)}`, q])).values()];
 }
 

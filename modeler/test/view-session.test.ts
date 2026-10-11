@@ -3,17 +3,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, ModelSubmissionHandler, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
+    Action, ChangeBoundsOperation, DefaultGModelSerializer, DefaultModelState, DeleteElementOperation, GModelIndex, MessageAction, ModelSubmissionHandler, UpdateModelAction,
+    PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
-import { EditCommand, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
+import { Doc, EditCommand, NS, boxes, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
 
 /** A diagram element by the id of what it shows: a card or a placed edge by its element (its id is the id of its placement). */
 const key = (e: { id: string; element?: unknown }) => (e.element as string | undefined) ?? e.id;
 import { ModelStore } from '@catenary/rdf';
+import { ModelGraph } from '../../packages/rdf/src/graph';
+import { elementId } from '../../packages/rdf/src/ids';
+import { rdf } from '../../packages/rdf/src/terms';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
-import { PasteHandler } from '../src/node/glsp/handlers';
+import { ChangeBoundsHandler, DeleteHandler, PasteHandler, SetVisibleAction, SetVisibleHandler, VisibleSetAction } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
@@ -31,7 +35,7 @@ async function client(store: ModelStore, viewId: string) {
         dispatchAll: vi.fn(async (actions: Action[]) => { sent.push(...actions); })
     };
     const sessions = { addListener: vi.fn(), removeListener: vi.fn() };
-    const session = Object.assign(new ViewSession(), { state, submission, dispatcher, sessions, clientId: viewId });
+    const session = Object.assign(new ViewSession(), { state, submission, dispatcher, sessions, clientId: viewId, modelState });
     const refresh = vi.spyOn(session, 'refresh');
     session.start(viewId);
     await session.refresh();
@@ -237,10 +241,89 @@ describe('model changes reaching view clients', () => {
         await a.flushed();
         expect(a.elements().find(e => key(e) === instance)).toMatchObject({ display: 'simple', color: '#ff0000' });
         expect(read).not.toHaveBeenCalled();
-        // A change of the content of the view reads it again.
+        // A change of the content of a card re-reads that card only (the DataPatch tier, §11.3).
         edit({ kind: 'rename', id: instance, label: 'Content' });
         await a.flushed();
+        expect(read).not.toHaveBeenCalled();
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Content' });
+    });
+
+    it('tierOf DataPatch: a rename of one card reads that element with the scoped read, not the view', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const a = await client(store, first), b = await client(store, second);
+        const read = vi.spyOn(store, 'viewDoc'), scoped = vi.spyOn(store as unknown as { scoped(scope: unknown): unknown }, 'scoped');
+        edit({ kind: 'rename', id: instance, label: 'Renamed' });
+        await Promise.all([a.flushed(), b.flushed()]);
+        expect(read).not.toHaveBeenCalled();
+        // One scoped read per canvas that shows the card, of that element only.
+        expect(scoped).toHaveBeenCalledTimes(2);
+        for (const call of scoped.mock.calls) expect(call[0]).toEqual({ elements: [instance], neighbors: true });
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
+        expect(b.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
+        expect(a.elements().find(e => key(e) === other)).toMatchObject({ name: 'Other' });
+        expect(a.state.part.instances[instance].label).toBe('Renamed');
+    });
+
+    it('law_keptDocEqualsRead: the kept part equals a fresh read of the view after each change of a sequence', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const shape = edit({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:p' }, range: { kind: 'class', class: 'urn:Class' } });
+        const a = await client(store, first), b = await client(store, second);
+        const otherUri = docOf(store).instances[other].uri;
+        // What toSchema reads: the boxes, edges and arrows of the view, the label, types and fields of the instances, the relations.
+        const shown = (doc: Doc, viewId: string) => {
+            const view = doc.views[viewId];
+            const ids = new Set([...boxes(view, 'card').map(c => c.element), ...boxes(view, 'collection').flatMap(c => c.members)]);
+            return {
+                boxes: view.boxes, edges: view.edges, arrows: view.arrows, label: view.label,
+                instances: Object.fromEntries([...ids].filter(id => doc.instances[id]).map(id => { const { label, types, fields } = doc.instances[id]; return [id, { label, types, fields }]; })),
+                relations: Object.values(doc.relations).filter(r => ids.has(r.subject) && ids.has(r.object)).sort((x, y) => x.id.localeCompare(y.id))
+            };
+        };
+        const check = async (step: string) => {
+            await Promise.all([a.flushed(), b.flushed()]);
+            for (const [c, viewId] of [[a, first], [b, second]] as const) expect(shown(c.state.part, viewId), `${step}: ${viewId}`).toEqual(shown(store.viewDoc(viewId), viewId));
+        };
+        const steps: [string, () => void][] = [
+            ['move', () => edit({ kind: 'setBounds', view: first, bounds: [{ id: cardOf(a.state.view, instance)!.id, x: 50, y: 60 }] })],
+            ['rename', () => edit({ kind: 'rename', id: instance, label: 'Renamed' })],
+            ['setStatements relation', () => edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [{ termType: 'NamedNode', value: otherUri }] } })],
+            ['setStatements field', () => edit({ kind: 'setStatements', id: other, values: { 'urn:note': [{ termType: 'Literal', value: 'text' }] } })],
+            ['removeFromView', () => edit({ kind: 'removeFromView', view: first, ids: [other] })],
+            ['addToView', () => edit({ kind: 'addToView', view: second, ids: [other], at: { x: 100, y: 900 } })],
+            ['setStatements removes relation', () => edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [] } })],
+            ['undo', () => store.undo()], ['undo', () => store.undo()], ['undo', () => store.undo()], ['undo', () => store.undo()],
+            ['redo', () => store.redo()], ['redo', () => store.redo()],
+            ['rename other', () => edit({ kind: 'rename', id: other, label: 'Other again' })]
+        ];
+        const loads = [vi.spyOn(a.state, 'load'), vi.spyOn(b.state, 'load')];
+        for (const [step, run] of steps) { run(); await check(step); }
+        // Only a placement change of its own view reads a view again. First: the relation arrives as a placed edge, removeFromView, its
+        // undo and its redo. Second: addToView, the cascade of the relation removal on its placed edge, their undo. The move, the renames,
+        // the field edit and their undo and redo read no view.
+        expect(loads.map(l => l.mock.calls.length)).toEqual([4, 4]);
+    });
+
+    it('law_keptDocEqualsRead: a note whose statements live in a data file shows its edited text (a DataPatch on a placed mark reads the view again)', async () => {
+        const note = edit({ kind: 'createNote', view: first, text: 'Old text', at: { x: -600, y: 0 } });
+        // Move the statements of the note from the view graph into the data graph (a file can hold marks: readView reads marks in any graph).
+        const g = (store as unknown as { graph: ModelGraph }).graph;
+        const dataGraph = g.dataGraphs()[0], viewGraph = rdf.namedNode(docOf(store).views[first].uri);
+        const mark = g.match(null, rdf.namedNode(NS.view + 'element'), null, viewGraph).map(q => q.object).find(o => g.match(o as never, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'Note')).length)!;
+        g.transact(x => {
+            for (const q of x.match(mark as never, null, null, viewGraph)) { x.remove(q); x.add(q.subject, q.predicate, q.object, dataGraph); }
+            return { ok: true };
+        });
+        expect(g.match(mark as never, null, null, dataGraph).length).toBeGreaterThan(0);
+        const a = await client(store, first);
+        expect(a.elements().find(e => e.id === note)).toMatchObject({ text: 'Old text' });
+        const read = vi.spyOn(store, 'viewDoc');
+        edit({ kind: 'setViewElements', view: first, ids: [note], patch: { text: 'New text' } });
+        expect(store.snapshot().change).toMatchObject({ reason: 'edit', tier: 'data', elements: [elementId(mark as never)] });
+        await a.flushed();
         expect(read).toHaveBeenCalledTimes(1);
+        expect(a.elements().find(e => e.id === note)).toMatchObject({ text: 'New text' });
+        expect(a.state.view!.boxes).toEqual(store.viewDoc(first).views[first].boxes);
     });
 
     it('a validation run refreshes the counts on the cards without a view read', async () => {
@@ -296,6 +379,23 @@ describe('model changes reaching view clients', () => {
         expect((a.elements().find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
     });
 
+    it('law_revealAfterShowUpdate: the show of a hidden canvas answers with the revision of its update; a move while hidden is in it', async () => {
+        const a = await client(store, first);
+        const card = a.elements().find(e => key(e) === instance) as GNodeSchema;
+        const handler = Object.assign(new SetVisibleHandler(), { session: a.session });
+        await handler.execute({ kind: SetVisibleAction.KIND, visible: false } as Action);
+        edit({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 1234, y: 567 }] });
+        const [answer] = await handler.execute({ kind: SetVisibleAction.KIND, visible: true, requestId: 'r1' } as Action) as VisibleSetAction[];
+        const update = a.sent.filter(UpdateModelAction.is);
+        expect(update).toHaveLength(1);
+        expect(answer).toEqual({ kind: VisibleSetAction.KIND, responseId: 'r1', revision: update[0].newRoot.revision });
+        expect((update[0].newRoot.children!.find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
+        // Nothing changed: the answer gives the revision that the client has, and no update.
+        expect(await handler.execute({ kind: SetVisibleAction.KIND, visible: true, requestId: 'r2' } as Action)).toEqual([{ kind: VisibleSetAction.KIND, responseId: 'r2', revision: update[0].newRoot.revision }]);
+        expect(await handler.execute({ kind: SetVisibleAction.KIND, visible: false } as Action)).toEqual([]);
+        expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
+    });
+
     it('law_hiddenCanvasRefreshesOnce: a hidden canvas collects changes and gets one update when it is shown', async () => {
         const a = await client(store, first);
         await a.session.setVisible(false);
@@ -327,10 +427,32 @@ describe('model changes reaching view clients', () => {
         a.sent.length = 0;
         select.mockClear();
         const before = store.snapshot();
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
         await a.session.edit({ kind: 'rename', id: instance, label: ' invalid' }, select);
-        expect(a.sent[0]).toMatchObject({ kind: 'message', severity: 'WARNING' });
+        // law_canvasEditErrorsOnce: one warning with the command kind and the reason, then the model of the store; no log line.
+        expect(a.sent.filter(MessageAction.is)).toHaveLength(1);
+        expect(a.sent[0]).toMatchObject({ kind: MessageAction.KIND, severity: 'WARNING', message: expect.stringMatching(/^"rename" refused: .+/) });
+        expect(a.sent.some(UpdateModelAction.is)).toBe(true);
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);
         expect(select).not.toHaveBeenCalled();
         expect(store.snapshot()).toEqual(before);
+    });
+
+    it('law_canvasEditErrorsOnce: a handler whose edit throws or is refused sends one warning and returns no GLSP command', async () => {
+        const a = await client(store, first);
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
+        const execute = vi.spyOn(store, 'execute').mockImplementation(() => { throw new Error('The model index failed.'); });
+        const remove = Object.assign(new DeleteHandler(), { session: a.session });
+        const card = cardOf(a.state.view, instance)!;
+        expect(await remove.createCommand(DeleteElementOperation.create([card.id]))).toBeUndefined();
+        expect(a.sent).toEqual([expect.objectContaining({ kind: MessageAction.KIND, severity: 'WARNING', message: '"removeFromView" failed in the backend: The model index failed.' })]);
+        a.sent.length = 0;
+        execute.mockImplementation(() => ({ ok: false, error: 'The store refused it.' }));
+        const move = Object.assign(new ChangeBoundsHandler(), { session: a.session });
+        expect(await move.createCommand(ChangeBoundsOperation.create([{ elementId: card.id, newPosition: { x: 1, y: 2 }, newSize: { width: 300, height: 200 } }]))).toBeUndefined();
+        expect(a.sent.filter(MessageAction.is)).toEqual([expect.objectContaining({ severity: 'WARNING', message: '"setBounds" refused: The store refused it.' })]);
+        expect(a.sent.some(UpdateModelAction.is)).toBe(true);
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);
     });
 
     it('fits only arriving cut placements while selecting existing cards too (UI §7.5)', async () => {
@@ -363,6 +485,16 @@ describe('model changes reaching view clients', () => {
         store.undo();
         await a.flushed();
         expect(a.elements().find(e => e.id === reference)).toMatchObject({ name: 'Renamed target' });
+    });
+
+    it('sends an error thrown by an edit to the client as one warning, without a model (§3.4)', async () => {
+        const a = await client(store, first);
+        vi.spyOn(store, 'execute').mockImplementation(() => { throw new Error('The model index failed. The files are read again.'); });
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
+        await a.session.edit({ kind: 'removeFromView', view: first, ids: [instance] });
+        expect(a.sent).toHaveLength(1);
+        expect(a.sent[0]).toMatchObject({ kind: MessageAction.KIND, severity: 'WARNING', message: '"removeFromView" failed in the backend: The model index failed. The files are read again.' });
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);   // law_canvasEditErrorsOnce: nothing is logged twice
     });
 
     it('clears dirty state on save and stops sending updates after the client disconnects', async () => {

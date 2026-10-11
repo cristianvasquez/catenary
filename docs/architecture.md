@@ -23,9 +23,18 @@ This document describes the structure of the code and the flow of data. The exac
 1. Open: the backend lists the model files, parses them, replaces blank nodes with skolem IRIs and loads the quads into the store. Each quad graph records its file and role.
 2. Read: each panel and each view session asks the backend for what it shows. The backend answers with a SPARQL query, and builds a request-scoped read model when a rule needs one. No component holds a copy of the whole model.
 3. Edit: the frontend or a GLSP handler sends one `EditCommand`. The store runs it in one synchronous transaction and produces one patch (added and removed quads) and one undo step.
-4. Write: the file queue writes the patch to the files that hold the statements, as a Turtle text patch when possible, else as a whole file. Then it makes a Git commit of those files.
-5. Notify: each patch produces one event with its changed graphs and elements. Caches retain the last event that affects their input. Connections receive snapshots with event sequence numbers, file state and change scope. A panel or view session reads again only when the scope touches it.
-6. Validate: 250 ms after a data or shape change, SHACL runs in a worker thread. The report goes to the unsaved graph `urn:trellis:validation`.
+4. Write: the file queue writes the patch to the files that hold the statements, as a text patch when possible (Turtle, or the graph block of a TriG view file), else as a whole file. Then it makes a Git commit of those files.
+5. Notify: each patch produces one event with its changed graphs and elements. `change.ts` gives the patch one tier: a view patch, a data patch or a rebuild. A view patch changes placement geometry or style only. A rebuild follows a shapes change, a disk read or an open. Caches retain the last event that affects their input. Connections receive snapshots with event sequence numbers, file state and the change scope with its tier. A panel reads again only when the scope touches it.
+6. Refresh: each canvas session keeps the read model (Doc) of its view and applies the change by tier (manifest §11.3).
+   - A view patch goes into the kept Doc in place. Only the canvases of that view refresh.
+   - A data patch reads the changed elements again with a scoped read and merges them into the kept Doc. A placement change or a new placed relation reads the view again.
+   - A rebuild reads the view again.
+   - The store keeps the SHACL target matches, the hidden neighbor counts, the figure input and the dataset warnings. It updates them from each patch. After each change, a kept Doc or kept read equals a fresh read (`law_keptDocEqualsRead`, `law_keptReadsEqualRead`).
+   - A hidden canvas tab refreshes nothing. It refreshes once when it is shown. A reveal on that canvas waits for the update of the show.
+7. Validate: 250 ms after a data or shape change, SHACL runs in a worker thread. The report goes to the unsaved graph `urn:trellis:validation`. A validation run refreshes only the canvases whose violation counts changed.
+8. Recover: a WebAssembly trap in Oxigraph stops that store (`trap.ts`). ModelStore builds a new store, reads the files again once, clears undo and shows one warning. A trap during that read stops with one error (manifest §3.4).
+
+The frontend holds one selection per window (ui-manifest §3.3). The canvas that made it (the origin) holds it as its GLSP selection. Other canvases show a local highlight and send nothing to the server. A file Model document reads only the store graphs of its file: each row is a subject with a statement in that file.
 
 ## Store layout
 
@@ -57,7 +66,7 @@ Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary
 | `packages/rdfs` (`@catenary/rdfs`) | The RDFS plugin: the Classes section of the Model explorer (classes, subclasses and instances as written); the palette classes, links and fields of `rdfs:domain` and `rdfs:range`. | The contracts. |
 | `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models, the merge of the plugins into the metamodel. Runs in Node and the browser. | `canonical-md`, `@catenary/explorer`, `@catenary/palette`, `@catenary/links`, `@catenary/fields`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
-| `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, Git, Oxigraph store. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
+| `packages/rdf-files` | Generic RDF files and quad store: formats, canonical write, text patches of Turtle and of a TriG graph block, folder watch, atomic writes, Git, Oxigraph store and its trap guard. Usable outside Catenary. | `rdf-serialization`, RDF libraries, Node built-ins. No `@catenary/*`. |
 | `packages/rdf` (`@catenary/rdf`) | `ModelStore`: operations, queries, validation, persistence. Runs the plugins; parses no vocabulary for the metamodel. Node only. | `@catenary/shacl`, `@catenary/rdfs`, the contracts, `@catenary/model`, `rdf-files`, `rdf-serialization`, RDF libraries, Node built-ins. No Theia, GLSP, React or DOM. |
 | `modeler` | Theia extension: RPC service, GLSP adapters, panels, canvas. | `@catenary/model`. Only `src/node` imports `@catenary/rdf`. |
 | `app`, `electron-app` | Browser host and desktop host. | Theia packages and `modeler`. |
@@ -140,11 +149,12 @@ Paths are relative to the directory in the first column.
 | | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
-| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
-| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
+| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `wasm-memory.ts`, `trap.ts`, `terms.ts` | Quad store port, Oxigraph store, the size of its WebAssembly memory (the trace notes it at each change), the trap guard (a WebAssembly trap stops the store; ModelStore then reads the files again, manifest §3.4), term keys |
+| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, text patches of Turtle and of a TriG graph block, statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore exposes PanelReads for query dispatch and wires file operations through ports. History records final file graphs, including transfers. |
-| | `panel-reads.ts` | Frontend query host: request-scoped reads, panel rules and prompt data. RPC and CLI dispatch queries here. ModelStore retains event-keyed caches. |
+| | `change.ts` | The change pipeline (manifest §11.3): one patch to its tier, scope, cache keys, validation decision and affected canvases (`classify`, `tierOf`, `refreshes`, `keepsReads`, `validates`); the merge of a data change into the kept part of a canvas (`mergeRecords`). ModelGraph, ModelStore, ViewState and the snapshot call it. |
+| | `panel-reads.ts`, `read-context.ts` | Frontend query host: request-scoped reads, panel rules and prompt data. RPC and CLI dispatch queries here. ModelStore retains event-keyed caches. Read-context keeps the facts that several reads share (shaped classes, property shape terms, files, placements, instance tests) on the data event: a read of n elements asks the store a bounded number of times (manifest §11.3 law_readQueriesBounded). |
 | | `settings.ts`, `files.ts`, `trig.ts` | Workspace settings, file membership, imported globs, statement positions, file reference paths and disk state, RDF serialization |
 | | `loader.ts`, `reconciler.ts`, `placement.ts`, `saver.ts`, `validation-data.ts` | Sync modules. Loader resolves open targets and reads workspace, model and import files. Reconciler owns the watcher, own-write filtering and disk reads. Placement assigns file graphs. Saver holds dirty state and import copies. Writer queues writes and commits, retaining retry notes across opens. Validation-data owns open editors, validation input, result IDs and the checked-instance count. None imports another. ModelStore wires them through ports. |
 | | `import.ts` | Import orchestration: prefix merge, marks, copies and rollback through ports. ModelStore supplies the file queue. No sync module imports another. |
@@ -152,21 +162,21 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
-| | `explorer.ts` | Model explorer host: plugins, query port, file scopes, keys, pages, search and paths |
+| | `explorer.ts` | Model explorer host: plugins, the query port over the graphs of one file, keys, pages, search and paths |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
-| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
+| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter. The adapter keeps the target matches of each node and drops those that a data patch can change (manifest §11.3). |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts`, `report-read.ts` | The pure validator (data and shape quads in, a report out); ValidationRunner debounces runs, rejects stale results and writes the report graph through the shared patch path; the report read of Problems and Properties |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins; `modeler/src/node/glsp/view-session.ts` traces the steps of a canvas refresh (layout patch, hidden neighbors, figures, applicability, schema, graph model) |
-| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
+| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, `keptStoreInput` keeps what it read and forgets the terms of each patch, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
 | | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |
-| | `glsp/` | GLSP server, one session per view (`view-session.ts`: the kept part of the view, layout patches in place, hidden canvases), operation handlers, layout |
+| | `glsp/` | GLSP server, one session per view (`view-session.ts`: the kept part of the view, layout patches and data patches in place by the tier of change.ts, hidden canvases; `ViewSession.edit`: the one edit path and its one warning, ui-manifest §4.9), operation handlers, layout |
 | `modeler/src/browser` | `actions.ts`, `action-service.ts`, `action-commands.ts`, `action-menus.ts`, `follow-up.ts` | Actions, prompts, creation follow-up |
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |
 | | `insert-view.ts` | Insert View in a Markdown editor |
-| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them |
+| | `diagram/`, `notes/` | Canvas rendering, gestures, clipboard, notes. `diagram/markdown-export.ts`: Markdown export dialog and SVG rendering of views. `notes/view-notes.tsx`: exclusive Properties/native Markdown editing and autosave. `notes/view-notes-resource.ts`: virtual Markdown resource backed by the view graph. `pending-*.ts`: moves and new members shown before the server confirms them. `diagram/selection-sync.ts`, `diagram/diagram-ids.ts`: the one window selection (a select on the origin canvas only, modifier clicks and keys on a highlight). `diagram/canvas-highlight.ts`: the local highlight of a canvas that is not the origin. `diagram/after-revision.ts`: the wait of a reveal for the update of a show |
 | | `trace/` | Trace panel (bottom area), request round trips and `visible-update-trace.ts` (model input to a paint opportunity) |
 | | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, pages, the flat fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
@@ -185,7 +195,8 @@ Paths are relative to the directory in the first column.
 
 - Each edit, undo and redo queues a write. The queue runs file operations one at a time.
 - A Turtle file gets a text patch: only the blocks of the changed subjects change. Catenary parses the result again and compares it with the expected RDF before it accepts it.
-- Other formats, TriG view files and failed patches get a whole-file write: first in the style of the file, then with the canonical writer as fallback.
+- A TriG view file (one graph block) gets the same text patch inside its graph block. The prefixes, comments and the other blocks stay byte for byte. The comparison checks the graph of each statement. The saver keeps the net changes of each view since its last write. The patch gets these changes (`patchTurtleDiff`) and does not compare two full statement sets. The saver reads them from the statements captured at the save, not from the live store. An edit during the disk read thus keeps the text patch. A second graph block, or a statement outside the block, gives a whole-file write.
+- Other formats and failed patches get a whole-file write: for Turtle first in the style of the file, then with the canonical writer as fallback.
 - Writes go to temporary files, then rename. Cross-file rollback is not required. A partial-save failure must report its cause and keep unwritten changes pending for retry (open check STORE2).
 - Catenary refuses to overwrite a file whose disk text differs from its last read or write.
 - The watcher reads changed files 150 ms after the last event. It does not read when each event is a file that Catenary wrote and that is unchanged since. A read from disk clears the undo history.
@@ -206,6 +217,23 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 | `scripts/smoke-desktop.mjs` | The desktop app or a package: paths, writes, Git, watcher, plugins, native modules |
 
 Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.
+
+Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its test name or in a comment next to the check. To find the check of a law, search the tests for its name. Tests of the change pipeline, the selection and the store failure:
+
+| Test | Laws |
+|---|---|
+| `packages/rdf/test/change.test.ts`, `modeler/test/view-session.test.ts` | `law_keptDocEqualsRead`, `law_canvasEditErrorsOnce`, `law_revealAfterShowUpdate` |
+| `packages/rdf/test/read-budget.test.ts`, `packages/rdf/test/shacl-targets.test.ts` | `law_keptReadsEqualRead`, `readBudgetMs` |
+| `packages/rdf/test/selection-scale.test.ts` | `readBudgetMs`: the store reads of a panel read of a few hundred placements stay bounded |
+| `packages/rdf/test/store.test.ts`, `packages/rdf-files/test/trap.test.ts` | `law_trapReadsFilesOnce`, `law_trapStopsStoreCalls` |
+| `packages/rdf-files/test/text-patch.test.ts`, `packages/rdf/test/review-save.test.ts` | `law_graphPatchKeepsText` |
+| `packages/rdf/test/explorer.test.ts`, `packages/rdf/test/file-explorer.test.ts` | `law_fileRowsOwnSubjects` |
+| `modeler/test/selection-sync.test.ts`, `modeler/test/diagram-ids.test.ts`, `modeler/test/selection-model.test.ts` | `law_oneSelectionPerWindow`, `law_highlightKeys`, `law_selectionReadsLastOnly` |
+| `modeler/test/after-revision.test.ts` | `law_revealAfterShowUpdate` |
+| `modeler/test/action-service.test.ts` | `law_selectionReadsLastOnly`, `law_gestureNoQuietWait` |
+| `scripts/e2e.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations) |
+
+Read budget: `packages/rdf/test/read-budget.test.ts` generates a view of 600 cards. It holds each panel read of 600 elements and each step of a content change with an open canvas to `readBudgetMs` (manifest §11.3), by the tracer spans of the fastest of three runs. Reads that still exceed the budget are listed with their `spec/open.md` row and a ceiling. The same file checks that the kept reads equal the reads of a new store after each edit.
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
 

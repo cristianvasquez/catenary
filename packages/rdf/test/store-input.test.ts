@@ -7,7 +7,8 @@ import { NTerm, Violation, nkey } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from '../src/graph';
 import { ModelStore, violationScope } from '../src/model-store';
-import { LAYOUT_PREDICATES, readNotations, storeIndex, storeInput } from '../src/notations';
+import { LAYOUT_PREDICATES } from '../src/change';
+import { readNotations, storeIndex, storeInput } from '../src/notations';
 import { rdf } from '../src/terms';
 
 const n = (l: string) => rdf.namedNode('urn:x:' + l);
@@ -88,7 +89,7 @@ describe('violationScope: the cards whose count of violations changed', () => {
     it('names the instances and property shapes with another count, not the others', () => {
         const before = [v('i1', 'p1'), v('i2', 'p1'), v('i3', 'p2', 'Warning')];
         const after = [v('i1', 'p1'), v('i2', 'p1'), v('i2', 'p2'), v('i3', 'p2', 'Info')];
-        expect(violationScope(before, after)).toEqual({ views: [], elements: ['i2', 'p2'], shapes: false, layout: false });
+        expect(violationScope(before, after)).toEqual({ tier: 'data', views: [], elements: ['i2', 'p2'], shapes: false, layout: false });
     });
 
     it('a run that changes no count touches no card', () => {

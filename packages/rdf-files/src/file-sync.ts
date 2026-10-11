@@ -156,7 +156,7 @@ export async function readUnchanged(file: string, last: string | undefined): Pro
 }
 
 /** The name of the temporary file of `file`: hidden, next to it (the same file system, so that a rename replaces the file). */
-export const tmpPath = (file: string, suffix = '.tmp') => path.join(path.dirname(file), `.${path.basename(file)}${suffix}`);
+const tmpPath = (file: string, suffix = '.tmp') => path.join(path.dirname(file), `.${path.basename(file)}${suffix}`);
 
 /**
  * Write several files: each text to a temporary file first, then a rename of each. `renamed` runs after the rename of each write.

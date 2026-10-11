@@ -19,6 +19,7 @@
     "@rdfjs/types": "^2.0.1",
     "oxigraph": "0.5.11",
     "rdf-serialization": "workspace:*",
+    "n3": "^2.7.12",
     "rdf-ext": "^2.6.0",
     "web-tree-sitter": "0.25.10"
   },

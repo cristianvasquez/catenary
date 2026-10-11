@@ -1,5 +1,6 @@
-// GLSP operation and action handlers. Each operation becomes one EditCommand on the shared store.
-// Handlers return no GLSP command: the store keeps the undo stack (see StoreCommandStack).
+// GLSP operation and action handlers. Each operation becomes one EditCommand on the shared store through ViewSession.edit, the one
+// edit path with the one error path (spec/ui-manifest.hs §4.9). Handlers return no GLSP command: the store keeps the undo stack
+// (StoreCommandStack). A message before the edit (an unknown class, an empty clipboard) is a check of the input, not an error.
 
 import {
     Action, ActionHandler, ChangeBoundsOperation, Command,
@@ -290,13 +291,24 @@ export namespace SetVisibleAction {
     export const KIND = 'catenarySetVisible';
 }
 
+/** The answer to a SetVisibleAction with a requestId: the revision of the model that the client has after the show. */
+export interface VisibleSetAction extends Action {
+    kind: typeof VisibleSetAction.KIND;
+    responseId: string;
+    revision: number;
+}
+export namespace VisibleSetAction {
+    export const KIND = 'catenaryVisibleSet';
+}
+
 @injectable()
 export class SetVisibleHandler implements ActionHandler {
     @inject(ViewSession) protected readonly session: ViewSession;
     readonly actionKinds = [SetVisibleAction.KIND];
 
     async execute(action: Action): Promise<Action[]> {
-        await this.session.setVisible((action as SetVisibleAction).visible !== false);
-        return [];
+        const revision = await this.session.setVisible((action as SetVisibleAction).visible !== false);
+        const requestId = (action as { requestId?: string }).requestId;
+        return requestId ? [{ kind: VisibleSetAction.KIND, responseId: requestId, revision } as VisibleSetAction] : [];
     }
 }

@@ -1,6 +1,8 @@
 // QuadStore on Oxigraph (in-memory, WASM). Oxigraph accepts RDF/JS terms of other factories (rdf-ext).
 
 import type { Quad, Term } from '@rdfjs/types';
+// Before 'oxigraph': it finds the WebAssembly memory of the store (STORE3).
+import { oxigraphMemoryBytes } from './wasm-memory';
 import * as ox from 'oxigraph';
 import type { Bindings, QuadStore } from './store';
 
@@ -8,6 +10,8 @@ import type { Bindings, QuadStore } from './store';
 export function parseRdfSync(text: string, mediaType: string): Quad[] {
     return ox.parse(text, { format: mediaType }) as unknown as Quad[];
 }
+
+export { oxigraphMemoryBytes };
 
 export class OxigraphStore implements QuadStore {
     protected readonly store: ox.Store;

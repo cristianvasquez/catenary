@@ -1,13 +1,13 @@
 // Resolve window selection IDs from RDF facts. The shapes index only translates existing UI identities.
 
 import { ElementKind, ModelSelection, NS, Selected, emptySelected, searchKind } from '@catenary/model';
-import type { NamedNode, Quad } from '@rdfjs/types';
+import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { TextTarget } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
-import { connections, construct, iri, statements, things } from './sparql';
+import { connections, construct, iri, rows, statements, statementsByTerm, things } from './sparql';
 import { rdf, termKey } from './terms';
 
 const buckets: Record<ElementKind, keyof Pick<Selected, 'instances' | 'relations' | 'views' | 'groups' | 'notes' | 'references' | 'collections' | 'arrows' | 'shapes' | 'properties' | 'constraints' | 'valueSets'>> = {
@@ -18,24 +18,38 @@ const marks: Record<string, ElementKind> = {
     [NS.view + 'Frame']: 'group', [NS.view + 'Note']: 'note', [NS.view + 'FileRef']: 'reference', [NS.view + 'EntityGroup']: 'collection'
 };
 
-/** Preserve placement IDs in `ids`, but resolve cards and edges to their element IDs in `elements`. */
+/**
+ * Preserve placement IDs in `ids`, but resolve cards and edges to their element IDs in `elements`. The placement statements and the
+ * facts are indexed by subject once: a term of the store compares in WebAssembly, so a scan of them for each id cost seconds for a
+ * few hundred ids (§11.3 readBudgetMs).
+ */
 export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSelection): Selected {
     const answer: Selected = { ...emptySelected(), view: undefined };
     const viewTerm = selection.view ? elementTerm(selection.view) : undefined;
-    const viewData = viewTerm ? [
-        ...g.match(viewTerm, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'View'), viewTerm),
-        ...selection.ids.flatMap(id => { const term = elementTerm(id); return term ? g.match(term, null, null, viewTerm) : []; })
-    ] : [];
-    if (viewTerm && viewData.some(q => q.subject.equals(viewTerm) && q.predicate.value === NS.rdf + 'type' && q.object.value === NS.view + 'View')) answer.view = selection.view;
-    const scoped = answer.view ? viewData : [];
-    const first = (s: string, p: string) => scoped.find(q => q.subject.value === s && q.predicate.value === p)?.object;
-    const candidates = [...new Set(selection.ids)].map(id => {
+    const ids = [...new Set(selection.ids)];
+    if (viewTerm && g.match(viewTerm, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'View'), viewTerm).length) answer.view = selection.view;
+    // The statements of each selected id in the view graph: its types, and the first view:element and rdf:reifies.
+    const placements = new Map<string, { placed: boolean; target?: Term; triple?: Term }>();
+    if (answer.view) for (const id of ids) {
         const term = elementTerm(id);
-        const placed = term && scoped.some(q => q.subject.equals(term) && q.predicate.value === NS.rdf + 'type' && q.object.value === NS.view + 'Placement');
-        return { id, term, target: placed ? first(term!.value, NS.view + 'element') : undefined, triple: placed ? first(term!.value, NS.rdf + 'reifies') : undefined };
+        if (!term) continue;
+        const entry = { placed: false } as { placed: boolean; target?: Term; triple?: Term };
+        for (const q of g.match(term, null, null, viewTerm)) {
+            const p = q.predicate.value;
+            if (p === NS.rdf + 'type') entry.placed ||= q.object.value === NS.view + 'Placement';
+            else if (p === NS.view + 'element') entry.target ??= q.object;
+            else if (p === NS.rdf + 'reifies') entry.triple ??= q.object;
+        }
+        placements.set(id, entry);
+    }
+    const candidates = ids.map(id => {
+        const term = elementTerm(id);
+        const entry = term ? placements.get(id) : undefined;
+        return { id, term, target: entry?.placed ? entry.target : undefined, triple: entry?.placed ? entry.triple : undefined };
     });
     const iris = [...new Set(candidates.flatMap(c => [c.target?.termType === 'NamedNode' ? c.target.value : c.term?.value].filter((s): s is string => !!s)))];
-    const facts = statements(g, iris);
+    const factTypes = new Map<string, string[]>();
+    for (const q of statements(g, iris)) if (q.predicate.value === NS.rdf + 'type') factTypes.set(q.subject.value, [...factTypes.get(q.subject.value) ?? [], q.object.value]);
     const types = new Map<string, string[]>();
     if (iris.length) for (const q of construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
         VALUES ?s { ${iris.map(iri).join(' ')} } { ${things()} }
@@ -50,23 +64,32 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
         if (!ts) return undefined;
         return searchKind(ts);
     };
+    // The triple of each relation candidate, and one query for the connections among them.
+    const tripleOf = (c: typeof candidates[number]) => c.triple?.termType === 'Quad' && c.triple.subject.termType === 'NamedNode' && c.triple.object.termType === 'NamedNode'
+        ? { s: c.triple.subject, p: c.triple.predicate as NamedNode, o: c.triple.object } : relationTriple(c.id);
+    const tripleKey = (t: { s: NamedNode; p: NamedNode; o: NamedNode }) => `${iri(t.s.value)} ${iri(t.p.value)} ${iri(t.o.value)}`;
+    const relationTriples = candidates.filter(c => c.target?.termType !== 'NamedNode').flatMap(c => {
+        const t = tripleOf(c);
+        return t && !(c.triple && t.p.value === NS.view + 'arrow') ? [t] : [];
+    });
+    const connected = new Set(relationTriples.length ? construct(g, `CONSTRUCT { ?s ?p ?o } WHERE {
+        VALUES (?s ?p ?o) { ${[...new Set(relationTriples.map(t => `(${tripleKey(t)})`))].join(' ')} }
+        ${connections()}
+    }`).map(q => tripleKey({ s: q.subject as NamedNode, p: q.predicate as NamedNode, o: q.object as NamedNode })) : []);
     for (const c of candidates) {
         let element = c.id;
         let k: ElementKind | undefined;
         if (c.target?.termType === 'NamedNode') {
-            const targetTypes = facts.filter(q => q.subject.value === c.target!.value && q.predicate.value === NS.rdf + 'type').map(q => q.object.value);
+            const targetTypes = factTypes.get(c.target.value) ?? [];
             k = targetTypes.map(t => marks[t]).find(Boolean);
             if (!k && targetTypes.includes(NS.view + 'View')) k = 'reference';
             if (!k) { element = identity(c.target.value); k = kind(element, c.target.value); }
         } else {
-            const triple = c.triple?.termType === 'Quad' && c.triple.subject.termType === 'NamedNode' && c.triple.object.termType === 'NamedNode'
-                ? { s: c.triple.subject, p: c.triple.predicate as NamedNode, o: c.triple.object } : relationTriple(c.id);
+            const triple = tripleOf(c);
             if (triple) {
                 const { s, p, o } = triple;
                 if (c.triple && p.value === NS.view + 'arrow') k = 'arrow';
-                else if (construct(g, `CONSTRUCT { ${iri(s.value)} ${iri(p.value)} ${iri(o.value)} } WHERE {
-                    ${connections(iri(s.value), iri(p.value), iri(o.value))}
-                }`).length) { element = relationId(s, p, o); k = 'relation'; }
+                else if (connected.has(tripleKey(triple))) { element = relationId(s, p, o); k = 'relation'; }
             } else k = kind(c.id, c.term?.value);
         }
         if (!k) continue;
@@ -79,15 +102,34 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
     return answer;
 }
 
-/** Subject statements, or object statements when none exist. A relation uses its triple. */
-export function statementsOf(g: ModelGraph, index: () => ShapesIndex, id: string): Quad[] {
-    const triple = relationTriple(id);
-    if (triple) return g.match(triple.s, triple.p, triple.o);
+/**
+ * The statements of each element with their graphs (not the report): a relation, the statements of its triple; another element, the
+ * statements of its term as subject, or as object when there are none. Three queries for all elements (§11.3 readBudgetMs).
+ */
+export function statementsOfAll(g: ModelGraph, index: () => ShapesIndex, ids: Iterable<string>): Map<string, Quad[]> {
+    const out = new Map<string, Quad[]>();
+    const triples = new Map<string, string[]>(), termIds = new Map<string, string[]>();
     const idx = index();
-    const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
-    if (!t) return [];
-    const own = g.match(t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
-    return own.length ? own : g.match(null, null, t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
+    for (const id of new Set(ids)) {
+        const triple = relationTriple(id);
+        if (triple) { const key = `${iri(triple.s.value)} ${iri(triple.p.value)} ${iri(triple.o.value)}`; triples.set(key, [...triples.get(key) ?? [], id]); continue; }
+        const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
+        if (!t) { out.set(id, []); continue; }
+        termIds.set(t.value, [...termIds.get(t.value) ?? [], id]);
+    }
+    if (triples.size) {
+        const found = new Map<string, Quad[]>();
+        for (const r of rows(g, `SELECT ?s ?p ?o ?g WHERE { VALUES (?s ?p ?o) { ${[...triples.keys()].map(k => `(${k})`).join(' ')} } GRAPH ?g { ?s ?p ?o } }`)) {
+            const key = `${iri(r.s.value)} ${iri(r.p.value)} ${iri(r.o.value)}`;
+            found.set(key, [...found.get(key) ?? [], rdf.quad(r.s as Quad_Subject, r.p as NamedNode, r.o as Quad_Object, r.g as NamedNode)]);
+        }
+        for (const [key, list] of triples) for (const id of list) out.set(id, found.get(key) ?? []);
+    }
+    if (termIds.size) {
+        const found = statementsByTerm(g, termIds.keys());
+        for (const [term, list] of termIds) for (const id of list) out.set(id, found.get(term) ?? []);
+    }
+    return out;
 }
 
 /** Text positions, best first: own block, property entry, then the containing shape. */
@@ -108,9 +150,56 @@ export function textTargets(idx: ShapesIndex, id: string): TextTarget[] {
     return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
 }
 
-/** Source files of an element, most statements first. */
-export function filesOfElement(g: ModelGraph, idx: () => ShapesIndex, settings: Settings | undefined, id: string): string[] {
+/** The files of the statements, most statements first. */
+const filesOfQuads = (settings: Settings | undefined, quads: Quad[]): string[] => {
     const count = new Map<string, number>();
-    for (const q of statementsOf(g, idx, id)) for (const f of settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
+    for (const q of quads) for (const f of settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
     return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
+};
+
+/**
+ * Source files of several elements: one query for the subject statements of all terms, one for the object statements of the terms
+ * without any, grouped by graph (§11.3 readBudgetMs). The relations, and the terms with statements in the logical model graph itself,
+ * take their statements in three more queries (statementsOfAll).
+ */
+export function filesOfElements(g: ModelGraph, index: () => ShapesIndex, settings: Settings | undefined, ids: string[]): Map<string, string[]> {
+    const result = new Map<string, string[]>();
+    const byStatements: string[] = [];
+    const termIds = new Map<string, string[]>();
+    const idx = index();
+    for (const id of new Set(ids)) {
+        if (relationTriple(id)) { byStatements.push(id); continue; }
+        const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
+        if (!t) { result.set(id, []); continue; }
+        termIds.set(t.value, [...termIds.get(t.value) ?? [], id]);
+    }
+    const finish = () => {
+        if (byStatements.length) for (const [id, quads] of statementsOfAll(g, index, byStatements)) result.set(id, filesOfQuads(settings, quads));
+        return result;
+    };
+    if (!termIds.size) return finish();
+    const counts = new Map<string, Map<string, number>>();
+    const fromModel = new Set<string>();
+    const scan = (terms: string[], bound: 's' | 'o') => {
+        const free = bound === 's' ? 'o' : 's';
+        for (const r of rows(g, `SELECT ?${bound} ?g (SAMPLE(?p) AS ?p1) (SAMPLE(?${free}) AS ?${free}1) (COUNT(*) AS ?n) WHERE {
+            VALUES ?${bound} { ${terms.map(iri).join(' ')} } GRAPH ?g { ?s ?p ?o } FILTER (?g != <${VALIDATION_GRAPH}>)
+        } GROUP BY ?${bound} ?g`)) {
+            const term = r[bound].value;
+            if (r.g.equals(g.model)) { fromModel.add(term); continue; }
+            const count = counts.get(term) ?? new Map<string, number>();
+            counts.set(term, count);
+            const sample = rdf.quad((bound === 's' ? r.s : r.s1) as Quad_Subject, r.p1 as NamedNode, (bound === 'o' ? r.o : r.o1) as Quad_Object, r.g as NamedNode);
+            for (const f of settings?.filesOfQuad(sample) ?? []) count.set(f, (count.get(f) ?? 0) + Number(r.n.value));
+        }
+    };
+    scan([...termIds.keys()], 's');
+    const objectsOnly = [...termIds.keys()].filter(t => !counts.has(t) && !fromModel.has(t));
+    if (objectsOnly.length) scan(objectsOnly, 'o');
+    for (const [term, list] of termIds) {
+        if (fromModel.has(term)) { byStatements.push(...list); continue; }
+        const files = [...counts.get(term) ?? []].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
+        for (const id of list) result.set(id, files);
+    }
+    return finish();
 }

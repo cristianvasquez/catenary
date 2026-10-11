@@ -7,7 +7,7 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import { ActionState, ActionTarget, ItemFacts, SelectionActions, targetKey, panelsUnchanged } from '@catenary/model';
 import { ViewEditors } from './diagram/view-editors';
 import { ModelFrontend } from './model-client';
-import { SelectionModel } from './selection-model';
+import { SELECTION_QUIET_MS, SelectionModel } from './selection-model';
 
 const EMPTY: SelectionActions = { actions: [], items: [], cards: [] };
 
@@ -35,6 +35,8 @@ export class ActionService {
     /** Answers of earlier revisions, by target key: the action row of Properties shows them until the new answer arrives (`latest`). */
     protected readonly previous = new Map<string, SelectionActions>();
     protected readonly pending = new Map<string, Promise<SelectionActions>>();
+    /** The timer of the quiet time: the read of the window selection waits until it fires. */
+    protected quiet?: ReturnType<typeof setTimeout>;
     protected revision = 0;
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** An answer arrived (menus and the action row of Properties render again). */
@@ -58,11 +60,25 @@ export class ActionService {
         this.editors.onDidChangeCurrentView(() => this.prefetch());
     }
 
-    /** Ask for the window selection; an empty selection on a canvas: also for its view (VIEW_AS_ITEM). Menus ask synchronously. */
+    /**
+     * Ask for the window selection after the quiet time (law_selectionReadsLastOnly): a marquee or a shift-click sequence sends one
+     * read, of the last selection. An empty selection on a canvas: also for its view (VIEW_AS_ITEM). Menus ask synchronously (`fetch`).
+     */
     protected prefetch(): void {
-        const t = this.selectionTarget();
-        void this.fetch(t);
-        if (!t.ids.length && t.view) void this.fetch(viewAsItem(VIEW_AS_ITEM[0], t));
+        clearTimeout(this.quiet);
+        this.quiet = setTimeout(() => {
+            this.quiet = undefined;
+            const t = this.selectionTarget();
+            void this.fetch(t);
+            if (!t.ids.length && t.view) void this.fetch(viewAsItem(VIEW_AS_ITEM[0], t));
+        }, SELECTION_QUIET_MS);
+    }
+
+    /** Ask for a target without an answer: the window selection after the quiet time, an explicit target (a menu, a row) at once. */
+    protected ask(target: ActionTarget): void {
+        const key = targetKey(target);
+        if (key !== targetKey(this.selectionTarget())) { void this.fetch(target); return; }
+        if (!this.quiet && !this.pending.has(key)) this.prefetch();
     }
 
     /** The target of the window selection: its view (a selection made on a canvas) and the active view (Add to view). */
@@ -84,7 +100,7 @@ export class ActionService {
     /** The last answer for a target, if it arrived; else asks for it and returns nothing for now. */
     get(target: ActionTarget): SelectionActions {
         const answer = this.answers.get(targetKey(target));
-        if (!answer) void this.fetch(target);
+        if (!answer) this.ask(target);
         return answer ?? EMPTY;
     }
 
@@ -95,7 +111,7 @@ export class ActionService {
     latest(target: ActionTarget): SelectionActions {
         const answer = this.answers.get(targetKey(target));
         if (answer) return answer;
-        void this.fetch(target);
+        this.ask(target);
         return this.previous.get(targetKey(target)) ?? EMPTY;
     }
 
@@ -103,11 +119,21 @@ export class ActionService {
         return this.get(target).actions.find(a => a.id === id);
     }
 
+    /**
+     * A command can run: the answer says so, or no answer has arrived yet. A gesture (a double-click, Enter, F12) must not wait for the
+     * quiet time of the window selection: the run asks at once and reports the reason when the action does not apply (ui-manifest §4.2).
+     */
+    enabled(id: string, target: ActionTarget): boolean {
+        const answer = this.answers.get(targetKey(target));
+        if (!answer) { this.ask(target); return true; }
+        return !!answer.actions.find(a => a.id === id)?.enabled;
+    }
+
     items(target: ActionTarget): ItemFacts[] {
         return this.get(target).items;
     }
 
-    /** Ask the backend for a target (once per target and revision). */
+    /** Ask the backend for a target at once (once per target and revision). A read that the quiet time holds back goes with it. */
     fetch(target: ActionTarget): Promise<SelectionActions> {
         const key = targetKey(target);
         const known = this.answers.get(key);

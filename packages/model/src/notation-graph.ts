@@ -116,7 +116,8 @@ export interface TripleSource {
 
 /**
  * A triple index that reads a store on demand: each subject, object or predicate once. The figures of a view read only the triples
- * around its elements, so a view costs what it shows, not the size of the workspace. Read-only: a change of the store needs a new one.
+ * around its elements, so a view costs what it shows, not the size of the workspace. Read-only: a change of the store needs a new one,
+ * or `forget` of what it changed.
  */
 export class LazyTripleIndex extends TripleIndex {
     protected readonly outs = new Map<string, Map<string, NTerm[]>>();
@@ -150,6 +151,16 @@ export class LazyTripleIndex extends TripleIndex {
         for (const [q, ss] of found) m.set(q, uniq(ss).sort(byKey));
         if (p === undefined) this.allIns.add(k);
         return m;
+    }
+
+    /**
+     * Forget what the index read about these keys (nkey) and predicates, after a change of the store: the next call reads them again.
+     * A caller that keeps one index across changes forgets the subject, the object and the predicate of each changed triple.
+     */
+    forget(subjects: Iterable<string>, objects: Iterable<string>, predicates: Iterable<string>): void {
+        for (const k of subjects) this.outs.delete(k);
+        for (const k of objects) { this.ins.delete(k); this.allIns.delete(k); }
+        for (const p of predicates) this.byPredicate.delete(p);
     }
 
     override objects(s: NTerm, p: string): NTerm[] { return this.outOf(s).get(p) ?? []; }

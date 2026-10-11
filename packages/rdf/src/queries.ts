@@ -6,15 +6,15 @@ import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shac
 // SPARQL queries that select a part of the model: the form data of an instance, the links of elements.
 
 import {
-    AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, ViewProperties, elementLabel, elementOfId, findRelation, formPredicates,
+    AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, ViewProperties, elementLabel, elementOfId, formPredicates,
     kindOf, pluginRanges, predicateName, primaryClass, shortIri
 } from '@catenary/model';
-import type { NamedNode, Quad } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, cmp, labelFromIri } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { cardIdsOf } from './records';
 import type { ShapesIndex } from './shapes-read';
-import { compareLabels, construct, iri as iriText, labels, statements, thingHead, things } from './sparql';
+import { compareLabels, construct, homesAmong, instancesAmong, iri as iriText, labels, statements, thingHead, things } from './sparql';
 import { rdf, termKey } from './terms';
 import { viewLabels } from './view-read';
 
@@ -83,7 +83,7 @@ export function formCandidates(g: ModelGraph, instance: NamedNode, meta?: Classe
  * that holds the list; a statement from the element to itself is only 'out'. View graphs count only as views. A property shape or logical constraint is shown by the card of its node shape.
  * Property shapes and logical constraints map to their ids; `isElement` tells which other IRI ids the user interface knows.
  */
-export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement: (id: string) => boolean): Links {
+export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElements: (ids: string[]) => Set<string>): Links {
     const values: string[] = [], relations: string[] = [];
     for (const id of new Set(ids)) {
         const r = relationTriple(id);
@@ -127,6 +127,10 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
             } GROUP BY ?eid ?dir ?p ?o ?v`);
         const constraintOf = new Map([...idx.constraint].map(([cid, c]) => [termKey(c.head), cid]));
         const seen = new Set<string>();
+        // The element test of all object IRIs in one call, not one store read per row.
+        const candidates = new Set<string>();
+        for (const b of found) if (!b.v && b.o.termType === 'NamedNode') candidates.add(elementId(b.o as NamedNode));
+        const elements = isElements([...candidates]);
         for (const b of found) {
             const element = b.eid.value;
             if (b.v) {
@@ -138,7 +142,7 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
             const o = b.o;
             const key = termKey(o);
             const id = idx.byTerm.get(key) ?? constraintOf.get(key)
-                ?? (o.termType === 'NamedNode' && isElement(elementId(o as NamedNode)) ? elementId(o as NamedNode) : undefined);
+                ?? (o.termType === 'NamedNode' && elements.has(elementId(o as NamedNode)) ? elementId(o as NamedNode) : undefined);
             rows.push({
                 element, dir: b.dir.value as 'out' | 'in', predicate: b.p.value, id,
                 iri: o.termType === 'NamedNode' ? o.value : undefined, label: b.label?.value
@@ -163,7 +167,8 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElement:
  * The Links panel data of a selection (ADR 0007): `ids` are the selected ids of `view` (a placement gives its element; groups, notes, …
  * are found in `view` only). The links query above, with the labels, kinds and relations of the read model of the backend.
  */
-export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: Classes, ids: string[], view?: string): SelectionLinks {
+export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: Classes, ids: string[], view?: string,
+    instances: (iris: Iterable<string>) => Set<string> = iris => instancesAmong(g, iris)): SelectionLinks {
     const v = view ? doc.views[view] : undefined;
     const label = (id: string) => elementLabel(doc, meta, id, v) ?? id;
     const elements: LinkElement[] = [];
@@ -178,14 +183,28 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
         });
     }
     // `doc` reads the selection only: an instance of the store outside it (an instance of a selected class) is an element too.
-    const inStore = (id: string) => g.isInstance(elementTerm(id));
-    const isElement = (id: string) => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id]) || inStore(id);
-    const found = links(g, idx, elements.map(e => e.id), isElement);
+    // The instance test of all ids in one request (§11.3 readBudgetMs), not one store read per row.
+    const inStore = (list: string[]): Set<string> => {
+        const idOf = new Map<string, string>();
+        for (const id of list) { const t = elementTerm(id); if (t) idOf.set(t.value, id); }
+        return new Set([...instances(idOf.keys())].map(iri => idOf.get(iri)!));
+    };
+    const isElements = (list: string[]) => {
+        const known = new Set(list.filter(id => !!(doc.instances[id] || doc.views[id] || doc.shapes.nodeShapes[id] || doc.shapes.valueSets[id])));
+        return new Set([...known, ...inStore(list.filter(id => !known.has(id)))]);
+    };
+    const found = links(g, idx, elements.map(e => e.id), isElements);
+    const rowIds = [...new Set(found.rows.flatMap(r => r.id ? [r.id] : []))];
+    const knownIds = new Set(rowIds.filter(id => !!kindOf(doc, undefined, id)));
+    const storeIds = inStore(rowIds.filter(id => !knownIds.has(id)));
+    // The relations of the read model by triple once, not a scan of them per row.
+    const relationOf = new Map<string, string>();
+    for (const r of Object.values(doc.relations)) { const k = `${r.subject} ${r.predicate} ${r.object}`; if (!relationOf.has(k)) relationOf.set(k, r.id); }
     const rows = found.rows.map(r => {
-        const known = !!r.id && !!kindOf(doc, undefined, r.id);
-        const target = r.id && (known || inStore(r.id)) ? r.id : undefined;
+        const known = !!r.id && knownIds.has(r.id);
+        const target = r.id && (known || storeIds.has(r.id)) ? r.id : undefined;
         const [s, o] = r.dir === 'out' ? [r.element, target] : [target, r.element];
-        const relation = s && o && doc.instances[s] && doc.instances[o] ? findRelation(doc, s, r.predicate, o)?.id : undefined;
+        const relation = s && o && doc.instances[s] && doc.instances[o] ? relationOf.get(`${s} ${r.predicate} ${o}`) : undefined;
         const inst = doc.instances[r.element];
         const cls = inst && primaryClass(meta, inst.types);
         const undeclared = r.dir === 'out' && !!relation && !!cls && !formPredicates(cls).includes(r.predicate);
@@ -195,22 +214,22 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
         };
     });
     const views = found.views.filter(x => doc.views[x.view]).map(x => ({ ...x, label: doc.views[x.view].label }));
-    const instances = new Map<string, { id: string; label: string; shapes: string[] }>();
-    for (const shape of elements.filter(e => e.kind === 'shape')) {
-        const term = elementTerm(shape.id);
-        if (!term) continue;
-        const found = shapeTargetMatches(g, { shapes: [term.value] })
-            .filter(m => m.node.termType === 'NamedNode' && g.isInstance(rdf.namedNode(m.node.value)))
-            .map(m => ({ s: rdf.namedNode(m.node.value) }));
-        const names = labels(g, found.map(b => b.s.value));
-        for (const b of found) {
-            const id = elementId(b.s as NamedNode);
-            const row = instances.get(id) ?? { id, label: names.get(b.s.value) ?? shortIri(b.s.value), shapes: [] };
+    const targeted = new Map<string, { id: string; label: string; shapes: string[] }>();
+    // The target matches of all selected shapes in one request, their instance test in one more.
+    const shapeTerms = elements.filter(e => e.kind === 'shape').flatMap(e => { const t = elementTerm(e.id); return t ? [{ id: e.id, uri: t.value }] : []; });
+    const matches = shapeTerms.length ? shapeTargetMatches(g, { shapes: shapeTerms.map(s => s.uri) }).filter(m => m.node.termType === 'NamedNode') : [];
+    const matched = instances(matches.map(m => m.node.value));
+    const names = labels(g, [...matched]);
+    for (const shape of shapeTerms) {
+        for (const m of matches) {
+            if (m.shape !== shape.uri || !matched.has(m.node.value)) continue;
+            const id = elementId(rdf.namedNode(m.node.value));
+            const row = targeted.get(id) ?? { id, label: names.get(m.node.value) ?? shortIri(m.node.value), shapes: [] };
             row.shapes.push(shape.id);
-            instances.set(id, row);
+            targeted.set(id, row);
         }
     }
-    return { elements, views, rows, instances: [...instances.values()].sort((a, b) => compareLabels(a.label, b.label) || a.id.localeCompare(b.id)) };
+    return { elements, views, rows, instances: [...targeted.values()].sort((a, b) => compareLabels(a.label, b.label) || a.id.localeCompare(b.id)) };
 }
 
 /** Kind names of the Links panel head (an instance: its class). */
@@ -219,34 +238,56 @@ const KIND_NAMES: Record<ElementKind, string> = {
     arrow: 'Arrow', shape: 'Node shape', property: 'Property shape', constraint: 'Logical constraint', valueSet: 'Value set'
 };
 
-/** Hidden instance links need placement membership and endpoint labels, not card fields or a diagram projection. */
-export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes): AppearanceData['hidden'] {
+/**
+ * Hidden instance links need placement membership and endpoint labels, not card fields or a diagram projection. The members, the
+ * instance test, the homes, the placed relations and the labels come in one query each for all cards (§11.3 readBudgetMs), not one
+ * store read per card or per relation. `instances`: the instance test of the request context (read-context.ts).
+ */
+export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes, instances: (iris: Iterable<string>) => Set<string> = iris => instancesAmong(g, iris)): AppearanceData['hidden'] {
     const view = elementTerm(viewId);
     if (!view) return [];
     const collected = new Set<string>();
     const placed = new Set(g.match(null, rdf.namedNode(NS.view + 'element'), null, view).flatMap(q => q.object.termType === 'NamedNode' ? [q.object.value] : []));
-    for (const group of placed) for (const q of g.match(rdf.namedNode(group), rdf.namedNode(NS.view + 'member'))) {
-        if (q.object.termType === 'NamedNode') { placed.add(q.object.value); collected.add(q.object.value); }
+    // The members of the placed collections (any graph), and of these members, until none is new.
+    for (let frontier = [...placed]; frontier.length;) {
+        const next: string[] = [];
+        for (const r of g.select(`${PREFIXES} SELECT DISTINCT ?c ?m WHERE { VALUES ?c { ${frontier.map(iriText).join(' ')} } GRAPH ?mg { ?c view:member ?m } FILTER (isIRI(?m)) }`)) {
+            if (!placed.has(r.m.value)) next.push(r.m.value);
+            placed.add(r.m.value); collected.add(r.m.value);
+        }
+        frontier = next;
     }
-    const cards = [...placed].filter(s => g.isInstance(rdf.namedNode(s)));
+    const instanceSet = instances(placed);
+    const cards = [...placed].filter(s => instanceSet.has(s));
     if (!cards.length) return [];
     const values = cards.map(s => `<${s}>`).join(' '), list = cards.map(s => `<${s}>`).join(', ');
     const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(iri).join(', ');
-    const graphRows = g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
+    const found: Record<string, Term>[] = g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o ?g WHERE {
         VALUES ?s { ${values} } GRAPH ?g { ?s ?p ?o }
         FILTER (?g IN (${graphs}) && ?o IN (${list}) && ?p NOT IN (rdf:type, rdfs:label))
-    }`).filter(r => (g.homeOf(rdf.namedNode(r.s.value)).equals(g.model) ? g.isDataGraph(r.g) : r.g.value === g.homeOf(rdf.namedNode(r.s.value)).value))
+    }`);
+    const homes = homesAmong(g, found.flatMap(r => [r.s.value, r.o.value]));
+    const graphRows = found.filter(r => (homes.get(r.s.value) === g.model.value ? g.isDataGraph(r.g) : r.g.value === homes.get(r.s.value)))
         .sort((a, b) => cmp(a.s.value, b.s.value) || cmp(a.p.value, b.p.value) || cmp(a.o.value, b.o.value));
-    const rows = [...new Map(graphRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()];
-    const label = (s: string) => {
-        const term = rdf.namedNode(s), home = g.homeOf(term);
-        const literals = (p: string) => g.match(term, rdf.namedNode(p), null, home).filter(q => q.object.termType === 'Literal').map(q => q.object.value).sort(cmp);
-        return literals(NS.rdfs + 'label')[0] ?? literals(NS.skos + 'prefLabel')[0] ?? labelFromIri(s);
-    };
-    return rows.filter(r => !collected.has(r.s.value) && !collected.has(r.o.value)
-        && !g.match(null, rdf.namedNode(NS.rdf + 'reifies'), rdf.quad(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode), view).length)
-        .map(r => ({ id: relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode),
-            label: `${label(r.s.value)} — ${predicateName(meta, r.p.value)} → ${label(r.o.value)}` }));
+    const rows = [...new Map(graphRows.map(r => [`${termKey(r.s)} ${termKey(r.p)} ${termKey(r.o)}`, r])).values()]
+        .filter(r => !collected.has(r.s.value) && !collected.has(r.o.value));
+    if (!rows.length) return [];
+    const tripleKey = (r: Record<string, Term>) => `${iriText(r.s.value)} ${iriText(r.p.value)} ${iriText(r.o.value)}`;
+    const placedRelations = new Set((g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o WHERE {
+        VALUES (?s ?p ?o) { ${[...new Set(rows.map(r => `(${tripleKey(r)})`))].join(' ')} } GRAPH ${iri(view)} { ?pl rdf:reifies <<( ?s ?p ?o )>> } }`) as Record<string, Term>[]).map(tripleKey));
+    const hidden = rows.filter(r => !placedRelations.has(tripleKey(r)));
+    // The label literals of each end in its home graph: rdfs:label, else skos:prefLabel, the first in order, else from the IRI.
+    const ends = [...new Set(hidden.flatMap(r => [r.s.value, r.o.value]))];
+    const literals = new Map<string, { label: string[]; pref: string[] }>();
+    if (ends.length) for (const r of g.select(`${PREFIXES} SELECT ?s ?p ?l ?h WHERE { VALUES ?s { ${ends.map(iriText).join(' ')} } GRAPH ?h { ?s ?p ?l } FILTER (?p IN (rdfs:label, skos:prefLabel) && isLiteral(?l)) }`)) {
+        const home = homes.get(r.s.value);
+        if (home === g.model.value ? !g.isDataGraph(r.h) : r.h.value !== home) continue;
+        const e = literals.get(r.s.value) ?? literals.set(r.s.value, { label: [], pref: [] }).get(r.s.value)!;
+        (r.p.value === NS.rdfs + 'label' ? e.label : e.pref).push(r.l.value);
+    }
+    const label = (s: string) => { const e = literals.get(s); return e?.label.sort(cmp)[0] ?? e?.pref.sort(cmp)[0] ?? labelFromIri(s); };
+    return hidden.map(r => ({ id: relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode),
+        label: `${label(r.s.value)} — ${predicateName(meta, r.p.value)} → ${label(r.o.value)}` }));
 }
 
 /** View counts read membership, types and relation endpoints. They do not load card fields or build a diagram. */
@@ -344,14 +385,14 @@ export function viewDescription(g: ModelGraph, file: string | undefined, viewId:
 /** Checked-node connections whose instance and shape cards are both shown. */
 export function applicabilityOf(g: ModelGraph, view: View): TargetMatch[] {
     const shown = new Set(boxes(view, 'card').map(b => b.element));
-    const nodes: string[] = [], shapes: string[] = [];
+    const shapes: string[] = [];
     for (const id of shown) {
         const t = elementTerm(id);
-        if (t?.termType !== 'NamedNode') continue;
         // A card can be both: a class used as its own node shape. Non-shape IRIs never match, so each card is a shape candidate.
-        shapes.push(t.value);
-        if (g.isInstance(t)) nodes.push(t.value);
+        if (t?.termType === 'NamedNode') shapes.push(t.value);
     }
+    // The instance test of all cards in one request (§11.3 readBudgetMs), not one store read per card.
+    const instances = instancesAmong(g, shapes), nodes = shapes.filter(s => instances.has(s));
     // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
     if (!nodes.length || !shapes.length) return [];
     return shapeTargetMatches(g, { nodes: nodes.map(value => ({ termType: 'NamedNode', value })), shapes })

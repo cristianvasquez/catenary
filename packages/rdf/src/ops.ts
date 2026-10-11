@@ -3,7 +3,7 @@
 // Arguments are element ids (see graph.ts); an operation resolves them to terms.
 
 import {
-    Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, LEAF_SUFFIX, MIN_GROUP, NS,
+    Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
     pillSize, pills, rangeText
 } from '@catenary/model';

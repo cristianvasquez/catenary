@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ClassDef, Classes, InstanceProperties, NS, RelationDef, iriId } from '@catenary/model';
-import { emptyGraph, load } from './helpers';
+import { load } from './helpers';
 import { outline } from '../src/outline';
 import { properties } from '../src/properties';
-import { project } from './project-full';
 import { readShapes } from '../src/shapes-read';
 import { readResults } from '../src/report-read';
 import { freeUnnamedLabel, linkChoices } from '../src/link-choices';

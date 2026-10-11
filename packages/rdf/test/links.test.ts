@@ -13,7 +13,7 @@ import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
 
 const linksOf = (g: ModelGraph, d: Doc, ids: string[]) =>
-    links(g, readShapes(g.shapesAndVocabulary()), ids, id => !!(d.instances[id] || d.views[id] || d.shapes.nodeShapes[id] || d.shapes.valueSets[id]));
+    links(g, readShapes(g.shapesAndVocabulary()), ids, ids => new Set(ids.filter(id => !!(d.instances[id] || d.views[id] || d.shapes.nodeShapes[id] || d.shapes.valueSets[id]))));
 const sorted = (xs: string[]) => [...xs].sort();
 const TYPE = NS.rdf + 'type';
 

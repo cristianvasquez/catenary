@@ -3,7 +3,7 @@ import { Emitter } from '@theia/core/lib/common/event';
 import { Doc, ModelSelection, ModelSnapshot, View, emptyDoc, boxes } from '@catenary/model';
 import { resolveSelection, selectionInView } from '../../packages/model/test/doc-reference';
 import { ModelFrontend } from '../src/browser/model-client';
-import { SelectionModel } from '../src/browser/selection-model';
+import { SELECTION_QUIET_MS, SelectionModel } from '../src/browser/selection-model';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
 const view = (id: string, instances: string[], extra: Partial<View> = {}): View =>
@@ -33,11 +33,14 @@ function selectionModel() {
     };
     const s = Object.assign(new SelectionModel(), { model: model as unknown as ModelFrontend });
     (s as unknown as { init(): void }).init();
+    // The selection follows the change after its quiet time: wait for the resolution that the change brings.
     const push = async (d: Doc, snap: ModelSnapshot) => {
         current = d;
         model.snapshot = snap;
+        const resolved = new Promise<void>(r => { const l = s.onDidResolve(() => { l.dispose(); r(); }); });
         snapshots.fire(snap);
-        await vi.waitFor(() => expect(s.resolved.ids).toEqual(s.selection.ids));
+        await resolved;
+        expect(s.resolved.ids).toEqual(s.selection.ids);
     };
     return { s, push, model, snapshots };
 }
@@ -71,6 +74,18 @@ describe('selection model', () => {
         expect(changed).toHaveBeenCalledTimes(2);
     });
 
+    it('law_oneSelectionPerWindow: one selection per window; a gesture in another canvas replaces it and its origin with one event', () => {
+        const { s } = selectionModel();
+        const events: ModelSelection[] = [];
+        s.onDidChange(e => events.push(e));
+        s.set({ view: 'A', ids: ['a'] });
+        s.set({ view: 'A', ids: ['a'] });
+        s.set({ view: 'B', ids: ['c'] });
+        s.set({ ids: ['b'] });
+        expect(events).toEqual([{ view: 'A', ids: ['a'] }, { view: 'B', ids: ['c'] }, { view: undefined, ids: ['b'] }]);
+        expect(s.selection).toEqual({ view: undefined, ids: ['b'] });
+    });
+
     it('follows IRI changes and drops deleted elements after a model change', async () => {
         const { s, push } = selectionModel();
         s.set({ view: 'A', ids: ['a', 'b', 'g'] });
@@ -96,7 +111,7 @@ describe('selection model', () => {
         selected.mockClear();
         const resolved = vi.fn();
         s.onDidResolve(resolved);
-        for (const change of [{ reason: 'save' }, { reason: 'edit', layout: true }, { reason: 'validation' }] as ModelSnapshot['change'][]) {
+        for (const change of [{ reason: 'save' }, { reason: 'edit', tier: 'view', layout: true }, { reason: 'validation' }] as ModelSnapshot['change'][]) {
             model.snapshot = { ...snapshot(model.snapshot.revision + 1), change };
             snapshots.fire(model.snapshot);
             await s.resolve();
@@ -106,7 +121,7 @@ describe('selection model', () => {
         expect(s.resolved.instances).toEqual(['a']);
     });
 
-    it.each([{ reason: 'save' }, { reason: 'validation' }, { reason: 'edit', layout: true }] as ModelSnapshot['change'][])(
+    it.each([{ reason: 'save' }, { reason: 'validation' }, { reason: 'edit', tier: 'view', layout: true }] as ModelSnapshot['change'][])(
         'law_selectionPromotesCurrentFacts: does not promote stale facts during a pending edit read: %j', async change => {
             const { s, model, snapshots } = selectionModel();
             s.set({ ids: ['a'] });
@@ -163,6 +178,67 @@ describe('selection model', () => {
         await Promise.resolve();
         pending[0](resolveSelection(doc(), { ids: ['a'] }));
         expect(await action).toEqual(current);
+    });
+
+    it('law_selectionReadsLastOnly: a sequence of selection changes sends one read, of the last selection, after the quiet time', async () => {
+        vi.useFakeTimers();
+        try {
+            const { s, model } = selectionModel();
+            const selected = vi.spyOn(model.service, 'selected');
+            s.set({ view: 'A', ids: ['a'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'A', ids: ['a', 'b'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            expect(selected).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(selected.mock.calls.map(([sel]) => sel.ids)).toEqual([['a', 'b']]);
+            expect(s.resolved.instances).toEqual(['a', 'b']);
+            // An action asks at once, and the quiet read joins it: one read.
+            s.set({ view: 'A', ids: ['b'] });
+            const action = s.resolve();
+            expect(selected).toHaveBeenCalledTimes(2);
+            expect((await action).instances).toEqual(['b']);
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS);
+            expect(selected).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('law_selectionReadsLastOnly: a panel that follows the selection (the Model explorer) joins the quiet read, so a marquee sends one read', async () => {
+        vi.useFakeTimers();
+        try {
+            const { s, model } = selectionModel();
+            const selected = vi.spyOn(model.service, 'selected');
+            // The listener of model-explorer.tsx showSelection: the facts of the selection on each change.
+            const shown: string[][] = [];
+            s.onDidChange(() => void s.whenResolved().then(r => shown.push(r.instances)));
+            s.set({ view: 'A', ids: ['a'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'A', ids: ['a', 'b'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'B', ids: ['a', 'c'] });
+            expect(selected).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS);
+            expect(selected.mock.calls.map(([sel]) => sel.ids)).toEqual([['a', 'c']]);
+            expect(shown).toEqual([['a', 'c'], ['a', 'c'], ['a', 'c']]);
+            // Without a pending quiet read, whenResolved gives the answer without a request.
+            expect((await s.whenResolved()).instances).toEqual(['a', 'c']);
+            expect(selected).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('a rejected read is not kept: the next resolve of the same selection asks again', async () => {
+        const { s, model } = selectionModel();
+        s.set({ ids: ['a'] });
+        const good = model.service.selected;
+        model.service.selected = () => Promise.reject(new Error('backend down'));
+        await expect(s.resolve()).rejects.toThrow('backend down');
+        model.service.selected = good;
+        expect((await s.resolve()).instances).toEqual(['a']);
+        expect(s.resolved.instances).toEqual(['a']);
     });
 
     it('an answer for an older selection does not replace the resolved selection', async () => {

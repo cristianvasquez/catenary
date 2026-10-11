@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { ModelStore } from '../src/model-store';
 import { parseRdf } from '../src/files';
 import { rdf } from '../src/terms';
 import * as patcher from 'rdf-files';
+import { boxes } from '@catenary/model';
 import { docOf } from './helpers';
 
 const dirs: string[] = [], stores: ModelStore[] = [];
@@ -159,6 +160,87 @@ it('failed commit notes survive a reopen, but do not reach another coordinator',
     expect(store.warnings).not.toContain(failure);
     expect(await second.save()).toEqual({ ok: true });
     expect(other.git('log', '-1', '--format=%s')).toBe('initial');
+});
+
+it('law_graphPatchKeepsText: a setBounds on a view file writes a text patch of the graph block (§10.2)', async () => {
+    const f = fixture();
+    const store = await f.open();
+    expect(store.execute({ kind: 'createView', label: 'Cards' }).ok).toBe(true);
+    const view = Object.values(docOf(store).views).find(v => v.label === 'Cards')!;
+    const element = Object.values(docOf(store).instances).find(i => i.uri === 'urn:a')!.id;
+    expect(store.execute({ kind: 'addToView', view: view.id, ids: [element], at: { x: 0, y: 0 } }).ok).toBe(true);
+    await store.idle();
+    const file = readdirSync(f.dir, { recursive: true, encoding: 'utf8' }).find(x => x.endsWith('.view.trig'))!;
+    const written = f.read(file);
+    const card = boxes(docOf(store).views[view.id], 'card')[0];
+    const full = vi.spyOn(patcher, 'patchTurtle'), byDiff = vi.spyOn(patcher, 'patchTurtleDiff');
+    expect(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: card.id, x: card.x + 50, y: card.y + 50 }] }).ok).toBe(true);
+    await store.idle();
+    expect(store.dirty).toBe(false);
+    // The write form: one patch call with the view graph and the changes since the last write (the two numbers), accepted (no whole-file note).
+    expect(full).not.toHaveBeenCalled();
+    expect(byDiff.mock.calls.map(c => [c[4]?.value, c[2].removed.length, c[2].added.length])).toEqual([[view.uri, 2, 2]]);
+    expect(store.warnings.filter(w => w.includes('written as a whole'))).toEqual([]);
+    // The text: the two numbers of the one placement change, the rest stays byte for byte.
+    const after = f.read(file);
+    const numbers = (text: string) => text.replace(/^(\s*view:(x|y)) -?\d+/gm, '$1 N');
+    expect(numbers(after)).toBe(numbers(written));
+    expect(after).not.toBe(written);
+    const quads = await parseRdf(after, join(f.dir, file));
+    expect(quads.every(q => q.graph.value === view.uri)).toBe(true);
+    expect(quads.filter(q => q.predicate.value === 'osg://vocab/view#x').map(q => q.object.value)).toEqual([String(card.x + 50)]);
+});
+
+it('law_graphPatchKeepsText: an edit during the disk read of a save does not break the next text patch', async () => {
+    const VIEW = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix view: <osg://vocab/view#>.
+# keep this comment
+
+<urn:name:Cards> {
+  <urn:name:Cards> a view:View;
+    rdfs:label "Cards".
+
+  <urn:name:Cards/p/1> a view:Placement;
+    view:element <urn:a>;
+    view:view <urn:name:Cards>;
+    view:x 0;
+    view:y 0.
+
+}
+`;
+    const f = fixture({ 'data.ttl': data + '<urn:b> a <urn:Class> ; <http://www.w3.org/2000/01/rdf-schema#label> "Second" .\n', 'cards.view.trig': VIEW });
+    const store = await f.open();
+    const view = Object.values(docOf(store).views).find(v => v.label === 'Cards')!;
+    const cards = () => boxes(docOf(store).views[view.id], 'card');
+    // The first write: from here on, the saver knows the changes of the view.
+    expect(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: cards()[0].id, x: 5, y: 5 }] }).ok).toBe(true);
+    await store.idle();
+    const written = f.read('cards.view.trig');
+    expect(written).toBe(VIEW.replace('view:x 0;\n    view:y 0.', 'view:x 5;\n    view:y 5.'));
+    // The next save pauses in its disk read; a new placement is moved meanwhile.
+    const original = patcher.readUnchanged;
+    let release!: () => void, reading!: () => void;
+    const released = new Promise<void>(r => { release = r; }), read = new Promise<void>(r => { reading = r; });
+    vi.spyOn(patcher, 'readUnchanged').mockImplementationOnce(async (...args) => { reading(); await released; return original(...args); });
+    const byDiff = vi.spyOn(patcher, 'patchTurtleDiff');
+    const second = Object.values(docOf(store).instances).find(i => i.uri === 'urn:b')!.id;
+    expect(store.execute({ kind: 'addToView', view: view.id, ids: [second], at: { x: 100, y: 100 } }).ok).toBe(true);
+    await read;
+    const added = cards().find(c => c.element === second)!;
+    expect(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: added.id, x: 300, y: 300 }] }).ok).toBe(true);
+    release();
+    await store.idle();
+    expect(store.dirty).toBe(false);
+    // Both saves are text patches: the comment and the first block stay, the new block has the last coordinates.
+    expect(byDiff).toHaveBeenCalledTimes(2);
+    for (const r of byDiff.mock.results) expect(await r.value).toMatchObject({ ok: true });
+    expect(store.warnings.filter(w => w.includes('written as a whole'))).toEqual([]);
+    const text = f.read('cards.view.trig');
+    expect(text.startsWith(written.slice(0, written.indexOf('\n}')))).toBe(true);
+    const quads = await parseRdf(text, join(f.dir, 'cards.view.trig'));
+    const placement = quads.find(q => q.predicate.value === 'osg://vocab/view#element' && q.object.value === 'urn:b')!.subject;
+    const of = (p: string) => quads.filter(q => q.subject.equals(placement) && q.predicate.value === 'osg://vocab/view#' + p).map(q => q.object.value);
+    expect([of('x'), of('y')]).toEqual([['300'], ['300']]);
 });
 
 it('near placement of new shapes skips read-only profiles', async () => {

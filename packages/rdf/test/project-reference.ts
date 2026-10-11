@@ -1,4 +1,4 @@
-// Reference for test/project.test.ts: project() before the SPARQL rewrite (per-term match calls).
+// Reference for test/records.test.ts: project() before the SPARQL rewrite (per-term match calls).
 // Test only. ModelGraph.instances() and graphs() were removed from graph.ts; they are local functions here.
 
 import {

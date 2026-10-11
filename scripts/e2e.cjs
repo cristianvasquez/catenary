@@ -648,7 +648,8 @@ test('browser: Turtle and TriG source language detection and token colors', { ti
 
 /**
  * A backend on a copy of the test fixtures, a browser page with the CLI bridge connected, and the cleanup. `run(app)` gets
- * { page, cli, url, dir, workspace }. On a failure: the backend log and a screenshot stay in the temporary folder.
+ * { page, cli, url, dir, workspace, logs }: `logs` collects the backend output, the browser console errors and warnings and the
+ * page errors. On a failure they stay in the temporary folder with a screenshot.
  */
 async function withFixtureApp(t, name, run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `catenary-${name}-`));
@@ -677,10 +678,12 @@ async function withFixtureApp(t, name, run) {
     browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', timeout: 10000 });
     page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     page.setDefaultTimeout(10000);
+    page.on('console', m => { if (m.type() === 'error' || m.type() === 'warn') logs.push(m.text()); });
+    page.on('pageerror', e => logs.push(e.stack ?? e.message));
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.locator('#shell-tab-explorer-view-container').waitFor();
     for (let i = 0; i < 50 && !cli('status').windows.length; i++) await page.waitForTimeout(100);
-    await run({ page, cli, url, dir, workspace });
+    await run({ page, cli, url, dir, workspace, logs });
     passed = true;
   } catch (e) {
     fs.writeFileSync(path.join(dir, 'backend-browser.log'), logs.join('\n'));
@@ -765,6 +768,7 @@ test('browser: file presentations use document panes, focus existing panes and r
     await tree.locator('.theia-mod-selected .catenary-tree-name').filter({ hasText: /^Reveal me$/ }).waitFor();
   };
   // From its Model pane, before any view places it: Source is the only other pane. A double-click opens it at the statement.
+  // law_gestureNoQuietWait: the double-click comes within the quiet time of the row selection.
   await selectRow();
   await revealRow.dblclick();
   for (let i = 0; i < 40 && current() !== sourceId; i++) await page.waitForTimeout(100);
@@ -779,6 +783,7 @@ test('browser: file presentations use document panes, focus existing panes and r
   const pickLabels = () => picks.evaluateAll(rows => rows.map(r => r.querySelector('.label-name')?.textContent).sort());
   await picks.first().waitFor();
   assert.deepEqual(await pickLabels(), ['Canvas', 'Source']);
+  // law_revealAfterShowUpdate: the canvas was hidden when addToView placed the card; the reveal centers it after the show update.
   await picks.filter({ has: page.locator('.label-name', { hasText: /^Canvas$/ }) }).first().click();
   await page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: 'Reveal me' }).waitFor();
   // On the canvas, F12 on the selected card asks between Source and Model. Model reveals the row.
@@ -965,7 +970,11 @@ test('browser: subject and object targets retain all predicates through Properti
     if (!await panel.isVisible()) await page.locator('#shell-tab-property-view').click();
     const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: new RegExp(`^sh:${key}$`) }) }).locator('textarea');
     await field.waitFor();
-    assert.equal(await field.inputValue(), '<urn:test:first>\n<urn:test:second>');
+    // ui-manifest §8.11: Properties shows its last data until the new answer arrives. The shapes answer of the revision before
+    // setNodeShape already lists the shape, without targets: the textarea renders empty for one read, then again with the value.
+    const expected = '<urn:test:first>\n<urn:test:second>';
+    for (let i = 0; i < 50 && await field.inputValue() !== expected; i++) await page.waitForTimeout(100);
+    assert.equal(await field.inputValue(), expected);
     await field.fill('<urn:test:second>\n<urn:test:third>');
     await field.blur();
     await page.waitForFunction(l => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === l), label);
@@ -1258,7 +1267,7 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.equal(fs.existsSync(path.join(out, 'Broken.md')), false);
 }));
 
-test('browser: law_hiddenPanelNoRead and law_saveKeepsRevision: panels read on show, save keeps content', { timeout: 90000 }, t => withFixtureApp(t, 'panel-reads', async ({ page, cli }) => {
+test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvasRefreshesOnce: panels and canvases read on show, save keeps content', { timeout: 90000 }, t => withFixtureApp(t, 'panel-reads', async ({ page, cli, workspace, logs }) => {
   cli('rpc', 'setSettings', JSON.stringify({ validation: 'off' }));
   const view = cli('model', 'files').views[0].view;
   const created = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Panel', label: 'Panel before', view, at: { x: 200, y: 200 } })).result;
@@ -1293,6 +1302,24 @@ test('browser: law_hiddenPanelNoRead and law_saveKeepsRevision: panels read on s
   assert.equal(cli('model', 'revision'), revision);
   const saved = cli('rpc', 'trace', '0').result.spans.filter(s => s.kind === 'rpc').map(s => s.name);
   assert.ok(!saved.some(name => ['properties', 'appearance', 'links', 'view', 'elementRows'].includes(name)), JSON.stringify(saved));
+  // law_hiddenCanvasRefreshesOnce: the canvas tells the server when its tab is hidden (catenarySetVisible). A change while hidden
+  // gives no refresh of the canvas; the show gives one, with the change.
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+  const card = () => page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: /^Panel/ });
+  await card().filter({ hasText: 'Panel after' }).waitFor();
+  const canvasId = cli('eval', 'ctx.shell.currentWidget.id');
+  assert.equal(cli('run', 'catenary.openAs', JSON.stringify(path.join(workspace, 'data.ttl')), '"Source"').status, 'done');
+  await page.locator('svg.sprotty-graph:visible').waitFor({ state: 'hidden' });
+  await page.waitForTimeout(300);
+  cli('rpc', 'clearTrace');
+  cli('exec', JSON.stringify({ kind: 'rename', id: created.id, label: 'Panel hidden' }));
+  await page.waitForTimeout(500);
+  const refreshes = () => cli('rpc', 'trace', '0').result.spans.filter(s => s.kind === 'refresh' && s.name.startsWith('view ')).map(s => s.name);
+  assert.deepEqual(refreshes(), [], 'a hidden canvas gets no refresh');
+  cli('eval', `await ctx.shell.activateWidget(${JSON.stringify(canvasId)}); return true`);
+  await card().filter({ hasText: 'Panel hidden' }).waitFor();
+  assert.equal(refreshes().length, 1, 'one refresh when the canvas shows again');
+  assert.ok(!logs.some(l => l.includes('Missing handler for action')), logs.filter(l => l.includes('Missing handler')).join('\n'));
   cli('rpc', 'setTracing', 'false');
 }));
 
@@ -1332,4 +1359,102 @@ test('browser: Trace performance metrics record model input and stop on pause', 
   assert.equal(await metric('First model update').innerText(), 'No samples');
   assert.equal(await metric('Backend event-loop delay').innerText(), 'No samples');
   assert.equal(await metric('RPC count').innerText(), '0');
+}));
+
+test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, the canvas of another view highlights, Ctrl+click adds from it', { timeout: 60000 }, t => withFixtureApp(t, 'one-selection', async ({ page, cli }) => {
+  cli('rpc', 'setSettings', JSON.stringify({ validation: 'off' }));
+  const exec = command => cli('exec', JSON.stringify(command)).result;
+  const left = exec({ kind: 'createView', label: 'Left view' }).id, right = exec({ kind: 'createView', label: 'Right view' }).id;
+  const one = exec({ kind: 'createInstance', classIri: 'urn:test:Sel', label: 'Shared one', view: left, at: { x: 100, y: 100 } }).id;
+  const two = exec({ kind: 'createInstance', classIri: 'urn:test:Sel', label: 'Shared two', view: left, at: { x: 100, y: 500 } }).id;
+  assert.equal(exec({ kind: 'addToView', view: right, ids: [one], at: { x: 100, y: 100 } }).ok, true);
+  assert.equal(exec({ kind: 'addToView', view: right, ids: [two], at: { x: 100, y: 500 } }).ok, true);
+  // Two canvases side by side. Count the selection events and the SelectActions of each canvas.
+  cli('eval', `const a = await ctx.editors.open(${JSON.stringify(left)}); await ctx.editors.open(${JSON.stringify(right)}, 'activate', { widgetOptions: { mode: 'split-right', ref: a } }); return true`);
+  const placement = (view, id) => cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)}); return [w.viewerOptions.baseDiv, ctx.editors.placementOf(w, ${JSON.stringify(id)})]`);
+  // The visible model only: the hidden model viewer (`<baseDiv>_hidden`) draws the same ids.
+  const node = (view, id) => { const [base, p] = placement(view, id); return page.locator(`[id="${base}"] [id="${base}_${p}"]`); };
+  await node(left, one).waitFor();
+  await node(right, one).waitFor();
+  cli('eval', `window.__one = { events: 0, selects: {} };
+    ctx.selection.onDidChange(() => window.__one.events++);
+    for (const view of ${JSON.stringify([left, right])}) {
+      const d = ctx.editors.find(view).actionDispatcher, dispatch = d.dispatch.bind(d);
+      d.dispatch = a => { if (a.kind === 'elementSelected') window.__one.selects[view] = (window.__one.selects[view] ?? 0) + 1; return dispatch(a); };
+    }
+    return true`);
+  const counts = () => cli('eval', 'return window.__one');
+  const classes = async (view, id) => (await node(view, id).getAttribute('class')).split(/\s+/);
+  await node(left, one).locator('.card-name').first().click();
+  await page.waitForTimeout(500);
+  // One click: one selection event and one SelectAction, in the canvas of the click. The other canvas highlights the element.
+  assert.deepEqual(counts(), { events: 1, selects: { [left]: 1 } });
+  assert.ok((await classes(left, one)).includes('selected'));
+  assert.ok((await classes(right, one)).includes('catenary-highlight'));
+  assert.ok(!(await classes(right, one)).includes('selected'));
+  // A model change sends no SelectAction to the canvases.
+  exec({ kind: 'rename', id: one, label: 'Shared one renamed' });
+  await node(right, one).filter({ hasText: 'Shared one renamed' }).waitFor();
+  await page.waitForTimeout(300);
+  assert.deepEqual(counts().selects, { [left]: 1 });
+  // Ctrl+click in the highlighting canvas adds: that canvas becomes the origin, and the first canvas highlights both.
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  const selection = cli('eval', 'return ctx.selection.selection');
+  assert.equal(selection.view, right);
+  assert.deepEqual(selection.ids.map(id => cli('eval', `return ctx.editors.elementIn(${JSON.stringify(right)}, ${JSON.stringify(id)})`)).sort(), [one, two].sort());
+  for (const id of [one, two]) {
+    assert.ok((await classes(right, id)).includes('selected'), `${id} selected in the origin`);
+    assert.ok((await classes(left, id)).includes('catenary-highlight'), `${id} highlighted in the other canvas`);
+    assert.ok(!(await classes(left, id)).includes('selected'), `${id} not selected in the other canvas`);
+  }
+  // law_highlightKeys: Ctrl+click on a highlighted card removes it; that canvas becomes the origin with the rest of the highlight.
+  const elementsOf = s => s.ids.map(id => cli('eval', `return ctx.editors.elementIn(${JSON.stringify(s.view)}, ${JSON.stringify(id)})`));
+  await node(left, one).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  let now = cli('eval', 'return ctx.selection.selection');
+  assert.equal(now.view, left);
+  assert.deepEqual(elementsOf(now), [two]);
+  assert.ok(!(await classes(left, one)).includes('selected'));
+  assert.ok((await classes(left, two)).includes('selected'));
+  assert.ok(!(await classes(right, one)).includes('catenary-highlight'));
+  // Ctrl+click twice on the same card of the other canvas: the first removes it (it is highlighted), the second adds it.
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  now = cli('eval', 'return ctx.selection.selection');
+  assert.deepEqual(now, { view: right, ids: [] });
+  assert.ok(!(await classes(right, two)).includes('selected'));
+  assert.ok(!(await classes(left, two)).includes('catenary-highlight'));
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  now = cli('eval', 'return ctx.selection.selection');
+  assert.equal(now.view, right);
+  assert.deepEqual(elementsOf(now), [two]);
+  assert.ok((await classes(right, two)).includes('selected'));
+  // law_highlightKeys: a listing selection and keys in a focused canvas. Del removes nothing (no origin), Ctrl+C copies the
+  // highlight (the paste adds a card), Ctrl+Del deletes the element of the window selection.
+  const cards = view => cli('rpc', 'view', JSON.stringify(view)).result.boxes.length;
+  const focusRight = () => cli('eval', `const w = ctx.editors.find(${JSON.stringify(right)}); await ctx.shell.activateWidget(w.id); w.node.querySelector('svg.sprotty-graph').focus(); return true`);
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
+  await page.waitForTimeout(300);
+  assert.ok((await classes(right, one)).includes('catenary-highlight'));
+  focusRight();
+  const before = cards(right);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(500);
+  assert.equal(before, 2);
+  assert.equal(cards(right), before, 'Del without an origin removes nothing');
+  await page.keyboard.press('Control+c');
+  await page.waitForTimeout(300);
+  focusRight();
+  await page.keyboard.press('Control+v');
+  for (let i = 0; i < 30 && cards(right) === before; i++) await page.waitForTimeout(100);
+  assert.equal(cards(right), before + 1, 'the paste of the copied highlight adds a card');
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
+  await page.waitForTimeout(300);
+  focusRight();
+  await page.keyboard.press('Control+Delete');
+  await page.locator('.dialogBlock .theia-button.main').click();
+  for (let i = 0; i < 30 && cli('rpc', 'search').result.some(h => h.id === one); i++) await page.waitForTimeout(100);
+  assert.ok(!cli('rpc', 'search').result.some(h => h.id === one), 'Ctrl+Del deletes the element of the listing selection');
 }));

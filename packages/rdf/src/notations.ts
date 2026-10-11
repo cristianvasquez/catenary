@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
 import type { Quad, Term } from '@rdfjs/types';
-import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
+import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, nkey, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
 import { parseRdfSync } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { skolemize } from './skolem';
@@ -47,8 +47,6 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     return n;
 }
 
-export { LAYOUT_PREDICATES } from './graph';
-
 const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
 
 /** An engine term as a store term. Undefined: a term that no statement of the store can have. */
@@ -71,6 +69,39 @@ export function storeInput(g: ModelGraph): TripleIndex {
     });
 }
 
+/** A patch with more quads than this (a load, a file read) starts a new kept input: forgetting each term costs more. */
+const KEPT_PATCH_LIMIT = 2000;
+const kept = new WeakMap<ModelGraph, { index: LazyTripleIndex }>();
+
+/**
+ * The engine input of a store kept across changes (manifest §11.3): each committed patch forgets the subjects, objects and predicates
+ * of its triples, so a later derivation reads only those again. Inside a transaction with changes, a new input (the kept one is behind).
+ * Only reads outside commands use it: a command reads the store while it changes it.
+ */
+export function keptStoreInput(g: ModelGraph): TripleIndex {
+    if (g.changes().length) return storeInput(g);
+    let k = kept.get(g);
+    if (!k) {
+        const entry = k = { index: storeInput(g) as LazyTripleIndex };
+        kept.set(g, k);
+        g.onDidChange(e => {
+            if (!e.patch.length) { if (e.data || e.query || e.shapes || e.persisted) entry.index = storeInput(g) as LazyTripleIndex; return; }
+            // The report is not engine input (a validation run replaces it).
+            const quads = e.patch.filter(c => !isReport(c.quad));
+            if (quads.length > KEPT_PATCH_LIMIT) { entry.index = storeInput(g) as LazyTripleIndex; return; }
+            const subjects = new Set<string>(), objects = new Set<string>(), predicates = new Set<string>();
+            for (const { quad: q } of quads) {
+                const s = nterm(q.subject), o = nterm(q.object);
+                if (s) subjects.add(nkey(s));
+                if (o) objects.add(nkey(o));
+                predicates.add(q.predicate.value);
+            }
+            entry.index.forget(subjects, objects, predicates);
+        });
+    }
+    return k.index;
+}
+
 /** The whole store as one engine input. For tests and comparisons: a view reads `storeInput`, not this. */
 export function storeIndex(g: ModelGraph): TripleIndex {
     return new TripleIndex(nquads(g.quads().filter(q => !isReport(q))));
@@ -87,10 +118,10 @@ export function keyTerm(k: string): NTerm {
 /**
  * The figures of a view and their join, from the store read around the view (law_scopedFiguresPreservePlacementRules). `also`: terms
  * that the view does not place yet but that the caller asks about (removed placements, pasted elements). `derivation`: an earlier one,
- * kept while the store changed only in what the figures do not read.
+ * kept while the store changed only in what the figures do not read. `keep`: read the store through the kept input (keptStoreInput).
  */
-export function viewFiguresOf(g: ModelGraph, viewIri: string, also: Iterable<NTerm> = [], derivation?: Derivation): ViewFigures {
-    const D = storeInput(g), notes = readNotations();
+export function viewFiguresOf(g: ModelGraph, viewIri: string, also: Iterable<NTerm> = [], derivation?: Derivation, keep = false): ViewFigures {
+    const D = keep ? keptStoreInput(g) : storeInput(g), notes = readNotations();
     const placed = placementsOf(D, viewIri);
     // A placement of another term (a statement with a literal) has no figure, and the store cannot look it up: the join reports it.
     const scope = [...[...placed.keys()].map(keyTerm), ...also].filter(t => t.termType === 'Triple' || IRI.test(t.value));

@@ -2,11 +2,15 @@
 // the frontend keeps the selection ids only (ADR 0007).
 
 /**
- * The selected items (never label ids), and the view they were selected in (if any). A selection on a canvas holds placements
- * (spec/ui-manifest.hs §3.3): a card and a placed edge by the id of their placement, as a mark. A listing selects elements.
+ * The one selection of a window (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow): the selected items (never label ids), and the
+ * view of the canvas that made it (the origin). A selection on a canvas holds placements of the origin (law_canvasSelectsPlacements):
+ * a card and a placed edge by the id of their placement, a mark by its id. The origin needs them: remove from view, cut, drag between
+ * views. Their elements: `Selected.elements` (backend) or the diagram of the origin (frontend). A listing selects elements, without origin.
  */
 export interface ModelSelection {
+    /** The origin: the view of the canvas that made the selection. Absent for a listing selection. */
     view?: string;
+    /** Placements of the origin (a canvas selection) or elements (a listing selection). */
     ids: string[];
 }
 

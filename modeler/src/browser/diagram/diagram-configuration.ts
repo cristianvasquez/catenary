@@ -24,6 +24,8 @@ import { ViewEditors } from './view-editors';
 import { CardScaleStartup } from './card-scale';
 import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
+import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
+import { canvasKeyTargets } from './diagram-ids';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
     AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView, OneOfNode, OneOfView,
@@ -83,6 +85,11 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     configureModelElement(context, CATENARY.VALUESET, ValueSetNode, ValueSetView);
     configureView(context, GResizeHandle.TYPE, ResizeHandleView, true);
     configureActionHandler(context, 'catenaryEditCanvasName', EditCreatedCanvasName);
+    // The highlight of the window selection in a canvas that is not its origin (canvas-highlight.ts).
+    bind(CanvasHighlight).toSelf().inSingletonScope();
+    bind(HighlightPostprocessor).toSelf().inSingletonScope();
+    bind(TYPES.IVNodePostprocessor).toService(HighlightPostprocessor);
+    configureCommand(context, HighlightCommand);
     // A server update sent before the server applied the last drop does not draw the box at its older place (pending-bounds.ts).
     bind(PendingBounds).toSelf().inSingletonScope();
     configureActionHandler(context, ChangeBoundsOperation.KIND, PendingBounds);
@@ -96,18 +103,34 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
 
 /**
  * A selection change in the view editor that has the focus is a user gesture: it goes to the SelectionModel, and to the
- * Theia selection (the Property view picks its provider from it). A change in another view editor comes from the
- * SelectionModel (DiagramSelectionSync) and is not sent back. On focus gain, the base class forwards the current diagram selection.
+ * Theia selection (the Property view picks its provider from it). The canvas becomes the origin of the window selection
+ * (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow). A canvas that is not the origin has no GLSP selection, only a highlight:
+ * its empty selection (the deselect that DiagramSelectionSync sends to the old origin) does not change the window selection.
+ * On focus gain, only the Theia selection follows: the empty selection of a canvas with a highlight must not clear the window selection.
  */
 @injectable()
 export class FocusedSelectionForwarder extends TheiaGLSPSelectionForwarder {
     @inject(SelectionModel) protected readonly selection: SelectionModel;
 
+    protected override init(): void {
+        const forward = () => super.selectionChanged(this.editorContext.modelRoot, this.editorContext.selectedElements.map(e => e.id));
+        this.toDispose.push(this.editorContext.onFocusChanged(event => { if (event.hasFocus) forward(); }));
+        // A selection made elsewhere (a listing, a command) while this canvas has the focus: the Theia selection still names this
+        // canvas, so that the Property view keeps the Catenary provider. The canvas shows a highlight and sends no SelectAction.
+        const listener = this.selection.onDidChange(() => {
+            const base = document.getElementById(this.viewerOptions.baseDiv);
+            // Before its first model the canvas has no root (the getter throws), and no selection to forward.
+            if (base?.contains(document.activeElement)) try { forward(); } catch { /* no model yet */ }
+        });
+        this.toDispose.push({ dispose: () => listener.dispose() });
+    }
+
     override selectionChanged(root: Readonly<GModelRoot>, selectedElements: string[]): void {
         const base = document.getElementById(this.viewerOptions.baseDiv);
         if (!base?.contains(document.activeElement)) return;
         const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
-        if (view) this.selection.set({ view, ids: selectedElements.map(ownerOfLabel).filter(id => id !== root.id) });
+        const ids = selectedElements.map(ownerOfLabel).filter(id => id !== root.id);
+        if (view && (ids.length || this.selection.selection.view === view)) this.selection.set({ view, ids });
         super.selectionChanged(root, selectedElements);
     }
 }
@@ -128,6 +151,7 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(MessageService) protected readonly messages: MessageService;
+    @inject(CanvasHighlight) protected readonly highlight: CanvasHighlight;
 
     override handlePaste(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldPaste(event)) return;
@@ -175,6 +199,28 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         } catch (e) { this.messages.warn(`RDF paste failed: ${e instanceof Error ? e.message : String(e)}`); }
     }
 
+    /**
+     * Copy in a canvas that is not the origin copies the window selection as this canvas shows it: its highlight
+     * (law_oneSelectionPerWindow, diagram-ids.ts canvasKeyTargets). Cut removes from the view: it needs the origin.
+     */
+    protected keyTargets(key: 'copy' | 'cut'): string[] {
+        return canvasKeyTargets({ selected: this.editorContext.get().selectedElementIds, highlighted: [...this.highlight.ids] }, key);
+    }
+
+    override handleCopy(event: ClipboardEvent): void {
+        const ids = this.keyTargets('copy');
+        if (!event.clipboardData || !ids.length || !this.hasFocus()) {
+            event.clipboardData?.clearData();
+            this.clipboardService.clear();
+            return;
+        }
+        const clipboardId = generateUuid();
+        event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
+        this.actionDispatcher.request(RequestClipboardDataAction.create({ ...this.editorContext.get(), selectedElementIds: ids }))
+            .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
+        event.preventDefault();
+    }
+
     override handleCut(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldCopy(event)) return;
         const clipboardId = generateUuid();
@@ -185,8 +231,9 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         event.preventDefault();
     }
 
+    /** Cut: the GLSP selection of the origin only. */
     protected override shouldCopy(_event: ClipboardEvent): boolean {
-        return this.editorContext.get().selectedElementIds.length > 0 && this.hasFocus();
+        return this.keyTargets('cut').length > 0 && this.hasFocus();
     }
 
     protected override shouldPaste(_event: ClipboardEvent): boolean {

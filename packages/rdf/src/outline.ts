@@ -16,25 +16,44 @@ export interface OutlineContext {
 export interface OutlineSelection { view?: string; ids: string[] }
 
 const MARKS = ['Frame', 'Note', 'FileRef', 'EntityGroup'].map(m => NS.view + m);
-const values = (quads: Quad[], s: string, p: string): Term[] => quads.filter(q => q.subject.value === s && q.predicate.value === p).map(q => q.object).sort((a, b) => cmp(a.value, b.value));
-const first = (quads: Quad[], s: string, p: string) => values(quads, s, p)[0];
-const number = (quads: Quad[], s: string, p: string, fallback: number) => {
-    const value = first(quads, s, NS.view + p)?.value;
+/** The objects of quads by subject and predicate, each list sorted by value. Each quad is read once (a term read of a store quad costs). */
+type Index = Map<string, Map<string, Term[]>>;
+const indexed = (quads: Quad[]): Index => {
+    const out: Index = new Map();
+    for (const q of quads) {
+        const s = q.subject.value, p = q.predicate.value;
+        let ps = out.get(s);
+        if (!ps) out.set(s, ps = new Map());
+        let os = ps.get(p);
+        if (!os) ps.set(p, os = []);
+        os.push(q.object);
+    }
+    for (const ps of out.values()) for (const os of ps.values()) os.sort((a, b) => cmp(a.value, b.value));
+    return out;
+};
+const values = (index: Index, s: string, p: string): Term[] => index.get(s)?.get(p) ?? [];
+const first = (index: Index, s: string, p: string) => values(index, s, p)[0];
+const number = (index: Index, s: string, p: string, fallback: number) => {
+    const value = first(index, s, NS.view + p)?.value;
     return value === undefined || isNaN(Number(value)) ? fallback : Number(value);
 };
 type Card = Box & { id: string; element: string; iri: string };
 type Group = Box & { id: string; label: string };
 
-/** Outline of one view. Geometry supplies frame containment. */
+/**
+ * Outline of one view. Geometry supplies frame containment. The view statements, the facts of the elements and the relations are
+ * indexed once: a scan of them for each placement cost seconds for a few hundred placements (§11.3 readBudgetMs).
+ */
 export function outline(ctx: OutlineContext, viewId: string, selection: OutlineSelection = { ids: [] }): OutlineNode[] {
     const { g, meta } = ctx;
     const V = elementTerm(viewId);
     if (!V) return [];
-    const data = graphStatements(g, V.value);
+    const quads = graphStatements(g, V.value);
+    const data = indexed(quads);
     if (!values(data, V.value, NS.rdf + 'type').some(t => t.value === NS.view + 'View')) return [];
-    const placements = [...new Set(data.filter(q => q.predicate.value === NS.rdf + 'type' && q.object.value === NS.view + 'Placement').map(q => q.subject.value))].sort(cmp);
-    const elements = [...new Set(data.filter(q => q.predicate.value === NS.view + 'element').map(q => q.object.value))];
-    const facts = statements(g, elements);
+    const placements = [...new Set(quads.filter(q => q.predicate.value === NS.rdf + 'type' && q.object.value === NS.view + 'Placement').map(q => q.subject.value))].sort(cmp);
+    const elements = [...new Set(quads.filter(q => q.predicate.value === NS.view + 'element').map(q => q.object.value))];
+    const facts = indexed(statements(g, elements));
     const names = labels(g, elements);
     const typed = elements.length ? construct(g, `CONSTRUCT { ?s rdf:type ?type } WHERE {
         VALUES ?s { ${elements.map(iri).join(' ')} } { ${things()} }
@@ -86,10 +105,16 @@ export function outline(ctx: OutlineContext, viewId: string, selection: OutlineS
         kind, key, name, element, selected: selected.ids.has(element) || target !== undefined && (selected.ids.has(target) || selected.elements.has(target)), children: []
     });
     const byName = (a: OutlineNode, b: OutlineNode) => a.name.localeCompare(b.name);
+    // The relations of each card, in relation order: not a scan of the relations for each card.
+    const outOf = new Map<string, typeof relations>(), inOf = new Map<string, typeof relations>();
+    for (const entry of relations) {
+        outOf.set(entry[1].s, [...outOf.get(entry[1].s) ?? [], entry]);
+        inOf.set(entry[1].o, [...inOf.get(entry[1].o) ?? [], entry]);
+    }
     const card = (c: Card): OutlineNode => {
         const n = node('card', c.id, names.get(c.iri)!, c.id, c.element);
-        for (const [id, r] of relations) if (r.s === c.iri) n.children.push(node('out', id, `${predicateName(meta, r.p)} → ${names.get(r.o)}`, r.placement, id));
-        for (const [id, r] of relations) if (r.o === c.iri) n.children.push(node('in', id, `${predicateName(meta, r.p)} ← ${names.get(r.s)}`, r.placement, id));
+        for (const [id, r] of outOf.get(c.iri) ?? []) n.children.push(node('out', id, `${predicateName(meta, r.p)} → ${names.get(r.o)}`, r.placement, id));
+        for (const [id, r] of inOf.get(c.iri) ?? []) n.children.push(node('in', id, `${predicateName(meta, r.p)} ← ${names.get(r.s)}`, r.placement, id));
         return n;
     };
     const parentOf = (b: Box & { id: string }) => groupAmong(groups, b, b.id)?.id;
@@ -108,7 +133,7 @@ function selectedIds(g: ModelGraph, viewId: string, selection: OutlineSelection,
     const elements = new Set(selection.ids);
     const S = selection.view ? elementTerm(selection.view) : undefined;
     if (S) {
-        const data = graphStatements(g, S.value);
+        const data = indexed(graphStatements(g, S.value));
         for (const id of selection.ids) {
             const pl = elementTerm(id);
             if (!pl) continue;
