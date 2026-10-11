@@ -1451,7 +1451,7 @@ law_notesReadScope descriptionCanChange readRequested = not descriptionCanChange
 -- Each file shows what its triples contain (views, shapes, instances). A view row opens its view.
 -- Opening a file selects its own editor when there is one, else source text.
 -- Each file tail shows one letter per kind: W workspace, V view, D default file, S shapes, C concepts, I instances,
--- R imported (read only), ! not read. The context menu of a model file or view file has Mark as Imported, or Mark as Own
+-- R imported (read-only), ! not read. The context menu of a model file or view file has Mark as Imported, or Mark as Own
 -- when it is imported.
 data FileContent = HasViews | HasShapes | HasInstances deriving Eq
 data FileMark = MarkWorkspace | MarkView | MarkDefault | MarkShapes | MarkConcepts | MarkInstances | MarkImported | MarkNotRead

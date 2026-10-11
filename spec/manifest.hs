@@ -46,7 +46,7 @@ import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 --           touches, and no read on the backend thread blocks a change. SHACL runs in a worker. spec/ui-manifest.hs §3.2, §5.2, §6.6; §9 and §11.3 here.
 -- ADR 0014  Notations draw views: figures are derived, views store only placements. §4, §7, spec/ui-manifest.hs §2.
 
--- | Terms. One name per concept for the store, the files and the change pipeline. Use these names in code comments and documents.
+-- | Glossary. One name per concept for the store, the files and the change pipeline. Use these names in code comments and documents.
 -- Reason: the same concept had several names, and a planned library extraction needs one name each. Format: term, meaning, names it replaces.
 -- graph        A named graph of the store. One per file by default. Replaces: data graph, shapes graph, file graph and view graph
 --              as different things. They are graphs with a role.
@@ -377,7 +377,7 @@ law_prefixesRejected b ps = failed (fst (step b (SetPrefixes ps))) == not (valid
 -- 2.6 Imported files and import ------------------------------------------------------
 
 -- | A ws:imported glob marks the model files and view files that it matches as imported. A ws:imported glob sets readOnly
--- (Terms): Catenary reads an imported file and does not change it. Files that no glob matches are own files.
+-- (Glossary): Catenary reads an imported file and does not change it. Files that no glob matches are own files.
 -- "Imported" names the workflow and the files it marks. "readOnly" names the write refusal.
 -- Reason: an official file stays as published, and own additions stay in own files.
 -- A command, an undo or a redo that changes a readOnly file fails as a whole. The failure names the files.
