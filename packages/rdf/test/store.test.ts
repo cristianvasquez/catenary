@@ -401,4 +401,50 @@ describe('store trap (§3.4)', () => {
         expect(changes).toEqual(['files']);
         expect(errors).toHaveBeenCalledTimes(2);
     });
+
+    it('an open after a failed read is a recovery: a healthy snapshot, and a later trap reads the files again', async () => {
+        const { store, stores, errors } = await trappingStore();
+        const workspacePath = store.file!;
+        store.newStore = () => { const s = new TrappingStore(); s.armed = true; stores.push(s); return s; };
+        stores[0].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        await store.idle();
+        expect(store.snapshot().warnings[0]).toMatch(/Restart Catenary/);
+        store.newStore = () => { const s = new TrappingStore(); stores.push(s); return s; };
+        expect(await store.open(workspacePath)).toEqual({ ok: true });
+        expect(stores).toHaveLength(3);
+        const snapshot = store.snapshot();
+        expect(snapshot.warnings).not.toContainEqual(expect.stringMatching(/model index/));
+        expect(snapshot.counts.instances).toBeGreaterThan(0);
+        expect(Object.values(docOf(store).views).map(v => v.label)).toContain('Before the trap');
+        stores[2].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        await store.idle();
+        expect(stores).toHaveLength(4);
+        expect(store.reads.search().length).toBeGreaterThan(0);
+        expect(store.snapshot().warnings.filter(w => w === TRAP_RECOVERED)).toHaveLength(1);
+        expect(errors.mock.calls.filter(c => /WebAssembly trap/.test(String(c[0])))).toHaveLength(2);
+    });
+
+    it('a trap of the new store in a listener of the load, caught by the listener, is a failed read: one error, no success', async () => {
+        const { store, stores, changes } = await trappingStore();
+        store.newStore = () => { const s = new TrappingStore(); stores.push(s); return s; };
+        // The second store traps on its first match after the files are read: a listener reads during changed('load') and swallows the error.
+        store.onDidChange(c => {
+            if (c.reason !== 'load' || stores.length < 2) return;
+            stores[1].armed = true;
+            try { store.reads.search(); } catch { /* a client that hides the error */ }
+        });
+        stores[0].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        await store.idle();
+        expect(stores).toHaveLength(2);
+        const error = 'The model index failed and the files cannot be read again (the model index failed again). Restart Catenary.';
+        expect(() => store.reads.search()).toThrow(error);
+        expect(store.snapshot().warnings).toEqual([error]);
+        expect(changes).toEqual(['load', 'files']);
+        expect(stores[1].callsAfterTrap).toBe(0);
+        await store.idle();
+        expect(stores).toHaveLength(2);
+    });
 });

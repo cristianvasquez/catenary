@@ -186,8 +186,9 @@ export class ModelStore {
      * queue. A trap of another graph (the read after a trap) ends in `recover`. The failing call throws to its caller.
      */
     protected trapped(trap: StoreTrap, guard: TrapGuard): void {
-        if (guard !== this.guard) { if (this.trapState?.recovering) this.trapState.again = true; return; }
-        if (this.trapState) return;
+        // A trap during the read after a trap, of the old or the new store (also in the listeners of the load): the read failed.
+        if (this.trapState?.recovering) { this.trapState.again = true; return; }
+        if (guard !== this.guard || this.trapState) return;
         console.error('[catenary] the model index failed (WebAssembly trap); the files are read again:', trap.cause.stack);
         this.trapState = { recovering: true };
         void this.serial(() => this.recover());
@@ -202,7 +203,7 @@ export class ModelStore {
         } catch (e) {
             r = { ok: false, error: e instanceof Error ? e.message : String(e) };
         }
-        if (!r.ok && this.trapState?.again) r = { ok: false, error: 'the model index failed again' };
+        if (this.trapState?.again || this.guard.trap) r = { ok: false, error: 'the model index failed again' };
         if (r.ok) {
             this.trapState = undefined;
             this.warnings = [...this.warnings, TRAP_RECOVERED];
@@ -678,6 +679,8 @@ export class ModelStore {
         this.saver = new Saver(graph, r.settings, text => this.note(text));
         this.graph = graph;
         this.guard = guard;
+        // An open after a failed recovery is a recovery: the new store answers. The recovery itself clears its state when it ends.
+        if (this.trapState && !this.trapState.recovering) this.trapState = undefined;
         this.history.clear();
         this.validation.reset();
         this.contentChanged();
