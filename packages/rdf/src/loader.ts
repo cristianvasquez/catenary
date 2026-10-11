@@ -106,13 +106,13 @@ export class Loader {
             return false;
         }
         notes.push(...r.warnings);
-        if (r.noWrite) { this.settings.noWrite.set(r.path, r.noWrite); notes.push(`${name}: ${r.noWrite}`); } else this.settings.noWrite.delete(r.path);
+        if (r.readOnlyContent) { this.settings.readOnlyContent.set(r.path, r.readOnlyContent); notes.push(`${name}: ${r.readOnlyContent}`); } else this.settings.readOnlyContent.delete(r.path);
         if (r.kind === 'view') {
             if (this.graph.isView(rdf.namedNode(r.view))) { notes.push(`${name}: not read: the view ${r.view} is in another file too.`); return false; }
             const read = r.triples.map(q => rdf.quad(q.subject, q.predicate, q.object, rdf.namedNode(r.view)));
             const { quads, count } = skolemize(read);
             // A file with blank nodes differs from its saved form: the next save writes the IRIs (not a file that Catenary does not write).
-            const keep = !this.settings.writeProblemOf(r.path);
+            const keep = !this.settings.readOnlyReason(r.path);
             if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
             for (const q of quads) this.graph.add(q.subject, q.predicate, q.object, q.graph);
             this.settings.viewFiles.set(r.view, { path: r.path, saved: canonical((count && keep ? read : quads).map(toTriple)), text: r.text, triples: quads.map(toTriple), blanks: count });
@@ -120,7 +120,7 @@ export class Loader {
         }
         const { quads, count } = skolemize(r.triples);
         // A file that Catenary does not write keeps its blank nodes on disk: its saved form is the read with IRIs.
-        const keep = !this.settings.writeProblemOf(r.path);
+        const keep = !this.settings.readOnlyReason(r.path);
         if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
         const shapes = shapePart(quads), graph = rdf.namedNode(fileGraphIri(r.path)), data = rdf.namedNode(dataGraphIri(r.path));
         this.graph.addDataGraph(data);
@@ -183,7 +183,7 @@ async function readWorkspace(file: string): Promise<{ manifest: Quad[]; warnings
 }
 
 /** Until n3 reads annotations correctly: a file with the annotation syntax is read only (a write could remove statements that the read lost). */
-const NO_WRITE_ANNOTATION = 'has RDF 1.2 annotation syntax ({| … |}); the reader (n3 2.7.12) can lose statements after it (rdfjs/N3.js #677, #673). Read only: Catenary does not write this file.';
+const READ_ONLY_ANNOTATION = 'has RDF 1.2 annotation syntax ({| … |}); the reader (n3 2.7.12) can lose statements after it (rdfjs/N3.js #677, #673). Read only: Catenary does not write this file.';
 
 /**
  * The views that RDF quads declare: the subjects of `rdf:type view:View`, in any graph (a SPARQL query on the quads of one file).
@@ -223,16 +223,16 @@ async function readModelFile(file: string): Promise<FileRead> {
         text = await readText(file);
         const quads = await parseRdf(text, file);
         triples = quads.map(toTriple);
-        const noWrite = /\.(ttl|trig)$/i.test(file) && await hasAnnotation(text) ? NO_WRITE_ANNOTATION : undefined;
+        const readOnlyContent = /\.(ttl|trig)$/i.test(file) && await hasAnnotation(text) ? READ_ONLY_ANNOTATION : undefined;
         if (isViewFile(file) || declaredViews(quads).length) {
             if (!/\.trig$/i.test(file)) return { kind: 'error', path: file, error: 'a view must be in a TriG file, in a graph named by the view IRI.' };
             const problem = viewProblem(quads);
             if (problem) return { kind: 'error', path: file, error: problem };
-            return { kind: 'view', path: file, view: quads[0].graph.value, triples, text, warnings: [], noWrite };
+            return { kind: 'view', path: file, view: quads[0].graph.value, triples, text, warnings: [], readOnlyContent };
         }
         const named = quads.filter(q => q.graph.termType !== 'DefaultGraph').length;
         const warnings = named ? [`${path.basename(file)}: ${named} statements in named graphs are read without the graph names; a write writes them so.`] : [];
-        return { kind: 'model', path: file, triples, text, warnings, noWrite };
+        return { kind: 'model', path: file, triples, text, warnings, readOnlyContent };
     } catch (e) {
         return { kind: 'error', path: file, error: (e as Error).message };
     }

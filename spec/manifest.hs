@@ -468,7 +468,7 @@ modelStatements b = nub [Quad s p o (graphIri ModelGraph) | Quad s p o g <- stor
 -- Reason: file graph patches preserve ownership through undo without a separate history.
 origin :: Quad -> Tx [FilePath]
 priorOrigin, subjectFile, referrerFile :: Quad -> Tx (Maybe FilePath)
-readOnlyFile :: FilePath -> Tx Bool
+readOnlyFile :: FilePath -> Tx Bool   -- Settings.readOnlyReason: format, then content, then an import mark (§2.6)
 currentSettings :: Tx WorkspaceSettings
 fileForAdd :: Quad -> Tx FilePath
 fileForAdd q = do

@@ -92,7 +92,7 @@ export function placeChanges(g: ModelGraph, settings: Settings): void {
         const files = prior.length ? prior : [...nearFiles(g, q.subject) ?? []];
         if (!files.length && !fallback) return undefined;
         const place = () => placeOf(g, settings.placement, file => settings.placeFile(file), q.subject);
-        return [...new Set((files.length ? files : [place()]).map(f => settings.writeProblemOf(f) ? settings.defaultFile : f))];
+        return [...new Set((files.length ? files : [place()]).map(f => settings.readOnlyReason(f) ? settings.defaultFile : f))];
     });
 }
 

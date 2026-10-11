@@ -168,8 +168,8 @@ export class Saver {
         const s = this.settings, saved = tracer.span('file', 'saved state', () => this.savedState());
         const problem = [...saved.files].map(f => writeProblem(f)).find(p => !!p);
         if (problem) return { ok: false, error: `${problem}. Convert the file to Turtle first.` };
-        const kept = [...saved.files, ...[...saved.views].map(v => s.viewFiles.get(v)?.path)].find(f => f && s.noWrite.has(f));
-        if (kept) return { ok: false, error: `${path.basename(kept)}: ${s.noWrite.get(kept)}` };
+        const kept = [...saved.files, ...[...saved.views].map(v => s.viewFiles.get(v)?.path)].map(f => f && s.readOnlyContentReason(f)).find(p => !!p);
+        if (kept) return { ok: false, error: kept };
         // Read the content now: edits during the writes do not count as saved.
         const now = this.current();
         type Write = { file: string; text: string; done: () => void };
@@ -315,7 +315,7 @@ export class Saver {
      * `diff`: the changes since the last write, when known: then the patch reads only their blocks.
      */
     protected async fileText(f: OnDisk & { path: string }, triples: Quad[], expected: string, graph?: NamedNode, diff?: StatementDiff): Promise<string> {
-        const problem = this.settings.writeProblemOf(f.path);
+        const problem = this.settings.readOnlyReason(f.path);
         if (problem) throw new Error(problem);
         // Undefined: not on disk (a new file, or removed): write it.
         const disk = await readUnchanged(f.path, f.text);
