@@ -1,14 +1,29 @@
 {
   "name": "rdf-files",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "RDF files on disk and an in-memory quad store: formats, canonical write, Turtle text patches, folder watch, atomic writes, git commits. Node only. No Catenary dependency.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cristianvasquez/catenary.git",
+    "directory": "packages/rdf-files"
+  },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./grammars/*": "./grammars/*"
+  },
   "files": [
     "lib",
     "src",
-    "grammars"
+    "grammars",
+    "readme.md"
   ],
   "scripts": {
     "build": "tsc -b",

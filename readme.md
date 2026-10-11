@@ -25,6 +25,7 @@ Read in this order, from overview to detail:
 | [Interaction contract](spec/ui-manifest.hs) | Interaction rules, keys, selection, panels, controls |
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
 | [Agent guide](AGENTS.md) | Work rules for agents and documentation style |
+| [rdf-files](packages/rdf-files/readme.md) | The RDF files package: modules, WASM files, grammar build, limits, tests |
 
 The contracts are Haskell modules. The optional `pnpm check:manifests` target typechecks them with GHC. It skips the check when GHC is absent. A mismatch of names or types fails when GHC is available.
 
