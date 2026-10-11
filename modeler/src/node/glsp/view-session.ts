@@ -214,13 +214,17 @@ export class ViewSession {
 
     /**
      * Run an edit for this session. The session sends its own update first, then `followUp`
-     * (for example a selection of the created element). Errors go to the client as a message.
+     * (for example a selection of the created element). Errors go to the client as a message: a rejected command with the model, a
+     * command that threw (for example a trap of the store, §3.4) as one warning without a model (the store may be unreadable).
      */
     async edit(command: EditCommand, followUp?: (r: CommandResult & { ok: true }) => Action[]): Promise<void> {
         this.muted = true;
         let r: CommandResult;
         try {
             r = this.store.execute(command);
+        } catch (e) {
+            await this.dispatcher.dispatchAll([MessageAction.create(`"${command.kind}" failed in the backend: ${e instanceof Error ? e.message : String(e)}`, { severity: 'WARNING' })]);
+            return;
         } finally {
             this.muted = false;
         }

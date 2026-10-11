@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NS, boxes, cardOf, iriId } from '@catenary/model';
-import { ModelChange, ModelStore } from '../src/model-store';
+import { ModelChange, ModelStore, TRAP_RECOVERED } from '../src/model-store';
+import { OxigraphStore } from 'rdf-files';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
 
@@ -324,5 +325,80 @@ describe('patch notification integration', () => {
             expect(store.snapshot()).toMatchObject({ canUndo: false, dirty: false });
             await store.idle();
         } finally { store.close(); }
+    });
+});
+
+/** An Oxigraph store that traps as the WASM store does: a `RuntimeError: unreachable` once `armed`, then a panic on each later call. */
+class TrappingStore extends OxigraphStore {
+    armed = false;
+    trapped = false;
+    callsAfterTrap = 0;
+    protected check(): void {
+        if (this.trapped) { this.callsAfterTrap++; throw new WebAssembly.RuntimeError('unreachable'); }
+        if (this.armed) { this.trapped = true; throw new WebAssembly.RuntimeError('unreachable'); }
+    }
+    override match(...a: Parameters<OxigraphStore['match']>) { this.check(); return super.match(...a); }
+    override select(query: string) { this.check(); return super.select(query); }
+    override add(q: Parameters<OxigraphStore['add']>[0]) { this.check(); super.add(q); }
+}
+
+describe('store trap (§3.4)', () => {
+    /** A store on the fixture workspace whose quad stores are TrappingStores, with one view edit in the undo history. */
+    async function trappingStore() {
+        const { a } = workspace();
+        const stores: TrappingStore[] = [];
+        const store = new ModelStore();
+        store.watching = false;
+        store.newStore = () => { const s = new TrappingStore(); stores.push(s); return s; };
+        expect(await store.open(a)).toEqual({ ok: true });
+        expect(store.execute({ kind: 'createView', label: 'Before the trap' }).ok).toBe(true);
+        await store.idle();
+        expect(store.canUndo).toBe(true);
+        const changes: string[] = [];
+        store.onDidChange(c => changes.push(c.reason));
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        return { store, stores, changes, errors };
+    }
+
+    it('law_trapReadsFilesOnce: after a trap the store reads the files again, answers the next query, clears undo and warns once', async () => {
+        const { store, stores, changes, errors } = await trappingStore();
+        expect(stores).toHaveLength(1);
+        const before = store.reads.search();
+        stores[0].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        expect(store.snapshot().warnings).toEqual(['The model index failed. The files are read again.']);
+        await store.idle();
+        expect(stores).toHaveLength(2);
+        expect(stores[0].callsAfterTrap).toBe(0);
+        expect(store.reads.search()).toEqual(before);
+        expect(Object.values(docOf(store).views).map(v => v.label)).toContain('Before the trap');
+        expect(store.canUndo).toBe(false);
+        expect(store.snapshot().warnings.filter(w => w === TRAP_RECOVERED)).toHaveLength(1);
+        expect(changes).toEqual(['load', 'files']);
+        expect(errors.mock.calls.filter(c => /WebAssembly trap/.test(String(c[0])))).toHaveLength(1);
+        expect(String(errors.mock.calls[0][1])).toMatch(/RuntimeError: unreachable/);
+        expect(store.execute({ kind: 'createView', label: 'After the trap' }).ok).toBe(true);
+        await store.idle();
+        expect(stores).toHaveLength(2);
+    });
+
+    it('law_trapReadsFilesOnce: a trap during the read of the files stops with one error and reads no more', async () => {
+        const { store, stores, changes, errors } = await trappingStore();
+        store.newStore = () => { const s = new TrappingStore(); s.armed = true; stores.push(s); return s; };
+        stores[0].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        await store.idle();
+        expect(stores).toHaveLength(2);
+        const error = 'The model index failed and the files cannot be read again (the model index failed again). Restart Catenary.';
+        expect(() => store.reads.search()).toThrow(error);
+        // A transaction turns the trap into its error result (graph.ts transact): the client shows it as a warning.
+        expect(store.execute({ kind: 'createView', label: 'Dead' })).toEqual({ ok: false, error });
+        await store.idle();
+        expect(stores).toHaveLength(2);
+        expect(stores[0].callsAfterTrap).toBe(0);
+        expect(stores[1].callsAfterTrap).toBe(0);
+        expect(store.snapshot().warnings).toEqual([error]);
+        expect(changes).toEqual(['files']);
+        expect(errors).toHaveBeenCalledTimes(2);
     });
 });

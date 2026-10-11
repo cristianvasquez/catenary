@@ -140,7 +140,7 @@ Paths are relative to the directory in the first column.
 | | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
-| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `terms.ts` | Quad store port, Oxigraph store, term keys |
+| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `trap.ts`, `terms.ts` | Quad store port, Oxigraph store, the trap guard (a WebAssembly trap stops the store; ModelStore then reads the files again, manifest §3.4), term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore exposes PanelReads for query dispatch and wires file operations through ports. History records final file graphs, including transfers. |

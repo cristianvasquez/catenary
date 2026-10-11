@@ -1,6 +1,7 @@
 // rdf-files: RDF files on disk and an in-memory quad store.
 
 export * from './store';
+export * from './trap';
 export * from './oxigraph-store';
 export * from './terms';
 export * from './paths';

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, ModelSubmissionHandler, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
+    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, MessageAction, ModelSubmissionHandler, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
 import { EditCommand, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
@@ -363,6 +363,14 @@ describe('model changes reaching view clients', () => {
         store.undo();
         await a.flushed();
         expect(a.elements().find(e => e.id === reference)).toMatchObject({ name: 'Renamed target' });
+    });
+
+    it('sends an error thrown by an edit to the client as one warning, without a model (§3.4)', async () => {
+        const a = await client(store, first);
+        vi.spyOn(store, 'execute').mockImplementation(() => { throw new Error('The model index failed. The files are read again.'); });
+        await a.session.edit({ kind: 'removeFromView', view: first, ids: [instance] });
+        expect(a.sent).toHaveLength(1);
+        expect(a.sent[0]).toMatchObject({ kind: MessageAction.KIND, severity: 'WARNING', message: '"removeFromView" failed in the backend: The model index failed. The files are read again.' });
     });
 
     it('clears dirty state on save and stops sending updates after the client disconnects', async () => {

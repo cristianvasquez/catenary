@@ -543,6 +543,25 @@ law_readsChangeNothing :: Backend -> Iri -> Bool
 law_readsChangeNothing b v = storeQuads (snd (runRead b (viewDoc v))) == storeQuads b
 runRead :: Backend -> IO a -> (a, Backend)
 
+-- 3.4 Store failure ---------------------------------------------------------------
+
+-- | Oxigraph runs as WebAssembly. A trap (RuntimeError "unreachable", also after a Rust panic) leaves the store locked: each later
+-- call of that store panics. The trap guard (rdf-files trap.ts) is the one place that detects a trap. It answers each later call
+-- with the same StoreTrap and makes no call of the store. The failing call fails with that error, shown to the client as one warning.
+-- After the first trap, ModelStore builds a new store and reads the workspace again from the files, once, in the file queue, as an
+-- open does (law_openClearsHistory). One warning of the snapshot says it. A trap during that read stops with one error: no further
+-- read, no retry on a later call, and the watcher stops. Reason: the files are the source of truth (ADR 0003), and a retry on each
+-- call would loop. At most the unwritten write queue is lost (§10.1: each edit is written at once).
+data StoreHealth = Healthy | Reading | Down String deriving Eq   -- Down: the message of each later call
+storeHealth :: Backend -> StoreHealth
+trapCount :: Backend -> Int                                      -- traps of the store so far
+trapReads :: Backend -> Int                                      -- reads of the files after a trap so far
+storeCallsAfterTrap :: Backend -> Int                            -- calls that reached a store after its trap
+law_trapReadsFilesOnce :: Backend -> Op -> Bool
+law_trapReadsFilesOnce b op = let b' = snd (step b op) in trapReads b' <= min 1 (trapCount b')
+law_trapStopsStoreCalls :: Backend -> Op -> Bool
+law_trapStopsStoreCalls b op = storeCallsAfterTrap (snd (step b op)) == 0
+
 -- 4. Views in RDF ------------------------------------------------------------
 
 -- 4.1 Notations and placements ----------------------------------------------------
@@ -1715,6 +1734,10 @@ manifestOnly :: a
 manifestOnly = error "signature-level manifest only"
 
 modelRdf = manifestOnly
+storeHealth = manifestOnly
+trapCount = manifestOnly
+trapReads = manifestOnly
+storeCallsAfterTrap = manifestOnly
 clipboardHasNamedGraphs = manifestOnly
 copiedDomainRdf = manifestOnly
 isPlacementQuad = manifestOnly

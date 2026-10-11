@@ -15,7 +15,8 @@ import {
 } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
-import { OxigraphStore, SerialQueue, isInside, portableRelative } from 'rdf-files';
+import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, portableRelative } from 'rdf-files';
+import type { StoreTrap } from 'rdf-files';
 import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
@@ -99,8 +100,17 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
+/** The warning of a snapshot after a trap of the store and a read of the files (§3.4). */
+export const TRAP_RECOVERED = 'The model index failed and was read again from the files. Undo history was cleared.';
+
 export class ModelStore {
-    protected graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+    /** Builds the quad store of a graph. A test replaces it with a store that traps. */
+    newStore: () => QuadStore = () => new OxigraphStore();
+    /** The trap guard of `graph` (rdf-files trap.ts): the one place that detects a WebAssembly trap of the store. */
+    protected guard!: TrapGuard;
+    protected graph = this.newGraph().graph;
+    /** The state after a trap of the store (§3.4). `error`: the read of the files failed too; no further read. Undefined: no trap. */
+    protected trapState?: { recovering: boolean; again?: boolean; error?: string };
     protected metamodel: Metamodel = emptyMetamodel();
     warnings: string[] = [];
     /** The open workspace: its files and the dataset. Undefined: none is open. */
@@ -162,6 +172,59 @@ export class ModelStore {
     onDidChange(listener: Listener): { dispose(): void } {
         this.listeners.add(listener);
         return { dispose: () => this.listeners.delete(listener) };
+    }
+
+    /** A new graph on a new quad store behind a trap guard. The guard becomes `this.guard` when the graph becomes `this.graph`. */
+    protected newGraph(): { graph: ModelGraph; guard: TrapGuard } {
+        const guard: TrapGuard = new TrapGuard(this.newStore(), trap => this.trapped(trap, guard));
+        this.guard ??= guard;
+        return { graph: new ModelGraph(new TracedStore(guard)), guard };
+    }
+
+    /**
+     * The store trapped (§3.4 law_trapReadsFilesOnce): the first trap of the current graph starts one read of the files, in the file
+     * queue. A trap of another graph (the read after a trap) ends in `recover`. The failing call throws to its caller.
+     */
+    protected trapped(trap: StoreTrap, guard: TrapGuard): void {
+        if (guard !== this.guard) { if (this.trapState?.recovering) this.trapState.again = true; return; }
+        if (this.trapState) return;
+        console.error('[catenary] the model index failed (WebAssembly trap); the files are read again:', trap.cause.stack);
+        this.trapState = { recovering: true };
+        void this.serial(() => this.recover());
+    }
+
+    /** Build a new store and read the workspace again from the files (the source of truth, ADR 0003). A second trap stops with one error. */
+    protected async recover(): Promise<void> {
+        const ws = this.settings;
+        let r: CommandResult;
+        try {
+            r = ws && !ws.gone ? await this.doOpen(ws.path, ws.workspace.text === undefined) : { ok: false, error: 'no workspace is open' };
+        } catch (e) {
+            r = { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+        if (!r.ok && this.trapState?.again) r = { ok: false, error: 'the model index failed again' };
+        if (r.ok) {
+            this.trapState = undefined;
+            this.warnings = [...this.warnings, TRAP_RECOVERED];
+            this.changed('files');
+            return;
+        }
+        const error = `The model index failed and the files cannot be read again (${r.error}). Restart Catenary.`;
+        console.error(`[catenary] ${error}`);
+        this.trapState = { recovering: false, error };
+        this.guard.fail(error);
+        this.close();
+        // The graph cannot be read: notify the clients without a scope. The snapshot is the trap snapshot.
+        for (const l of [...this.listeners]) l({ reason: 'files', event: this.graph.change });
+    }
+
+    /** The snapshot while the store is down: no read of the graph. */
+    protected trapSnapshot(warning: string): ModelSnapshot {
+        return {
+            revision: this.revision, file: this.file, files: { files: [], views: [] }, shapesVersion: this.shapesVersion, meta: this.meta,
+            counts: { instances: 0, results: 0, violations: 0 }, warnings: [warning], migrations: [], movedIds: {},
+            prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes }, dirty: false, canUndo: false, canRedo: false
+        };
     }
 
     protected cached<K extends 'placements' | 'instances' | 'explorer' | 'readWarnings'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
@@ -321,6 +384,7 @@ export class ModelStore {
     protected lastChange?: SnapshotChange;
 
     snapshot(): ModelSnapshot {
+        if (this.trapState) return this.trapSnapshot(this.trapState.error ?? TRAP_MESSAGE);
         return {
             revision: this.revision,
             ...(this.lastChange ? { change: this.lastChange } : {}),
@@ -605,7 +669,7 @@ export class ModelStore {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
-        const graph = new ModelGraph(new TracedStore(new OxigraphStore()));
+        const { graph, guard } = this.newGraph();
         const r = await openWorkspace(graph, primaryPath, ofFolder);
         if ('error' in r) return { ok: false, error: r.error };
         if (this.settings) this.settings.retired = true;
@@ -613,6 +677,7 @@ export class ModelStore {
         this.loader = r.loader;
         this.saver = new Saver(graph, r.settings, text => this.note(text));
         this.graph = graph;
+        this.guard = guard;
         this.history.clear();
         this.validation.reset();
         this.contentChanged();
