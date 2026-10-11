@@ -45,8 +45,17 @@ export class SelectionModel {
         const ids = [...new Set(s.ids)];
         if (s.view === this.current.view && sameIds(ids, this.current.ids)) return;
         this.current = { view: s.view, ids };
-        this.onDidChangeEmitter.fire(this.current);
+        // The quiet read is scheduled before the listeners run: a listener that follows the selection joins it (whenResolved).
         void this.schedule();
+        this.onDidChangeEmitter.fire(this.current);
+    }
+
+    /**
+     * The facts of the current selection as a panel that follows it needs them: the scheduled quiet read when one is pending, else
+     * the answer or a read at once. A listener of onDidChange uses this, not `resolve()`, so a marquee sends one read.
+     */
+    whenResolved(): Promise<Selected> {
+        return this.quiet?.done ?? this.resolve();
     }
 
     /**
@@ -82,13 +91,18 @@ export class SelectionModel {
         if (this.answer.selection === selection && this.answer.revision === revision && this.answer.epoch === epoch) return Promise.resolve(this.answer.value);
         const flying = this.inFlight;
         if (flying && flying.selection === selection && flying.revision === revision && flying.epoch === epoch) return flying.promise;
+        const landed = () => { if (this.inFlight?.promise === promise) this.inFlight = undefined; };
         const promise: Promise<Selected> = this.model.service.selected(selection).then(value => {
-            if (this.inFlight?.promise === promise) this.inFlight = undefined;
+            landed();
             // The selection or the model changed meanwhile: the answer of the current selection, after its quiet time when one runs.
             if (this.current !== selection || this.resolutionEpoch !== epoch) return this.quiet?.done ?? this.resolve();
             this.answer = { selection, revision: this.model.snapshot.revision, epoch, value };
             this.onDidResolveEmitter.fire(value);
             return value;
+        }, (e: unknown) => {
+            // A failed read is not kept: the next resolve() asks again. The callers of this one get the error.
+            landed();
+            throw e;
         });
         this.inFlight = { selection, revision, epoch, promise };
         return promise;

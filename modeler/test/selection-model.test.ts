@@ -193,6 +193,42 @@ describe('selection model', () => {
         }
     });
 
+    it('law_selectionReadsLastOnly: a panel that follows the selection (the Model explorer) joins the quiet read, so a marquee sends one read', async () => {
+        vi.useFakeTimers();
+        try {
+            const { s, model } = selectionModel();
+            const selected = vi.spyOn(model.service, 'selected');
+            // The listener of model-explorer.tsx showSelection: the facts of the selection on each change.
+            const shown: string[][] = [];
+            s.onDidChange(() => void s.whenResolved().then(r => shown.push(r.instances)));
+            s.set({ view: 'A', ids: ['a'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'A', ids: ['a', 'b'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'B', ids: ['a', 'c'] });
+            expect(selected).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS);
+            expect(selected.mock.calls.map(([sel]) => sel.ids)).toEqual([['a', 'c']]);
+            expect(shown).toEqual([['a', 'c'], ['a', 'c'], ['a', 'c']]);
+            // Without a pending quiet read, whenResolved gives the answer without a request.
+            expect((await s.whenResolved()).instances).toEqual(['a', 'c']);
+            expect(selected).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('a rejected read is not kept: the next resolve of the same selection asks again', async () => {
+        const { s, model } = selectionModel();
+        s.set({ ids: ['a'] });
+        const good = model.service.selected;
+        model.service.selected = () => Promise.reject(new Error('backend down'));
+        await expect(s.resolve()).rejects.toThrow('backend down');
+        model.service.selected = good;
+        expect((await s.resolve()).instances).toEqual(['a']);
+        expect(s.resolved.instances).toEqual(['a']);
+    });
+
     it('an answer for an older selection does not replace the resolved selection', async () => {
         const { s } = selectionModel();
         s.set({ ids: ['a'] });

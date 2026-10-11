@@ -310,7 +310,8 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
      */
     protected async showSelection(): Promise<void> {
         const selection = this.elements.selection;
-        const { elements } = await this.elements.resolve();
+        // Join the quiet read of the selection (law_selectionReadsLastOnly): no read of each step of a marquee.
+        const { elements } = await this.elements.whenResolved();
         if (this.elements.selection !== selection) return;
         const nodes = [...new Set(elements.flatMap(id => this.nodesOf(id)).filter(n => this.isShown(n)))];
         const current = this.selectedNodes.filter(n => CatenaryNode.isElement(n)).map(n => n.id);
