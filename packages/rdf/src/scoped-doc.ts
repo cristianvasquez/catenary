@@ -1,10 +1,10 @@
 import { shapeTargetMatches } from './shacl-targets';
 // Request-scoped read models (ADR 0012): a Doc with only the elements, neighbors and views that one request needs, from SPARQL rows.
-// The store builds one for each request and keeps none. The records use the rules of project.ts (`instanceRecords`) and view-read.ts.
+// The store builds one for each request and keeps none. The records use the rules of records.ts (`instanceRecords`) and view-read.ts.
 // Every view has an entry: the views that the scope does not read have their label only (no boxes, edges or arrows).
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { Doc, NS, ShapesModel, View, boxes, elementOfId, emptyDoc } from '@catenary/model';
+import { Doc, NS, ShapesModel, View, boxes, emptyDoc } from '@catenary/model';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';

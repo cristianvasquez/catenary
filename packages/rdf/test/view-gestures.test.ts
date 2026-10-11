@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-    Doc, EdgeLayout, View, arrowProblem, boxOf, boxShowing, boxes, broaderProblem, cardOf, conceptParents, edgeLayout, elementLabel, freeRelations, isHidden,
+    EdgeLayout, View, arrowProblem, boxOf, boxShowing, boxes, broaderProblem, cardOf, conceptParents, edgeLayout, elementLabel, freeRelations, isHidden,
     isValueSetMember, placementOfId, predicateName, propertyTargetProblem, reconnectProblem, relationLabel, relationsInView, viewsShowing
 } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
@@ -34,7 +34,7 @@ async function open(dcat: boolean): Promise<void> {
 }
 
 /** The candidate ids that a canvas sends: the card elements of what the view shows, the box ids, and '' (no id). */
-const cardsOf = (doc: Doc, v: View) => [...new Set(boxes(v, 'card').map(n => n.element)), ''];
+const cardsOf = (v: View) => [...new Set(boxes(v, 'card').map(n => n.element)), ''];
 const boxesOf = (v: View) => [...v.boxes.map(b => b.kind === 'card' ? b.element : b.id), ''];
 const expected = (ids: string[], problem: (id: string) => string | undefined) => Object.fromEntries(ids.map(id => [id, problem(id) ?? '']));
 
@@ -46,7 +46,7 @@ describe('view editor gestures from the backend (ADR 0007 step 5)', () => {
         const note = store.execute({ kind: 'createNote', view: v.id, text: 'N', at: { x: 0, y: 0 } });
         expect(note.ok).toBe(true);
         const d = docOf(store), view = d.views[v.id];
-        const cards = cardsOf(d, view), all = boxesOf(view);
+        const cards = cardsOf(view), all = boxesOf(view);
         const [a] = boxes(view, 'card');
         const r = Object.values(d.relations).find(x => relationsInView(d, view).includes(x))!;
         const link = store.reads.viewGesture(v.id, { kind: 'link', source: a.element, cards, boxes: all });
@@ -79,7 +79,7 @@ describe('view editor gestures from the backend (ADR 0007 step 5)', () => {
         await open(true);
         const d = docOf(store), meta = store.meta, { shapes } = d;
         const view = Object.values(d.views).find(x => boxes(x, 'card').some(n => shapes.nodeShapes[n.element]))!;
-        const cards = cardsOf(d, view);
+        const cards = cardsOf(view);
         const shape = boxes(view, 'card').find(n => shapes.nodeShapes[n.element])!.element;
         const p = shapes.properties[shapes.nodeShapes[shape].properties[0]];
         expect(store.reads.viewGesture(view.id, { kind: 'shapeLink', source: shape, cards, boxes: [] }).problems.cards).toEqual(expected(cards, c => propertyTargetProblem(shapes, c)));

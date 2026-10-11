@@ -14,11 +14,6 @@ import type { ShapesIndex } from './shapes-read';
 import { labels } from './sparql';
 import { rdf, termKey } from './terms';
 
-/**
- * The explorer reads the graphs of one file. `ExplorerScope` is kept only for the unused cache entry of model-store.ts
- * (`explorerScopes`): remove both together.
- */
-export type ExplorerScope = unknown;
 export interface ExplorerContext { g: ModelGraph; idx: ShapesIndex; settings?: Settings; folder: string }
 
 /** The sections of the Model explorer, in display order. */

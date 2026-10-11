@@ -12,10 +12,10 @@ export function globRegExp(glob: string): RegExp {
 }
 
 /** RDF file extensions, without `.xml` (other XML files are common). */
-export const LISTED_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions).filter(e => e !== '.xml');
+const LISTED_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions).filter(e => e !== '.xml');
 
 /** Names that `listRdfFiles` does not enter or list by default: hidden files and folders, `node_modules`, `*.bak`. */
-export const skipName = (name: string, folder: boolean) => name.startsWith('.') || (folder ? name === 'node_modules' : name.endsWith('.bak'));
+const skipName = (name: string, folder: boolean) => name.startsWith('.') || (folder ? name === 'node_modules' : name.endsWith('.bak'));
 
 export interface ListOptions {
     /** Globs relative to the root folder, with `/`. A match is not listed. */

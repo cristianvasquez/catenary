@@ -9,7 +9,7 @@ import {
 import { absolutePath, pathKey } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
-import { ExplorerContext, ExplorerScope, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
+import { ExplorerContext, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
 import { enclosingWorkspace, positionIn } from './files';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
@@ -40,8 +40,6 @@ export interface ReadContext {
     shapesIndex(): ShapesIndex;
     scoped(scope: DocScope): Doc;
     viewDoc(view: string): Doc;
-    /** Unused: the explorer keeps no cache across requests. Remove with the entry in model-store.ts. */
-    explorerScopes?(): Map<string, ExplorerScope>;
 }
 
 /**

@@ -7,7 +7,8 @@ import { NTerm, Violation, nkey } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { ModelGraph, VALIDATION_GRAPH } from '../src/graph';
 import { ModelStore, violationScope } from '../src/model-store';
-import { LAYOUT_PREDICATES, readNotations, storeIndex, storeInput } from '../src/notations';
+import { LAYOUT_PREDICATES } from '../src/change';
+import { readNotations, storeIndex, storeInput } from '../src/notations';
 import { rdf } from '../src/terms';
 
 const n = (l: string) => rdf.namedNode('urn:x:' + l);

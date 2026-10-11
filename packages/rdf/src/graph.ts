@@ -19,7 +19,7 @@ import { rdf, termKey, tripleKey } from './terms';
  * (workspace files, test fixtures), and the model graph when there is no data file.
  */
 export const MODEL_GRAPH = 'urn:name:model';
-export { LAYOUT_PREDICATES, VALIDATION_GRAPH } from './change';
+export { VALIDATION_GRAPH } from './change';
 
 /** Store graph of a file: this prefix and the encoded absolute path. */
 export const FILE_GRAPH_PREFIX = 'urn:shapes:';

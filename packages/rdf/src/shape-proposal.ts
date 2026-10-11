@@ -22,10 +22,9 @@ export function shapedClasses(g: ModelGraph): Set<string> {
     return new Set(g.shapesQuads().filter(q => q.predicate.equals(S.targetClass) && q.object.termType === 'NamedNode').map(q => q.object.value));
 }
 
-/** The IRI types of the model graph that no node shape targets, sorted. `of`: the types of these subjects only. */
-export function unshapedClasses(g: ModelGraph, of?: NamedNode[]): string[] {
+/** The IRI types of the model graph that no node shape targets, sorted. */
+export function unshapedClasses(g: ModelGraph): string[] {
     const shaped = shapedClasses(g);
-    if (of) return [...new Set([...unshapedClassesOf(g, shaped, of.map(t => t.value)).values()].flat())].sort();
     const quads = g.match(null, P.type, null, g.model);
     const classes = new Set(quads.filter(q => q.object.termType === 'NamedNode').map(q => q.object.value));
     return [...classes].filter(c => !shaped.has(c) && shapeable(c)).sort();

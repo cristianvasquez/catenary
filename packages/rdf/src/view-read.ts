@@ -1,8 +1,8 @@
 // The input of the view diagram (ADR 0007 step 5): the Doc of one view, from SPARQL rows of its view graph and of the model,
 // without a projection of a part store. Rows per part: placements of the view graph (cards, placed edges, arrows, references),
 // the marks they place (frames, notes, file references, collections, in any graph), the statements of the placed elements, the
-// views that the part names (labels), the arrow statements. The rows become records with the rules of project.ts
-// (`instanceRecords`, `projectView`), so the view diagram and the read model of the whole model have one rule each.
+// views that the part names (labels), the arrow statements. The rows become records with the rules of records.ts
+// (`instanceRecords`, `projectView`), so the view diagram and the request-scoped read models (scoped-doc.ts) have one rule each.
 
 import type { NamedNode, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, emptyDoc } from '@catenary/model';
@@ -299,7 +299,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     return doc;
 }
 
-/** Label of every view (view id → label): the rule of project.ts (the first view:View subject of the graph; rdfs:label, else from the IRI). */
+/** Label of every view (view id → label): the first view:View subject of the graph; rdfs:label, else from the IRI. */
 export function viewLabels(g: ModelGraph): Record<string, string> {
     const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => `<${t.value}>`).join(', ');
     const subjects = new Map<string, Map<string, { v: string; labels: string[] }>>();

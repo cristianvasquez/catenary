@@ -63,7 +63,7 @@ function subjectOf(g: ViewGesture): string | undefined {
 
 /**
  * The problems of the candidate targets of gesture `g` in `view` (the stored view), with the rules that the canvas used: the same
- * functions on the read model `doc` of the whole model. An undefined problem is ''.
+ * functions on the read model `doc` of the gesture elements and the view (PanelReads.viewGesture). An undefined problem is ''.
  */
 export function viewGesture(doc: Doc, meta: Classes & { concepts?: ConceptDef[] }, view: View | undefined, g: ViewGesture): GestureInfo {
     const { shapes } = doc;

@@ -1,11 +1,10 @@
 import { TargetMatch } from '@catenary/shacl/common';
-import type { ExplorerScope } from './explorer';
 import { PanelReads } from './panel-reads';
 import { applicabilityOf } from './queries';
-import { filesOfElement } from './selection';
 // The model store: one RDF dataset (ModelGraph), shared by all diagram sessions and by the frontend. It coordinates the parts:
 // the files on disk and the dataset read from them (settings.ts, loader.ts, reconciler.ts, placement.ts, saver.ts), undo and the patch queue (history.ts), validation
-// (validation-runner.ts), and the read models of the panels and editors, built for each request (ADR 0012: no shared Doc).
+// (validation-runner.ts), the read models of the panels, built for each request (ADR 0012: no Doc of the whole dataset), and the
+// reads that it keeps across changes and brings up to date from each patch (change.ts, manifest §11.3).
 // All edits go through `execute` (one EditCommand = one transaction = one patch = one undo step). File operations run one at a time.
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
@@ -13,11 +12,9 @@ import {
     ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
     ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, cardOf, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
-import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
 import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, oxigraphMemoryBytes, portableRelative } from 'rdf-files';
 import type { StoreTrap } from 'rdf-files';
-import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
@@ -43,8 +40,6 @@ import { TracedStore, tracer } from './trace';
 import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
 import { readView } from './view-read';
-
-export type { ChangeReason };
 
 /** A patch with more quads than this (a load, a file read) reads the hidden neighbor counts of each view again. */
 const NEIGHBOR_PATCH_LIMIT = 2000;
@@ -130,8 +125,8 @@ export class ModelStore {
     get shapesVersion(): number { return this.graph.keys.shapes.sequence; }
     get revision(): number { return this.graph.change.sequence; }
     protected notified?: GraphChange;
-    /** Reads that placement geometry and reports cannot change. */
-    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = {};
+    /** The instance count of the current data event (ModelGraph.keys.data). */
+    protected cache: { event?: GraphChange; instances?: number } = {};
     /** The dataset warnings of the snapshot, kept between changes (scoped-doc.ts DatasetWarnings). */
     protected readonly datasetWarnings = new DatasetWarnings();
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
@@ -229,7 +224,7 @@ export class ModelStore {
         };
     }
 
-    protected cached<K extends 'placements' | 'instances' | 'explorer'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
+    protected cached<K extends 'instances'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
         const event = this.graph.keys.data;
         if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
@@ -241,8 +236,7 @@ export class ModelStore {
         return new PanelReads({
             get graph() { return store.graph; }, get metamodel() { return store.metamodel; },
             get settings() { return store.settings; }, get folder() { return store.folder; }, get file() { return store.file; },
-            shapesIndex: () => this.shapesIndex(), scoped: scope => this.scoped(scope), viewDoc: view => this.viewDoc(view),
-            explorerScopes: () => this.cached('explorer', () => new Map())
+            shapesIndex: () => this.shapesIndex(), scoped: scope => this.scoped(scope), viewDoc: view => this.viewDoc(view)
         });
     })();
 
@@ -337,14 +331,6 @@ export class ModelStore {
     }
 
     protected applicabilityOf(view: View): TargetMatch[] { return applicabilityOf(this.graph, view); }
-
-    /**
-     * The files with statements of an element (Open in → Source, spec 0.4): the triples with the element as subject; a relation: its
-     * triple; no such triples: the triples with it as object. Most statements first.
-     */
-    filesOfElement(id: string): string[] {
-        return filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
-    }
 
     /**
      * The classification of a patch (change.ts classify, §11.3): its tier, scope, and whether validation runs. In the validation mode

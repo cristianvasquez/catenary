@@ -171,7 +171,7 @@ export function homesAmong(g: ModelGraph, iris: Iterable<string>): Map<string, s
 
 /**
  * The statements of several terms with their graphs, by term: as subject, and (`objects`) as object for the terms without any as
- * subject (selection.ts statementsOf). Not the report graph. Two queries for all terms.
+ * subject (selection.ts statementsOfAll). Not the report graph. Two queries for all terms.
  */
 export function statementsByTerm(g: ModelGraph, terms: Iterable<string>, objects = true): Map<string, Quad[]> {
     const values = [...new Set(terms)];

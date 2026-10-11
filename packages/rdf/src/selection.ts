@@ -102,11 +102,6 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
     return answer;
 }
 
-/** Subject statements, or object statements when none exist. A relation uses its triple. One element of `statementsOfAll`. */
-export function statementsOf(g: ModelGraph, index: () => ShapesIndex, id: string): Quad[] {
-    return statementsOfAll(g, index, [id]).get(id) ?? [];
-}
-
 /**
  * The statements of each element with their graphs (not the report): a relation, the statements of its triple; another element, the
  * statements of its term as subject, or as object when there are none. Three queries for all elements (§11.3 readBudgetMs).
@@ -153,11 +148,6 @@ export function textTargets(idx: ShapesIndex, id: string): TextTarget[] {
     if (constraint) return [{ subject: constraint.owner.value, predicate: NS.sh + constraint.operator }, { subject: constraint.owner.value }];
     const t = elementTerm(id);
     return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
-}
-
-/** Source files of an element, most statements first. One element of `filesOfElements`. */
-export function filesOfElement(g: ModelGraph, idx: () => ShapesIndex, settings: Settings | undefined, id: string): string[] {
-    return filesOfElements(g, idx, settings, [id]).get(id) ?? [];
 }
 
 /** The files of the statements, most statements first. */

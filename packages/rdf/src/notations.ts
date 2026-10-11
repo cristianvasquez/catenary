@@ -47,8 +47,6 @@ export function readNotations(dir = NOTATIONS_DIR): Notations {
     return n;
 }
 
-export { LAYOUT_PREDICATES } from './graph';
-
 const isReport = (q: Quad) => q.graph.termType === 'NamedNode' && q.graph.value === VALIDATION_GRAPH;
 
 /** An engine term as a store term. Undefined: a term that no statement of the store can have. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NS } from '@catenary/model';
 import { dataGraphIri, fileGraphIri } from '../src/graph';
 import { filesOfSubject, nearFiles, placeOf } from '../src/placement';
-import { rdf, tripleKey } from '../src/terms';
+import { rdf } from '../src/terms';
 import { emptyGraph } from './helpers';
 
 const EX = 'http://example.org/';

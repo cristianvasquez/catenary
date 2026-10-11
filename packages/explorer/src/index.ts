@@ -3,7 +3,7 @@
 // file (`graph`), so each row is a subject that the file describes. The plugin owns its queries. All values are JSON.
 // The query port comes from @catenary/query.
 
-import type { QueryPort, QueryTerm } from '@catenary/query';
+import type { QueryPort } from '@catenary/query';
 
 /** One row of the Model explorer. */
 export interface ExplorerRow {
@@ -25,8 +25,6 @@ export interface ExplorerRow {
 
 /** A path to the row of an element: keys from a section to the row; `name`: the folder names, for a choice between paths. */
 export interface ExplorerPath { keys: string[]; name: string }
-
-export type ExplorerTerm = QueryTerm;
 
 /** What the host gives to a plugin for one request: the query port over the graphs of the file, and the ids of the explorer. */
 export interface ExplorerPort extends QueryPort {

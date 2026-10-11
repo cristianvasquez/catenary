@@ -19,7 +19,7 @@ export const RDF_FORMATS: { extensions: string[]; mediaType: string; write: bool
 ];
 
 /** File extensions of RDF_FORMATS, without the dot. */
-export const RDF_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions.map(e => e.slice(1)));
+const RDF_EXTENSIONS = RDF_FORMATS.flatMap(f => f.extensions.map(e => e.slice(1)));
 
 export function formatOf(file: string) {
     const ext = path.extname(file).toLowerCase();
@@ -51,7 +51,7 @@ export function parseTurtleText(text: string, file: string): Quad[] {
 }
 
 /** The quads without duplicates (a dataset; the key keeps the direction of a literal). */
-export function uniqueQuads(quads: Iterable<Quad>): Quad[] {
+function uniqueQuads(quads: Iterable<Quad>): Quad[] {
     return [...new Map([...quads].map(q => [`${tripleKey(q)} ${termKey(q.graph)}`, q])).values()];
 }
 
