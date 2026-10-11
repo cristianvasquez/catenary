@@ -728,6 +728,40 @@ law_referencesCountTwice vs = sum (map snd (referenceCounts vs)) == length vs
 -- Part III. Canvas
 --------------------------------------------------------------------------------
 
+-- 4.9 Canvas edit path ------------------------------------------------------------
+
+-- | A canvas operation (a GLSP operation handler, modeler/src/node/glsp/handlers.ts) sends one EditCommand to the shared store
+-- through ViewSession.edit and returns no GLSP command. The store is the one undo stack and the one dirty state of every canvas
+-- and every panel. The GLSP command stack of a session delegates undo, redo and the dirty state to the store and holds no command
+-- (StoreCommandStack); the undo and redo actions of a canvas go to the store (StoreUndoRedoHandler).
+-- Reason: a GLSP command per session would be a second undo stack next to the store, and its undo would never run.
+-- The update after an edit comes from the change event of the store (§3.2 Canvas updates), not from the operation: the session of
+-- the edit sends its update first, then the follow-up actions (§4.6).
+-- An error of an edit, thrown or refused, reaches the client as one warning with the command kind and the message, and the backend
+-- logs it no second time (ViewSession.edit). A refused edit sends the current model with the warning: the canvas shows the store
+-- again. An error outside the edit (a handler bug, an unknown action) takes the GLSP error path: one error message with the action
+-- kind and one log line with the action and the stack (LoggingGLSPServer).
+-- Other differences from the GLSP workflow example, with their reasons: no PopupModelFactory and no popup feature on a card, so a
+-- hover sends no popup request (hover popups are not a requirement, open.md); no ModelValidator, the violations show as counts on
+-- the cards and in Problems (§8.10); no LabelEditValidator, a name is edited in the Catenary name editor (§4.5); no server layout,
+-- the positions come from the view graph and ELK runs on request (§7.5); no ContextActionsProvider, the menus are Theia menus (§4).
+data EditOutcome = Applied | Refused String | Threw String
+data ClientMessage = Warning String | Error String deriving Eq
+glspCommands :: EditCommand -> Int             -- the GLSP commands a handler returns for one edit
+glspCommands _ = 0
+law_canvasEditReturnsNoCommand :: EditCommand -> Bool
+law_canvasEditReturnsNoCommand c = glspCommands c == 0
+editMessages :: String -> EditOutcome -> [ClientMessage]   -- the command kind, the outcome -> the messages sent to the client
+editMessages _ Applied = []
+editMessages kind (Refused why) = [Warning (show kind ++ " refused: " ++ why)]
+editMessages kind (Threw why) = [Warning (show kind ++ " failed in the backend: " ++ why)]
+law_canvasEditErrorsOnce :: String -> EditOutcome -> Bool
+law_canvasEditErrorsOnce kind o = length (editMessages kind o) <= 1 && all isWarning (editMessages kind o)
+  where isWarning (Warning _) = True
+        isWarning _ = False
+popupRequestsPerHover :: Int
+popupRequestsPerHover = 0
+
 -- 5. Canvas gestures -----------------------------------------------------------
 
 -- 5.1 Palette and drag sources ------------------------------------------------------
@@ -1766,6 +1800,7 @@ openInPane = manifestOnly
 arity = manifestOnly
 appliesTo = manifestOnly
 commandsOf = manifestOnly
+selectionReads = manifestOnly
 controlTarget = manifestOnly
 controlCommand = manifestOnly
 isTextKey = manifestOnly
@@ -1789,4 +1824,3 @@ embedDestination = manifestOnly
 slug = manifestOnly
 lastName = manifestOnly
 sha256Hex = manifestOnly
-selectionReads = manifestOnly

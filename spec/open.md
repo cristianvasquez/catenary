@@ -130,6 +130,7 @@ These entries record earlier runs on different trees. Their counts are not addit
 - **RDF 1.2:** base-direction literals lack end-to-end verification. Do not claim full support from term-key and writer checks alone.
 - **Scale:** routing cost on larger diagrams remains unmeasured. Small-view timings are not performance guarantees.
 - **Manifests:** GHC checks only names and types. No test checks a `law_<name>` clause yet, and the stubs are not linked to the TypeScript code. Next step: one vitest per law, for the history model (spec/manifest.hs §5), IDs (§1.3) and the label and cardinality equations first. Primitives without a law are still prose. Do not claim contract certification from the typecheck.
+- **Unbound GLSP actions (GLSP1):** `scripts/e2e.cjs` keeps the backend log only on a failed test and checks it for whole-file writes, not for unbound actions (`No \`PopupModelFactory\` is bound`, `No matching bindings found`). Checked by hand 2026-10-11 (kata n577): after ui-manifest §4.9 a hover on a card sends no popup request, and the diagram container binds `SetUIExtensionVisibilityCommand` through the sprotty default module on every path. Add the assertion next to the `Every write is a text patch` check of each e2e test.
 
 ## Optional work
 

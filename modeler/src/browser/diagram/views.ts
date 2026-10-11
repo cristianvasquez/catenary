@@ -3,7 +3,7 @@
 import {
     GChildElement, GEdge, GLSPProjectionView, GLabel, GLabelView, GModelElement, GNode, GResizeHandle, GResizeHandleView, GViewportRootElement,
     IView, IViewArgs, RenderingContext, ResizeHandleLocation, ShapeView, deletableFeature, fadeFeature, hoverFeedbackFeature, moveFeature,
-    popupFeature, resizeFeature, selectFeature, svg
+    resizeFeature, selectFeature, svg
 } from '@eclipse-glsp/client';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { MarkdownRenderResult } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
@@ -22,9 +22,10 @@ export { COLOR_NAMES, COLOR_ORDER, PRESETS, colorValue, colorVars } from './card
 
 // No boundsFeature: the size comes from the model only. With it, the hidden DOM measurement would
 // return the SVG bounding box (badge, handle, long names) and the size would grow on each move.
+// No popupFeature: a hover would request a popup model that no server factory makes (spec/ui-manifest.hs §4.9).
 export class CardNode extends GNode {
     static override readonly DEFAULT_FEATURES = [
-        selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature, popupFeature
+        selectFeature, moveFeature, resizeFeature, deletableFeature, hoverFeedbackFeature, fadeFeature
     ];
     /** Eight handles, as Reactodia: corners and side middles (GLSP default: corners). */
     readonly resizeLocations = ResizeHandleLocation.ALL;

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Action, DefaultGModelSerializer, DefaultModelState, GModelIndex, MessageAction, ModelSubmissionHandler, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
+    Action, ChangeBoundsOperation, DefaultGModelSerializer, DefaultModelState, DeleteElementOperation, GModelIndex, MessageAction, ModelSubmissionHandler, UpdateModelAction,
+    PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
 import { EditCommand, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
@@ -13,7 +14,7 @@ const key = (e: { id: string; element?: unknown }) => (e.element as string | und
 import { ModelStore } from '@catenary/rdf';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
-import { PasteHandler } from '../src/node/glsp/handlers';
+import { ChangeBoundsHandler, DeleteHandler, PasteHandler } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
@@ -327,10 +328,32 @@ describe('model changes reaching view clients', () => {
         a.sent.length = 0;
         select.mockClear();
         const before = store.snapshot();
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
         await a.session.edit({ kind: 'rename', id: instance, label: ' invalid' }, select);
-        expect(a.sent[0]).toMatchObject({ kind: 'message', severity: 'WARNING' });
+        // law_canvasEditErrorsOnce: one warning with the command kind and the reason, then the model of the store; no log line.
+        expect(a.sent.filter(MessageAction.is)).toHaveLength(1);
+        expect(a.sent[0]).toMatchObject({ kind: MessageAction.KIND, severity: 'WARNING', message: expect.stringMatching(/^"rename" refused: .+/) });
+        expect(a.sent.some(UpdateModelAction.is)).toBe(true);
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);
         expect(select).not.toHaveBeenCalled();
         expect(store.snapshot()).toEqual(before);
+    });
+
+    it('law_canvasEditErrorsOnce: a handler whose edit throws or is refused sends one warning and returns no GLSP command', async () => {
+        const a = await client(store, first);
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
+        const execute = vi.spyOn(store, 'execute').mockImplementation(() => { throw new Error('The model index failed.'); });
+        const remove = Object.assign(new DeleteHandler(), { session: a.session });
+        const card = cardOf(a.state.view, instance)!;
+        expect(await remove.createCommand(DeleteElementOperation.create([card.id]))).toBeUndefined();
+        expect(a.sent).toEqual([expect.objectContaining({ kind: MessageAction.KIND, severity: 'WARNING', message: '"removeFromView" failed in the backend: The model index failed.' })]);
+        a.sent.length = 0;
+        execute.mockImplementation(() => ({ ok: false, error: 'The store refused it.' }));
+        const move = Object.assign(new ChangeBoundsHandler(), { session: a.session });
+        expect(await move.createCommand(ChangeBoundsOperation.create([{ elementId: card.id, newPosition: { x: 1, y: 2 }, newSize: { width: 300, height: 200 } }]))).toBeUndefined();
+        expect(a.sent.filter(MessageAction.is)).toEqual([expect.objectContaining({ severity: 'WARNING', message: '"setBounds" refused: The store refused it.' })]);
+        expect(a.sent.some(UpdateModelAction.is)).toBe(true);
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);
     });
 
     it('fits only arriving cut placements while selecting existing cards too (UI §7.5)', async () => {
@@ -368,9 +391,11 @@ describe('model changes reaching view clients', () => {
     it('sends an error thrown by an edit to the client as one warning, without a model (§3.4)', async () => {
         const a = await client(store, first);
         vi.spyOn(store, 'execute').mockImplementation(() => { throw new Error('The model index failed. The files are read again.'); });
+        const logged = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'warn').mockImplementation(() => {})];
         await a.session.edit({ kind: 'removeFromView', view: first, ids: [instance] });
         expect(a.sent).toHaveLength(1);
         expect(a.sent[0]).toMatchObject({ kind: MessageAction.KIND, severity: 'WARNING', message: '"removeFromView" failed in the backend: The model index failed. The files are read again.' });
+        expect(logged.map(l => l.mock.calls.length)).toEqual([0, 0]);   // law_canvasEditErrorsOnce: nothing is logged twice
     });
 
     it('clears dirty state on save and stops sending updates after the client disconnects', async () => {

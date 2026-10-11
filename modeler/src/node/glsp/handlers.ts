@@ -1,5 +1,6 @@
-// GLSP operation and action handlers. Each operation becomes one EditCommand on the shared store.
-// Handlers return no GLSP command: the store keeps the undo stack (see StoreCommandStack).
+// GLSP operation and action handlers. Each operation becomes one EditCommand on the shared store through ViewSession.edit, the one
+// edit path with the one error path (spec/ui-manifest.hs §4.9). Handlers return no GLSP command: the store keeps the undo stack
+// (StoreCommandStack). A message before the edit (an unknown class, an empty clipboard) is a check of the input, not an error.
 
 import {
     Action, ActionHandler, ChangeBoundsOperation, Command,

@@ -143,6 +143,10 @@ export class ViewState {
     }
 }
 
+/** The one message of a failed canvas edit: the command kind, what happened, the reason (law_canvasEditErrorsOnce). */
+const editWarning = (kind: string, what: string, reason: string): MessageAction =>
+    MessageAction.create(`"${kind}" ${what}: ${reason}`, { severity: 'WARNING' });
+
 /** Sends updates to the client. One per session. */
 @injectable()
 export class ViewSession {
@@ -213,9 +217,11 @@ export class ViewSession {
     }
 
     /**
-     * Run an edit for this session. The session sends its own update first, then `followUp`
-     * (for example a selection of the created element). Errors go to the client as a message: a rejected command with the model, a
-     * command that threw (for example a trap of the store, §3.4) as one warning without a model (the store may be unreadable).
+     * Run an edit for this session: the one edit path of a canvas operation (spec/ui-manifest.hs §4.9). The session sends its own
+     * update first, then `followUp` (for example a selection of the created element). An error of the edit reaches the client as
+     * one warning with the command kind and the message, and nothing is logged here (law_canvasEditErrorsOnce): a refused command
+     * with the model (the canvas shows the store again), a command that threw (for example a trap of the store, manifest §3.4)
+     * without a model (the store may be unreadable).
      */
     async edit(command: EditCommand, followUp?: (r: CommandResult & { ok: true }) => Action[]): Promise<void> {
         this.muted = true;
@@ -223,13 +229,13 @@ export class ViewSession {
         try {
             r = this.store.execute(command);
         } catch (e) {
-            await this.dispatcher.dispatchAll([MessageAction.create(`"${command.kind}" failed in the backend: ${e instanceof Error ? e.message : String(e)}`, { severity: 'WARNING' })]);
+            await this.dispatcher.dispatchAll([editWarning(command.kind, 'failed in the backend', e instanceof Error ? e.message : String(e))]);
             return;
         } finally {
             this.muted = false;
         }
         if (!r.ok) {
-            await this.dispatcher.dispatchAll([MessageAction.create(r.error, { severity: 'WARNING' }), ...await this.submission.submitModel('operation')]);
+            await this.dispatcher.dispatchAll([editWarning(command.kind, 'refused', r.error), ...await this.submission.submitModel('operation')]);
             return;
         }
         const actions = await this.submission.submitModel('operation');
@@ -302,8 +308,9 @@ export class ViewGModelFactory implements GModelFactory {
 }
 
 /**
- * Undo, redo and dirty state belong to the shared store, not to the session:
- * one undo stack for all views, the tree and the properties panel.
+ * Undo, redo and dirty state belong to the shared store, not to the session: one undo stack for all views, the tree and the
+ * properties panel (spec/ui-manifest.hs §4.9, law_canvasEditReturnsNoCommand). The handlers return no command, so `execute` never
+ * runs: it stays for the CommandStack contract.
  */
 @injectable()
 export class StoreCommandStack implements CommandStack {
