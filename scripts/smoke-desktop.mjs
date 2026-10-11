@@ -140,7 +140,7 @@ try {
     const outside = paths.filter(p => !p.startsWith(ws + sep) || !existsSync(p));
     check(`model and view files inside the workspace and on disk (${paths.length})`, paths.length >= 4 && !outside.length, outside);
     check('no unexpected read warnings', (await cli('model', { path: 'warnings' })).every(w => /commit/.test(w)
-        || w === 'Bookshop model: node for unknown instance urn:name:Cities%20member kept in the file, not shown'), await cli('model', { path: 'warnings' }));
+        || w === 'Bookshop model: placement of urn:name:Cities%20member has no supported card presentation, kept in the file, not shown'), await cli('model', { path: 'warnings' }));
 
     // Paths in the frontend: Theia URIs and the backend paths must give the same strings (commands.ts, file-kinds-decorator.ts compare them).
     const front = await evaluate(`
