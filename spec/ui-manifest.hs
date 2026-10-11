@@ -425,8 +425,9 @@ startupDocument Nothing _ restored = restored
 
 -- | Canvas updates (manifest §11.3, the tiers of a change). The canvas of a view keeps the read model of its view (the part) between changes. A layout-only change of the
 -- view (position, size, style of its placements) goes into the kept part: no view read. A new validation report: the counts come
--- from the report, no view read. A change of the content (the elements shown, their statements, the shapes, a disk read) reads
--- the view again. A layout-only change of a view updates no canvas of another view. A hidden canvas (a tab behind another one)
+-- from the report, no view read. A change of the statements of shown elements merges the changed elements into the part when
+-- the merge can give the read (manifest §11.3 merges). Otherwise a change of the content (the placements, the shapes, a disk read)
+-- reads the view again: Content below. A layout-only change of a view updates no canvas of another view. A hidden canvas (a tab behind another one)
 -- sends nothing while hidden and refreshes once when it is shown. Reason: a move of a card on a large view read the whole view
 -- again for each open canvas, hidden ones too (view-session.ts ViewState.accept, ViewSession.setVisible).
 data CanvasChange = LayoutOnly | Report | Content deriving Eq

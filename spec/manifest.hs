@@ -1666,7 +1666,7 @@ tierOf c
 -- | A canvas keeps the Doc of its view. It brings the Doc up to date by the tier of the change: a ViewPatch goes into the kept
 -- Doc in place; a DataPatch re-reads the changed elements that the Doc holds, with the scoped read of §3.3, and merges them; a
 -- Rebuild reads the view again. A validation report changes no Doc: the counts on the cards come from the report (violationScope).
--- Oracle: after any change, the kept Doc equals a fresh read of the view. The tests compare the two (scoped-doc.test.ts pattern).
+-- Oracle: after any change, the kept Doc equals a fresh read of the view. The tests compare the two (change.test.ts, view-session.test.ts).
 keptDoc :: Backend -> Iri -> Doc                 -- the Doc that the canvas of view v holds after the last change
 sameDoc :: Doc -> Doc -> Bool                     -- the same views, boxes, edges, instances and relations
 law_keptDocEqualsRead :: Backend -> Op -> Iri -> Bool
@@ -1727,7 +1727,7 @@ keptRead :: Backend -> KeptRead -> String          -- the read that the store ke
 freshRead :: Backend -> KeptRead -> String         -- the same read of a store opened from the files of the backend
 law_keptReadsEqualRead :: Backend -> Op -> KeptRead -> Bool
 law_keptReadsEqualRead b op r = let b' = snd (step b op) in keptRead b' r == freshRead b' r
--- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, PERF5).
+-- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, open work: spec/open.md PERF7).
 -- Reason: the GLSP server and every RPC share the backend thread.
 -- The test (read-budget.test.ts): on a generated view of 600 cards, each panel read of 600 elements and each step of a content change
 -- with an open canvas is one tracer span within the budget. The reads that still exceed it are listed there with their open.md row.
@@ -1737,7 +1737,7 @@ readBudgetMs = 50
 -- (VALUES), not one per element; a fact of the whole store (the shaped classes, the terms of each property shape id, the files,
 -- placements and instance test of the elements) comes from one request context that PanelReads keeps on the data event
 -- (read-context.ts), never from a loop over the elements. The time of a read then follows the number of rows it returns.
--- Reason: a read that scanned the store once per element took seconds for a few hundred selected cards (PERF5, PERF6).
+-- Reason: a read that scanned the store once per element took seconds for a few hundred selected cards.
 readQueries :: Backend -> IO a -> Int            -- the SPARQL queries that one read sends to the store (the trace counts them)
 readQueryBound :: Int
 readQueryBound = 30

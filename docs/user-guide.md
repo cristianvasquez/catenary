@@ -28,7 +28,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 | Right area | Properties (fields from all applicable shapes and from the RDFS domain and range of the classes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
 | Outline | Frames, cards and placed relations of the active view. |
 | Problems | SHACL results. A click selects the focus instance. |
-| Trace (View → Trace) | Bottom area, next to the terminal. It shows what the backend runs: requests, edits, change events, view refreshes, SHACL target reads, validation, SPARQL queries and file writes. SHACL spans show scope discovery, reference reads, the walk, and whether references can be cached. Summary sorts totals by time or calls per minute. Timeline shows each operation with its effects below. The trace records only while the panel is visible. |
+| Trace (View → Trace) | Bottom area, next to the terminal. It shows what the backend runs: requests, edits, change events, view refreshes, SHACL target reads, validation, SPARQL queries and file writes. SHACL spans show scope discovery, reference reads, the walk, and whether references can be cached. Summary sorts totals by time or calls per minute. Timeline shows each operation with its effects below. A canvas refresh shows its steps: layout patch, data patch, read view, hidden neighbors, figures, applicability, schema and graph model. An edit shows the snapshot steps (files, dataset warnings, dirty). A change notes its tier and the WebAssembly memory of the model index. The trace records only while the panel is visible. |
 
 Catenary resets saved layouts once when you first open this version. Later sessions restore your pane arrangement.
 
@@ -70,10 +70,10 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Move a shape with its structural nodes. If a nested shape has an unselected parent, select that parent before moving it. View files are not file-move destinations.
 - Link to a file: drag a file from the navigator onto a canvas. A view file gives a view reference, another file a file reference.
 - Card controls (halo): Open in, Remove, More actions, expand incoming/outgoing neighbors, create incoming/outgoing relations with `+`.
-- Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group; its relations and arrows end at the group.
+- Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group. Its relations and arrows end at the group.
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
-- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste creates new instances; cut and paste moves the placements.
+- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste creates new instances. Cut and paste moves the placements.
 - Paste arranges new placements near the pointer. Existing placements stay fixed. Copied frames move with their contents.
 - The canvas fits the pasted placements so they remain visible.
 - Paste raw RDF to add missing statements and show figures from the canvas notations. Existing resource IRIs remain unchanged.
@@ -85,6 +85,17 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - A Model pane shows only the subjects that its file describes, so you can move each row to another file or place it on a canvas. A class that the file only uses as a type is a folder, not an element. The workspace file has no Model rows.
 - A Model pane has a section for each vocabulary: **Classes** (classes, subclasses and instances as written) and **Shapes** (node shapes and their property shapes). A folder shows 100 rows at a time: click **Show more** for the next rows.
 - Type in the filter to get one list of the matching elements of the file. Each row says where it is. Escape clears the filter.
+- A canvas tab behind another tab does not update. It updates once when you show it.
+- If Catenary refuses a canvas edit, the canvas shows one warning and the current model. If the edit fails in the backend, the canvas shows one warning with the name of the command.
+
+### Selection
+
+A window has one selection. You make it on a canvas or in a panel list (Model explorer, Outline, Problems).
+
+- A click on a canvas selects in that canvas only. Other canvases that show the same elements highlight them. A highlight is not a selection.
+- A selection in a panel list highlights its elements on each canvas.
+- Ctrl-click, Meta-click or Shift-click on a canvas with a highlight starts from the highlight. The click adds the element, or removes it when it is highlighted. That canvas then holds the selection.
+- In a canvas with a highlight only, Ctrl+C copies the highlight. Del and Ctrl+X need a selection made in that canvas. Ctrl+Del deletes the elements of the window selection.
 
 ### View notes
 
@@ -133,8 +144,8 @@ Catenary reads the `rdfs:domain` and `rdfs:range` statements of all model files,
 | F12 | Open in…: open the element in another pane: Source at its statement, Model at its row, or a Canvas that shows it. With nothing selected on a canvas: the view. Double-click or Enter on a Model or Problems row does the same |
 | F8, Ctrl+T | Find an element. Enter adds it to the current view. With no view open, Enter shows it |
 | F3 / Shift+F3 | Next / previous occurrence of the element in views |
-| Del | Remove the placement from the view. The model does not change |
-| Ctrl+Del | Delete the element from the model, after confirmation |
+| Del | Remove the placement from the view. The model does not change. It needs a selection made in this canvas |
+| Ctrl+Del | Delete the elements of the window selection from the model, after confirmation |
 | Ctrl+Z / Ctrl+Shift+Z | Undo / redo (shared model history, outside text inputs) |
 | Escape | Cancel the current edit. It never commits |
 
@@ -208,7 +219,11 @@ Catenary records the files that it writes in `_resources/.catenary-export.json`.
 
 ## History and Git
 
-If the workspace is in a Git repository, each write makes a commit of the changed files only (`git commit --only`). Other staged changes stay out of it. Source Control shows changes and history. A file changed outside Catenary is read again; this clears the undo history.
+If the workspace is in a Git repository, each write makes a commit of the changed files only (`git commit --only`). Other staged changes stay out of it. Source Control shows changes and history. A file changed outside Catenary is read again. This clears the undo history.
+
+## Model index failure
+
+Catenary keeps the model in an in-memory index (Oxigraph). If the index fails, Catenary reads the files again once. A warning says: "The model index failed and was read again from the files. Undo history was cleared." Edits that were not written yet can be lost. If the second read fails too, Catenary shows one error and stops reading. Restart Catenary.
 
 ## Command line
 
