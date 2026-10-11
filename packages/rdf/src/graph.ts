@@ -3,8 +3,7 @@
 // The role of a graph comes from the registry of this class (`model`, `setShapesGraphs`), not from its name.
 // The store is the source of truth. Every change goes through `add` / `remove`, which record a patch:
 // a transaction gives one patch, undo applies the patch backwards. Element ids: see ids.ts.
-// The vocabulary and the reads of views are functions of a ModelGraph in vocabulary.ts, views.ts and shapes.ts. This module imports
-// none of them: they fill graphRules.
+// Vocabulary and view reads are functions of a ModelGraph in vocabulary.ts, views.ts, shapes.ts. They fill graphRules.
 
 import type { MigrationChange } from '@catenary/model';
 import { VALIDATION_GRAPH, layoutOnly, quadDependencies } from './change';
@@ -40,6 +39,7 @@ export interface GraphRules {
 }
 const notLoaded = (module: string) => (): never => { throw new Error(`The graph rules of ${module} are not loaded.`); };
 export const graphRules: GraphRules = { isView: notLoaded('views.ts'), views: notLoaded('views.ts'), metamodelQuad: notLoaded('vocabulary.ts') };
+const placeholders = new Set<unknown>(Object.values(graphRules));
 
 /** `was`: on an add, the statement that it replaces (an IRI change); the store keeps the files of that statement. */
 export type Change = { op: 'add' | 'remove'; quad: Quad; was?: Quad };
@@ -65,7 +65,6 @@ export class ModelGraph {
     /** The shapes graphs: the store graphs of the shapes files. */
     protected shapes: TermSet<NamedNode> = rdf.termSet<NamedNode>();
     protected data?: NamedNode[];
-
     protected log?: Patch;
 
     /** Shapes graph that gets new node shapes (the primary shapes file). Undefined: the first shapes graph. */
@@ -124,7 +123,10 @@ export class ModelGraph {
         for (const listener of [...this.listeners]) listener(event);
     }
 
-    constructor(readonly store: QuadStore) {}
+    /** Throws when views.ts or vocabulary.ts is not loaded: a change event needs their rules. */
+    constructor(readonly store: QuadStore) {
+        for (const rule of Object.values(graphRules)) if (placeholders.has(rule)) (rule as () => never)();
+    }
 
     setShapesGraphs(graphs: Iterable<NamedNode>): void {
         const next = [...graphs];
