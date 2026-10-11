@@ -2,7 +2,7 @@
 // instance of a class can have: the Properties form and the cards show them. The host merges the fields of all plugins into the
 // metamodel (@catenary/model): for a class and a predicate, the first plugin that gives a field or a link wins. All values are JSON.
 
-import type { QueryPort } from '@catenary/query';
+import type { QueryPort } from './query';
 
 /** A value of a closed list (sh:in). A literal without a datatype is an xsd:string (or an rdf:langString with a language). */
 export interface FieldValue {

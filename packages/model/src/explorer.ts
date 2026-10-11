@@ -1,8 +1,8 @@
-// The Model explorer (ADR 0006): sections from plugins (@catenary/explorer). The backend gives the children of a key when a folder
+// The Model explorer (ADR 0006): sections from plugins (@catenary/contracts). The backend gives the children of a key when a folder
 // opens, one page at a time. Keys: '<plugin id>/<plugin key>'.
 
-import type { ExplorerRow } from '@catenary/explorer';
-export type { ExplorerPath, ExplorerRow } from '@catenary/explorer';
+import type { ExplorerRow } from '@catenary/contracts';
+export type { ExplorerPath, ExplorerRow } from '@catenary/contracts';
 
 /** Rows of one folder per request. */
 export const EXPLORER_PAGE = 100;

@@ -4,10 +4,8 @@
 // rdfs:Resource and owl:Thing: any value, a literal or a resource (a field and a link). rdfs:Literal: any literal. No inference of
 // types, no rdfs:subPropertyOf, no cardinality, no validation.
 
-import type { FieldRule, FieldsProvider } from '@catenary/fields';
-import type { LinkRule, LinksProvider } from '@catenary/links';
-import type { PaletteClass, PaletteProvider } from '@catenary/palette';
-import { OWL, QueryPort, RDF, RDFS, SH, XSD, iri } from '@catenary/query';
+import type { FieldRule, FieldsProvider, LinkRule, LinksProvider, PaletteClass, PaletteProvider } from '@catenary/contracts';
+import { OWL, QueryPort, RDF, RDFS, SH, XSD, iri } from '@catenary/contracts';
 
 /** What the objects of a predicate are: instances of a class, literals (of a datatype), or any value (a literal or a resource). */
 export type RdfsRange = { kind: 'class'; iri: string; subclasses?: string[] } | { kind: 'literal'; datatype?: string } | { kind: 'any' };

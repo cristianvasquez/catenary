@@ -24,19 +24,7 @@
   ],
   "references": [
     {
-      "path": "../explorer"
-    },
-    {
-      "path": "../query"
-    },
-    {
-      "path": "../palette"
-    },
-    {
-      "path": "../links"
-    },
-    {
-      "path": "../fields"
+      "path": "../contracts"
     },
     {
       "path": "../shacl"

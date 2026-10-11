@@ -1,0 +1,15 @@
+{
+  "name": "@catenary/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The contracts between the host and a vocabulary plugin: the query port with its namespaces and IRI escaper, and the explorer, palette, links and fields contracts.",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

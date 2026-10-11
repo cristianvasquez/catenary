@@ -1,9 +1,9 @@
 // The Model explorer plugin contract. A plugin gives its top sections and the children of its own keys. The host owns the store,
 // the graph identities, the label rule and the element ids. The host chooses the graphs: a file document gives only the graphs of its
 // file (`graph`), so each row is a subject that the file describes. The plugin owns its queries. All values are JSON.
-// The query port comes from @catenary/query.
+// The query port comes from ./query.
 
-import type { QueryPort } from '@catenary/query';
+import type { QueryPort } from './query';
 
 /** One row of the Model explorer. */
 export interface ExplorerRow {

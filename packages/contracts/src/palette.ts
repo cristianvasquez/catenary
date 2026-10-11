@@ -2,7 +2,7 @@
 // palette and the class picker offer. The host merges the classes of all plugins into the metamodel (@catenary/model): the first
 // plugin that gives a class wins. All values are JSON.
 
-import type { QueryPort } from '@catenary/query';
+import type { QueryPort } from './query';
 
 export interface PaletteClass {
     iri: string;

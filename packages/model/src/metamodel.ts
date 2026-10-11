@@ -1,9 +1,7 @@
 // Metamodel: palette classes, fields and relation types, as JSON. Merged from what the vocabulary plugins (SHACL, RDFS) give the
 // palette, links and fields contracts (mergeContributions); @catenary/rdf runs the plugins.
 
-import type { FieldRule } from '@catenary/fields';
-import type { LinkRule } from '@catenary/links';
-import type { PaletteClass } from '@catenary/palette';
+import type { FieldRule, LinkRule, PaletteClass } from '@catenary/contracts';
 import { NS, TermJSON, localName } from './terms';
 import { compactParts, shortIri } from './shapes-doc';
 

@@ -1,11 +1,8 @@
 // The vocabulary plugins of the palette, links and fields contracts on this store, and their merge into the metamodel
 // (mergeContributions). This package parses no vocabulary: SHACL and RDFS read their own statements through a query port.
 
-import type { FieldsProvider } from '@catenary/fields';
-import type { LinksProvider } from '@catenary/links';
+import type { FieldsProvider, LinksProvider, PaletteProvider, QueryPort } from '@catenary/contracts';
 import { Classes, mergeContributions } from '@catenary/model';
-import type { PaletteProvider } from '@catenary/palette';
-import type { QueryPort } from '@catenary/query';
 import { rdfsFields, rdfsLinks, rdfsPalette } from '@catenary/rdfs';
 import { shaclFields, shaclLinks, shaclPalette } from '@catenary/shacl/backend';
 import type { Term } from '@rdfjs/types';

@@ -3,7 +3,7 @@
 // merges the links of all plugins into the metamodel (@catenary/model): for a class and a predicate, the first plugin that gives a
 // link or a field wins. All values are JSON.
 
-import type { QueryPort } from '@catenary/query';
+import type { QueryPort } from './query';
 
 export interface LinkRule {
     /** The class of the subject. */
