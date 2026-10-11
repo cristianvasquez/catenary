@@ -25,7 +25,7 @@ import Prelude hiding (Left, Right)   -- Side uses these names. The contract nev
 import Control.Applicative ((<|>))
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, toLower)
 import Data.List (isPrefixOf, isSuffixOf, nub, sort, sortOn)
-import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 
 -- | Design rules. Code comments cite them as "ADR <n>". Each line gives the rule, its reason, and where the contract states it.
 -- ADR 0001  One operation per action for all element kinds (rename, setUri, delete, copy, setStatements, one view-box model);
@@ -48,20 +48,22 @@ import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 
 -- | Glossary. One name per concept for the store, the files and the change pipeline. Use these names in code comments and documents.
 -- Reason: the same concept had several names, and a planned library extraction needs one name each. Format: term, meaning, names it replaces.
--- graph        A named graph of the store. One per file by default. Replaces: data graph, shapes graph, file graph and view graph
---              as different things. They are graphs with a role.
+-- graph        A named graph of the store. A file populates one graph per role that it has: a model file its data graph and, with
+--              shape statements, its shapes graph; a view file its view graph (mountGraph, §3.1). Replaces: data graph, shapes
+--              graph, file graph and view graph as different things. They are graphs with a role.
 -- role         A label that the registry of ModelGraph gives a graph: data, shapes, view, report. Replaces: kind, and partition
 --              when it means a kind.
 -- partition    A set of graphs that a predicate selects, with a snapshot and a subscription. New term, reserved. No code uses it yet.
 -- patch        An ordered list of {op: add | remove, quad} with concrete graphs only, never the union graph. Replaces: delta,
 --              change list, Change[].
--- transaction  One command, one patch, one undo step (§5.2). Replaces: update and transact as names of the concept.
+-- transaction  One command, one patch. A successful nonempty edit command also gives one undo step; loads, replay and reports
+--              use the same path without history (§5.2). Replaces: update and transact as names of the concept.
 -- event        A committed patch with its sequence number and the graphs it touched. Replaces: GraphChange as the name of the
 --              concept. The type keeps its name until a later kata renames it.
 -- readOnly     A graph that refuses writes, with a reason. A command, an undo or a redo that changes a readOnly graph fails as a
 --              whole. Replaces: read only, protected, sealed, noWrite, writeProblem, and "imported" when it means the refusal.
--- import       The workflow that copies files into the workspace folder imported/ and marks them readOnly (ws:imported globs, §2.6).
---              It is not a synonym of readOnly.
+-- import       The workflow that marks files readOnly (ws:imported globs, §2.6). A file in the workspace is marked where it is.
+--              An external file is copied into the workspace folder imported/ first. It is not a synonym of readOnly.
 -- union        The logical data graph urn:name:model that the reads see: the union of the data graphs. A write to it is
 --              temporary until placement gives it a graph.
 -- placement    The rule that gives a new statement its graph (§2.4). It is a policy of Catenary, not of the store.
@@ -489,7 +491,12 @@ modelStatements b = nub [Quad s p o (graphIri ModelGraph) | Quad s p o g <- stor
 -- Reason: file graph patches preserve ownership through undo without a separate history.
 origin :: Quad -> Tx [FilePath]
 priorOrigin, subjectFile, referrerFile :: Quad -> Tx (Maybe FilePath)
-readOnlyFile :: FilePath -> Tx Bool   -- Settings.readOnlyReason: format, then content, then an import mark (§2.6)
+-- | A file is readOnly for the first reason that applies: its format, its content, an import mark (§2.6). The reason text is the first one.
+readOnlyFile :: FilePath -> Tx Bool
+readOnlyFile f = isJust <$> readOnlyReason f
+readOnlyReason :: FilePath -> Tx (Maybe String)   -- Settings.readOnlyReason
+readOnlyReason f = listToMaybe . catMaybes <$> sequence [formatReason f, contentReason f, importReason f]
+formatReason, contentReason, importReason :: FilePath -> Tx (Maybe String)
 currentSettings :: Tx WorkspaceSettings
 fileForAdd :: Quad -> Tx FilePath
 fileForAdd q = do
@@ -1852,7 +1859,9 @@ origin = manifestOnly
 priorOrigin = manifestOnly
 subjectFile = manifestOnly
 referrerFile = manifestOnly
-readOnlyFile = manifestOnly
+formatReason = manifestOnly
+contentReason = manifestOnly
+importReason = manifestOnly
 lastTransferFiles = manifestOnly
 importedFiles = manifestOnly
 pluginContributions = manifestOnly
