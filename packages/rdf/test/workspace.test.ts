@@ -61,8 +61,8 @@ describe('sync modules', () => {
         const { dir, ws } = await open();
         const n = (s: string) => rdf.namedNode(EX + s);
         const { patch, result } = ws.graph.transact(g => {
-            g.add(n('nested'), n('value'), rdf.literal('child'));
-            g.add(n('b'), n('detail'), n('nested'));
+            g.add(n('nested'), n('value'), rdf.literal('child'), g.model);
+            g.add(n('b'), n('detail'), n('nested'), g.model);
             placeChanges(g, ws.settings);
             return { ok: true };
         });

@@ -229,7 +229,7 @@ export function migrate(g: ModelGraph, m: MigrationChange): Result<number> {
     if (m.kind === 'renameClass') {
         for (const q of [...g.match(null, P.type, rdf.namedNode(m.from), g.model)]) {
             g.remove(q);
-            g.add(q.subject, P.type, rdf.namedNode(m.to));
+            g.add(q.subject, P.type, rdf.namedNode(m.to), g.model);
         }
         return ok(count);
     }
@@ -238,7 +238,7 @@ export function migrate(g: ModelGraph, m: MigrationChange): Result<number> {
     for (const q of [...g.match(null, from, null, g.model)]) {
         if (cls && !g.has(rdf.quad(q.subject, P.type, cls, g.model))) continue;
         g.remove(q);
-        g.add(q.subject, to, q.object);
+        g.add(q.subject, to, q.object, g.model);
         for (const view of views(g)) {
             const e = edgeOf(g, view, q.subject, from, q.object);
             if (e) g.set(e, P.reifies, rdf.quad(q.subject, to, q.object), view);

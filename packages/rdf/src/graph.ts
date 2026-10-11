@@ -251,7 +251,8 @@ export class ModelGraph {
     quads(): Quad[] { return this.store.match(); }
 
     /** `was`: the statement that this one replaces (see Change.was). */
-    add(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object, g: Quad_Graph = this.model, was?: Quad): void {
+    // g is the target graph. g.model is the union: placePending gives such a quad its file graph before the transaction commits.
+    add(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object, g: Quad_Graph, was?: Quad): void {
         const q = rdf.quad(s, p, o, g);
         if (this.has(q)) return;
         if (!this.log) { this.transact(graph => { graph.add(s, p, o, g, was); return { ok: true }; }); return; }
@@ -288,7 +289,7 @@ export class ModelGraph {
     }
 
     /** Replace the objects of (s, p) in graph g. Undefined removes them. */
-    set(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object | undefined, g: Quad_Graph = this.model): void {
+    set(s: Quad_Subject, p: Quad_Predicate, o: Quad_Object | undefined, g: Quad_Graph): void {
         this.update(() => {
             const copies = g.equals(this.model) && this.data
                 ? this.store.match(s, p).filter(q => this.isDataGraph(q.graph)) : this.match(s, p, null, g);

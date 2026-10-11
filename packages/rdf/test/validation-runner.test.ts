@@ -82,8 +82,8 @@ describe('validation in a worker thread', () => {
         const g = await load();
         const metamodel = await meta();
         // A data product without its required owner: a violation.
-        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(DPROD + 'DataProduct'));
-        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdfs + 'label'), rdf.literal('Product'));
+        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(DPROD + 'DataProduct'), g.model);
+        g.add(rdf.namedNode('urn:x:product'), rdf.namedNode(NS.rdfs + 'label'), rdf.literal('Product'), g.model);
         const run = async () => {
             let r!: ValidationRunner;
             await new Promise<void>(done => { r = new ValidationRunner(() => sourceOf(g, metamodel), () => done()); void r.now().then(() => done()); });

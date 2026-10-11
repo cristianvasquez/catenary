@@ -15,7 +15,7 @@ describe('shared patch events', () => {
         const g = graph(), events: GraphChange[] = [];
         g.onDidChange(e => events.push(e));
         const { patch } = g.transact(x => {
-            x.add(n('a'), n('p'), n('b'));
+            x.add(n('a'), n('p'), n('b'), x.model);
             x.add(n('b'), n('q'), rdf.literal('name'), n('view'));
             return { ok: true };
         });
@@ -26,7 +26,7 @@ describe('shared patch events', () => {
         expect(g.keys.data).toBe(events[0]);
         expect(g.keys.persisted).toBe(events[0]);
         g.transact(() => ({ ok: true }));
-        g.add(n('a'), n('p'), n('b'));
+        g.add(n('a'), n('p'), n('b'), g.model);
         expect(events).toHaveLength(1);
     });
 
@@ -52,8 +52,8 @@ describe('shared patch events', () => {
     it('undo and redo each publish one effective patch in application order', () => {
         const g = graph(), events: GraphChange[] = [];
         const { patch } = g.transact(x => {
-            x.add(n('a'), n('p'), n('b'));
-            x.add(n('b'), n('p'), n('c'));
+            x.add(n('a'), n('p'), n('b'), x.model);
+            x.add(n('b'), n('p'), n('c'), x.model);
             return { ok: true };
         });
         g.onDidChange(e => events.push(e));

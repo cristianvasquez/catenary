@@ -245,11 +245,11 @@ export function createInstance(g: ModelGraph, classIri: string, label: string, i
     const problem = labelProblem(label);
     if (problem) return fail(problem);
     const s = rdf.namedNode(mintFree(g, label));
-    g.add(s, P.type, rdf.namedNode(classIri));
-    g.add(s, P.label, rdf.literal(label));
+    g.add(s, P.type, rdf.namedNode(classIri), g.model);
+    g.add(s, P.label, rdf.literal(label), g.model);
     if (inScheme) {
-        g.add(s, rdf.namedNode(NS.skos + 'prefLabel'), rdf.literal(label));
-        g.add(s, rdf.namedNode(NS.skos + 'inScheme'), rdf.namedNode(inScheme));
+        g.add(s, rdf.namedNode(NS.skos + 'prefLabel'), rdf.literal(label), g.model);
+        g.add(s, rdf.namedNode(NS.skos + 'inScheme'), rdf.namedNode(inScheme), g.model);
     }
     return ok(elementId(s));
 }
