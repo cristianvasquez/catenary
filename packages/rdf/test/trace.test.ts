@@ -211,7 +211,8 @@ describe('traced store', () => {
                 if (instances === 0) expect(origins).toHaveLength(0);
                 else expect(origins.length).toBeGreaterThan(0);
                 expect(origins.every(s => s.detail?.startsWith(`instances ${instances};`))).toBe(true);
-                expect(origins.every(s => s.queries === instances)).toBe(true);
+                // The files of all instances in one query (placement.ts filesOfSubjects), not one store read per instance.
+                expect(origins.every(s => s.queries === 1)).toBe(true);
             };
             tracer.setClient(true);
             assertScoped(() => store.reads.links([model.iriId(uris[0])], view), 1);

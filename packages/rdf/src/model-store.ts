@@ -15,14 +15,14 @@ import {
 } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
-import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, portableRelative } from 'rdf-files';
+import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, oxigraphMemoryBytes, portableRelative } from 'rdf-files';
 import type { StoreTrap } from 'rdf-files';
 import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
 import { ChangeScope, Classified, classify, keepsReads, mergeRecords, tierOf } from './change';
-import { GraphChange, ModelGraph, P, Patch, V } from './graph';
+import { GraphChange, ModelGraph, P, Patch, VALIDATION_GRAPH, V } from './graph';
 import { History } from './history';
 import { elementId, elementTerm } from './ids';
 import { importFiles } from './import';
@@ -30,10 +30,10 @@ import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './l
 import { movedIds } from './moved-ids';
 import { viewFiguresOf } from './notations';
 import { gone } from './ops';
-import { filesOfSubject, placeChanges, transfer } from './placement';
+import { filesOfSubjects, placeChanges, transfer } from './placement';
 import { Reconciler } from './reconciler';
 import { ImportCopies, Saver, Writer } from './saver';
-import { DocScope, fileReferences, hiddenNeighborCounts, instanceCount, readWarnings, scopedDoc } from './scoped-doc';
+import { DatasetWarnings, DocScope, NeighborCount, fileReferences, hiddenNeighborCounts, instanceCount, scopedDoc, updateHiddenNeighborCounts } from './scoped-doc';
 import { Settings, createWorkspace } from './settings';
 import { withCount } from './shape-ops';
 import { Metamodel, buildVocabulary, emptyMetamodel } from './shapes';
@@ -46,8 +46,14 @@ import { readView } from './view-read';
 
 export type { ChangeReason };
 
-/** The reads of one view for its diagram that do not depend on the geometry of its placements. */
-interface ViewReads { figures?: Derivation; neighbors?: Map<string, { in: number; out: number; targets?: number }>; applicability?: TargetMatch[] }
+/** A patch with more quads than this (a load, a file read) reads the hidden neighbor counts of each view again. */
+const NEIGHBOR_PATCH_LIMIT = 2000;
+
+/**
+ * The reads of one view for its diagram that do not depend on the geometry of its placements. `changed`: the IRIs of the data
+ * statements that changed since `neighbors` was read (a DataPatch, updateHiddenNeighborCounts).
+ */
+interface ViewReads { figures?: Derivation; neighbors?: Map<string, NeighborCount>; changed?: Set<string>; applicability?: TargetMatch[] }
 
 export interface ModelChange {
     reason: ChangeReason;
@@ -125,7 +131,9 @@ export class ModelStore {
     get revision(): number { return this.graph.change.sequence; }
     protected notified?: GraphChange;
     /** Reads that placement geometry and reports cannot change. */
-    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope>; readWarnings?: string[] } = {};
+    protected cache: { event?: GraphChange; placements?: Placements; instances?: number; explorer?: Map<string, ExplorerScope> } = {};
+    /** The dataset warnings of the snapshot, kept between changes (scoped-doc.ts DatasetWarnings). */
+    protected readonly datasetWarnings = new DatasetWarnings();
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
@@ -221,7 +229,7 @@ export class ModelStore {
         };
     }
 
-    protected cached<K extends 'placements' | 'instances' | 'explorer' | 'readWarnings'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
+    protected cached<K extends 'placements' | 'instances' | 'explorer'>(k: K, compute: () => NonNullable<ModelStore['cache'][K]>): NonNullable<ModelStore['cache'][K]> {
         const event = this.graph.keys.data;
         if (this.cache.event !== event) this.cache = { event };
         return (this.cache[k] ??= compute()) as NonNullable<ModelStore['cache'][K]>;
@@ -273,28 +281,53 @@ export class ModelStore {
         return tracer.span('refresh', 'figures', () => {
             // A kept derivation still reads the live store on demand (its data is a LazyTripleIndex, read later by the join and the
             // labels): sound because viewReads drops it at each change of what the figures read (all but layout and the report).
-            const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures);
+            const reads = this.viewReads(viewId), vf = viewFiguresOf(this.graph, iri, [], reads.figures, true);
             reads.figures = vf.derivation;
             return vf;
         });
     }
 
     /** For each instance card of the view: the number of related instances in and out that the view does not show (card halo). */
-    hiddenNeighborCounts(view: View): Map<string, { in: number; out: number; targets?: number }> {
-        const reads = this.viewReads(view.id);
-        return reads.neighbors ??= hiddenNeighborCounts(this.graph, this.shapesIndex().model, view);
+    hiddenNeighborCounts(view: View): Map<string, NeighborCount> {
+        const reads = this.viewReads(view.id), shapes = this.shapesIndex().model;
+        if (reads.neighbors && reads.changed) {
+            const changed = [...reads.changed];
+            tracer.note(`changed ${changed.length}`);
+            reads.neighbors = updateHiddenNeighborCounts(this.graph, shapes, view, reads.neighbors, changed);
+            reads.changed = undefined;
+        }
+        return reads.neighbors ??= hiddenNeighborCounts(this.graph, shapes, view);
     }
 
     /**
      * The reads of each view that a move or a resize keeps: they read which elements the view shows, not where. Kept while the store
      * changes only in the geometry of placements and the validation report (ModelGraph.keys.data retains the last event that affects these reads).
      */
-    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads> } = { byView: new Map() };
+    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads>; graph?: ModelGraph; changed?: Set<string> } = { byView: new Map() };
 
+    /**
+     * The kept reads of a view. A change of the data key drops them, but the hidden neighbor counts stay with the IRIs of the changed
+     * statements when each change since they were read was a patch of data graphs only (§11.3 DataPatch): no view graph, no shapes.
+     */
     protected viewReads(viewId: string): ViewReads {
-        const event = this.graph.keys.data;
-        if (this.viewReadCache.event !== event) this.viewReadCache = { event, byView: new Map() };
-        const byView = this.viewReadCache.byView;
+        const cache = this.viewReadCache, g = this.graph;
+        if (cache.graph !== g) {
+            cache.graph = g;
+            cache.event = undefined;
+            g.onDidChange(e => {
+                if (cache.graph !== g || (!e.data && !e.shapes)) return;
+                const quads = e.patch.filter(c => c.quad.graph.value !== VALIDATION_GRAPH);
+                if (e.shapes || !quads.length || !cache.changed || quads.length > NEIGHBOR_PATCH_LIMIT || quads.some(c => !g.isDataGraph(c.quad.graph))) { cache.changed = undefined; return; }
+                for (const { quad: q } of quads) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') cache.changed.add(t.value);
+            });
+        }
+        const event = g.keys.data;
+        if (cache.event !== event) {
+            const changed = cache.changed, byView = new Map<string, ViewReads>();
+            if (changed && cache.event) for (const [id, r] of cache.byView) if (r.neighbors) byView.set(id, { neighbors: r.neighbors, changed: new Set([...r.changed ?? [], ...changed]) });
+            Object.assign(cache, { event, byView, changed: new Set<string>() });
+        }
+        const byView = cache.byView;
         return byView.get(viewId) ?? byView.set(viewId, {}).get(viewId)!;
     }
 
@@ -354,8 +387,10 @@ export class ModelStore {
         tracer.span('refresh', 'instance file origins', () => {
             const instances = Object.values(doc.instances);
             tracer.note(`instances ${instances.length}; populated views ${Object.values(doc.views).filter(v => v.boxes.length || v.edges.length || v.arrows.length).map(v => v.id).join(', ') || 'none'}`);
+            // One query for all instances (placement.ts filesOfSubjects), not one store read per instance.
+            const files = this.settings && instances.length ? filesOfSubjects(this.graph, instances.map(i => i.uri)) : undefined;
             for (const i of instances) {
-                const f = this.settings && filesOfSubject(this.graph, rdf.namedNode(i.uri))[0];
+                const f = files?.get(i.uri)?.[0];
                 if (f) i.file = f; else delete i.file;
             }
         });
@@ -394,7 +429,7 @@ export class ModelStore {
             revision: this.revision,
             ...(this.lastChange ? { change: this.lastChange } : {}),
             file: this.file,
-            files: this.files,
+            files: tracer.span('snapshot', 'files', () => this.files),
             shapesVersion: this.shapesVersion,
             meta: this.meta,
             counts: {
@@ -403,11 +438,11 @@ export class ModelStore {
                 violations: this.violations.filter(v => v.severity === 'Violation').length,
                 ...(this.settings?.validation === 'views' && this.validationData.validated !== undefined ? { validated: this.validationData.validated } : {})
             },
-            warnings: [...this.warnings, ...this.cached('readWarnings', () => readWarnings(this.graph, this.shapesIndex().model))],
+            warnings: [...this.warnings, ...tracer.span('snapshot', 'dataset warnings', () => this.datasetWarnings.read(this.graph, this.shapesIndex().model))],
             migrations: this.history.migrations.map(m => withCount(this.graph, m)),
             movedIds: this.movedIds,
             prefixes: { table: { ...PREFIXES }, stored: !!this.settings?.prefixes },
-            dirty: this.dirty,
+            dirty: tracer.span('snapshot', 'dirty', () => this.dirty),
             canUndo: this.canUndo,
             canRedo: this.canRedo
         };
@@ -541,9 +576,10 @@ export class ModelStore {
         this.lastChange = { reason, ...scope };
         // A ViewPatch, a save or a report cannot change the file references: the state of the last content change stays (keepsReads).
         if (this.settings && reason !== 'disk' && reason !== 'validation' && !keepsReads(this.lastChange)) this.referencedState = this.referencedFiles();
+        const wasm = this.wasmMemory();
         if (tracer.on) {
             tracer.span('change', reason, () => {
-                tracer.note(`${this.listeners.size} listeners${scope ? `; tier ${scope.tier}; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
+                tracer.note(`${this.listeners.size} listeners${scope ? `; tier ${scope.tier}; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}${wasm ? `; wasm ${wasm} MB` : ''}`);
                 for (const l of [...this.listeners]) l({ reason, event, scope, patch });
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
@@ -551,6 +587,24 @@ export class ModelStore {
         if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.commitNotes.push(reason);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
+    }
+
+    /** The largest WebAssembly memory of the store that the backend log reported (MB). */
+    protected wasmLogged = 0;
+
+    /**
+     * The WebAssembly memory of the Oxigraph store in MB (spec/open.md STORE3): the trace notes it at each change. The backend log gets
+     * a line each time it passes a new multiple of 256 MB (it never shrinks).
+     */
+    protected wasmMemory(): number | undefined {
+        const bytes = oxigraphMemoryBytes();
+        if (bytes === undefined) return undefined;
+        const mb = Math.round(bytes / 1048576);
+        if (Math.floor(mb / 256) > Math.floor(this.wasmLogged / 256)) {
+            this.wasmLogged = mb;
+            console.log(`[catenary] the model index uses ${mb} MB of WebAssembly memory (${this.graph.store.size} quads)`);
+        }
+        return mb;
     }
 
     /** Resolves when the queued writes are done. */

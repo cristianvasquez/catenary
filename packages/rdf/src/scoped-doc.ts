@@ -3,7 +3,7 @@ import { shapeTargetMatches } from './shacl-targets';
 // The store builds one for each request and keeps none. The records use the rules of project.ts (`instanceRecords`) and view-read.ts.
 // Every view has an entry: the views that the scope does not read have their label only (no boxes, edges or arrows).
 
-import type { NamedNode, Term } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, View, boxes, elementOfId, emptyDoc } from '@catenary/model';
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -172,70 +172,236 @@ export function fileReferences(g: ModelGraph): { view: string; file: string }[] 
         .filter(r => r.g.termType === 'NamedNode' && r.g.value !== VALIDATION_GRAPH).map(r => ({ view: r.g.value, file: r.file.value }));
 }
 
+const values = (iris: Iterable<string>) => [...iris].map(iri).join(' ');
+
+/** Subject → its warning: the subjects of the model graph with more than one rdfs:label (of `subjects`; none: all). */
+function labelWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string, string> {
+    const M = iri(g.model.value), out = new Map<string, string>();
+    const found = select(g, `${PREFIXES} SELECT ?s (COUNT(?l) AS ?n) WHERE { ${subjects ? `VALUES ?s { ${values(subjects)} }` : ''}
+        GRAPH ${M} { ?s rdfs:label ?l } FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)}) } GROUP BY ?s HAVING (COUNT(?l) > 1)`).map(r => r.s.value);
+    if (!found.length) return out;
+    // The label that the card shows (instanceLabels): the first literal rdfs:label in order (a subject of the model graph is no vocabulary subject).
+    const first = new Map<string, string>();
+    for (const r of select(g, `${PREFIXES} SELECT ?s ?l WHERE { VALUES ?s { ${values(found)} } GRAPH ${M} { ?s rdfs:label ?l } FILTER (isLiteral(?l)) }`)) {
+        const was = first.get(r.s.value);
+        if (was === undefined || cmp(r.l.value, was) < 0) first.set(r.s.value, r.l.value);
+    }
+    const pref = new Map<string, string>();
+    for (const r of select(g, `${PREFIXES} SELECT ?s ?l WHERE { VALUES ?s { ${values(found.filter(x => !first.has(x)))} } GRAPH ${M} { ?s <${NS.skos}prefLabel> ?l } FILTER (isLiteral(?l)) }`)) {
+        const was = pref.get(r.s.value);
+        if (was === undefined || cmp(r.l.value, was) < 0) pref.set(r.s.value, r.l.value);
+    }
+    for (const x of found) out.set(x, `${x}: more than one rdfs:label, shows "${first.get(x) ?? pref.get(x) ?? labelFromIri(x)}"`);
+    return out;
+}
+
+/** Subject → its warning: the subjects of the model graph without rdf:type or rdfs:label (of `subjects`; none: all). */
+function untypedWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string, string> {
+    const M = iri(g.model.value);
+    return new Map(select(g, `${PREFIXES} SELECT DISTINCT ?s WHERE { ${subjects ? `VALUES ?s { ${values(subjects)} }` : ''} GRAPH ${M} { ?s ?p ?o }
+        FILTER (?s != ${iri(MODEL_GRAPH)} && (!isIRI(?s) || NOT EXISTS { GRAPH ${M} { ?s rdf:type|rdfs:label ?any } })) }`)
+        .map(r => [r.s.value, `subject without rdf:type or rdfs:label kept in the file, not shown: ${r.s.value}`]));
+}
+
+/** Statements about the model graph (other than dct:conformsTo). */
+function modelGraphWarnings(g: ModelGraph): string[] {
+    return select(g, `SELECT ?p WHERE { GRAPH ${iri(g.model.value)} { ${iri(MODEL_GRAPH)} ?p ?o } }`)
+        .filter(r => r.p.value !== P.conformsTo.value).map(r => `statement about the model graph kept in the file, not shown: ${r.p.value}`);
+}
+
+/** Graphs without a role and without a view:View. */
+function graphWarnings(g: ModelGraph): string[] {
+    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => iri(t.value)).join(', ');
+    return select(g, `${PREFIXES} SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${excluded}))
+        FILTER NOT EXISTS { GRAPH ?g { ?v a view:View } } }`).sort((a, b) => cmp(a.g.value, b.g.value))
+        .map(r => `graph ${r.g.value} has no view:View, kept in the file, not shown`);
+}
+
+/** The warnings of the read of one view, and the terms whose statements the read depends on (DatasetWarnings). */
+interface ViewWarnings { warnings: string[]; terms: Set<string> }
+
+function viewWarnings(g: ModelGraph, view: NamedNode, shapes: ShapesModel): ViewWarnings {
+    const warnings: string[] = [];
+    readView(g, elementId(view), shapes, warnings);
+    // What the projection of the view reads besides its view graph: the placed elements (cards, marks, referenced views), the ends of
+    // the placed statements (relations, arrows), and the members of the placed collections.
+    const terms = new Set(select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE {
+        { GRAPH ${iri(view.value)} { ?pl view:element ?e } }
+        UNION { GRAPH ${iri(view.value)} { ?pl rdf:reifies ?t } BIND (SUBJECT(?t) AS ?e) }
+        UNION { GRAPH ${iri(view.value)} { ?pl rdf:reifies ?t } BIND (OBJECT(?t) AS ?e) }
+        UNION { GRAPH ${iri(view.value)} { ?pl view:element ?c } GRAPH ?mg { ?c view:member ?e } }
+        FILTER (isIRI(?e)) }`).map(r => r.e.value));
+    return { warnings, terms };
+}
+
+const assemble = (labels: Map<string, string>, model: string[], untyped: Map<string, string>, graphs: string[], views: Iterable<ViewWarnings>) => [...new Set([
+    ...[...labels].sort((a, b) => cmp(a[0], b[0])).map(([, w]) => w), ...model, ...[...untyped].sort((a, b) => cmp(a[0], b[0])).map(([, w]) => w),
+    ...graphs, ...[...views].flatMap(v => v.warnings)
+])];
+
 /**
  * What the read models cannot show in the current dataset: statements about the model graph, subjects without a type or a label,
  * instances with several labels, graphs without a view, and the parts of each view (view-read.ts). The statements stay in the files.
  */
 export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {
-    const warnings: string[] = [];
-    const M = iri(g.model.value);
-    const labels = instanceLabels(g);
-    for (const r of select(g, `${PREFIXES} SELECT ?s (COUNT(?l) AS ?n) WHERE { GRAPH ${M} { ?s rdfs:label ?l } FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)}) } GROUP BY ?s HAVING (COUNT(?l) > 1)`)
-        .sort((a, b) => cmp(a.s.value, b.s.value))) {
-        warnings.push(`${r.s.value}: more than one rdfs:label, shows "${labels.get(r.s.value)}"`);
-    }
-    for (const r of select(g, `SELECT ?p WHERE { GRAPH ${M} { ${iri(MODEL_GRAPH)} ?p ?o } }`)) {
-        if (r.p.value !== P.conformsTo.value) warnings.push(`statement about the model graph kept in the file, not shown: ${r.p.value}`);
-    }
-    for (const r of select(g, `${PREFIXES} SELECT DISTINCT ?s WHERE { GRAPH ${M} { ?s ?p ?o }
-        FILTER (?s != ${iri(MODEL_GRAPH)} && (!isIRI(?s) || NOT EXISTS { GRAPH ${M} { ?s rdf:type|rdfs:label ?any } })) }`)) {
-        warnings.push(`subject without rdf:type or rdfs:label kept in the file, not shown: ${r.s.value}`);
-    }
-    const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(VALIDATION_GRAPH)].map(t => iri(t.value)).join(', ');
-    for (const r of select(g, `${PREFIXES} SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER (isIRI(?g) && ?g NOT IN (${excluded}))
-        FILTER NOT EXISTS { GRAPH ?g { ?v a view:View } } }`).sort((a, b) => cmp(a.g.value, b.g.value))) {
-        warnings.push(`graph ${r.g.value} has no view:View, kept in the file, not shown`);
-    }
-    for (const v of g.views()) readView(g, elementId(v), shapes, warnings);
-    return [...new Set(warnings)];
+    return assemble(labelWarnings(g), modelGraphWarnings(g), untypedWarnings(g), graphWarnings(g), g.views().map(v => viewWarnings(g, v, shapes)));
 }
+
+/** A patch of more quads than this (a load, a file read) reads all warnings again. */
+const WARNINGS_PATCH_LIMIT = 2000;
+const VIEW_TYPE = NS.view + 'View';
+/** The predicates of the marks that a view projects (view-read.ts MARKS) and of the arrows. */
+const MARK_PREDICATES = new Set([P.type.value, P.label.value, ...['text', 'file', 'member', 'arrow'].map(p => NS.view + p)]);
+
+/**
+ * The dataset warnings (readWarnings), kept between changes of one graph (spec/manifest.hs §11.3 law_keptReadsEqualRead). A data
+ * patch reads again the subject warnings of its subjects only, and the views whose read it can change: a changed view graph, a view
+ * that places a changed term of a statement to an IRI, of a view:* statement, or of a statement of a term that is not an instance (or
+ * stops or starts being one). A shapes change, a patch without quads or a large patch reads all again.
+ */
+export class DatasetWarnings {
+    protected graph?: ModelGraph;
+    protected shapes?: ShapesModel;
+    protected kept?: { labels: Map<string, string>; model: string[]; untyped: Map<string, string>; graphs: string[]; views: Map<string, ViewWarnings>; out: string[] };
+    /** The changes since the last read; undefined: read all. */
+    protected pending?: { op: 'add' | 'remove'; quad: Quad }[];
+
+    read(g: ModelGraph, shapes: ShapesModel): string[] {
+        if (g !== this.graph) {
+            this.graph = g;
+            this.kept = undefined;
+            g.onDidChange(e => {
+                if (g !== this.graph || (!e.data && !e.shapes)) return;
+                if (e.shapes || !e.patch.length || !this.pending || this.pending.length + e.patch.length > WARNINGS_PATCH_LIMIT) this.pending = undefined;
+                else this.pending.push(...e.patch);
+            });
+        }
+        if (!this.kept || !this.pending || shapes !== this.shapes) return this.readAll(g, shapes);
+        if (this.pending.length) this.update(g, shapes, this.pending);
+        this.pending = [];
+        return this.kept.out;
+    }
+
+    protected readAll(g: ModelGraph, shapes: ShapesModel): string[] {
+        this.shapes = shapes;
+        this.pending = [];
+        const views = new Map(g.views().map(v => [v.value, viewWarnings(g, v, shapes)]));
+        const kept = { labels: labelWarnings(g), model: modelGraphWarnings(g), untyped: untypedWarnings(g), graphs: graphWarnings(g), views, out: [] as string[] };
+        kept.out = assemble(kept.labels, kept.model, kept.untyped, kept.graphs, views.values());
+        this.kept = kept;
+        return kept.out;
+    }
+
+    protected update(g: ModelGraph, shapes: ShapesModel, changes: readonly { op: 'add' | 'remove'; quad: Quad }[]): void {
+        const kept = this.kept!;
+        const data = changes.filter(c => g.isDataGraph(c.quad.graph));
+        const subjects = [...new Set(data.flatMap(c => c.quad.subject.termType === 'NamedNode' ? [c.quad.subject.value] : []))];
+        if (subjects.length) {
+            for (const s of subjects) { kept.labels.delete(s); kept.untyped.delete(s); }
+            for (const [s, w] of labelWarnings(g, subjects)) kept.labels.set(s, w);
+            for (const [s, w] of untypedWarnings(g, subjects)) kept.untyped.set(s, w);
+        }
+        if (subjects.includes(MODEL_GRAPH)) kept.model = modelGraphWarnings(g);
+        const other = changes.filter(c => !g.isDataGraph(c.quad.graph) && !g.isShapesGraph(c.quad.graph) && c.quad.graph.value !== VALIDATION_GRAPH);
+        if (other.some(c => !g.isView(c.quad.graph) || (c.quad.predicate.value === P.type.value && c.quad.object.value === VIEW_TYPE))) kept.graphs = graphWarnings(g);
+        // The terms whose change can change the read of a view that places them.
+        const relevant = new Set<string>();
+        const literal = data.filter(c => c.quad.object.termType !== 'NamedNode').map(c => c.quad.subject.value);
+        const instances = literal.length ? instancesAmong(g, literal) : new Set<string>();
+        const typing = (c: { quad: Quad }) => c.quad.predicate.value === P.type.value || c.quad.predicate.value === P.label.value;
+        // An instance stays one when it had a type or a label that the patch removed, or when the patch added none.
+        const stays = (s: string) => instances.has(s) && (data.some(c => c.op === 'remove' && typing(c) && c.quad.subject.value === s)
+            || !data.some(c => c.op === 'add' && typing(c) && c.quad.subject.value === s));
+        for (const { quad: q } of data) {
+            if (q.object.termType === 'NamedNode') { relevant.add(q.subject.value); relevant.add(q.object.value); }
+            else if (q.predicate.value.startsWith(NS.view) || !stays(q.subject.value)) relevant.add(q.subject.value);
+        }
+        const changedViews = new Set<string>();
+        for (const { quad: q } of other) {
+            changedViews.add(q.graph.value);
+            relevant.add(q.graph.value);
+            if (MARK_PREDICATES.has(q.predicate.value)) {
+                relevant.add(q.subject.value);
+                if (q.object.termType === 'NamedNode') relevant.add(q.object.value);
+            }
+        }
+        const views = new Map<string, ViewWarnings>();
+        for (const v of g.views()) {
+            const was = kept.views.get(v.value);
+            views.set(v.value, !was || changedViews.has(v.value) || [...relevant].some(t => was.terms.has(t)) ? viewWarnings(g, v, shapes) : was);
+        }
+        kept.views = views;
+        kept.out = assemble(kept.labels, kept.model, kept.untyped, kept.graphs, views.values());
+    }
+}
+
+/** A row of the card halo: related instances in and out that the view does not show, and shapes or targets that it does not show. */
+export type NeighborCount = { in: number; out: number; targets?: number };
+
+/**
+ * The counts of `hiddenNeighborCounts` after a data patch, from the counts before it (`prior`) and the IRIs of the changed statements
+ * (§11.3 DataPatch, law_keptReadsEqualRead). The related instances of a card change when its statements change, or when a
+ * related node stops or starts being an instance: only the related instances of these cards are read again. The target counts come
+ * from the kept matches of each node (shacl-targets.ts) for all cards. The view itself did not change.
+ */
+export function updateHiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View, prior: ReadonlyMap<string, NeighborCount>, changed: readonly string[]): Map<string, NeighborCount> {
+    const cards = new Set<string>();
+    for (const b of boxes(view, 'card')) { const t = elementTerm(b.element); if (t?.termType === 'NamedNode') cards.add(t.value); }
+    const affected = new Set(changed.filter(x => cards.has(x)));
+    const iris = changed.filter(x => IRI_TEXT.test(x));
+    if (iris.length) {
+        const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
+        for (const r of select(g, `${PREFIXES} SELECT DISTINCT ?c WHERE { VALUES ?e { ${values(iris)} }
+            { GRAPH ?g { ?e ?p ?c } } UNION { GRAPH ?g { ?c ?p ?e } } FILTER (isIRI(?c) && ?g IN (${graphs})) }`)) if (cards.has(r.c.value)) affected.add(r.c.value);
+    }
+    return hiddenNeighborCounts(g, shapes, view, { rows: prior, affected });
+}
+
+const IRI_TEXT = /^[^\s<>"{}|^`\\]+$/;
 
 /**
  * For each instance card of `view`: the number of instances related to it ('in': subjects of its relations, 'out': objects) that the
  * view does not show. The rule of `hiddenNeighborCounts` (@catenary/model) on SPARQL rows of the cards, without the records of all instances.
+ * `prior`: the related instances of the cards outside `affected` (IRIs) come from these rows; only the affected cards are read.
  */
-export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View): Map<string, { in: number; out: number; targets?: number }> {
+export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View, prior?: { rows: ReadonlyMap<string, NeighborCount>; affected: ReadonlySet<string> }): Map<string, NeighborCount> {
     // The instance test of all cards in one request (§11.3 readBudgetMs), not one store read per card.
     const cardTerms = boxes(view, 'card').flatMap(b => { const t = elementTerm(b.element); return t?.termType === 'NamedNode' ? [{ b, t }] : []; });
     const cardInstances = instancesAmong(g, cardTerms.map(c => c.t.value));
     const cards = new Map<string, string>();
     for (const { b, t } of cardTerms) if (cardInstances.has(t.value)) cards.set(t.value, b.element);
-    const out = new Map<string, { in: number; out: number; targets?: number }>();
+    const out = new Map<string, NeighborCount>();
     const placed = new Set(boxes(view, 'card').map(b => b.element));
+    // The IRIs of the cards once: a test by IRI, not an id built for each target.
+    const placedIris = new Set(cardTerms.map(c => c.t.value));
     // One request for all shape cards, not one per card.
     const placedShapes = Object.values(shapes.nodeShapes).filter(s => placed.has(s.id));
-    const targets = placedShapes.length ? shapeTargetMatches(g, { shapes: placedShapes.map(s => s.uri) }).filter(m => m.node.termType === 'NamedNode') : [];
+    const targets = placedShapes.length ? shapeTargetMatches(g, { shapes: placedShapes.map(s => s.uri) }).filter(m => m.node.termType === 'NamedNode' && !placedIris.has(m.node.value)) : [];
     const targetInstances = instancesAmong(g, targets.map(m => m.node.value));
-    const hidden = targets.filter(m => targetInstances.has(m.node.value) && !placed.has(elementId(rdf.namedNode(m.node.value))));
+    const hidden = targets.filter(m => targetInstances.has(m.node.value));
+    const hiddenOf = new Map<string, number>();
+    for (const m of hidden) hiddenOf.set(m.shape, (hiddenOf.get(m.shape) ?? 0) + 1);
     for (const shape of placedShapes) {
-        const targets = hidden.filter(m => m.shape === shape.uri).length;
+        const targets = hiddenOf.get(shape.uri) ?? 0;
         if (targets) out.set(shape.id, { in: 0, out: 0, targets });
     }
     if (!cards.size) return out;
     // The IRIs that the view shows, once: a card, or a member of a shown value set (not a test per neighbor over all boxes).
-    const shownIris = new Set<string>();
-    for (const b of boxes(view, 'card')) {
-        const t = elementTerm(b.element);
-        if (t) shownIris.add(t.value);
-        for (const m of shapes.valueSets[b.element]?.members ?? []) shownIris.add(m.uri);
-    }
+    const shownIris = new Set<string>(placedIris);
+    for (const b of boxes(view, 'card')) for (const m of shapes.valueSets[b.element]?.members ?? []) shownIris.add(m.uri);
     const shown = (iri: string) => cards.has(iri) || shownIris.has(iri);
     const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
-    const values = [...cards.keys()].map(iri).join(' ');
+    const read = [...cards.keys()].filter(c => !prior || prior.affected.has(c));
+    const counts = new Map<string, { in: number; out: number }>();
+    // The cards that are not read again keep the related instances of their prior row (a row without any has 0 in and 0 out).
+    if (prior) for (const [c, id] of cards) {
+        const row = prior.rows.get(id);
+        if (!prior.affected.has(c) && row && (row.in || row.out)) counts.set(c, { in: row.in, out: row.out });
+    }
     const others = new Map<string, { in: Set<string>; out: Set<string> }>();
-    const found = select(g, `${PREFIXES} SELECT DISTINCT ?s ?x ?g ?dir WHERE { VALUES ?s { ${values} }
+    const found = read.length ? select(g, `${PREFIXES} SELECT DISTINCT ?s ?x ?g ?dir WHERE { VALUES ?s { ${values(read)} }
         { GRAPH ?g { ?s ?p ?x } BIND ("out" AS ?dir) } UNION { GRAPH ?g { ?x ?p ?s } BIND ("in" AS ?dir) }
-        FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`);
+        FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`) : [];
     // The homes and the instance test of all neighbors in one request each, not one store read per row.
     const homes = homesAmong(g, found.flatMap(r => [r.s.value, r.x.value]));
     const neighborInstances = instancesAmong(g, found.map(r => r.x.value));
@@ -251,12 +417,18 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         if (owner === g.model.value ? !g.isDataGraph(r.g) : r.g.value !== owner) continue;
         add(r.s.value, dir, r.x.value);
     }
-    for (const [self, o] of others) out.set(cards.get(self)!, { in: o.in.size, out: o.out.size });
+    for (const [self, o] of others) counts.set(self, { in: o.in.size, out: o.out.size });
+    // In the order of the cards, as a read of all cards gives them.
+    for (const [self, id] of cards) { const c = counts.get(self); if (c) out.set(id, { in: c.in, out: c.out }); }
     const shownShapes = new Set(boxes(view, 'card').map(c => c.element));
     const shapeIds = new Map(Object.values(shapes.nodeShapes).map(s => [s.uri, s.id]));
-    const matches = shapeTargetMatches(g, { nodes: [...cards.keys()].map(value => ({ termType: 'NamedNode', value })) });
+    // The shapes of each card that the view does not show, from the kept matches of each node (shacl-targets.ts).
+    const unshown = new Map<string, number>();
+    for (const m of shapeTargetMatches(g, { nodes: [...cards.keys()].map(value => ({ termType: 'NamedNode', value })) })) {
+        if (shapeIds.has(m.shape) && !shownShapes.has(shapeIds.get(m.shape)!)) unshown.set(m.node.value, (unshown.get(m.node.value) ?? 0) + 1);
+    }
     for (const [uri, id] of cards) {
-        const targets = matches.filter(m => m.node.value === uri && shapeIds.has(m.shape) && !shownShapes.has(shapeIds.get(m.shape)!)).length;
+        const targets = unshown.get(uri) ?? 0;
         const row = out.get(id);
         if (targets && row) row.targets = targets;
         else if (targets) out.set(id, { in: 0, out: 0, targets });

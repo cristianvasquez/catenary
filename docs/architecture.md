@@ -140,7 +140,7 @@ Paths are relative to the directory in the first column.
 | | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
-| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `trap.ts`, `terms.ts` | Quad store port, Oxigraph store, the trap guard (a WebAssembly trap stops the store; ModelStore then reads the files again, manifest §3.4), term keys |
+| `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `wasm-memory.ts`, `trap.ts`, `terms.ts` | Quad store port, Oxigraph store, the size of its WebAssembly memory (the trace notes it at each change), the trap guard (a WebAssembly trap stops the store; ModelStore then reads the files again, manifest §3.4), term keys |
 | | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, text patches of Turtle and of a TriG graph block, statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore exposes PanelReads for query dispatch and wires file operations through ports. History records final file graphs, including transfers. |
@@ -155,11 +155,11 @@ Paths are relative to the directory in the first column.
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
 | | `explorer.ts` | Model explorer host: plugins, the query port over the graphs of one file, keys, pages, search and paths |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
-| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
+| | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter. The adapter keeps the target matches of each node and drops those that a data patch can change (manifest §11.3). |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |
 | | `validate.ts`, `validation-runner.ts`, `validation-worker.ts`, `plain-quads.ts`, `report-read.ts` | The pure validator (data and shape quads in, a report out); ValidationRunner debounces runs, rejects stale results and writes the report graph through the shared patch path; the report read of Problems and Properties |
 | | `trace.ts` | Trace spans with causes (AsyncLocalStorage), totals, quad-store query reporting; `figure-edits.ts` traces sync, derivation and placement rules; `view-read.ts` and `model-store.ts` trace full-view reads and instance file origins; `modeler/src/node/glsp/view-session.ts` traces the steps of a canvas refresh (layout patch, hidden neighbors, figures, applicability, schema, graph model) |
-| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
+| | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, `keptStoreInput` keeps what it read and forgets the terms of each patch, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
 | | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |
@@ -208,6 +208,8 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 | `scripts/smoke-desktop.mjs` | The desktop app or a package: paths, writes, Git, watcher, plugins, native modules |
 
 Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.
+
+Read budget: `packages/rdf/test/read-budget.test.ts` generates a view of 600 cards. It holds each panel read of 600 elements and each step of a content change with an open canvas to `readBudgetMs` (manifest §11.3), by the tracer spans of the fastest of three runs. Reads that still exceed the budget are listed with their `spec/open.md` row and a ceiling. The same file checks that the kept reads equal the reads of a new store after each edit.
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
 

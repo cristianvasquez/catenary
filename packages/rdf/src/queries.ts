@@ -385,14 +385,14 @@ export function viewDescription(g: ModelGraph, file: string | undefined, viewId:
 /** Checked-node connections whose instance and shape cards are both shown. */
 export function applicabilityOf(g: ModelGraph, view: View): TargetMatch[] {
     const shown = new Set(boxes(view, 'card').map(b => b.element));
-    const nodes: string[] = [], shapes: string[] = [];
+    const shapes: string[] = [];
     for (const id of shown) {
         const t = elementTerm(id);
-        if (t?.termType !== 'NamedNode') continue;
         // A card can be both: a class used as its own node shape. Non-shape IRIs never match, so each card is a shape candidate.
-        shapes.push(t.value);
-        if (g.isInstance(t)) nodes.push(t.value);
+        if (t?.termType === 'NamedNode') shapes.push(t.value);
     }
+    // The instance test of all cards in one request (§11.3 readBudgetMs), not one store read per card.
+    const instances = instancesAmong(g, shapes), nodes = shapes.filter(s => instances.has(s));
     // Only the shapes on the canvas: a connection needs both cards. No shape card, no query.
     if (!nodes.length || !shapes.length) return [];
     return shapeTargetMatches(g, { nodes: nodes.map(value => ({ termType: 'NamedNode', value })), shapes })

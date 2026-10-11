@@ -357,13 +357,17 @@ export function deriveFigures(data: TripleIndex, notes: Notations, viewIri: stri
 const cmpKey = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const LINKING: Role[] = ['part', 'from', 'to', 'anchor', 'link'];
 
-/** A focus is a target of a figure shape: the membership test of `targets`, without the enumeration of the workspace. */
-function isTarget(D: TripleIndex, fs: FigureShape, t: TermJSON): boolean {
+/**
+ * A focus is a target of a figure shape: the membership test of `targets`, without the enumeration of the workspace. `classes`: the
+ * keys of the classes of `t` (classesOf), computed once for all figure shapes.
+ */
+function isTarget(D: TripleIndex, fs: FigureShape, t: TermJSON, classes: () => ReadonlySet<string>): boolean {
     if (t.termType !== 'NamedNode') return false;
-    if (fs.targets.node.some(n => nkey(n) === nkey(t))) return true;
+    const k = nkey(t);
+    if (fs.targets.node.some(n => nkey(n) === k)) return true;
     if (fs.targets.subjectsOf.some(p => D.objects(t, p.value).length)) return true;
     if (fs.targets.objectsOf.some(p => D.subjects(p.value, t).length)) return true;
-    return fs.targets.class.length > 0 && classesOf(D, t).some(c => fs.targets.class.some(k => nkey(k) === nkey(c)));
+    return fs.targets.class.length > 0 && fs.targets.class.some(c => classes().has(nkey(c)));
 }
 
 /**
@@ -379,7 +383,9 @@ function scopedFigures(D: TripleIndex, shapes: FigureShape[], scope: readonly NT
         if (t.termType !== 'NamedNode') return undefined;
         const k = nkey(t);
         if (!decided.has(k)) {
-            const fs = shapes.find(fs => isTarget(D, fs, t) && holds(fs.when, t));
+            let classes: Set<string> | undefined;
+            const classKeys = () => classes ??= new Set(classesOf(D, t).map(nkey));
+            const fs = shapes.find(fs => isTarget(D, fs, t, classKeys) && holds(fs.when, t));
             decided.set(k, fs ? newFigure(t, fs) : null);
         }
         return decided.get(k) ?? undefined;
