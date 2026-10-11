@@ -30,8 +30,8 @@ export class Settings {
     newViewFile?: string;
     /** The model files that are not views, by path. Their shapes are in the shapes graph of the file, the rest in its data graph. */
     readonly modelFiles = new Map<string, ModelFile>();
-    /** Files that Catenary reads but does not write (path -> why), besides the formats it does not write (`writeProblem`). */
-    readonly noWrite = new Map<string, string>();
+    /** Files that Catenary reads but does not write because of their content (path -> why), for example RDF 1.2 annotations. */
+    readonly readOnlyContent = new Map<string, string>();
     /** Manifest settings: the file for new subjects (undefined: not set), the placement by kind, the exclude globs. */
     protected defaultFileSetting?: string;
     placement: Placement;
@@ -154,7 +154,7 @@ export class Settings {
      * writable file that is not the file of shapes or SKOS resources (Turtle first), else `<workspace name>.ttl`.
      */
     get defaultFile(): string {
-        const writable = (file: string) => !this.writeProblemOf(file) && (path.extname(file).toLowerCase() !== '.json' || this.modelFiles.has(file));
+        const writable = (file: string) => !this.readOnlyReason(file) && (path.extname(file).toLowerCase() !== '.json' || this.modelFiles.has(file));
         if (this.defaultFileSetting && writable(this.defaultFileSetting)) return this.defaultFileSetting;
         const kindFiles = new Set([this.placement.shapes, this.placement.concepts].map(f => pathKey(f)));
         const files = [...this.modelFiles.values()].filter(f => !f.error && writable(f.path) && f.triples?.length && !kindFiles.has(pathKey(f.path)));
@@ -172,7 +172,7 @@ export class Settings {
 
     /** A file of the placement when Catenary can write it, else the default file. */
     placeFile(file: string | undefined): string {
-        return file && !this.writeProblemOf(file) ? file : this.defaultFile!;
+        return file && !this.readOnlyReason(file) ? file : this.defaultFile!;
     }
 
     /** The graph for new shapes: the file of the placement, or ("near") the file with most node shapes. The shapes graphs of the store. */
@@ -180,7 +180,7 @@ export class Settings {
         let target = this.placeFile(this.placement.shapes === NEAR ? undefined : this.placement.shapes);
         if (this.placement.shapes === NEAR) {
             const count = (f: string) => this.graph.match(null, P.type, rdf.namedNode(NS.sh + 'NodeShape'), rdf.namedNode(fileGraphIri(f))).length;
-            const best = [...this.modelFiles.keys()].filter(f => !this.writeProblemOf(f)).map(f => [f, count(f)] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0];
+            const best = [...this.modelFiles.keys()].filter(f => !this.readOnlyReason(f)).map(f => [f, count(f)] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0];
             if (best) target = best[0];
         }
         this.modelFile(target);
@@ -225,10 +225,26 @@ export class Settings {
         }
     }
 
-    /** Undefined, or why Catenary does not write this file: its format (`writeProblem`), its content (`noWrite`), or an import mark (ws:imported). */
-    writeProblemOf(file: string): string | undefined {
-        return writeProblem(file) ?? (this.noWrite.has(file) ? `${path.basename(file)}: ${this.noWrite.get(file)}` : undefined)
-            ?? (this.isImported(file) ? `${path.basename(file)} is an imported file.` : undefined);
+    /** The reasons why a file is read only, in the order that `readOnlyReason` tries them: format, content, import mark (ws:imported). */
+    protected readonly readOnlyReasons: ReadonlyArray<(file: string) => string | undefined> = [
+        file => writeProblem(file),
+        file => this.readOnlyContentReason(file),
+        file => this.isImported(file) ? `${path.basename(file)} is an imported file.` : undefined
+    ];
+
+    /** Undefined, or why the file is read only: the first reason of `readOnlyReasons`. */
+    readOnlyReason(file: string): string | undefined {
+        for (const reason of this.readOnlyReasons) {
+            const text = reason(file);
+            if (text !== undefined) return text;
+        }
+        return undefined;
+    }
+
+    /** Undefined, or why Catenary does not write this file because of its content (`readOnlyContent`). */
+    readOnlyContentReason(file: string): string | undefined {
+        const why = this.readOnlyContent.get(file);
+        return why === undefined ? undefined : `${path.basename(file)}: ${why}`;
     }
 
     /** A ws:imported glob matches the path of the file relative to the workspace folder. */
@@ -276,7 +292,7 @@ export class Settings {
         for (const file of files) {
             const record = this.modelFiles.get(file);
             if (!record) return `${path.basename(file)} is not a model data file.`;
-            const problem = record.error ?? this.writeProblemOf(file);
+            const problem = record.error ?? this.readOnlyReason(file);
             if (problem) return problem;
         }
         return undefined;
@@ -312,7 +328,7 @@ export class Settings {
         const fileOf = (rel: string): { file: string } | { error: string } => {
             const file = path.resolve(this.folder, rel);
             if (!isInside(this.folder, file)) return { error: `${rel}: the file must be in the folder of the workspace file.` };
-            const problem = this.writeProblemOf(file);
+            const problem = this.readOnlyReason(file);
             if (problem) return { error: problem };
             if ([...this.viewFiles.values(), this.workspace].some(f => pathKey(f.path) === pathKey(file))) return { error: `${path.basename(file)} is a view or the workspace file.` };
             return { file: knownPath(this.modelFiles.keys(), file) };
@@ -426,7 +442,7 @@ export interface ModelFile extends OnDisk {
     blanks?: number;
 }
 
-/** A model file read: a view (one view:View IRI), another file, or an error. `noWrite`: why Catenary reads the file but does not write it. */
-export type FileRead = { kind: 'view'; path: string; view: string; triples: Quad[]; text: string; warnings: string[]; noWrite?: string }
-    | { kind: 'model'; path: string; triples: Quad[]; text: string; warnings: string[]; noWrite?: string }
+/** A model file read: a view (one view:View IRI), another file, or an error. `readOnlyContent`: why Catenary reads the file but does not write it (its content). */
+export type FileRead = { kind: 'view'; path: string; view: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string }
+    | { kind: 'model'; path: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string }
     | { kind: 'error'; path: string; error: string };
