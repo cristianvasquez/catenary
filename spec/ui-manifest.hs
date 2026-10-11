@@ -479,7 +479,8 @@ law_canvasSelectsPlacements s = source s == OnCanvas ==> all onCanvas (items s)
     onCanvas (SelPart _) = True
 
 -- | Tree and Results highlight selected elements, their placements and the elements of selected placements.
--- A closed folder that contains a highlight is marked, not opened. Placements highlight on the active canvas only (open.md D2).
+-- A closed folder that contains a highlight is marked, not opened. A canvas highlights the selected elements that it shows when it is
+-- not the origin of the selection (law_oneSelectionPerWindow).
 -- A selected part highlights its resource in Tree when Tree contains it.
 highlight :: UiSelection -> Pane -> [Highlighted]
 data Highlighted = Row Element | ClosedFolder String | OnActiveCanvas Element deriving Eq
@@ -488,6 +489,30 @@ highlightedElements s = nub (concat [selfAndRelated e | SelElement e <- items s]
   where selfAndRelated e = e : placements e ++ [elementOf e | isPlacement e]
 law_highlightRows :: UiSelection -> Listing -> Element -> Bool
 law_highlightRows s l e = (Row e `elem` highlight s (InListing l)) ==> e `elem` highlightedElements s
+
+-- | One selection per window. A canvas gesture makes its canvas the origin: the selection holds placements of that view.
+-- The origin shows the selection as its canvas selection. Canvases of other views highlight the same elements, never select.
+-- A listing selection has no origin: each canvas highlights. A highlight sends no select and gives no selection event.
+-- A select goes to the origin canvas only, when its canvas selection differs. The old origin gets one empty select, which clears it.
+-- Reason: one click selected in every open canvas, and each model change sent one select per canvas.
+-- Code: diagram-ids.ts canvasSelection, selection-sync.ts, diagram-configuration.ts FocusedSelectionForwarder.
+originOf :: UiSelection -> Maybe Element          -- the view of the canvas that made the selection
+originOf s = case (source s, [viewOf e | SelElement e <- items s, isPlacement e]) of
+  (OnCanvas, v : _) -> Just v
+  _ -> Nothing
+data CanvasShows = CanvasShows { canvasSelected :: [Element], canvasHighlighted :: [Element] } deriving Eq
+canvasShows :: UiSelection -> Element -> CanvasShows   -- selection, view of the canvas
+canvasShows s v
+  | originOf s == Just v = CanvasShows shown []
+  | otherwise = CanvasShows [] shown
+  where shown = nub [p | e <- highlightedElements s, p <- e : placements e, isPlacement p, viewOf p == v]
+selects :: (Element -> [Element]) -> UiSelection -> [Element] -> [(Element, [Element])]   -- held canvas selections, selection, open views
+selects held s views = [(v, want) | v <- views, let want = canvasSelected (canvasShows s v), want /= held v]
+law_oneSelectionPerWindow :: UiSelection -> (Element -> [Element]) -> [Element] -> Bool
+law_oneSelectionPerWindow s held views =
+  all (\v -> null (canvasSelected (canvasShows s v)) || originOf s == Just v) views
+    && all (\v -> null (canvasHighlighted (canvasShows s v)) || originOf s /= Just v) views
+    && all (\(v, ids) -> null ids || originOf s == Just v) (selects held s views)
 
 -- 4. Actions and keys --------------------------------------------------------
 

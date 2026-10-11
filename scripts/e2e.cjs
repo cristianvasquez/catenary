@@ -1360,3 +1360,52 @@ test('browser: Trace performance metrics record model input and stop on pause', 
   assert.equal(await metric('Backend event-loop delay').innerText(), 'No samples');
   assert.equal(await metric('RPC count').innerText(), '0');
 }));
+
+test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, the canvas of another view highlights, Ctrl+click adds from it', { timeout: 60000 }, t => withFixtureApp(t, 'one-selection', async ({ page, cli }) => {
+  cli('rpc', 'setSettings', JSON.stringify({ validation: 'off' }));
+  const exec = command => cli('exec', JSON.stringify(command)).result;
+  const left = exec({ kind: 'createView', label: 'Left view' }).id, right = exec({ kind: 'createView', label: 'Right view' }).id;
+  const one = exec({ kind: 'createInstance', classIri: 'urn:test:Sel', label: 'Shared one', view: left, at: { x: 100, y: 100 } }).id;
+  const two = exec({ kind: 'createInstance', classIri: 'urn:test:Sel', label: 'Shared two', view: left, at: { x: 100, y: 500 } }).id;
+  assert.equal(exec({ kind: 'addToView', view: right, ids: [one], at: { x: 100, y: 100 } }).ok, true);
+  assert.equal(exec({ kind: 'addToView', view: right, ids: [two], at: { x: 100, y: 500 } }).ok, true);
+  // Two canvases side by side. Count the selection events and the SelectActions of each canvas.
+  cli('eval', `const a = await ctx.editors.open(${JSON.stringify(left)}); await ctx.editors.open(${JSON.stringify(right)}, 'activate', { widgetOptions: { mode: 'split-right', ref: a } }); return true`);
+  const placement = (view, id) => cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)}); return [w.viewerOptions.baseDiv, ctx.editors.placementOf(w, ${JSON.stringify(id)})]`);
+  // The visible model only: the hidden model viewer (`<baseDiv>_hidden`) draws the same ids.
+  const node = (view, id) => { const [base, p] = placement(view, id); return page.locator(`[id="${base}"] [id="${base}_${p}"]`); };
+  await node(left, one).waitFor();
+  await node(right, one).waitFor();
+  cli('eval', `window.__one = { events: 0, selects: {} };
+    ctx.selection.onDidChange(() => window.__one.events++);
+    for (const view of ${JSON.stringify([left, right])}) {
+      const d = ctx.editors.find(view).actionDispatcher, dispatch = d.dispatch.bind(d);
+      d.dispatch = a => { if (a.kind === 'elementSelected') window.__one.selects[view] = (window.__one.selects[view] ?? 0) + 1; return dispatch(a); };
+    }
+    return true`);
+  const counts = () => cli('eval', 'return window.__one');
+  const classes = async (view, id) => (await node(view, id).getAttribute('class')).split(/\s+/);
+  await node(left, one).locator('.card-name').first().click();
+  await page.waitForTimeout(500);
+  // One click: one selection event and one SelectAction, in the canvas of the click. The other canvas highlights the element.
+  assert.deepEqual(counts(), { events: 1, selects: { [left]: 1 } });
+  assert.ok((await classes(left, one)).includes('selected'));
+  assert.ok((await classes(right, one)).includes('catenary-highlight'));
+  assert.ok(!(await classes(right, one)).includes('selected'));
+  // A model change sends no SelectAction to the canvases.
+  exec({ kind: 'rename', id: one, label: 'Shared one renamed' });
+  await node(right, one).filter({ hasText: 'Shared one renamed' }).waitFor();
+  await page.waitForTimeout(300);
+  assert.deepEqual(counts().selects, { [left]: 1 });
+  // Ctrl+click in the highlighting canvas adds: that canvas becomes the origin, and the first canvas highlights both.
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  const selection = cli('eval', 'return ctx.selection.selection');
+  assert.equal(selection.view, right);
+  assert.deepEqual(selection.ids.map(id => cli('eval', `return ctx.editors.elementIn(${JSON.stringify(right)}, ${JSON.stringify(id)})`)).sort(), [one, two].sort());
+  for (const id of [one, two]) {
+    assert.ok((await classes(right, id)).includes('selected'), `${id} selected in the origin`);
+    assert.ok((await classes(left, id)).includes('catenary-highlight'), `${id} highlighted in the other canvas`);
+    assert.ok(!(await classes(left, id)).includes('selected'), `${id} not selected in the other canvas`);
+  }
+}));

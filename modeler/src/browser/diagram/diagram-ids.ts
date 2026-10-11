@@ -57,3 +57,20 @@ export function selectionInDiagram(ids: DiagramIds, s: ModelSelection, viewId: s
     };
     return [...new Set(elements.map(shown).filter((id): id is string => id !== undefined && ids.has(id)))];
 }
+
+/** What a view editor shows of the window selection: a GLSP selection, or a highlight (CSS class only). */
+export interface CanvasSelection {
+    /** The GLSP selection: the part of the selection that the origin canvas shows. Empty in other canvases. */
+    selected: string[];
+    /** The highlight: the part that a canvas of another view (or any canvas, for a listing selection) shows. Empty in the origin. */
+    highlighted: string[];
+}
+
+/**
+ * spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow: one selection per window. Only the canvas of its view (the origin) selects;
+ * the other canvases highlight the same elements. `root`: the id of the graph root, never highlighted.
+ */
+export function canvasSelection(ids: DiagramIds, s: ModelSelection, viewId: string, other: (view: string, id: string) => string, root?: string): CanvasSelection {
+    const shown = selectionInDiagram(ids, s, viewId, other).filter(id => id !== root);
+    return s.view === viewId ? { selected: shown, highlighted: [] } : { selected: [], highlighted: shown };
+}

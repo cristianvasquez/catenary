@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Doc, ElementSchema, ModelSelection, View, emptyDoc, toSchema } from '@catenary/model';
 import { selectionInView } from '../../packages/model/test/doc-reference';
-import { diagramIds, selectionInDiagram } from '../src/browser/diagram/diagram-ids';
+import { canvasSelection, diagramIds, selectionInDiagram } from '../src/browser/diagram/diagram-ids';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
 const card = (id: string, element: string) => ({ kind: 'card' as const, id, element, ...box });
@@ -51,6 +51,24 @@ describe('placement ⇄ element from the diagram graph', () => {
             for (const s of selections) for (const v of Object.keys(d.views)) {
                 expect(selectionInDiagram(graphs[v], s, v, other).sort(), `${JSON.stringify(s)} in ${v}`).toEqual(selectionInView(d, s, v).filter(id => graphs[v].has(id)).sort());
             }
+        }
+    });
+
+    it('law_oneSelectionPerWindow: the origin canvas selects, the canvases of other views highlight, a listing selection highlights in each', () => {
+        const d = doc();
+        const graphs = Object.fromEntries(Object.keys(d.views).map(v => [v, graph(d, v)]));
+        const other = (view: string, id: string) => graphs[view].elementOf(id);
+        const fromP: ModelSelection = { view: 'P', ids: ['pa', 'pab', 'g'] };
+        expect(canvasSelection(graphs.P, fromP, 'P', other)).toEqual({ selected: ['pa', 'pab', 'g'], highlighted: [] });
+        // View-owned elements (the group g) stay in their view.
+        expect(canvasSelection(graphs.Q, fromP, 'Q', other)).toEqual({ selected: [], highlighted: ['qa', 'qab'] });
+        expect(canvasSelection(graphs.Q, { ids: ['a', 'b'] }, 'Q', other)).toEqual({ selected: [], highlighted: ['qa', 'qb'] });
+        expect(canvasSelection(graphs.P, { ids: ['a', 'b'] }, 'P', other)).toEqual({ selected: [], highlighted: ['pa', 'pb'] });
+        // Each id is a selection or a highlight, never both; the graph root is neither.
+        for (const s of [fromP, { ids: ['a'] }, { view: 'Q', ids: ['qa'] }]) for (const v of Object.keys(d.views)) {
+            const c = canvasSelection(graphs[v], s, v, other, 'a');
+            expect(c.selected.length === 0 || c.highlighted.length === 0).toBe(true);
+            expect([...c.selected, ...c.highlighted]).not.toContain('a');
         }
     });
 });

@@ -144,6 +144,11 @@
 .catenary-edge.hidden-edge { opacity: 0.4; }
 .catenary-edge.hidden-edge > .line { stroke-dasharray: 6 5; }
 .catenary-edge.arrow-edge > .line { stroke-dasharray: 6 4; cursor: pointer; }
+/* Highlight: a canvas that is not the origin of the window selection shows its elements (canvas-highlight.ts, ui-manifest §3.3). */
+.catenary-highlight:not(.selected) > .body { stroke: var(--catenary-accent); stroke-width: 2; stroke-dasharray: 5 3; }
+.catenary-edge.catenary-highlight:not(.selected) > .line { stroke: var(--catenary-accent); stroke-dasharray: 5 3; }
+.catenary-edge.catenary-highlight:not(.selected) > .arrow { fill: var(--catenary-accent); }
+.shape-row.catenary-highlight:not(.selected) { outline: 1px dashed var(--catenary-accent); }
 .catenary-edge.arrow-edge > .hit { cursor: pointer; }
 /* The dashed edge of a row: no hit area; only its button takes the pointer. */
 .catenary-edge.latent-edge > .line { stroke-dasharray: 6 4; opacity: 0.7; }

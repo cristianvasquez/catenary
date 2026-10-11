@@ -74,6 +74,18 @@ describe('selection model', () => {
         expect(changed).toHaveBeenCalledTimes(2);
     });
 
+    it('law_oneSelectionPerWindow: one selection per window; a gesture in another canvas replaces it and its origin with one event', () => {
+        const { s } = selectionModel();
+        const events: ModelSelection[] = [];
+        s.onDidChange(e => events.push(e));
+        s.set({ view: 'A', ids: ['a'] });
+        s.set({ view: 'A', ids: ['a'] });
+        s.set({ view: 'B', ids: ['c'] });
+        s.set({ ids: ['b'] });
+        expect(events).toEqual([{ view: 'A', ids: ['a'] }, { view: 'B', ids: ['c'] }, { view: undefined, ids: ['b'] }]);
+        expect(s.selection).toEqual({ view: undefined, ids: ['b'] });
+    });
+
     it('follows IRI changes and drops deleted elements after a model change', async () => {
         const { s, push } = selectionModel();
         s.set({ view: 'A', ids: ['a', 'b', 'g'] });

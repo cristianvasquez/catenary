@@ -1,5 +1,6 @@
-// The selected elements: one state for the window. Each view (view editors, Model Explorer, Outline, Links, Properties,
-// Appearance) writes it on a user gesture and shows it on each change. No view selects in another view.
+// The selected elements: one state for the window (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow). Each view (view editors,
+// Model Explorer, Outline, Links, Properties, Appearance) writes it on a user gesture and shows it on each change. No view selects in
+// another view: the canvas of the origin view selects, other canvases highlight (diagram/selection-sync.ts).
 // The selection holds ids only. The backend resolves it (RPC `selected`): its elements by kind, and the ids that still exist.
 
 import { Emitter } from '@theia/core';
