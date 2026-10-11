@@ -203,7 +203,8 @@ export class ModelStore {
         } catch (e) {
             r = { ok: false, error: e instanceof Error ? e.message : String(e) };
         }
-        if (this.trapState?.again || this.guard.trap) r = { ok: false, error: 'the model index failed again' };
+        // A trap during the read (also one that a listener of the load swallowed) is the failure; a file error of the read stays itself.
+        if (this.trapState?.again || (r.ok && this.guard.trap)) r = { ok: false, error: 'the model index failed again' };
         if (r.ok) {
             this.trapState = undefined;
             this.warnings = [...this.warnings, TRAP_RECOVERED];

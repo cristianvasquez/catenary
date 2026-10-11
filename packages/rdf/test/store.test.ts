@@ -402,6 +402,22 @@ describe('store trap (§3.4)', () => {
         expect(errors).toHaveBeenCalledTimes(2);
     });
 
+    it('a file error of the read after a trap is reported as that error, not as a second trap', async () => {
+        const { store, stores, changes } = await trappingStore();
+        store.newStore = () => { const s = new TrappingStore(); stores.push(s); return s; };
+        rmSync(store.file!);
+        stores[0].armed = true;
+        expect(() => store.reads.search()).toThrow('The model index failed. The files are read again.');
+        await store.idle();
+        const [warning] = store.snapshot().warnings;
+        expect(warning).toMatch(/^The model index failed and the files cannot be read again \(.*\)\. Restart Catenary\.$/);
+        expect(warning).not.toMatch(/failed again/);
+        expect(warning).toContain('a.trig');
+        expect(() => store.reads.search()).toThrow(warning);
+        expect(changes).toEqual(['files']);
+        expect(stores).toHaveLength(2);
+    });
+
     it('an open after a failed read is a recovery: a healthy snapshot, and a later trap reads the files again', async () => {
         const { store, stores, errors } = await trappingStore();
         const workspacePath = store.file!;
