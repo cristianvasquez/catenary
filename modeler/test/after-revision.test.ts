@@ -38,3 +38,16 @@ it('a show without an update (the model has the revision) resolves at once; a fa
     await vi.advanceTimersByTimeAsync(2000);
     expect(done).toBe(true);
 });
+
+it('an answer after the timeout installs no listener', async () => {
+    const d = diagram(4);
+    vi.useFakeTimers();
+    let answer: (r: number) => void = () => undefined;
+    const wait = afterRevision(new Promise<number>(r => { answer = r; }), d.current, d.onChange, 2000);
+    await vi.advanceTimersByTimeAsync(2000);
+    await wait;
+    answer(9);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(d.listeners.size).toBe(0);
+});
