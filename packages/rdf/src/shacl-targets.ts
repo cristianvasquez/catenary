@@ -199,7 +199,10 @@ function affected(g: ModelGraph, scope: TargetScope, paths: { forward: string[];
     for (let step = 0; frontier.length; step++) {
         if (step >= AFFECTED_STEPS) return undefined;
         const next: string[] = [];
-        for (const r of g.select(`SELECT DISTINCT ?x ${from} WHERE { VALUES ?n { ${frontier.map(iri).join(' ')} } ${steps} FILTER (isIRI(?x)) }`)) {
+        for (const r of g.select(`SELECT DISTINCT ?x ${from} WHERE { VALUES ?n { ${frontier.map(iri).join(' ')} } ${steps} }`)) {
+            // A path can pass through a literal (a shared label: rdfs:label / ^rdfs:label): the nodes behind it are not walked here, so
+            // all kept matches drop.
+            if (r.x.termType !== 'NamedNode') return undefined;
             if (!seen.has(r.x.value)) { seen.add(r.x.value); next.push(r.x.value); }
         }
         if (seen.size > AFFECTED_LIMIT) return undefined;

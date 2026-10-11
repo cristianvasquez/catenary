@@ -265,3 +265,26 @@ describe('kept target matches (§11.3 law_keptReadsEqualRead)', () => {
         expect(shapeTargetMatches(g, { nodes: b })).toEqual([]);
     });
 });
+
+describe('kept target matches through an unchanged literal (§11.3 law_keptReadsEqualRead)', () => {
+    const fresh = (g: ModelGraph) => new ModelGraph(new TracedStore(new OxigraphStore(g.store.match())));
+    const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+
+    it('removing the target class of the root drops the kept match of the node behind the shared label', () => {
+        // S targets class X; its property (rdfs:label / ^rdfs:label) has sh:node T. A has type X; A and B share a label.
+        const g = new ModelGraph(new TracedStore(store(`<urn:shapes> {
+                <urn:S> sh:targetClass <urn:X> ; sh:property <urn:P> .
+                <urn:P> sh:path <urn:path1> ; sh:node <urn:T> .
+                <urn:path1> <${RDF}first> rdfs:label ; <${RDF}rest> <urn:path2> .
+                <urn:path2> <${RDF}first> <urn:inverse> ; <${RDF}rest> <${RDF}nil> .
+                <urn:inverse> sh:inversePath rdfs:label .
+            }
+            <urn:data> { <urn:a> a <urn:X> ; rdfs:label "shared" . <urn:b> rdfs:label "shared" . }`)));
+        const b = [node('urn:b')];
+        expect(shapeTargetMatches(g, { nodes: b }).map(m => m.shape)).toEqual(['urn:T']);
+        // An IRI-only patch: the labels stay.
+        g.update(() => g.remove(rdf.quad(rdf.namedNode('urn:a'), rdf.namedNode(RDF + 'type'), rdf.namedNode('urn:X'), rdf.namedNode('urn:data'))));
+        expect(shapeTargetMatches(g, { nodes: b })).toEqual(shapeTargetMatches(fresh(g), { nodes: b }));
+        expect(shapeTargetMatches(g, { nodes: b })).toEqual([]);
+    });
+});
