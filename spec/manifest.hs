@@ -46,6 +46,26 @@ import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
 --           touches, and no read on the backend thread blocks a change. SHACL runs in a worker. spec/ui-manifest.hs §3.2, §5.2, §6.6; §9 and §11.3 here.
 -- ADR 0014  Notations draw views: figures are derived, views store only placements. §4, §7, spec/ui-manifest.hs §2.
 
+-- | Terms. One name per concept for the store, the files and the change pipeline. Use these names in code comments and documents.
+-- Reason: the same concept had several names, and a planned library extraction needs one name each. Format: term, meaning, names it replaces.
+-- graph        A named graph of the store. One per file by default. Replaces: data graph, shapes graph, file graph and view graph
+--              as different things. They are graphs with a role.
+-- role         A label that the registry of ModelGraph gives a graph: data, shapes, view, report. Replaces: kind, and partition
+--              when it means a kind.
+-- partition    A set of graphs that a predicate selects, with a snapshot and a subscription. New term, reserved. No code uses it yet.
+-- patch        An ordered list of {op: add | remove, quad} with concrete graphs only, never the union graph. Replaces: delta,
+--              change list, Change[].
+-- transaction  One command, one patch, one undo step (§5.2). Replaces: update and transact as names of the concept.
+-- event        A committed patch with its sequence number and the graphs it touched. Replaces: GraphChange as the name of the
+--              concept. The type keeps its name until a later kata renames it.
+-- readOnly     A graph that refuses writes, with a reason. A command, an undo or a redo that changes a readOnly graph fails as a
+--              whole. Replaces: read only, protected, sealed, noWrite, writeProblem, and "imported" when it means the refusal.
+-- import       The workflow that copies files into the workspace folder imported/ and marks them readOnly (ws:imported globs, §2.6).
+--              It is not a synonym of readOnly.
+-- union        The logical data graph urn:name:model that the reads see: the union of the data graphs. A write to it is
+--              temporary until placement gives it a graph.
+-- placement    The rule that gives a new statement its graph (§2.4). It is a policy of Catenary, not of the store.
+
 -- | Helpers of the formal clauses. They are not part of the implementation.
 infixr 1 ==>
 (==>) :: Bool -> Bool -> Bool
@@ -212,7 +232,7 @@ create path p = runOp (Create path p)
 -- | Membership: supported RDF files of the folder and its subfolders. Not: hidden entries, *.bak, node_modules,
 -- other workspace files, ws:exclude matches. A subfolder with its own workspace file is a nested workspace, outside this one.
 -- A .json file needs @context. Automatic discovery excludes .xml.
--- Read and write: Turtle, TriG, N-Triples, N-Quads, JSON-LD. Read only: N3, RDF/XML.
+-- Read and write: Turtle, TriG, N-Triples, N-Quads, JSON-LD. Read-only: N3, RDF/XML.
 -- Exact extensions and media types: packages/rdf-files/src/formats.ts, RDF_FORMATS.
 -- Relative IRIs resolve against the URI of each source file. An unreadable file gives a warning, not invented content.
 data Format = Turtle | TriG | NTriples | NQuads | JsonLd | N3 | RdfXml deriving (Eq, Enum, Bounded)
@@ -356,11 +376,12 @@ law_prefixesRejected b ps = failed (fst (step b (SetPrefixes ps))) == not (valid
 
 -- 2.6 Imported files and import ------------------------------------------------------
 
--- | A ws:imported glob marks the model files and view files that it matches as imported. An imported file is read only:
--- Catenary reads it and does not change it. Files that no glob matches are own files.
+-- | A ws:imported glob marks the model files and view files that it matches as imported. A ws:imported glob sets readOnly
+-- (Terms): Catenary reads an imported file and does not change it. Files that no glob matches are own files.
+-- "Imported" names the workflow and the files it marks. "readOnly" names the write refusal.
 -- Reason: an official file stays as published, and own additions stay in own files.
--- A command, an undo or a redo that changes an imported file fails as a whole. The failure names the files.
--- A new statement about an imported subject goes to the default file (§3.2: an imported file is a read-only file).
+-- A command, an undo or a redo that changes a readOnly file fails as a whole. The failure names the files.
+-- A new statement about an imported subject goes to the default file (§3.2: an imported file is a readOnly file).
 -- An imported file is not a file of new subjects. Marking such a file sets its kind to near and clears ws:defaultFile.
 -- Validation reads only the part of imported files that own statements need (§9).
 -- Mark as Imported writes the pending changes first. It refuses a file that keeps blank nodes on disk: their IRIs change at each read.
@@ -461,7 +482,7 @@ modelStatements b = nub [Quad s p o (graphIri ModelGraph) | Quad s p o g <- stor
 -- 3.2 Statement origin ------------------------------------------------------------
 
 -- | Statement origin: existing triples keep their files. An addition prefers its prior origin, then the file of its subject,
--- then the file of a referring statement. A preferred read-only file gives the default file. Imported files are read only (§2.6).
+-- then the file of a referring statement. A preferred read-only file gives the default file. Imported files are readOnly (§2.6).
 -- A deletion from a read-only file cannot persist. IRI replacement and undo keep statement origins.
 -- Placement assigns final file graphs inside the transaction. Transfers and replay need only quad patches.
 -- The store has no separate origin map. A statement held by two files has one quad in each file data graph.
@@ -1319,7 +1340,7 @@ reportIsCurrent :: Int -> Int -> Bool                -- the revision of the run,
 reportIsCurrent run current = run == current
 -- | With imported files (§2.6), validation reads the statements of own files, all statements of their subjects, and the rdf:type
 -- and scheme membership statements of the IRIs that they refer to. The rest of the imported files is not validated.
--- Reason: imported files are read only and can be large. Validating all of them makes each edit slow, and their results cannot be fixed.
+-- Reason: imported files are readOnly and can be large. Validating all of them makes each edit slow, and their results cannot be fixed.
 -- Scheme membership: a value "in scheme S" (sh:node of a scheme shape) is often a concept of an imported vocabulary.
 -- Without imported files, validation reads the whole model graph.
 validationData :: [Quad] -> [Quad] -> [Quad]      -- the statements of own files, the statements of the model graph
@@ -1530,7 +1551,7 @@ law_diskReadClearsHistory b fs =
 law_openClearsHistory :: Backend -> FilePath -> Bool
 law_openClearsHistory b p = let (r, b') = step b (Open p) in not (failed r) ==> historyOf b' == clearHistory
 
--- | RDF 1.2 limits: JSON-LD cannot write triple terms. Turtle and TriG files with annotations are read only while n3
+-- | RDF 1.2 limits: JSON-LD cannot write triple terms. Turtle and TriG files with annotations are read-only while n3
 -- parsing can lose statements (open.md RDF1). Triple-term canonicalization extends RDFC-1.0. It is not a standard.
 -- Legacy view vocabulary has no upgrade path.
 hasTripleTerm :: Quad -> Bool

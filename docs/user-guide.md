@@ -17,7 +17,7 @@ If the folder has no workspace file, Catenary uses default settings and asks onc
 
 In the desktop app, each workspace runs in its own process with its own window. File → New Window and a workspace opened in a new window start a new process. If the workspace is already open, its window comes to the front. `bash scripts/desktop.sh <folder>` does the same from the command line.
 
-All supported RDF files in the folder and its subfolders are part of the model: Turtle, TriG, N-Triples, N-Quads and JSON-LD (read and write), N3 and RDF/XML (read only). Hidden files, `*.bak`, `node_modules`, nested workspaces and the exclude globs of the settings are not part of it.
+All supported RDF files in the folder and its subfolders are part of the model: Turtle, TriG, N-Triples, N-Quads and JSON-LD (read and write), N3 and RDF/XML (read-only). Hidden files, `*.bak`, `node_modules`, nested workspaces and the exclude globs of the settings are not part of it.
 
 ## The screen
 
@@ -165,7 +165,7 @@ Person settings (theme, card, note and group text size, edge style, layout spaci
 
 ## Imported files
 
-An imported file is an official file that Catenary must not change. It is read only: Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
+An imported file is an official file that Catenary must not change. It is read-only: Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
 
 - Right-click a file in the file navigator and select Mark as Imported or Mark as Own. The workspace file stores the path.
 - If a change edits an imported file, Catenary asks whether to mark it as own. Select Mark as Own to make the change, or Cancel to keep the file as it is.
