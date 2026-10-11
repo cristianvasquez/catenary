@@ -13,7 +13,7 @@ import { VIEW_SCHEME } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel, sameIds } from '../selection-model';
 import { CanvasHighlight, HighlightAction } from './canvas-highlight';
-import { canvasSelection } from './diagram-ids';
+import { canvasSelection, toggleHighlight } from './diagram-ids';
 import { ViewEditors, viewIdOf } from './view-editors';
 
 @injectable()
@@ -77,16 +77,38 @@ export class DiagramSelectionSync implements FrontendApplicationContribution {
     }
 
     /**
-     * A Ctrl, Meta or Shift press adds to the selection, also from another canvas: a canvas with a highlight first takes the
-     * highlight as its GLSP selection. The press then adds to it, and the canvas becomes the origin.
+     * A Ctrl, Meta or Shift press adds to the selection, also from another canvas (law_oneSelectionPerWindow). On an element of a
+     * canvas with a highlight, the press acts on the highlight: the canvas becomes the origin with the highlight plus the element,
+     * or minus it when it is highlighted. GLSP and the canvas listeners do not get this press: they read the `selected` flags,
+     * and a SelectAction sets them only later (the dispatcher is asynchronous). On empty canvas (a marquee), the canvas takes the
+     * highlight as its GLSP selection first, and the marquee adds to it.
      */
     protected press(e: MouseEvent): void {
         if (e.button !== 0 || !(e.ctrlKey || e.metaKey || e.shiftKey)) return;
         const w = this.canvasAt(e), highlight = w && this.highlightOf(w);
         if (!w || !highlight?.ids.size) return;
+        const id = this.pressedId(w, e.target as Element);
         const ids = [...highlight.ids];
+        if (id !== undefined) {
+            e.stopPropagation();
+            this.selection.set({ view: viewIdOf(w), ids: toggleHighlight(ids, id) });
+            return;
+        }
         w.actionDispatcher.dispatch(HighlightAction.create([]));
         w.actionDispatcher.dispatch(SelectAction.create({ selectedElementsIDs: ids, deselectedElementsIDs: true }));
+    }
+
+    /** The diagram id of the element under a press (a card, an edge, a row; the owner of a label), undefined on empty canvas. */
+    protected pressedId(w: GLSPDiagramWidget, target: Element | null): string | undefined {
+        const ids = this.editors.diagram(w), prefix = w.viewerOptions.baseDiv + '_';
+        if (!ids) return undefined;
+        const root = w.editorContext.modelRoot.id;
+        for (let el = target; el && el !== w.node; el = el.parentElement) {
+            if (!el.id?.startsWith(prefix)) continue;
+            const raw = el.id.slice(prefix.length), id = ids.has(raw) ? raw : ownerOfLabel(raw);
+            if (id !== root && ids.has(id)) return id;
+        }
+        return undefined;
     }
 
     /**

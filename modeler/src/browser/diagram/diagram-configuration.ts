@@ -25,6 +25,7 @@ import { CardScaleStartup } from './card-scale';
 import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
+import { canvasKeyTargets } from './diagram-ids';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
     AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView, OneOfNode, OneOfView,
@@ -150,6 +151,7 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     @inject(ModelActions) protected readonly actions: ModelActions;
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(MessageService) protected readonly messages: MessageService;
+    @inject(CanvasHighlight) protected readonly highlight: CanvasHighlight;
 
     override handlePaste(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldPaste(event)) return;
@@ -197,6 +199,28 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         } catch (e) { this.messages.warn(`RDF paste failed: ${e instanceof Error ? e.message : String(e)}`); }
     }
 
+    /**
+     * Copy in a canvas that is not the origin copies the window selection as this canvas shows it: its highlight
+     * (law_oneSelectionPerWindow, diagram-ids.ts canvasKeyTargets). Cut removes from the view: it needs the origin.
+     */
+    protected keyTargets(key: 'copy' | 'cut'): string[] {
+        return canvasKeyTargets({ selected: this.editorContext.get().selectedElementIds, highlighted: [...this.highlight.ids] }, key);
+    }
+
+    override handleCopy(event: ClipboardEvent): void {
+        const ids = this.keyTargets('copy');
+        if (!event.clipboardData || !ids.length || !this.hasFocus()) {
+            event.clipboardData?.clearData();
+            this.clipboardService.clear();
+            return;
+        }
+        const clipboardId = generateUuid();
+        event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
+        this.actionDispatcher.request(RequestClipboardDataAction.create({ ...this.editorContext.get(), selectedElementIds: ids }))
+            .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
+        event.preventDefault();
+    }
+
     override handleCut(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldCopy(event)) return;
         const clipboardId = generateUuid();
@@ -207,8 +231,9 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         event.preventDefault();
     }
 
+    /** Cut: the GLSP selection of the origin only. */
     protected override shouldCopy(_event: ClipboardEvent): boolean {
-        return this.editorContext.get().selectedElementIds.length > 0 && this.hasFocus();
+        return this.keyTargets('cut').length > 0 && this.hasFocus();
     }
 
     protected override shouldPaste(_event: ClipboardEvent): boolean {

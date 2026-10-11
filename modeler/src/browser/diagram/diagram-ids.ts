@@ -74,3 +74,20 @@ export function canvasSelection(ids: DiagramIds, s: ModelSelection, viewId: stri
     const shown = selectionInDiagram(ids, s, viewId, other).filter(id => id !== root);
     return s.view === viewId ? { selected: shown, highlighted: [] } : { selected: [], highlighted: shown };
 }
+
+/**
+ * law_oneSelectionPerWindow: a Ctrl, Meta or Shift click on `id` in a canvas that highlights. The canvas becomes the origin, and its
+ * selection is the highlight with `id` added, or without `id` when it is highlighted. The result does not wait for a GLSP selection.
+ */
+export function toggleHighlight(highlighted: readonly string[], id: string): string[] {
+    return highlighted.includes(id) ? highlighted.filter(h => h !== id) : [...highlighted, id];
+}
+
+/**
+ * The diagram ids that a canvas key acts on (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow, §4.4 keys). Copy: the GLSP
+ * selection of the origin, else the highlight (the window selection as this canvas shows it). Cut and Del remove placements from
+ * the view: they need the origin, so a highlight gives them nothing (law_delNeedsPlacements). Ctrl+Del uses the window selection.
+ */
+export function canvasKeyTargets(c: CanvasSelection, key: 'copy' | 'cut' | 'del'): string[] {
+    return key === 'copy' && !c.selected.length ? c.highlighted : c.selected;
+}

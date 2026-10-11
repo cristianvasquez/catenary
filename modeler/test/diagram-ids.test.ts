@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Doc, ElementSchema, ModelSelection, View, emptyDoc, toSchema } from '@catenary/model';
 import { selectionInView } from '../../packages/model/test/doc-reference';
-import { canvasSelection, diagramIds, selectionInDiagram } from '../src/browser/diagram/diagram-ids';
+import { canvasKeyTargets, canvasSelection, diagramIds, selectionInDiagram, toggleHighlight } from '../src/browser/diagram/diagram-ids';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
 const card = (id: string, element: string) => ({ kind: 'card' as const, id, element, ...box });
@@ -70,5 +70,25 @@ describe('placement ⇄ element from the diagram graph', () => {
             expect(c.selected.length === 0 || c.highlighted.length === 0).toBe(true);
             expect([...c.selected, ...c.highlighted]).not.toContain('a');
         }
+    });
+
+    it('law_highlightKeys: a modifier click on a highlighting canvas adds to the highlight or removes a highlighted element', () => {
+        expect(toggleHighlight(['qa', 'qb'], 'qa')).toEqual(['qb']);
+        expect(toggleHighlight(['qa'], 'qb')).toEqual(['qa', 'qb']);
+        expect(toggleHighlight(['qa'], 'qa')).toEqual([]);
+    });
+
+    it('law_highlightKeys and law_delNeedsPlacements: copy takes the highlight of a canvas; cut and Del need the origin', () => {
+        const d = doc();
+        const graphs = Object.fromEntries(Object.keys(d.views).map(v => [v, graph(d, v)]));
+        const other = (view: string, id: string) => graphs[view].elementOf(id);
+        // A listing selection: no origin. Copy in a focused canvas copies what it shows; cut and Del act on nothing.
+        const listing = canvasSelection(graphs.Q, { ids: ['a', 'b'] }, 'Q', other);
+        expect(canvasKeyTargets(listing, 'copy')).toEqual(['qa', 'qb']);
+        expect(canvasKeyTargets(listing, 'cut')).toEqual([]);
+        expect(canvasKeyTargets(listing, 'del')).toEqual([]);
+        // The origin: all keys act on its selection.
+        const origin = canvasSelection(graphs.P, { view: 'P', ids: ['pa'] }, 'P', other);
+        for (const key of ['copy', 'cut', 'del'] as const) expect(canvasKeyTargets(origin, key)).toEqual(['pa']);
     });
 });

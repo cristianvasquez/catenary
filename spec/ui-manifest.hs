@@ -513,6 +513,18 @@ law_oneSelectionPerWindow s held views =
   all (\v -> null (canvasSelected (canvasShows s v)) || originOf s == Just v) views
     && all (\v -> null (canvasHighlighted (canvasShows s v)) || originOf s /= Just v) views
     && all (\(v, ids) -> null ids || originOf s == Just v) (selects held s views)
+-- | A Ctrl, Meta or Shift click on an element of a canvas with a highlight: that canvas becomes the origin, with the highlight plus
+-- the element, or minus it when it is highlighted. The click acts on the highlight, not on a canvas selection that is not set yet.
+-- Keys in a canvas that is not the origin: Ctrl+C copies its highlight. Ctrl+X and Del remove from the view: they need the origin
+-- (law_delNeedsPlacements). Ctrl+Del deletes the elements of the window selection. Code: diagram-ids.ts canvasKeyTargets.
+modifierClick :: [Element] -> Element -> [Element]   -- highlight, clicked element -> the selection of the new origin
+modifierClick hs e = if e `elem` hs then filter (/= e) hs else hs ++ [e]
+canvasKeyTargets :: CanvasShows -> Key -> [Element]
+canvasKeyTargets c k = if k == CtrlC && null (canvasSelected c) then canvasHighlighted c else canvasSelected c
+law_highlightKeys :: CanvasShows -> Element -> Bool
+law_highlightKeys c e =
+  (null (canvasSelected c) ==> (null (canvasKeyTargets c Del) && null (canvasKeyTargets c CtrlX)))
+    && ((e `elem` canvasHighlighted c) ==> notElem e (modifierClick (canvasHighlighted c) e))
 
 -- 4. Actions and keys --------------------------------------------------------
 

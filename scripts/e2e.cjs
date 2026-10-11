@@ -1408,4 +1408,53 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
     assert.ok((await classes(left, id)).includes('catenary-highlight'), `${id} highlighted in the other canvas`);
     assert.ok(!(await classes(left, id)).includes('selected'), `${id} not selected in the other canvas`);
   }
+  // law_highlightKeys: Ctrl+click on a highlighted card removes it; that canvas becomes the origin with the rest of the highlight.
+  const elementsOf = s => s.ids.map(id => cli('eval', `return ctx.editors.elementIn(${JSON.stringify(s.view)}, ${JSON.stringify(id)})`));
+  await node(left, one).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  let now = cli('eval', 'return ctx.selection.selection');
+  assert.equal(now.view, left);
+  assert.deepEqual(elementsOf(now), [two]);
+  assert.ok(!(await classes(left, one)).includes('selected'));
+  assert.ok((await classes(left, two)).includes('selected'));
+  assert.ok(!(await classes(right, one)).includes('catenary-highlight'));
+  // Ctrl+click twice on the same card of the other canvas: the first removes it (it is highlighted), the second adds it.
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  now = cli('eval', 'return ctx.selection.selection');
+  assert.deepEqual(now, { view: right, ids: [] });
+  assert.ok(!(await classes(right, two)).includes('selected'));
+  assert.ok(!(await classes(left, two)).includes('catenary-highlight'));
+  await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
+  await page.waitForTimeout(500);
+  now = cli('eval', 'return ctx.selection.selection');
+  assert.equal(now.view, right);
+  assert.deepEqual(elementsOf(now), [two]);
+  assert.ok((await classes(right, two)).includes('selected'));
+  // law_highlightKeys: a listing selection and keys in a focused canvas. Del removes nothing (no origin), Ctrl+C copies the
+  // highlight (the paste adds a card), Ctrl+Del deletes the element of the window selection.
+  const cards = view => cli('rpc', 'view', JSON.stringify(view)).result.boxes.length;
+  const focusRight = () => cli('eval', `const w = ctx.editors.find(${JSON.stringify(right)}); await ctx.shell.activateWidget(w.id); w.node.querySelector('svg.sprotty-graph').focus(); return true`);
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
+  await page.waitForTimeout(300);
+  assert.ok((await classes(right, one)).includes('catenary-highlight'));
+  focusRight();
+  const before = cards(right);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(500);
+  assert.equal(before, 2);
+  assert.equal(cards(right), before, 'Del without an origin removes nothing');
+  await page.keyboard.press('Control+c');
+  await page.waitForTimeout(300);
+  focusRight();
+  await page.keyboard.press('Control+v');
+  for (let i = 0; i < 30 && cards(right) === before; i++) await page.waitForTimeout(100);
+  assert.equal(cards(right), before + 1, 'the paste of the copied highlight adds a card');
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
+  await page.waitForTimeout(300);
+  focusRight();
+  await page.keyboard.press('Control+Delete');
+  await page.locator('.dialogBlock .theia-button.main').click();
+  for (let i = 0; i < 30 && cli('rpc', 'search').result.some(h => h.id === one); i++) await page.waitForTimeout(100);
+  assert.ok(!cli('rpc', 'search').result.some(h => h.id === one), 'Ctrl+Del deletes the element of the listing selection');
 }));

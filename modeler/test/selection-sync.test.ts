@@ -32,6 +32,9 @@ function canvas(view: string, cards: Record<string, string>) {
     const rootChanged = new Emitter<void>();
     const w = {
         view, ids, highlight, rootChanged, dispatched: [] as Dispatched[], selected: [] as string[],
+        /** As the GLSP dispatcher: an action applies after the current task (a microtask here), not during dispatch. */
+        async: false,
+        viewerOptions: { baseDiv: `base-${view}` },
         node: { contains: () => true },
         disposed: { connect: () => undefined },
         diContainer: { get: () => highlight },
@@ -41,10 +44,16 @@ function canvas(view: string, cards: Record<string, string>) {
             onModelRootChanged: rootChanged.event
         },
         actionDispatcher: {
-            dispatch(a: Dispatched) {
+            dispatch(a: Dispatched & { deselectedElementsIDs?: boolean | string[] }) {
                 w.dispatched.push(a);
-                if (a.kind === 'elementSelected') w.selected = a.selectedElementsIDs ?? [];
-                if (a.kind === HighlightAction.KIND) highlight.ids = new Set(a.ids);
+                const apply = () => {
+                    if (a.kind === 'elementSelected') {
+                        const kept = a.deselectedElementsIDs === true ? [] : w.selected.filter(id => !(a.deselectedElementsIDs as string[] ?? []).includes(id));
+                        w.selected = [...new Set([...kept, ...a.selectedElementsIDs ?? []])];
+                    }
+                    if (a.kind === HighlightAction.KIND) highlight.ids = new Set(a.ids);
+                };
+                if (w.async) queueMicrotask(apply); else apply();
             }
         },
         /** A user gesture: GLSP selects, and the forwarder (the canvas has the focus) sets the window selection. */
@@ -150,18 +159,62 @@ describe('selection sync (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow)',
         expect(selects(B)).toEqual([]);
     });
 
-    it('law_oneSelectionPerWindow: a Ctrl press in the highlighting canvas first takes the highlight as its GLSP selection', () => {
-        const { selection, sync, A, B } = setup();
-        A.click(selection, 'pa');
-        A.node.contains = () => false;   // the press is in B
-        const press = { button: 0, ctrlKey: true, metaKey: false, shiftKey: false, target: { closest: () => ({}) } } as unknown as MouseEvent;
+    /**
+     * A Ctrl press on an element of B, then what GLSP does with the press when it gets it: it reads the `selected` flag of the
+     * element at once and adds or removes it (sprotty SelectMouseListener).
+     */
+    function ctrlPress(sync: DiagramSelectionSync, w: Canvas, id?: string) {
+        let stopped = false;
+        const el = (elId: string, parent: unknown) => ({ id: elId, parentElement: parent });
+        const target = id ? el(`${w.viewerOptions.baseDiv}_${id}`, el('', w.node)) : el('', w.node);
+        const press = {
+            button: 0, ctrlKey: true, metaKey: false, shiftKey: false, stopPropagation: () => { stopped = true; },
+            target: { ...target, closest: () => ({}) }
+        } as unknown as MouseEvent;
         (sync as unknown as { press(e: MouseEvent): void }).press(press);
-        expect(selects(B)).toEqual([{ kind: 'elementSelected', selectedElementsIDs: ['qa'], deselectedElementsIDs: true }]);
+        if (!stopped && id) {
+            const on = w.selected.includes(id);
+            w.actionDispatcher.dispatch({ kind: 'elementSelected', selectedElementsIDs: on ? [] : [id], deselectedElementsIDs: on ? [id] : [] });
+        }
+    }
+    const settle = () => new Promise(r => setTimeout(r, 0));
+
+    it('law_oneSelectionPerWindow: a Ctrl click on a highlighted element removes it, with an asynchronous dispatcher', async () => {
+        const { selection, sync, A, B } = setup();
+        A.async = B.async = true;
+        A.click(selection, 'pa', 'pb');
+        await settle();
+        expect([...B.highlight.ids].sort()).toEqual(['qa', 'qb']);
+        A.node.contains = () => false;   // the press is in B
+        ctrlPress(sync, B, 'qa');
+        await settle();
+        expect(selection.selection).toEqual({ view: 'B', ids: ['qb'] });
+        expect(B.selected).toEqual(['qb']);
         expect([...B.highlight.ids]).toEqual([]);
-        // GLSP then adds the pressed card, and the forwarder sets the window selection: B is the origin.
-        B.click(selection, 'qa', 'qb');
+        expect(A.selected).toEqual([]);
+        expect([...A.highlight.ids]).toEqual(['pb']);
+    });
+
+    it('law_oneSelectionPerWindow: a Ctrl click on another element of the highlighting canvas adds it; that canvas becomes the origin', async () => {
+        const { selection, sync, A, B } = setup();
+        A.async = B.async = true;
+        A.click(selection, 'pa');
+        await settle();
+        A.node.contains = () => false;
+        ctrlPress(sync, B, 'qb');
+        await settle();
         expect(selection.selection).toEqual({ view: 'B', ids: ['qa', 'qb'] });
+        expect(B.selected.sort()).toEqual(['qa', 'qb']);
         expect(A.selected).toEqual([]);
         expect([...A.highlight.ids].sort()).toEqual(['pa', 'pb']);
+    });
+
+    it('law_oneSelectionPerWindow: a Ctrl press on empty canvas (a marquee) first takes the highlight as its GLSP selection', () => {
+        const { selection, sync, A, B } = setup();
+        A.click(selection, 'pa');
+        A.node.contains = () => false;
+        ctrlPress(sync, B);
+        expect(selects(B)).toEqual([{ kind: 'elementSelected', selectedElementsIDs: ['qa'], deselectedElementsIDs: true }]);
+        expect([...B.highlight.ids]).toEqual([]);
     });
 });
