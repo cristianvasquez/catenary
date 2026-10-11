@@ -7,11 +7,14 @@ import {
     PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
-import { Doc, EditCommand, boxes, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
+import { Doc, EditCommand, NS, boxes, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
 
 /** A diagram element by the id of what it shows: a card or a placed edge by its element (its id is the id of its placement). */
 const key = (e: { id: string; element?: unknown }) => (e.element as string | undefined) ?? e.id;
 import { ModelStore } from '@catenary/rdf';
+import { ModelGraph } from '../../packages/rdf/src/graph';
+import { elementId } from '../../packages/rdf/src/ids';
+import { rdf } from '../../packages/rdf/src/terms';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
 import { ChangeBoundsHandler, DeleteHandler, PasteHandler } from '../src/node/glsp/handlers';
@@ -299,6 +302,28 @@ describe('model changes reaching view clients', () => {
         // undo and its redo. Second: addToView, the cascade of the relation removal on its placed edge, their undo. The move, the renames,
         // the field edit and their undo and redo read no view.
         expect(loads.map(l => l.mock.calls.length)).toEqual([4, 4]);
+    });
+
+    it('law_keptDocEqualsRead: a note whose statements live in a data file shows its edited text (a DataPatch on a placed mark reads the view again)', async () => {
+        const note = edit({ kind: 'createNote', view: first, text: 'Old text', at: { x: -600, y: 0 } });
+        // Move the statements of the note from the view graph into the data graph (a file can hold marks: readView reads marks in any graph).
+        const g = (store as unknown as { graph: ModelGraph }).graph;
+        const dataGraph = g.dataGraphs()[0], viewGraph = rdf.namedNode(docOf(store).views[first].uri);
+        const mark = g.match(null, rdf.namedNode(NS.view + 'element'), null, viewGraph).map(q => q.object).find(o => g.match(o as never, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'Note')).length)!;
+        g.transact(x => {
+            for (const q of x.match(mark as never, null, null, viewGraph)) { x.remove(q); x.add(q.subject, q.predicate, q.object, dataGraph); }
+            return { ok: true };
+        });
+        expect(g.match(mark as never, null, null, dataGraph).length).toBeGreaterThan(0);
+        const a = await client(store, first);
+        expect(a.elements().find(e => e.id === note)).toMatchObject({ text: 'Old text' });
+        const read = vi.spyOn(store, 'viewDoc');
+        edit({ kind: 'setViewElements', view: first, ids: [note], patch: { text: 'New text' } });
+        expect(store.snapshot().change).toMatchObject({ reason: 'edit', tier: 'data', elements: [elementId(mark as never)] });
+        await a.flushed();
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(a.elements().find(e => e.id === note)).toMatchObject({ text: 'New text' });
+        expect(a.state.view!.boxes).toEqual(store.viewDoc(first).views[first].boxes);
     });
 
     it('a validation run refreshes the counts on the cards without a view read', async () => {

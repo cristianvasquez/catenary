@@ -1675,11 +1675,12 @@ law_keptDocEqualsRead b op v = let b' = snd (step b op) in sameDoc (keptDoc b' v
 -- holds, read with their neighbors (so a statement to an instance is a relation, to another IRI a field), replace the kept records;
 -- the relations of a changed instance with both ends in the Doc stay; the hidden edges of the view follow the relations. The Doc
 -- is read again when the merge cannot give the read: a changed view graph that the Doc holds (a placement, the label or the
--- description of the view, a referenced view), a changed element that the view places and the Doc does not hold, a held element
--- that is no instance any more (its card goes), or a new relation that the view places (its edge shows).
+-- description of the view, a referenced view), a changed element that the view places other than as a card (a node that became an
+-- instance; a mark of a data file: a note, a frame, a reference, a collection, whose box content the read projects), a held
+-- element that is no instance any more (its card goes), or a new relation that the view places (its edge shows).
 merges :: Doc -> SnapshotChange -> Bool            -- the DataPatch merges into the kept Doc; else the canvas reads the view
 merges d c = tierOf c == DataPatch && not (any (`elem` docViews d) (changedViews c)) && all (keptAfterRead d) (changedElements c)
-keptAfterRead :: Doc -> Id -> Bool                 -- the element stays as the Doc shows it: held and an instance, or not placed
+keptAfterRead :: Doc -> Id -> Bool                 -- the element stays as the Doc shows it: held as a card and an instance, or not placed
 -- | Which canvases a change refreshes (change.ts refreshes; view-session.ts affectedBy calls it). No scope: all. A ViewPatch: the
 -- canvases of the changed views. Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on
 -- a shapes change.

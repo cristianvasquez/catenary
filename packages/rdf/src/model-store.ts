@@ -11,7 +11,7 @@ import { filesOfElement } from './selection';
 
 import {
     ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
-    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, idIri, prefixesProblem, setPrefixes
+    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, cardOf, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import * as path from 'path';
@@ -324,9 +324,10 @@ export class ModelStore {
 
     /**
      * The DataPatch tier of a canvas (§11.3 keptDoc, law_keptDocEqualsRead): the records of the changed elements that `part` holds are read
-     * again with the scoped read and merged into the part (change.ts mergeRecords). False: the change needs a read of the view. A changed
-     * element that the view places and the part does not hold (a node that became an instance), a held element that is no instance any
-     * more (its card goes), or a new relation that the view places (its edge shows).
+     * again with the scoped read and merged into the part (change.ts mergeRecords). False: the change needs a read of the view
+     * (keptAfterRead). A changed element that the view places other than as a card: a node that became an instance, or a mark whose
+     * statements a data file holds (a note, a frame, a reference, a collection: its box content is projected, not merged). A held
+     * element that is no instance any more (its card goes). A new relation that the view places (its edge shows).
      */
     mergeChanged(part: Doc, viewId: string, elements: string[]): boolean {
         const view = part.views[viewId];
@@ -335,7 +336,7 @@ export class ModelStore {
         const held = elements.filter(id => !!part.instances[id]);
         for (const id of elements) {
             const t = elementTerm(id);
-            if (!part.instances[id] && t && this.graph.match(null, V.element, t, graph).length) return false;
+            if (t && !cardOf(view, id) && this.graph.match(null, V.element, t, graph).length) return false;
         }
         if (!held.length) return true;
         const fresh = this.scoped({ elements: held, neighbors: true });

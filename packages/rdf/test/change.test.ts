@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Doc, NS, SnapshotChange, boxes, emptyDoc } from '@catenary/model';
+import type { NamedNode } from '@rdfjs/types';
 import { OxigraphStore } from 'rdf-files';
 import { classify, keepsReads, mergeRecords, refreshes, tierOf, validates } from '../src/change';
 import { ModelGraph, VALIDATION_GRAPH, dataGraphIri } from '../src/graph';
@@ -200,6 +201,22 @@ describe('law_keptDocEqualsRead: the DataPatch merge of a kept part (mergeRecord
         const part = store.viewDoc(viewId);
         expect(store.mergeChanged(part, viewId, [outside, 'n-urn_3atest_3anone'])).toBe(true);
         expect(shown(part)).toEqual(shown(store.viewDoc(viewId)));
+    });
+
+    it('law_keptDocEqualsRead: a changed mark (a note in a data file) that the view places needs a read: its box content is not merged', () => {
+        const note = ok(store.execute({ kind: 'createNote', view: viewId, text: 'Old', at: { x: -600, y: 0 } })).id!;
+        const g = (store as unknown as { graph: ModelGraph }).graph;
+        const dataGraph = g.dataGraphs()[0], viewGraph = rdf.namedNode(docOf(store).views[viewId].uri);
+        const mark = g.match(null, rdf.namedNode(NS.view + 'element'), null, viewGraph).map(q => q.object as NamedNode).find(o => g.match(o, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'Note')).length)!;
+        g.transact(x => { for (const q of x.match(mark, null, null, viewGraph)) { x.remove(q); x.add(q.subject, q.predicate, q.object, dataGraph); } return { ok: true }; });
+        const part = store.viewDoc(viewId);
+        ok(store.execute({ kind: 'setViewElements', view: viewId, ids: [note], patch: { text: 'New' } }));
+        const change = store.snapshot().change!;
+        expect(change).toMatchObject({ reason: 'edit', tier: 'data', views: [], elements: [elementId(mark)] });
+        expect(store.mergeChanged(part, viewId, change.elements!)).toBe(false);
+        expect(shown(store.viewDoc(viewId)).boxes.find(b => b.id === note)).toMatchObject({ text: 'New' });
+        store.undo();
+        ok(store.execute({ kind: 'removeFromView', view: viewId, ids: [note] }));
     });
 
     it('mergeRecords keeps the relations of unchanged instances and orders the edges by their statement', () => {
