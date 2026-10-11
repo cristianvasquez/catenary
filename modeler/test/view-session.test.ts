@@ -7,7 +7,7 @@ import {
     PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
-import { EditCommand, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
+import { Doc, EditCommand, boxes, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
 
 /** A diagram element by the id of what it shows: a card or a placed edge by its element (its id is the id of its placement). */
 const key = (e: { id: string; element?: unknown }) => (e.element as string | undefined) ?? e.id;
@@ -238,10 +238,67 @@ describe('model changes reaching view clients', () => {
         await a.flushed();
         expect(a.elements().find(e => key(e) === instance)).toMatchObject({ display: 'simple', color: '#ff0000' });
         expect(read).not.toHaveBeenCalled();
-        // A change of the content of the view reads it again.
+        // A change of the content of a card re-reads that card only (the DataPatch tier, §11.3).
         edit({ kind: 'rename', id: instance, label: 'Content' });
         await a.flushed();
-        expect(read).toHaveBeenCalledTimes(1);
+        expect(read).not.toHaveBeenCalled();
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Content' });
+    });
+
+    it('tierOf DataPatch: a rename of one card reads that element with the scoped read, not the view', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const a = await client(store, first), b = await client(store, second);
+        const read = vi.spyOn(store, 'viewDoc'), scoped = vi.spyOn(store as unknown as { scoped(scope: unknown): unknown }, 'scoped');
+        edit({ kind: 'rename', id: instance, label: 'Renamed' });
+        await Promise.all([a.flushed(), b.flushed()]);
+        expect(read).not.toHaveBeenCalled();
+        // One scoped read per canvas that shows the card, of that element only.
+        expect(scoped).toHaveBeenCalledTimes(2);
+        for (const call of scoped.mock.calls) expect(call[0]).toEqual({ elements: [instance], neighbors: true });
+        expect(a.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
+        expect(b.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
+        expect(a.elements().find(e => key(e) === other)).toMatchObject({ name: 'Other' });
+        expect(a.state.part.instances[instance].label).toBe('Renamed');
+    });
+
+    it('law_keptDocEqualsRead: the kept part equals a fresh read of the view after each change of a sequence', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const shape = edit({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' });
+        edit({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: 'urn:p' }, range: { kind: 'class', class: 'urn:Class' } });
+        const a = await client(store, first), b = await client(store, second);
+        const otherUri = docOf(store).instances[other].uri;
+        // What toSchema reads: the boxes, edges and arrows of the view, the label, types and fields of the instances, the relations.
+        const shown = (doc: Doc, viewId: string) => {
+            const view = doc.views[viewId];
+            const ids = new Set([...boxes(view, 'card').map(c => c.element), ...boxes(view, 'collection').flatMap(c => c.members)]);
+            return {
+                boxes: view.boxes, edges: view.edges, arrows: view.arrows, label: view.label,
+                instances: Object.fromEntries([...ids].filter(id => doc.instances[id]).map(id => { const { label, types, fields } = doc.instances[id]; return [id, { label, types, fields }]; })),
+                relations: Object.values(doc.relations).filter(r => ids.has(r.subject) && ids.has(r.object)).sort((x, y) => x.id.localeCompare(y.id))
+            };
+        };
+        const check = async (step: string) => {
+            await Promise.all([a.flushed(), b.flushed()]);
+            for (const [c, viewId] of [[a, first], [b, second]] as const) expect(shown(c.state.part, viewId), `${step}: ${viewId}`).toEqual(shown(store.viewDoc(viewId), viewId));
+        };
+        const steps: [string, () => void][] = [
+            ['move', () => edit({ kind: 'setBounds', view: first, bounds: [{ id: cardOf(a.state.view, instance)!.id, x: 50, y: 60 }] })],
+            ['rename', () => edit({ kind: 'rename', id: instance, label: 'Renamed' })],
+            ['setStatements relation', () => edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [{ termType: 'NamedNode', value: otherUri }] } })],
+            ['setStatements field', () => edit({ kind: 'setStatements', id: other, values: { 'urn:note': [{ termType: 'Literal', value: 'text' }] } })],
+            ['removeFromView', () => edit({ kind: 'removeFromView', view: first, ids: [other] })],
+            ['addToView', () => edit({ kind: 'addToView', view: second, ids: [other], at: { x: 100, y: 900 } })],
+            ['setStatements removes relation', () => edit({ kind: 'setStatements', id: instance, values: { 'urn:p': [] } })],
+            ['undo', () => store.undo()], ['undo', () => store.undo()], ['undo', () => store.undo()], ['undo', () => store.undo()],
+            ['redo', () => store.redo()], ['redo', () => store.redo()],
+            ['rename other', () => edit({ kind: 'rename', id: other, label: 'Other again' })]
+        ];
+        const loads = [vi.spyOn(a.state, 'load'), vi.spyOn(b.state, 'load')];
+        for (const [step, run] of steps) { run(); await check(step); }
+        // Only a placement change of its own view reads a view again. First: the relation arrives as a placed edge, removeFromView, its
+        // undo and its redo. Second: addToView, the cascade of the relation removal on its placed edge, their undo. The move, the renames,
+        // the field edit and their undo and redo read no view.
+        expect(loads.map(l => l.mock.calls.length)).toEqual([4, 4]);
     });
 
     it('a validation run refreshes the counts on the cards without a view read', async () => {

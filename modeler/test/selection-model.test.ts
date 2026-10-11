@@ -99,7 +99,7 @@ describe('selection model', () => {
         selected.mockClear();
         const resolved = vi.fn();
         s.onDidResolve(resolved);
-        for (const change of [{ reason: 'save' }, { reason: 'edit', layout: true }, { reason: 'validation' }] as ModelSnapshot['change'][]) {
+        for (const change of [{ reason: 'save' }, { reason: 'edit', tier: 'view', layout: true }, { reason: 'validation' }] as ModelSnapshot['change'][]) {
             model.snapshot = { ...snapshot(model.snapshot.revision + 1), change };
             snapshots.fire(model.snapshot);
             await s.resolve();
@@ -109,7 +109,7 @@ describe('selection model', () => {
         expect(s.resolved.instances).toEqual(['a']);
     });
 
-    it.each([{ reason: 'save' }, { reason: 'validation' }, { reason: 'edit', layout: true }] as ModelSnapshot['change'][])(
+    it.each([{ reason: 'save' }, { reason: 'validation' }, { reason: 'edit', tier: 'view', layout: true }] as ModelSnapshot['change'][])(
         'law_selectionPromotesCurrentFacts: does not promote stale facts during a pending edit read: %j', async change => {
             const { s, model, snapshots } = selectionModel();
             s.set({ ids: ['a'] });

@@ -9,10 +9,10 @@ import { Command } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { viewIdOfUri } from '../../common/protocol';
 import {
-    CommandResult, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EditCommand, GROUP_SIZE, NS, SIDES, Side, TYPES, View,
+    ChangeReason, CommandResult, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EditCommand, GROUP_SIZE, NS, SIDES, Side, TYPES, View,
     ViewBox, edgeLanes, iriId, emptyDoc, hiddenShapeSources, placementOfId, toSchema
 } from '@catenary/model';
-import { ChangeScope, ModelChange, ModelStore, tracer } from '@catenary/rdf';
+import { ChangeScope, ModelChange, ModelStore, refreshes, tierOf, tracer } from '@catenary/rdf';
 
 const placementId = iriId;
 type Patch = NonNullable<ModelChange['patch']>;
@@ -42,21 +42,28 @@ export class ViewState {
     readDue = true;
 
     /**
-     * Keep `part` in step with a change (law_layoutChangeReadsNoView). A validation run: the schema reads the new counts from the
-     * store. A layout-only patch of this view: its values go to the boxes and edges of the kept part. A removal of placed instance
-     * edges: the edges leave the kept part (law_edgeRemovalUpdatesDisplay). Any other change: the next build reads the view again.
+     * Keep `part` in step with a change, by its tier (§11.3 keptDoc, law_keptDocEqualsRead). A validation run: the schema reads the new
+     * counts from the store. A ViewPatch of this view: its values go to the boxes and edges of the kept part (law_layoutChangeReadsNoView).
+     * A DataPatch: a removal of placed instance edges leaves the kept part (law_edgeRemovalUpdatesDisplay); a change of a view graph the
+     * part holds (placements) reads the view again; else the changed elements the part holds are read again with the scoped read and merged
+     * (ModelStore.mergeChanged). A Rebuild, or a merge that cannot keep the part: the next build reads the view again.
      */
     accept(change: ModelChange): void {
         const { reason, scope, patch } = change, view = this.view;
         if (reason === 'validation') return;
-        if (!view || !scope || !patch?.length || !(reason === 'edit' || reason === 'undo' || reason === 'redo')) { this.invalidate(); return; }
-        if (scope.layout) {
-            if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch, view))) this.invalidate();
+        const tier = scope && patch?.length ? tierOf({ reason, ...scope }) : 'rebuild';
+        if (!view || tier === 'rebuild') { this.invalidate(); return; }
+        if (tier === 'view') {
+            if (!tracer.span('refresh', 'layout patch', () => this.applyLayout(patch!, view))) this.invalidate();
             // A pending edge removal is already in the part (hidden edges): the next build from the part shows both changes.
             else { this.removedEdges = undefined; this.rootBehind = true; }
             return;
         }
-        if (!this.acceptRemovedEdges(patch, view)) this.invalidate();
+        if (this.acceptRemovedEdges(patch!, view)) return;
+        // A changed view graph that the part holds (its placements, label or description; a referenced view): read again.
+        if (scope!.views.some(id => !!this.part.views[id]) || !tracer.span('refresh', 'data patch', () => this.store.mergeChanged(this.part, this.viewId, scope!.elements))) { this.invalidate(); return; }
+        this.removedEdges = undefined;
+        this.rootBehind = true;
     }
 
     protected invalidate(): void {
@@ -130,16 +137,9 @@ export class ViewState {
         this.part = tracer.span('refresh', 'read view', () => this.store.viewDoc(this.viewId));
     }
 
-    /**
-     * A change with this scope can change what the view shows. A shapes change: shape cards, and class names on instance cards. An
-     * element: an instance, or a property shape of a shape card (a validation run changes its count of violations). A layout-only
-     * change: only the sessions of the changed views (law_layoutChangeStaysInView).
-     */
-    affectedBy(scope?: ChangeScope): boolean {
-        if (!scope) return true;
-        if (scope.layout) return scope.views.includes(this.viewId);
-        return scope.shapes || scope.views.some(id => !!this.part.views[id])
-            || scope.elements.some(id => !!this.part.instances[id] || !!this.part.shapes.properties[id]);
+    /** A change with this scope can change what the view shows (§11.3 refreshes, change.ts: the one rule). */
+    affectedBy(reason: ChangeReason, scope?: ChangeScope): boolean {
+        return refreshes(this.part, this.viewId, scope && { reason, ...scope });
     }
 }
 
@@ -179,7 +179,7 @@ export class ViewSession {
                 if (!this.muted) this.dispatcher.dispatch(SetDirtyStateAction.create(false, { reason: 'save' }));
                 return;
             }
-            if (!this.state.affectedBy(e.scope)) return;
+            if (!this.state.affectedBy(e.reason, e.scope)) return;
             this.state.accept(e);
             if (this.muted) return;
             if (this.visible) this.refresh(); else this.refreshDue = true;

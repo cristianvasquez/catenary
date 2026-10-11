@@ -5,6 +5,7 @@
 // a transaction gives one patch, undo applies the patch backwards. Element ids: see ids.ts.
 
 import { MigrationChange, NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
+import { VALIDATION_GRAPH, layoutOnly, quadDependencies } from './change';
 import type { TermSet } from 'rdf-ext';
 import type { NamedNode, Quad, Quad_Graph, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { nameFromURI, nameToURI } from 'canonical-md';
@@ -18,8 +19,7 @@ import { rdf, termKey, tripleKey } from './terms';
  * (workspace files, test fixtures), and the model graph when there is no data file.
  */
 export const MODEL_GRAPH = 'urn:name:model';
-/** The SHACL report of the last validation (ADR 0007): derived, not saved, not in undo, not in the canonical form. */
-export const VALIDATION_GRAPH = 'urn:trellis:validation';
+export { LAYOUT_PREDICATES, VALIDATION_GRAPH } from './change';
 
 /** Store graph of a file: this prefix and the encoded absolute path. */
 export const FILE_GRAPH_PREFIX = 'urn:shapes:';
@@ -96,9 +96,6 @@ export type Change = { op: 'add' | 'remove'; quad: Quad; was?: Quad };
 /** The changes of one transaction, in order. */
 export type Patch = Change[];
 
-/** Placement geometry and style do not change figure derivation. */
-export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
-
 /** One committed patch and its cache dependencies. Metadata changes can have an empty patch. */
 export interface GraphChange {
     sequence: number;
@@ -154,17 +151,19 @@ export class ModelGraph {
         if (!this.log) this.publish([], event);
     }
 
+    /** The cache inputs that a quad invalidates (change.ts quadDependencies, the one rule). */
     protected dependencies(q: Quad): Dependencies {
-        const report = q.graph.value === VALIDATION_GRAPH;
-        const model = this.isDataGraph(q.graph), shapesGraph = this.isShapesGraph(q.graph);
-        return {
-            persisted: !report,
-            data: !report && (model || shapesGraph || !this.isView(q.graph) || !LAYOUT_PREDICATES.has(q.predicate.value)),
-            query: !report && (model || shapesGraph || !this.isView(q.graph) || (q.predicate.equals(P.type) && q.object.equals(V.View))),
-            shapes: shapesGraph || (model && (isVocabularyQuad(q) || isRdfsQuad(q)
-                || SKOS_TYPES.some(t => this.match(q.subject, P.type, t, this.model).length > 0)
-                || (RDFS_TEXT.has(q.predicate.value) && this.inRdfsRule(q.subject))))
-        };
+        return quadDependencies(this, q);
+    }
+
+    /**
+     * A quad of a data graph that changes the metamodel: the SKOS vocabulary, an RDFS rule, a statement of a SKOS subject, or the text of
+     * a predicate or a class of an RDFS rule (GraphFacts.metamodelQuad).
+     */
+    metamodelQuad(q: Quad): boolean {
+        return isVocabularyQuad(q) || isRdfsQuad(q)
+            || SKOS_TYPES.some(t => this.match(q.subject, P.type, t, this.model).length > 0)
+            || (RDFS_TEXT.has(q.predicate.value) && this.inRdfsRule(q.subject));
     }
 
     protected publish(patch: Patch, dependencies: Dependencies): void {
@@ -173,8 +172,7 @@ export class ModelGraph {
             graphs: [...new Set(patch.map(c => c.quad.graph.value))],
             elements: [...new Set(patch.flatMap(c => [c.quad.subject, c.quad.object])
                 .filter(t => t.termType === 'NamedNode').map(t => t.value))],
-            layout: patch.length > 0 && patch.every(c => this.isView(c.quad.graph) && !this.isShapesGraph(c.quad.graph)
-                && LAYOUT_PREDICATES.has(c.quad.predicate.value))
+            layout: layoutOnly(this, patch)
         };
         this.change = event;
         for (const key of Object.keys(this.keys) as (keyof Dependencies)[]) if (event[key]) this.keys[key] = event;

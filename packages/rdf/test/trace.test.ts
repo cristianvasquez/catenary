@@ -183,7 +183,7 @@ describe('traced store', () => {
         expect(command.queries).toBeGreaterThan(0);
         const listener = spans.find(s => s.name === 'listener')!;
         expect(causes(spans, listener)).toEqual(['change:edit', 'command:createView']);
-        expect(spans.find(s => s.kind === 'change' && s.name === 'edit')?.detail).toMatch(/^1 listeners; views 1/);
+        expect(spans.find(s => s.kind === 'change' && s.name === 'edit')?.detail).toMatch(/^1 listeners; tier data; views 1/);
         expect(causes(spans, spans.find(s => s.kind === 'file' && s.name === 'write')!)).toContain('command:createView');
         store.close();
     });

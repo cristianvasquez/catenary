@@ -97,9 +97,18 @@ export interface WorkspaceFiles {
 /** Why the store changed. files: a file was added, removed or replaced; queue: the patch queue changed; disk: a referenced file appeared or disappeared. */
 export type ChangeReason = 'edit' | 'undo' | 'redo' | 'load' | 'files' | 'save' | 'validation' | 'shapes' | 'queue' | 'disk';
 
+/**
+ * The tier of a change (spec/manifest.hs §11.3 tierOf, computed by the backend in @catenary/rdf change.ts): `view`, a placement change
+ * that touches the canvases of its view only; `data`, a change of data statements that touches what shows a changed element; `rebuild`,
+ * a change of the shapes, a disk read or an open that touches everything.
+ */
+export type ChangeTier = 'view' | 'data' | 'rebuild';
+
 /** The last change of the store (`ModelSnapshot.change`): panels skip a read that the change cannot affect. */
 export interface SnapshotChange {
     reason: ChangeReason;
+    /** edit, undo, redo, validation: the tier (§11.3 tierOf). Undefined: anything can have changed. */
+    tier?: ChangeTier;
     /** edit, undo, redo: views whose view graph changed. */
     views?: string[];
     /** edit, undo, redo: instances in changed model statements. */
@@ -111,14 +120,15 @@ export interface SnapshotChange {
 }
 
 /**
- * The change cannot change what a model panel shows (explorer, search, links, problems, actions): a write of the files, a move, resize or
- * style change of placements, or (`violations` false: the panel does not show violations) a new validation report.
+ * The change cannot change what a model panel shows (explorer, search, links, problems, actions): a write of the files, a ViewPatch (a
+ * move, resize or style change of placements, §11.3 tierOf), or (`violations` false: the panel does not show violations) a new
+ * validation report. The tier comes from the backend: the frontend repeats no rule of change.ts.
  */
 export function panelsUnchanged(change: SnapshotChange | undefined, violations = false): boolean {
     if (!change) return false;
     if (change.reason === 'save') return true;
     if (change.reason === 'validation') return !violations;
-    return (change.reason === 'edit' || change.reason === 'undo' || change.reason === 'redo') && !!change.layout;
+    return change.tier === 'view';
 }
 
 export interface ModelSnapshot {

@@ -67,7 +67,7 @@ describe('view notes resources', () => {
         await f.resource.readContents();
         f.service.viewDescription.mockClear();
         for (const change of [
-            { reason: 'save' }, { reason: 'edit', layout: true, views: ['view'] },
+            { reason: 'save' }, { reason: 'edit', tier: 'view', layout: true, views: ['view'] },
             { reason: 'edit', views: ['other'] }, { reason: 'validation' }
         ] as SnapshotChange[]) f.remote('Original', change);
         expect(f.service.viewDescription).not.toHaveBeenCalled();

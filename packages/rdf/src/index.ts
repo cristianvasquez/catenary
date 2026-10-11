@@ -2,5 +2,6 @@
 // everything it exchanges with it is plain JSON from @catenary/model.
 
 export { ChangeReason, ChangeScope, ModelChange, ModelStore } from './model-store';
+export { classify, keepsReads, refreshes, tierOf, validates } from './change';
 export { useValidationWorker } from './validation-runner';
 export { tracer } from './trace';

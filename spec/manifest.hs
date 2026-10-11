@@ -1309,9 +1309,11 @@ data ValidationResult = ValidationResult
 validator :: [Quad] -> [Quad] -> [ValidationResult]   -- the data, the shapes
 law_validatorNoShapes :: [Quad] -> Bool
 law_validatorNoShapes dataQs = null (validator dataQs [])
-data ChangeScope = ChangeScope { dataChanged, shapesChanged, layoutOnly :: Bool }
-validates :: ChangeScope -> Bool
-validates s = not (layoutOnly s) && (dataChanged s || shapesChanged s)
+-- | Validation runs after a change of data statements (a changed element: the subject of a data statement is an IRI) or of the
+-- shapes, not after a layout change. In OpenViews, a change of the placements of an open view starts a run too (validationFocus
+-- changed). One function: change.ts validates; ModelStore.contentChanged calls it.
+validates :: SnapshotChange -> [Id] -> Bool           -- the change, the open views in OpenViews (else [])
+validates c openViews = not (layoutFlag c) && (not (null (changedElements c)) || shapesFlag c || any (`elem` openViews) (changedViews c))
 -- | A run reports only when no newer edit started after it.
 reportIsCurrent :: Int -> Int -> Bool                -- the revision of the run, the current revision
 reportIsCurrent run current = run == current
@@ -1619,13 +1621,14 @@ getSnapshot :: IO Snapshot
 onDidChange :: Snapshot -> IO ()
 snapshotOf :: Backend -> Snapshot
 -- | The change cannot change what a model panel shows (explorer, search, links, problems, actions): a write of the files, a
--- move, resize or style change of placements, or a new report when the panel shows no violations (panelsUnchanged).
+-- ViewPatch (a move, resize or style change of placements, §11.3 tierOf), or a new report when the panel shows no violations
+-- (panelsUnchanged). The snapshot carries the tier that the backend computed (change.ts): the frontend repeats no rule.
 panelsUnchanged :: Maybe SnapshotChange -> Bool -> Bool   -- the change, the panel shows violations
 panelsUnchanged Nothing _ = False
 panelsUnchanged (Just c) showsViolations = case reason c of
   SaveChange -> True
   ValidationChange -> not showsViolations
-  r -> r `elem` [EditChange, UndoChange, RedoChange] && layoutFlag c
+  _ -> tierOf c == ViewPatch
 law_snapshotMirrorsHistory :: Backend -> Bool
 law_snapshotMirrorsHistory b =
   let s = snapshotOf b
@@ -1650,6 +1653,10 @@ law_movedIdsFollowSetUri b old new =
 -- §10.1 law_viewPatchWritesOneFile). A change of data statements touches the canvases that show a changed element. A change of the
 -- shapes, a disk read or an open touches every canvas. Reason: the cost of a change must follow the size of the change, not the
 -- size of the view or the workspace.
+-- One module holds these rules (packages/rdf/src/change.ts): classify gives the tier, the scope (SnapshotChange), the cache keys
+-- to invalidate and validates; tierOf, refreshes, keepsReads and validates are one function each. ModelGraph (the keys), ModelStore
+-- (the scope, the validation trigger), ViewState (refresh and the kept Doc) and the snapshot (panelsUnchanged, by the tier it
+-- carries) call them. Reason: five copies of one rule drifted apart.
 data ChangeTier = ViewPatch | DataPatch | Rebuild deriving Eq
 tierOf :: SnapshotChange -> ChangeTier
 tierOf c
@@ -1664,8 +1671,18 @@ keptDoc :: Backend -> Iri -> Doc                 -- the Doc that the canvas of v
 sameDoc :: Doc -> Doc -> Bool                     -- the same views, boxes, edges, instances and relations
 law_keptDocEqualsRead :: Backend -> Op -> Iri -> Bool
 law_keptDocEqualsRead b op v = let b' = snd (step b op) in sameDoc (keptDoc b' v) (fst (runRead b' (viewDoc v)))
--- | Which canvases a change refreshes (view-session.ts, affectedBy). No scope: all. A ViewPatch: the canvases of the changed views.
--- Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on a shapes change.
+-- | The merge of a DataPatch (change.ts mergeRecords, ModelStore.mergeChanged): the records of the changed instances that the Doc
+-- holds, read with their neighbors (so a statement to an instance is a relation, to another IRI a field), replace the kept records;
+-- the relations of a changed instance with both ends in the Doc stay; the hidden edges of the view follow the relations. The Doc
+-- is read again when the merge cannot give the read: a changed view graph that the Doc holds (a placement, the label or the
+-- description of the view, a referenced view), a changed element that the view places and the Doc does not hold, a held element
+-- that is no instance any more (its card goes), or a new relation that the view places (its edge shows).
+merges :: Doc -> SnapshotChange -> Bool            -- the DataPatch merges into the kept Doc; else the canvas reads the view
+merges d c = tierOf c == DataPatch && not (any (`elem` docViews d) (changedViews c)) && all (keptAfterRead d) (changedElements c)
+keptAfterRead :: Doc -> Id -> Bool                 -- the element stays as the Doc shows it: held and an instance, or not placed
+-- | Which canvases a change refreshes (change.ts refreshes; view-session.ts affectedBy calls it). No scope: all. A ViewPatch: the
+-- canvases of the changed views. Otherwise: the canvases whose Doc holds a changed view or a changed element, and all of them on
+-- a shapes change.
 docView :: Doc -> Id                              -- the view of the canvas
 refreshes :: Doc -> Maybe SnapshotChange -> Bool
 refreshes _ Nothing = True
@@ -1688,15 +1705,26 @@ displayRefreshAfterEdit completed started = completed <= started
 violationScope :: [(Id, Int)] -> [(Id, Int)] -> [Id]   -- violations by element before the run, after the run
 violationScope before after = [i | i <- nub (map fst before ++ map fst after), lookup i before /= lookup i after]
 -- | A ViewPatch and a save keep the reads that do not read the geometry: the figures, hidden neighbor counts and shape
--- applicability of each view, the explorer, the instance count, the file kinds and the dataset warnings. The figures of a view read
--- the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
+-- applicability of each view, the explorer, the instance count, the file kinds, the file references and the dataset warnings. The
+-- figures of a view read the store on demand around the placed terms of the view (notations.ts storeInput): no copy of the store.
 -- Reason: these reads scan the whole store. Built again after each change, they made a move take seconds in a large workspace.
+-- The per-quad form of the rule: a quad of placement geometry or style moves no data key of the graph (change.ts quadDependencies).
 keepsReads :: SnapshotChange -> Bool
 keepsReads c = reason c == SaveChange || tierOf c == ViewPatch
 -- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, PERF5).
 -- Reason: the GLSP server and every RPC share the backend thread.
 readBudgetMs :: Int
 readBudgetMs = 50
+-- | A panel read of n elements asks the store a bounded number of SPARQL queries, whatever n: one query for all elements
+-- (VALUES), not one per element; a fact of the whole store (the shaped classes, the terms of each property shape id, the files,
+-- placements and instance test of the elements) comes from one request context that PanelReads keeps on the data event
+-- (read-context.ts), never from a loop over the elements. The time of a read then follows the number of rows it returns.
+-- Reason: a read that scanned the store once per element took seconds for a few hundred selected cards (PERF5, PERF6).
+readQueries :: Backend -> IO a -> Int            -- the SPARQL queries that one read sends to the store (the trace counts them)
+readQueryBound :: Int
+readQueryBound = 30
+law_readQueriesBounded :: Backend -> IO a -> Bool
+law_readQueriesBounded b r = readQueries b r <= readQueryBound
 
 -- 12. CLI --------------------------------------------------------------------
 
@@ -1800,6 +1828,7 @@ termKey = manifestOnly
 randomBase36 = manifestOnly
 isNote = manifestOnly
 fileNameOf = manifestOnly
+keptAfterRead = manifestOnly
 step = manifestOnly
 runOp = manifestOnly
 runTx = manifestOnly
@@ -1839,6 +1868,9 @@ savedContent = manifestOnly
 writeFailed = manifestOnly
 parsesTo = manifestOnly
 hasBlankNodes = manifestOnly
+oneGraphBlock = manifestOnly
+textOutside = manifestOnly
+changedSubjects = manifestOnly
 diskText = manifestOnly
 lastKnownText = manifestOnly
 isTemporary = manifestOnly
@@ -1850,10 +1882,8 @@ validationScheduled = manifestOnly
 filesWritten = manifestOnly
 viewFileOf = manifestOnly
 docView = manifestOnly
+readQueries = manifestOnly
 keptDoc = manifestOnly
 sameDoc = manifestOnly
 onDidChange = manifestOnly
 snapshotOf = manifestOnly
-oneGraphBlock = manifestOnly
-textOutside = manifestOnly
-changedSubjects = manifestOnly

@@ -21,13 +21,14 @@ import { Placements } from './actions';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
-import { GraphChange, ModelGraph, Patch, VALIDATION_GRAPH, isRdfsQuad, isVocabularyQuad } from './graph';
+import { ChangeScope, Classified, classify, keepsReads, mergeRecords, tierOf } from './change';
+import { GraphChange, ModelGraph, P, Patch, V } from './graph';
 import { History } from './history';
 import { elementId, elementTerm } from './ids';
 import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
 import { movedIds } from './moved-ids';
-import { LAYOUT_PREDICATES, viewFiguresOf } from './notations';
+import { viewFiguresOf } from './notations';
 import { gone } from './ops';
 import { filesOfSubject, placeChanges, transfer } from './placement';
 import { Reconciler } from './reconciler';
@@ -58,17 +59,8 @@ export interface ModelChange {
     patch?: Patch;
 }
 
-/** What a patch touched, as element ids. */
-export interface ChangeScope {
-    /** Views whose view graph changed. */
-    views: string[];
-    /** Instances in changed model statements, as subject or IRI object. */
-    elements: string[];
-    /** A shapes graph changed. */
-    shapes: boolean;
-    /** Only the geometry or the style of placements changed (LAYOUT_PREDICATES of view graphs). */
-    layout: boolean;
-}
+/** What a patch touched, as element ids, and its tier (change.ts, §11.3). */
+export type { ChangeScope } from './change';
 
 export type Listener = (change: ModelChange) => void;
 
@@ -87,7 +79,7 @@ export function violationScope(before: Violation[], after: Violation[]): ChangeS
     };
     const was = counts(before), now = counts(after);
     const elements = [...new Set([...was.keys(), ...now.keys()])].filter(id => was.get(id) !== now.get(id));
-    return { views: [], elements, shapes: false, layout: false };
+    return { tier: tierOf({ reason: 'validation', shapes: false, layout: false }), views: [], elements, shapes: false, layout: false };
 }
 
 /** A command refused because it changes protected files (absolute paths). */
@@ -321,28 +313,38 @@ export class ModelStore {
         return filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
     }
 
-    protected scopeOf(patch: Patch): ChangeScope {
-        const views = new Set<string>(), elements = new Set<string>();
-        let shapes = this.graph.change.shapes, layout = true;
-        for (const { quad: q } of patch) {
-            if (q.graph.value === VALIDATION_GRAPH) { layout = false; continue; }
-            if (this.graph.isShapesGraph(q.graph)) {
-                shapes = true;
-                layout = false;
-                continue;
-            }
-            if (!this.graph.isDataGraph(q.graph)) {
-                if (q.graph.termType === 'NamedNode') views.add(elementId(q.graph));
-                if (!LAYOUT_PREDICATES.has(q.predicate.value)) layout = false;
-                continue;
-            }
-            layout = false;
-            // A concept scheme, concept or collection of the data file: the value set cards and the metamodel change too. An RDFS rule
-            // statement changes the metamodel.
-            if (isVocabularyQuad(q) || isRdfsQuad(q)) shapes = true;
-            for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') elements.add(elementId(t as NamedNode));
+    /**
+     * The classification of a patch (change.ts classify, §11.3): its tier, scope, and whether validation runs. In the validation mode
+     * "views", the open views count (a placement change on one of them changes what the run checks).
+     */
+    protected classify(patch: Patch, reason: ChangeReason = 'edit'): Classified {
+        const open = this.settings?.validation === 'views' ? this.validationData.openViewIris().map(iri => elementId(rdf.namedNode(iri))) : [];
+        return classify(this.graph, patch, reason, open);
+    }
+
+    /**
+     * The DataPatch tier of a canvas (§11.3 keptDoc, law_keptDocEqualsRead): the records of the changed elements that `part` holds are read
+     * again with the scoped read and merged into the part (change.ts mergeRecords). False: the change needs a read of the view. A changed
+     * element that the view places and the part does not hold (a node that became an instance), a held element that is no instance any
+     * more (its card goes), or a new relation that the view places (its edge shows).
+     */
+    mergeChanged(part: Doc, viewId: string, elements: string[]): boolean {
+        const view = part.views[viewId];
+        if (!view) return false;
+        const graph = rdf.namedNode(view.uri);
+        const held = elements.filter(id => !!part.instances[id]);
+        for (const id of elements) {
+            const t = elementTerm(id);
+            if (!part.instances[id] && t && this.graph.match(null, V.element, t, graph).length) return false;
         }
-        return { views: [...views], elements: [...elements], shapes, layout: layout && patch.length > 0 };
+        if (!held.length) return true;
+        const fresh = this.scoped({ elements: held, neighbors: true });
+        if (held.some(id => !fresh.instances[id])) return false;
+        for (const id of mergeRecords(part, viewId, fresh, held)) {
+            const r = part.relations[id], triple = rdf.quad(rdf.namedNode(part.instances[r.subject].uri), rdf.namedNode(r.predicate), rdf.namedNode(part.instances[r.object].uri));
+            if (this.graph.match(null, P.reifies, triple, graph).length) return false;
+        }
+        return true;
     }
 
     /** What the read of a view does not know: the file of each instance, and the path and state of each file reference. */
@@ -513,7 +515,7 @@ export class ModelStore {
     }
 
     /**
-     * The dataset changed. Validation depends on the model graph only: a layout change does not start it.
+     * The dataset changed. Validation runs by the rule of §9 validates (change.ts): a layout change does not start it.
      * `patch`: the changes in the order applied. `shapesBefore`: the shapes index before them, when they changed the shapes or the
      * vocabulary (ModelGraph.keys.shapes); no patch: anything can have changed.
      */
@@ -524,12 +526,7 @@ export class ModelStore {
         // A view graph whose IRI changed stays in its view file. (Other moved ids, such as property shapes, are not graphs.)
         for (const [from, to] of Object.entries(this.movedIds)) this.settings?.moveViewFile(elementTerm(from)?.value ?? '', elementTerm(to)?.value ?? '');
         this.settings?.assignViewFiles();
-        if (shapes || patch.some(c => this.graph.isDataGraph(c.quad.graph))) this.validation.invalidate();
-        // The validation mode "views": a placement on an open view changes what validation checks.
-        else if (this.settings?.validation === 'views') {
-            const open = new Set(this.validationData.openViewIris());
-            if (patch.some(c => open.has(c.quad.graph.value) && !LAYOUT_PREDICATES.has(c.quad.predicate.value))) this.validation.invalidate();
-        }
+        if (!patch || this.classify(patch).validates) this.validation.invalidate();
     }
 
     /** `scope`: what a change without a patch touched (a validation run); else the scope of `patch`; neither: anything. */
@@ -539,13 +536,13 @@ export class ModelStore {
         const event = this.graph.change;
         this.notified = event;
         if (!patch && (reason === 'load' || reason === 'files')) patch = event.patch.length ? event.patch : undefined;
-        scope ??= patch && this.scopeOf(patch);
-        // A layout change or a report cannot change the file references: the state of the last content change stays.
-        if (this.settings && reason !== 'disk' && reason !== 'validation' && !scope?.layout) this.referencedState = this.referencedFiles();
+        scope ??= patch && this.classify(patch, reason);
         this.lastChange = { reason, ...scope };
+        // A ViewPatch, a save or a report cannot change the file references: the state of the last content change stays (keepsReads).
+        if (this.settings && reason !== 'disk' && reason !== 'validation' && !keepsReads(this.lastChange)) this.referencedState = this.referencedFiles();
         if (tracer.on) {
             tracer.span('change', reason, () => {
-                tracer.note(`${this.listeners.size} listeners${scope ? `; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
+                tracer.note(`${this.listeners.size} listeners${scope ? `; tier ${scope.tier}; views ${scope.views.length}, elements ${scope.elements.length}${scope.shapes ? ', shapes' : ''}${scope.layout ? ', layout only' : ''}` : ''}`);
                 for (const l of [...this.listeners]) l({ reason, event, scope, patch });
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
