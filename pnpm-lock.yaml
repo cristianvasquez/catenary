@@ -219,38 +219,13 @@ importers:
         specifier: ^22
         version: 22.20.4
 
-  packages/explorer:
-    dependencies:
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
-
-  packages/fields:
-    dependencies:
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
-
-  packages/links:
-    dependencies:
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
+  packages/contracts: {}
 
   packages/model:
     dependencies:
-      '@catenary/explorer':
+      '@catenary/contracts':
         specifier: workspace:*
-        version: link:../explorer
-      '@catenary/fields':
-        specifier: workspace:*
-        version: link:../fields
-      '@catenary/links':
-        specifier: workspace:*
-        version: link:../links
-      '@catenary/palette':
-        specifier: workspace:*
-        version: link:../palette
+        version: link:../contracts
       '@catenary/shacl':
         specifier: workspace:*
         version: link:../shacl
@@ -262,34 +237,14 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.6)(terser@5.51.2)(yaml@2.9.1)
 
-  packages/palette:
-    dependencies:
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
-
-  packages/query: {}
-
   packages/rdf:
     dependencies:
-      '@catenary/explorer':
+      '@catenary/contracts':
         specifier: workspace:*
-        version: link:../explorer
-      '@catenary/fields':
-        specifier: workspace:*
-        version: link:../fields
-      '@catenary/links':
-        specifier: workspace:*
-        version: link:../links
+        version: link:../contracts
       '@catenary/model':
         specifier: workspace:*
         version: link:../model
-      '@catenary/palette':
-        specifier: workspace:*
-        version: link:../palette
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
       '@catenary/rdfs':
         specifier: workspace:*
         version: link:../rdfs
@@ -380,39 +335,15 @@ importers:
 
   packages/rdfs:
     dependencies:
-      '@catenary/explorer':
+      '@catenary/contracts':
         specifier: workspace:*
-        version: link:../explorer
-      '@catenary/fields':
-        specifier: workspace:*
-        version: link:../fields
-      '@catenary/links':
-        specifier: workspace:*
-        version: link:../links
-      '@catenary/palette':
-        specifier: workspace:*
-        version: link:../palette
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
+        version: link:../contracts
 
   packages/shacl:
     dependencies:
-      '@catenary/explorer':
+      '@catenary/contracts':
         specifier: workspace:*
-        version: link:../explorer
-      '@catenary/fields':
-        specifier: workspace:*
-        version: link:../fields
-      '@catenary/links':
-        specifier: workspace:*
-        version: link:../links
-      '@catenary/palette':
-        specifier: workspace:*
-        version: link:../palette
-      '@catenary/query':
-        specifier: workspace:*
-        version: link:../query
+        version: link:../contracts
 
 packages:
 

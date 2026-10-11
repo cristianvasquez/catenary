@@ -21,16 +21,7 @@
   ],
   "references": [
     {
-      "path": "../explorer"
-    },
-    {
-      "path": "../palette"
-    },
-    {
-      "path": "../links"
-    },
-    {
-      "path": "../fields"
+      "path": "../contracts"
     },
     {
       "path": "../shacl"

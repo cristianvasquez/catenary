@@ -1,5 +1,5 @@
-import { RDF, RDFS, SH, XSD, iri } from '@catenary/query';
-import type { QueryTerm as Term } from '@catenary/query';
+import type { QueryTerm as Term } from '@catenary/contracts';
+import { RDF, RDFS, SH, XSD, iri } from '@catenary/contracts';
 import type { FocusNode, TargetKind, TargetMatch } from '../common';
 
 export { iri };

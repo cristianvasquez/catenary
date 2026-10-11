@@ -2,10 +2,8 @@
 // itself when it is also a class). Its property shapes (sh:property, and the members of sh:or, sh:xone and sh:and) give a link for
 // sh:class or sh:node, else a field (sh:datatype, sh:in, sh:nodeKind sh:IRI). The host gives a port on the shapes graphs only.
 
-import type { FieldRule, FieldValue, FieldsProvider } from '@catenary/fields';
-import type { LinkRule, LinksProvider } from '@catenary/links';
-import type { PaletteClass, PaletteProvider } from '@catenary/palette';
-import { OWL, QueryPort, RDF, RDFS, SH, XSD } from '@catenary/query';
+import type { FieldRule, FieldValue, FieldsProvider, LinkRule, LinksProvider, PaletteClass, PaletteProvider } from '@catenary/contracts';
+import { OWL, QueryPort, RDF, RDFS, SH, XSD } from '@catenary/contracts';
 
 const SKOS = 'http://www.w3.org/2004/02/skos/core#';
 const DCT = 'http://purl.org/dc/terms/';

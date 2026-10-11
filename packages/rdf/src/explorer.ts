@@ -1,7 +1,7 @@
-// The Model explorer (ADR 0006): the sections of the explorer plugins (@catenary/explorer) on this store. A plugin query runs only
+// The Model explorer (ADR 0006): the sections of the explorer plugins (@catenary/contracts) on this store. A plugin query runs only
 // when the frontend asks for the children of a key. Keys: '<plugin id>/<plugin key>'.
 
-import type { ExplorerPlugin, ExplorerPort } from '@catenary/explorer';
+import type { ExplorerPlugin, ExplorerPort } from '@catenary/contracts';
 import { EXPLORER_PAGE, ExplorerPage, ExplorerPath, ExplorerRow, fuzzyMatch, iriId, shortIri } from '@catenary/model';
 import { rdfsExplorer } from '@catenary/rdfs';
 import { shaclExplorer } from '@catenary/shacl/backend';

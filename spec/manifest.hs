@@ -1241,10 +1241,10 @@ shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes t
 
 -- 8.5 Vocabulary plugins: palette, links, fields --------------------------------------------
 
--- | Each reader of the metamodel has its own provider contract, named after it: @catenary/palette (the palette and the class
--- picker), @catenary/links (the link picker, drawn and reconnected edges), @catenary/fields (the Properties form, the card fields).
--- @catenary/explorer is the contract of the Model explorer (ADR 0006). A vocabulary plugin implements the contracts it can and reads
--- its statements only through a query port (@catenary/query). The host (@catenary/rdf authoring.ts) parses no vocabulary: it gives
+-- | Each reader of the metamodel has its own provider contract, named after it, in @catenary/contracts: palette (the palette and
+-- the class picker), links (the link picker, drawn and reconnected edges), fields (the Properties form, the card fields).
+-- explorer is the contract of the Model explorer (ADR 0006). A vocabulary plugin implements the contracts it can and reads
+-- its statements only through a query port (@catenary/contracts query). The host (@catenary/rdf authoring.ts) parses no vocabulary: it gives
 -- each plugin a port (SHACL: the shapes graphs; RDFS: all graphs of the files, never the validation report), runs the plugins in
 -- precedence order (SHACL, RDFS) and merges them (@catenary/model mergeContributions). The readers read only the merged metamodel.
 -- Merge: the first plugin that gives a class wins it; the classes of a plugin follow those of the plugins before it, by order, then

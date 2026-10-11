@@ -3,6 +3,7 @@
 //  1. A package imports only its own files, Node built-ins, and packages declared in its package.json.
 //  2. rdf-files imports no Catenary package: other projects use it.
 //  3. The browser side and the shared side of the Theia extension do not import @catenary/rdf.
+//  4. @catenary/contracts imports no Catenary package. A vocabulary plugin (shacl, rdfs) imports only @catenary/contracts.
 // Exit code 1 on a violation.
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { builtinModules } from 'module';
@@ -10,18 +11,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const packages = ['packages/query', 'packages/palette', 'packages/links', 'packages/fields', 'packages/explorer', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
+const packages = ['packages/contracts', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
 const forbidden = [
     { dir: 'packages/shacl/src/common', module: '@catenary/shacl/backend', why: 'shared SHACL rules must not load the backend' },
     { dir: 'modeler/src/browser', module: '@catenary/shacl/backend', why: 'the browser reads SHACL through RPC' },
     { dir: 'modeler/src/common', module: '@catenary/shacl/backend', why: 'shared adapters must not load the backend' },
     { dir: 'packages/model/src', module: '@catenary/shacl/backend', why: 'model runs in the browser' },
-    { dir: 'packages/rdfs/src', module: '@catenary/model', why: 'a plugin gets the store through the explorer port' },
-    { dir: 'packages/shacl/src', module: '@catenary/model', why: 'a plugin gets the store through the explorer port' },
     { dir: 'packages/rdf-files/src', module: '@catenary/model', why: 'rdf-files is generic: other projects use it' },
     { dir: 'packages/rdf-files/src', module: '@catenary/rdf', why: 'rdf-files is generic: other projects use it' },
     { dir: 'modeler/src/browser', module: '@catenary/rdf', why: 'the browser gets JSON from @catenary/model, never RDF' },
     { dir: 'modeler/src/common', module: '@catenary/rdf', why: 'code shared with the browser must not load RDF' }
+];
+// The only Catenary packages that the files under `dir` can import.
+const onlyCatenary = [
+    { dir: 'packages/contracts/src', allowed: [], why: 'the contracts import no Catenary package' },
+    { dir: 'packages/shacl/src', allowed: ['@catenary/contracts'], why: 'a vocabulary plugin sees only the contracts' },
+    { dir: 'packages/rdfs/src', allowed: ['@catenary/contracts'], why: 'a vocabulary plugin sees only the contracts' }
 ];
 
 const files = dir => readdirSync(dir).flatMap(f => {
@@ -47,6 +52,9 @@ for (const pkg of packages) {
             }
             for (const f of forbidden) {
                 if (rel.startsWith(f.dir + '/') && (f.module.startsWith('@catenary/shacl/') ? s === f.module : packageName(s) === f.module)) errors.push(`${rel}: imports ${f.module} (${f.why})`);
+            }
+            for (const o of onlyCatenary) {
+                if (rel.startsWith(o.dir + '/') && s.startsWith('@catenary/') && !o.allowed.includes(packageName(s))) errors.push(`${rel}: imports ${s} (${o.why})`);
             }
         }
     }

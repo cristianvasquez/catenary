@@ -1466,7 +1466,7 @@ editorFor f Nothing = AsText f
 
 -- 8.5 Model explorer ----------------------------------------------------------------
 
--- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/explorer). The core has no section rules.
+-- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/contracts explorer). The core has no section rules.
 -- Reason: a new vocabulary (SKOS) adds a plugin, not a special case in the explorer.
 -- A plugin query runs only when a folder opens. A folder shows its child count and reads pages of 100. A last "Show more" row reads the next page.
 -- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in the file is not shown.
