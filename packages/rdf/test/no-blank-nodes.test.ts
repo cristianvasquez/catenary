@@ -8,7 +8,7 @@ import { ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import * as ops from '../src/ops';
 import { OxigraphStore } from 'rdf-files';
-import { SKOLEM_BASE, skolemize } from '../src/skolem';
+import { SKOLEM_BASE, skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { parseTrig } from '../src/trig';
 import { SHAPES, value, writeWorkspace } from './helpers';

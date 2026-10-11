@@ -7,7 +7,7 @@ import type { Quad, Term } from '@rdfjs/types';
 import { Derivation, LazyTripleIndex, ListHeads, NQuad, NTerm, Notations, TermJSON, TripleIndex, ViewFigures, deriveFigures, nkey, notations, placementsOf, termToJSON, viewFigures } from '@catenary/model';
 import { parseRdfSync } from 'rdf-files';
 import { ModelGraph, REPORT_GRAPH } from './graph';
-import { skolemize } from './skolem';
+import { skolemize } from 'rdf-core';
 import { jsonToTerm, rdf } from './terms';
 
 /** The folder of the built-in notation files: next to the package source or build, or next to the backend bundle. */

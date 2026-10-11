@@ -10,7 +10,7 @@ import { elementId } from './ids';
 import { Result, fail, ok } from './ops';
 import { mintShapeIri } from './shape-ops';
 import { S } from './shapes-read';
-import { skolemize } from './skolem';
+import { skolemize } from 'rdf-core';
 import { rdf } from './terms';
 import { shapesQuads, shapesTarget } from './shapes';
 import { modelTriples, usedIris, label, P } from './vocabulary';

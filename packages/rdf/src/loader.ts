@@ -10,7 +10,7 @@ import { OxigraphStore, absolutePath, hasAnnotation, knownPath, portableRelative
 import { MANIFEST_GRAPH, NEAR, WORKSPACE_FILE, isViewFile, listModelFiles, parseRdf, readManifest, workspaceFileOf } from './files';
 import { ModelGraph, cmp, dataGraphIri, shapesGraphIri } from './graph';
 import { FileRead, PLACE_KINDS, Settings } from './settings';
-import { isSkolem, skolemize } from './skolem';
+import { isSkolem, skolemize } from 'rdf-core';
 import { rdf, termKey } from './terms';
 import { canonical, parseTrig } from './trig';
 import { isView, V } from './views';

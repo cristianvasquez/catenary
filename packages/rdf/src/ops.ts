@@ -9,7 +9,7 @@ import {
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
-import { skolemIri } from './skolem';
+import { skolemIri } from 'rdf-core';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { shapesCardTerm, shapesIndex } from './shape-ops';
 import { jsonToTerm, mapTerm, rdf } from './terms';

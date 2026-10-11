@@ -11,7 +11,7 @@ import { project } from './project-full';
 import type { ModelStore } from '../src/model-store';
 import { parseTrig } from '../src/trig';
 import { OxigraphStore } from 'rdf-files';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { newModelGraph } from '../src/model-graph';
 

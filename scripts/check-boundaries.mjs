@@ -6,7 +6,7 @@
 //  4. @catenary/contracts imports no Catenary package. A vocabulary plugin (shacl, rdfs) imports only @catenary/contracts.
 //  5. rdf-core imports only rdf-files, rdf-serialization, RDF libraries and Node built-ins: other projects use it.
 //  6. packages/rdf-core/src/graph.ts (the transaction core) imports only terms.ts of rdf-core.
-//  7. packages/rdf-core/src contains no string literal that starts with 'urn:': the host supplies the IRI values (GraphNames, skolemizer).
+//  7. packages/rdf-core/src contains no string literal that starts with 'urn:', except the skolem prefix of the contract (skolem.ts): the host supplies the graph names (GraphNames).
 // Exit code 1 on a violation.
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { builtinModules } from 'module';
@@ -84,7 +84,7 @@ for (const pkg of packages) {
 for (const file of files(path.join(root, 'packages/rdf-core/src'))) {
     const rel = path.relative(root, file).split(path.sep).join('/');
     readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
-        if (/['"`]urn:/.test(line)) errors.push(`${rel}:${i + 1}: a string literal starts with 'urn:' (the host supplies the IRI values)`);
+        if (/['"`]urn:/.test(line) && !rel.endsWith('/skolem.ts')) errors.push(`${rel}:${i + 1}: a string literal starts with 'urn:' (the host supplies the IRI values)`);
     });
 }
 if (errors.length) {

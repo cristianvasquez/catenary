@@ -1,6 +1,6 @@
 // Blank nodes -> IRIs, at the read of every file and of every result that has blank nodes (AGENTS.md: Catenary has no blank nodes).
 // One read assigns one IRI `<base><uuid>` to each blank node. A quoted triple uses the same IRI inside and outside.
-// The core owns no IRI value: the host gives the base (Catenary: packages/rdf/src/skolem.ts).
+// The skolem prefix is a defined value of the contract (manifest §1 skolemPrefix): urn:skolem:<uuid>. `skolemizer` lets another host use its own base.
 
 import type { BlankNode, NamedNode, Quad, Term } from '@rdfjs/types';
 import { randomUUID } from 'crypto';
@@ -29,3 +29,7 @@ export function skolemizer(base: string): Skolemizer {
         skolemIri
     };
 }
+
+/** The skolem prefix of the contract. */
+export const SKOLEM_BASE = 'urn:skolem:';
+export const { isSkolem, skolemize, skolemIri } = skolemizer(SKOLEM_BASE);
