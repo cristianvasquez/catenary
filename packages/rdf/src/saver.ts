@@ -6,7 +6,7 @@ import { CommandResult, PREFIXES } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { OwnWrites, SerialQueue, StatementDiff, commitFiles, gitChanges, parseTurtleText, patchTurtle, patchTurtleDiff, pathKey, portableRelative, readUnchanged, tripleKey, writeAll } from 'rdf-files';
+import { OwnWrites, SerialQueue, StatementDiff, commitFiles, gitChanges, parseTurtleText, patchTurtle, patchTurtleDiff, pathKey, portableRelative, readUnchanged, termKey, tripleKey, writeAll } from 'rdf-files';
 import type { Change } from './graph';
 import { IMPORT_FOLDER, manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
 import { ModelGraph, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
@@ -190,8 +190,12 @@ export class Saver {
                 if (net) {
                     taken.set(graph.value, net);
                     this.pending.set(graph.value, new NetDiff());
+                    // The statements of this save (`all`), not the live store: an edit during the disk read is not in `content`.
+                    const bySubject = (quads: Quad[]) => { const m = new Map<string, Quad[]>(); for (const q of quads) (m.get(termKey(q.subject)) ?? m.set(termKey(q.subject), []).get(termKey(q.subject))!).push(q); return m; };
+                    let after: Map<string, Quad[]> | undefined, before: Map<string, Quad[]> | undefined;
                     diff = { removed: [...net.removed.values()], added: [...net.added.values()],
-                        after: subject => this.graph.match(subject, null, null, graph).map(toTriple), had: subject => !!f.triples?.some(q => q.subject.equals(subject)) };
+                        after: subject => (after ??= bySubject(all)).get(termKey(subject)) ?? [],
+                        had: subject => ((before ??= bySubject(f.triples ?? [])).get(termKey(subject))?.length ?? 0) > 0 };
                 }
             }
             const text = await this.fileText(f, all, content, graph, diff);

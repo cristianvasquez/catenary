@@ -191,6 +191,58 @@ it('law_graphPatchKeepsText: a setBounds on a view file writes a text patch of t
     expect(quads.filter(q => q.predicate.value === 'osg://vocab/view#x').map(q => q.object.value)).toEqual([String(card.x + 50)]);
 });
 
+it('law_graphPatchKeepsText: an edit during the disk read of a save does not break the next text patch', async () => {
+    const VIEW = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix view: <osg://vocab/view#>.
+# keep this comment
+
+<urn:name:Cards> {
+  <urn:name:Cards> a view:View;
+    rdfs:label "Cards".
+
+  <urn:name:Cards/p/1> a view:Placement;
+    view:element <urn:a>;
+    view:view <urn:name:Cards>;
+    view:x 0;
+    view:y 0.
+
+}
+`;
+    const f = fixture({ 'data.ttl': data + '<urn:b> a <urn:Class> ; <http://www.w3.org/2000/01/rdf-schema#label> "Second" .\n', 'cards.view.trig': VIEW });
+    const store = await f.open();
+    const view = Object.values(docOf(store).views).find(v => v.label === 'Cards')!;
+    const cards = () => boxes(docOf(store).views[view.id], 'card');
+    // The first write: from here on, the saver knows the changes of the view.
+    expect(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: cards()[0].id, x: 5, y: 5 }] }).ok).toBe(true);
+    await store.idle();
+    const written = f.read('cards.view.trig');
+    expect(written).toBe(VIEW.replace('view:x 0;\n    view:y 0.', 'view:x 5;\n    view:y 5.'));
+    // The next save pauses in its disk read; a new placement is moved meanwhile.
+    const original = patcher.readUnchanged;
+    let release!: () => void, reading!: () => void;
+    const released = new Promise<void>(r => { release = r; }), read = new Promise<void>(r => { reading = r; });
+    vi.spyOn(patcher, 'readUnchanged').mockImplementationOnce(async (...args) => { reading(); await released; return original(...args); });
+    const byDiff = vi.spyOn(patcher, 'patchTurtleDiff');
+    const second = Object.values(docOf(store).instances).find(i => i.uri === 'urn:b')!.id;
+    expect(store.execute({ kind: 'addToView', view: view.id, ids: [second], at: { x: 100, y: 100 } }).ok).toBe(true);
+    await read;
+    const added = cards().find(c => c.element === second)!;
+    expect(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: added.id, x: 300, y: 300 }] }).ok).toBe(true);
+    release();
+    await store.idle();
+    expect(store.dirty).toBe(false);
+    // Both saves are text patches: the comment and the first block stay, the new block has the last coordinates.
+    expect(byDiff).toHaveBeenCalledTimes(2);
+    for (const r of byDiff.mock.results) expect(await r.value).toMatchObject({ ok: true });
+    expect(store.warnings.filter(w => w.includes('written as a whole'))).toEqual([]);
+    const text = f.read('cards.view.trig');
+    expect(text.startsWith(written.slice(0, written.indexOf('\n}')))).toBe(true);
+    const quads = await parseRdf(text, join(f.dir, 'cards.view.trig'));
+    const placement = quads.find(q => q.predicate.value === 'osg://vocab/view#element' && q.object.value === 'urn:b')!.subject;
+    const of = (p: string) => quads.filter(q => q.subject.equals(placement) && q.predicate.value === 'osg://vocab/view#' + p).map(q => q.object.value);
+    expect([of('x'), of('y')]).toEqual([['300'], ['300']]);
+});
+
 it('near placement of new shapes skips read-only profiles', async () => {
     const f = fixture({ 'profile.n3': '<urn:Shape> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <urn:Class> .\n' }, '; <osg://vocab/workspace#placeShapes> "near"');
     const store = await f.open();
