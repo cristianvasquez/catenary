@@ -33,6 +33,12 @@ function fail(message, code = 2) {
     process.exit(code);
 }
 
+/** Write to stdout, then exit. A pipe takes a large write in several steps: process.exit right after the write cuts the output at 64 KiB. */
+function finish(text, code) {
+    process.exitCode = code;
+    process.stdout.write(text, () => process.exit(code));
+}
+
 function parseArgs(argv) {
     const opts = {};
     const pos = [];
@@ -113,8 +119,7 @@ async function main() {
     const { opts, pos } = parseArgs(process.argv.slice(2));
     const [command, ...rest] = pos;
     if (opts.help || !command) {
-        process.stdout.write(USAGE + '\n');
-        process.exit(command || opts.help ? 0 : 2);
+        return finish(USAGE + '\n', command || opts.help ? 0 : 2);
     }
     if (command === 'instances') {
         process.stdout.write(JSON.stringify(instances().map(({ token, ...i }) => i), null, 2) + '\n');
@@ -145,8 +150,7 @@ async function main() {
         default: fail(`unknown command "${command}"; see "catenary --help"`);
     }
     const result = await call(pickInstance(opts), method, params, opts.window);
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-    process.exit(exitCode(result));
+    finish(JSON.stringify(result, null, 2) + '\n', exitCode(result));
 }
 
 main().catch(e => fail(e.message ?? String(e), 1));
