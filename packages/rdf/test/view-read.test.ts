@@ -8,10 +8,10 @@ import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { rdf } from '../src/terms';
 import { showsShapes } from '../src/view-read';
-import { ModelGraph } from '../src/graph';
 import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 import { viewPart } from './view-part-reference';
 import { fileURLToPath } from 'node:url';
+import { newModelGraph } from '../src/model-graph';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
@@ -43,7 +43,7 @@ async function openDcat(): Promise<void> {
 function byProjection(viewId: string): Doc {
     const g = store['graph'];
     const view = docOf(store).views[viewId];
-    const part = new ModelGraph(new OxigraphStore(viewPart(g, rdf.namedNode(view.uri))));
+    const part = newModelGraph(new OxigraphStore(viewPart(g, rdf.namedNode(view.uri))));
     part.model = g.model;
     part.setShapesGraphs(g.shapesGraphs());
     part.primaryShapes = g.primaryShapes;

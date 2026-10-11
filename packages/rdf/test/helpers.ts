@@ -13,6 +13,7 @@ import { parseTrig } from '../src/trig';
 import { OxigraphStore } from 'rdf-files';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
+import { newModelGraph } from '../src/model-graph';
 
 /** Metamodel of shapes in Turtle or TriG text (TriG is a superset; quads in named graphs count as shapes too). */
 export async function parseShapes(text: string, source?: string): Promise<Metamodel> {
@@ -46,11 +47,11 @@ export const meta = (): Promise<Metamodel> => parseShapes(SHAPES, 'shapes.ttl');
 /** A TriG as the store reads it: blank nodes replaced by IRIs (skolem.ts). A graph `urn:file:<path>` is a shapes file. */
 export async function load(text = MODEL): Promise<ModelGraph> {
     const quads = skolemize((await parseTrig(text)).quads).quads;
-    const g = new ModelGraph(new OxigraphStore(quads));
+    const g = newModelGraph(new OxigraphStore(quads));
     g.setShapesGraphs(quads.map(q => q.graph).filter((t): t is NamedNode => t.termType === 'NamedNode' && (t.value.startsWith(FILE_GRAPH_PREFIX) || t.value.startsWith('urn:file:'))));
     return g;
 }
-export const emptyGraph = (): ModelGraph => new ModelGraph(new OxigraphStore());
+export const emptyGraph = (): ModelGraph => newModelGraph(new OxigraphStore());
 export const example = () => load();
 export const doc = (g: ModelGraph): Doc => project(g).doc;
 /** The read model of the whole dataset of a store, with the files of the instances and the paths of file references (test oracle). */

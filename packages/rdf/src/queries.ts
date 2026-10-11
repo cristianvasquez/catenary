@@ -10,13 +10,15 @@ import {
     kindOf, pluginRanges, predicateName, primaryClass, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, cmp, labelFromIri } from './graph';
+import { ModelGraph, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { cardIdsOf } from './records';
 import type { ShapesIndex } from './shapes-read';
 import { compareLabels, construct, homesAmong, instancesAmong, iri as iriText, labels, statements, thingHead, things } from './sparql';
 import { rdf, termKey } from './terms';
 import { viewLabels } from './view-read';
+import { isView } from './views';
+import { vocabularySubjects, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri } from './vocabulary';
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}>`;
 
@@ -293,7 +295,7 @@ export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes, in
 /** View counts read membership, types and relation endpoints. They do not load card fields or build a diagram. */
 export function viewCounts(g: ModelGraph, idx: ShapesIndex, viewId: string): ViewProperties | undefined {
     const view = elementTerm(viewId);
-    if (!view || !g.isView(view)) return undefined;
+    if (!view || !isView(g, view)) return undefined;
     const viewQuads = g.match(null, null, null, view);
     const placements = new Set(viewQuads.filter(q => q.predicate.equals(P.type) && q.object.value === NS.view + 'Placement').map(q => q.subject.value));
     const elements = viewQuads.filter(q => q.predicate.value === NS.view + 'element' && q.object.termType === 'NamedNode' && placements.has(q.subject.value));
@@ -360,7 +362,7 @@ export function dataPredicates(g: ModelGraph): string[] {
     for (const r of g.select(`SELECT DISTINCT ?s ?p WHERE { GRAPH <${g.model.value}> { ?s ?p ?o } FILTER (isIRI(?s)) }`)) {
         if (labels.has(r.s.value) && r.p.value !== P.type.value && r.p.value !== P.label.value) found.add(r.p.value);
     }
-    for (const [s, graph] of g.vocabularySubjects()) {
+    for (const [s, graph] of vocabularySubjects(g)) {
         for (const q of g.match(rdf.namedNode(s), null, null, graph)) if (!q.predicate.equals(P.type) && !q.predicate.equals(P.label)) found.add(q.predicate.value);
     }
     return [...found].sort(cmp);
@@ -370,7 +372,7 @@ export function dataPredicates(g: ModelGraph): string[] {
 export function knownClasses(g: ModelGraph, meta: Classes): { iri: string; name?: string }[] {
     const types = new Set<string>();
     for (const r of g.select(`SELECT DISTINCT ?t WHERE { GRAPH <${g.model.value}> { ?s a ?t } FILTER (isIRI(?s) && ?s != <${MODEL_GRAPH}>) }`)) types.add(r.t.value);
-    for (const [s, graph] of g.vocabularySubjects()) for (const t of g.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
+    for (const [s, graph] of vocabularySubjects(g)) for (const t of g.objects(rdf.namedNode(s), P.type, graph)) types.add(t.value);
     return [...meta.classes.map(c => ({ iri: c.iri, name: c.name })), ...[...types].sort(cmp).map(iri => ({ iri }))];
 }
 
@@ -378,7 +380,7 @@ export function knownClasses(g: ModelGraph, meta: Classes): { iri: string; name?
 export function viewDescription(g: ModelGraph, file: string | undefined, viewId: string): string | undefined {
     if (!file) return undefined;
     const view = elementTerm(viewId);
-    return view && g.isView(view)
+    return view && isView(g, view)
         ? g.match(view, rdf.namedNode(NS.view + 'description'), null, view)[0]?.object.value ?? '' : undefined;
 }
 

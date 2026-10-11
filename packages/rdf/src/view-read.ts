@@ -6,13 +6,15 @@
 
 import type { NamedNode, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, emptyDoc } from '@catenary/model';
-import { MODEL_GRAPH, ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, VALIDATION_GRAPH, cmp, fileOfGraph, labelFromIri } from './graph';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, fileOfGraph } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
 import { shapesIndexOf } from './shapes-read';
 import { instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { tracer } from './trace';
+import { isView } from './views';
+import { homeOf, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri } from './vocabulary';
 
 export interface ViewReadContext {
     g: ModelGraph;
@@ -59,7 +61,7 @@ function resources(rows: Record<string, Plain>[], vars: readonly string[]): Reso
  */
 export function readView(g: ModelGraph, viewId: string, shapes?: ShapesModel, warnings: string[] = [], elements?: string[]): Doc {
     const view = elementTerm(viewId);
-    if (!view || view.termType !== 'NamedNode' || !g.isView(view)) return emptyDoc();
+    if (!view || view.termType !== 'NamedNode' || !isView(g, view)) return emptyDoc();
     return tracer.span('refresh', elements ? 'read selected view' : 'read full view', () => {
         tracer.note(`view ${viewId}; IRI ${view.value}`);
         const doc = viewRead({ g, shapes: shapes ?? shapesIndexOf(g).model }, view, warnings, elements);
@@ -186,7 +188,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     }
     const TYPE = P.type.value, LABEL = P.label.value;
     const subjects = [...statements.values()].filter(e => e.s.termType === 'NamedNode' && e.s.value !== MODEL_GRAPH && e.rows.some(r => r.p.value === TYPE || r.p.value === LABEL));
-    // A view with shape elements: the SKOS subjects of the shapes graphs that are not instances above (ModelGraph.vocabularySubjects
+    // A view with shape elements: the SKOS subjects of the shapes graphs that are not instances above (vocabulary.ts vocabularySubjects
     // on these statements), with their statements of the first such shapes graph.
     const files = new Map<string, string>();
     if (shows) {
@@ -210,7 +212,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     if (elements) for (const iri of placed) {
         if (!placedInstances.has(iri)) continue;
         if (subjectValues.has(iri)) continue;
-        const home = g.homeOf(rdf.namedNode(iri));
+        const home = homeOf(g, rdf.namedNode(iri));
         if (home.equals(g.model)) continue;
         const rows = g.match(rdf.namedNode(iri), null, null, home).map(q => ({ s: { termType: q.subject.termType, value: q.subject.value, term: q.subject } as Plain,
             p: { termType: q.predicate.termType, value: q.predicate.value, term: q.predicate } as Plain,

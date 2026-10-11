@@ -3,7 +3,7 @@
 
 import { Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeSides, EditCommand, boxes, Point, ViewClip, centered, gridPositions, isViewClip, nextLabel, rangeOfShape, selection, valueSetOf } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
-import { ModelGraph, P, V } from './graph';
+import { ModelGraph } from './graph';
 import { elementId, elementTerm, relationId } from './ids';
 import { deleteElements, renameElement } from './elements';
 import * as ops from './ops';
@@ -14,6 +14,8 @@ import { rdf } from './terms';
 import { readView } from './view-read';
 import { layoutNewPlacements, pasteRdf } from './clipboard';
 import { thingHead } from './sparql';
+import { isInstance, label as labelOf, homeOf, P } from './vocabulary';
+import { isView, nodeOf, edgeOf, V } from './views';
 
 const { ok, fail } = ops;
 const done = ok(undefined);
@@ -26,7 +28,7 @@ function withSides(g: ModelGraph, view: string | undefined, sides: EdgeSides | u
 /** Card id of an IRI in this model, if the IRI is an instance or a node shape. */
 function instanceId(g: ModelGraph, iri: string): string | undefined {
     const t = rdf.namedNode(iri);
-    return g.isInstance(t) || shapes.nodeShapeTerm(g, elementId(t)) ? elementId(t) : undefined;
+    return isInstance(g, t) || shapes.nodeShapeTerm(g, elementId(t)) ? elementId(t) : undefined;
 }
 
 /**
@@ -53,7 +55,7 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
     // Boxes of this model: a card of an element of this model, a reference to a view of this model. `id`: its element or target view.
     const items = clip.boxes.flatMap((b): { b: ViewClip['boxes'][number]; id: string }[] => {
         if (b.kind === 'card') return instanceId(g, b.id) ? [{ b, id: instanceId(g, b.id)! }] : [];
-        if (b.kind === 'reference') return b.target && g.isView(rdf.namedNode(b.target)) ? [{ b, id: elementId(rdf.namedNode(b.target)) }] : [];
+        if (b.kind === 'reference') return b.target && isView(g, rdf.namedNode(b.target)) ? [{ b, id: elementId(rdf.namedNode(b.target)) }] : [];
         return [{ b, id: '' }];
     });
     if (items.length === 0) return fail('The copied elements do not exist in this model.');
@@ -62,7 +64,7 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
     const view = ops.viewTerm(g, viewId)!;
     const copy = clip.mode === 'copy';
     // A view places an element once: a card of a cut, and a reference (copy or cut), already in the view, are skipped.
-    const inView = items.filter(({ b }) => (b.kind === 'card' && !copy && !!g.nodeOf(view, rdf.namedNode(b.id))) || (b.kind === 'reference' && !!g.nodeOf(view, rdf.namedNode(b.target!))));
+    const inView = items.filter(({ b }) => (b.kind === 'card' && !copy && !!nodeOf(g, view, rdf.namedNode(b.id))) || (b.kind === 'reference' && !!nodeOf(g, view, rdf.namedNode(b.target!))));
     if (inView.length === items.length) return alreadyInView(items.length);
     // Copy: IRI of the source instance -> its copy.
     const copies = rdf.termMap<NamedNode, NamedNode>();
@@ -75,7 +77,7 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
         if (b.kind === 'card') {
             // A node shape is not copied: the paste shows the same shape.
             if (copy && ops.instanceTerm(g, id)) {
-                const label = nextLabel(g.label(rdf.namedNode(b.id)), used);
+                const label = nextLabel(labelOf(g, rdf.namedNode(b.id)), used);
                 const c = ops.copyInstance(g, id, label);
                 if (!c.ok) return c;
                 used.add(label);
@@ -93,16 +95,16 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
         pasted.push(element);
     }
     for (const [source, target] of copies) {
-        for (const q of g.match(source, null, null, g.homeOf(source))) {
+        for (const q of g.match(source, null, null, homeOf(g, source))) {
             const o = copies.get(q.object as NamedNode);
-            if (o) g.add(target, q.predicate, o, g.homeOf(target));
+            if (o) g.add(target, q.predicate, o, homeOf(g, target));
         }
     }
     for (const e of clip.edges) {
         const t = triple(e);
-        if (!g.isInstance(t.subject) || !g.isInstance(t.object) || !g.has(rdf.quad(t.subject, t.predicate, t.object, g.homeOf(t.subject)))) continue;
+        if (!isInstance(g, t.subject) || !isInstance(g, t.object) || !g.has(rdf.quad(t.subject, t.predicate, t.object, homeOf(g, t.subject)))) continue;
         const s = copy ? copies.get(t.subject) : t.subject, o = copy ? copies.get(t.object) : t.object;
-        if (!s || !o || g.edgeOf(view, s, t.predicate, o)) continue;
+        if (!s || !o || edgeOf(g, view, s, t.predicate, o)) continue;
         const { subject: _s, predicate: _p, object: _o, ...layout } = e;
         const r = ops.setEdgeLayout(g, viewId, relationId(s, t.predicate as NamedNode, o), layout);
         if (!r.ok) return r;
@@ -113,13 +115,13 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
 /** The property shape `id` is a line in the view (ADR 0014: its placement, or its hub). */
 function isLineIn(g: ModelGraph, viewId: string, id: string): boolean {
     const view = ops.viewTerm(g, viewId), term = figureTermOf(g, id);
-    return !!view && !!term && !!g.nodeOf(view, term);
+    return !!view && !!term && !!nodeOf(g, view, term);
 }
 
 /** Add the instances that are not in the view yet: one at `at`, several in a grid around it. Returns the added ids. */
 function placeAround(g: ModelGraph, viewId: string, ids: string[], at: Point): string[] {
     const view = ops.viewTerm(g, viewId)!;
-    const add = [...new Set(ids)].filter(id => !g.nodeOf(view, ops.cardTerm(g, id)!));
+    const add = [...new Set(ids)].filter(id => !nodeOf(g, view, ops.cardTerm(g, id)!));
     const places = add.length === 1 ? [centered(at)] : gridPositions(add.length, at);
     add.forEach((id, i) => {
         const size = ops.cardSize(g, id);
@@ -290,7 +292,7 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
                 }
                 const t = ops.instanceTerm(g, id);
                 if (!t) return ops.gone('instance', id);
-                if (c.view && ops.viewTerm(g, c.view) && !g.nodeOf(ops.viewTerm(g, c.view)!, t)) ops.addToView(g, c.view, id, centered(c.at ?? { x: 0, y: 0 }));
+                if (c.view && ops.viewTerm(g, c.view) && !nodeOf(g, ops.viewTerm(g, c.view)!, t)) ops.addToView(g, c.view, id, centered(c.at ?? { x: 0, y: 0 }));
                 ends.push(id);
             }
             return withSides(g, c.view, c.sides, ops.createRelation(g, meta, ends[0], c.predicate, ends[1]));

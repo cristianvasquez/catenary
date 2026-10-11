@@ -8,6 +8,7 @@ import type { Dataset } from 'rdf-ext';
 import { GraphChange, ModelGraph, VALIDATION_GRAPH } from './graph';
 import { jsonToTerm, rdf, termKey } from './terms';
 import { tracer } from './trace';
+import { isView } from './views';
 
 const SH = 'http://www.w3.org/ns/shacl#';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -55,7 +56,7 @@ function changed(g: ModelGraph, s: TargetState, e: GraphChange): void {
     if (!e.query && !e.shapes) return;
     if (e.shapes || !e.patch.length || e.patch.length > PATCH_LIMIT || !s.scope) return reset(s);
     for (const { quad: q } of e.patch) {
-        if (q.graph.value === VALIDATION_GRAPH || g.isView(q.graph)) continue;
+        if (q.graph.value === VALIDATION_GRAPH || isView(g, q.graph)) continue;
         if (!s.scope.data.includes(q.graph.value) || shaclQuad(q)) return reset(s);
         for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') s.frontiers.delete(iri(t.value));
         // A literal is a focus node too (a value of a path): its frontier has the statements with it as object.

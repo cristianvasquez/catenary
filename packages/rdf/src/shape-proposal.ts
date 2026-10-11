@@ -5,13 +5,15 @@
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { extractShapes } from 'shaclxtract';
-import { ModelGraph, P } from './graph';
+import { ModelGraph } from './graph';
 import { elementId } from './ids';
 import { Result, fail, ok } from './ops';
 import { mintShapeIri } from './shape-ops';
 import { S } from './shapes-read';
 import { skolemize } from './skolem';
 import { rdf } from './terms';
+import { shapesQuads, shapesTarget } from './shapes';
+import { modelTriples, usedIris, label, P } from './vocabulary';
 
 /** Types that get no proposed shape: the vocabulary-description and SHACL types (rdfs:Class, owl:Class, …) and SKOS (value sets). */
 const NOT_SHAPED = [NS.rdf, NS.rdfs, NS.owl, NS.sh, NS.skos, NS.view, NS.ws];
@@ -19,7 +21,7 @@ export const shapeable = (c: string) => !NOT_SHAPED.some(ns => c.startsWith(ns))
 
 /** IRIs that a node shape of the shapes graphs targets (sh:targetClass). */
 export function shapedClasses(g: ModelGraph): Set<string> {
-    return new Set(g.shapesQuads().filter(q => q.predicate.equals(S.targetClass) && q.object.termType === 'NamedNode').map(q => q.object.value));
+    return new Set(shapesQuads(g).filter(q => q.predicate.equals(S.targetClass) && q.object.termType === 'NamedNode').map(q => q.object.value));
 }
 
 /** The IRI types of the model graph that no node shape targets, sorted. */
@@ -52,16 +54,16 @@ export function unshapedClassesOf(g: ModelGraph, shaped: Set<string>, subjects: 
  * class covers it). Returns the ids of the new node shapes.
  */
 export function proposeShapes(g: ModelGraph, classes?: string[]): Result<string[]> {
-    const graph = g.shapesTarget();
+    const graph = shapesTarget(g);
     if (!graph) return fail('The workspace has no shapes file. Use "Add Shapes…" first: new shapes go to the primary shapes file.');
     const shaped = shapedClasses(g);
     const targets = [...new Set(classes ?? unshapedClasses(g))].filter(c => !shaped.has(c) && shapeable(c));
     if (!targets.length) return fail(classes ? 'A node shape targets each of these classes already.' : 'Each class of the data has a node shape.');
 
-    const data = g.modelTriples();
-    const used = g.usedIris();
+    const data = modelTriples(g);
+    const used = usedIris(g);
     for (const q of data) for (const t of [q.subject, q.object]) if (t.termType === 'NamedNode') used.add(t.value);
-    const labels = new Map(targets.map(c => [c, g.label(rdf.namedNode(c))]));
+    const labels = new Map(targets.map(c => [c, label(g, rdf.namedNode(c))]));
     let extracted: Quad[];
     try {
         extracted = [...extractShapes(data, {

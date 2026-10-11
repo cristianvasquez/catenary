@@ -10,6 +10,7 @@ import { emptyMetamodel } from '../src/shapes';
 import { skolemize } from '../src/skolem';
 import { rdf } from '../src/terms';
 import { DCAT, parseQuads, run } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 const TTL = readFileSync(new URL('./fixtures/dcat-shapes.ttl', import.meta.url), 'utf8');
 const FILE = '/tmp/dcat-shapes.ttl';
@@ -19,7 +20,7 @@ const SKOS = 'http://www.w3.org/2004/02/skos/core#';
 const productAnalytics = rdf.namedNode(VOC + 'product-analytics');
 
 async function load(): Promise<ModelGraph> {
-    const g = new ModelGraph(new OxigraphStore());
+    const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
     for (const q of await parseQuads(`<urn:d1> a <${DCAT}Dataset> ; <${DCAT}theme> <${VOC}product-analytics> .`)) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));

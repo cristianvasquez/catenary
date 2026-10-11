@@ -3,10 +3,12 @@
 // kind, so the store compares the state before and after the patch for these terms, not for all elements.
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { Change, MODEL_GRAPH, ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, V } from './graph';
+import { Change, MODEL_GRAPH, ModelGraph } from './graph';
 import { elementId } from './ids';
 import type { ShapesIndex } from './shapes-read';
 import { rdf, termKey, tripleKey } from './terms';
+import { P, SKOS_MEMBERSHIP, SKOS_TYPES } from './vocabulary';
+import { V } from './views';
 
 const quadKey = (q: Quad) => `${tripleKey(q)} ${termKey(q.graph)}`;
 const matches = (q: Quad, s?: Term | null, p?: Term | null, o?: Term | null, g?: Term | null) =>

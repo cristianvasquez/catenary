@@ -8,11 +8,13 @@ import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { OxigraphStore, absolutePath, hasAnnotation, knownPath, portableRelative } from 'rdf-files';
 import { MANIFEST_GRAPH, NEAR, WORKSPACE_FILE, isViewFile, listModelFiles, parseRdf, readManifest, workspaceFileOf } from './files';
-import { ModelGraph, P, V, cmp, dataGraphIri, fileGraphIri } from './graph';
+import { ModelGraph, cmp, dataGraphIri, fileGraphIri } from './graph';
 import { FileRead, PLACE_KINDS, Settings } from './settings';
 import { isSkolem, skolemize } from './skolem';
 import { rdf, termKey } from './terms';
 import { canonical, parseTrig } from './trig';
+import { isView, V } from './views';
+import { P } from './vocabulary';
 
 /**
  * Read a workspace file and its model files into `graph`. `ofFolder`: the folder was given; a workspace file that is not on disk is
@@ -108,7 +110,7 @@ export class Loader {
         notes.push(...r.warnings);
         if (r.readOnlyContent) { this.settings.readOnlyContent.set(r.path, r.readOnlyContent); notes.push(`${name}: ${r.readOnlyContent}`); } else this.settings.readOnlyContent.delete(r.path);
         if (r.kind === 'view') {
-            if (this.graph.isView(rdf.namedNode(r.view))) { notes.push(`${name}: not read: the view ${r.view} is in another file too.`); return false; }
+            if (isView(this.graph, rdf.namedNode(r.view))) { notes.push(`${name}: not read: the view ${r.view} is in another file too.`); return false; }
             const read = r.triples.map(q => rdf.quad(q.subject, q.predicate, q.object, rdf.namedNode(r.view)));
             const { quads, count } = skolemize(read);
             // A file with blank nodes differs from its saved form: the next save writes the IRIs (not a file that Catenary does not write).

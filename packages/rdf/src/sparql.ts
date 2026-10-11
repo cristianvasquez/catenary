@@ -3,8 +3,9 @@
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, labelFromIri } from './graph';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { rdf } from './terms';
+import { labelFromIri } from './vocabulary';
 
 export const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}> PREFIX view: <${NS.view}>`;
 
@@ -127,7 +128,7 @@ export const compareLabels = (a: string, b: string) => {
 };
 
 
-/** The IRIs of `iris` with an rdf:type or an rdfs:label in the model graph (ModelGraph.inModel), in one query. */
+/** The IRIs of `iris` with an rdf:type or an rdfs:label in the model graph (vocabulary.ts inModel), in one query. */
 export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
     const values = [...new Set(iris)].filter(s => s !== g.model.value);
     if (!values.length) return new Set();
@@ -135,7 +136,7 @@ export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string>
 }
 
 /**
- * The IRIs of `iris` that are instances (ModelGraph.isInstance: in the model graph, or a SKOS subject of a shapes graph), in one or
+ * The IRIs of `iris` that are instances (vocabulary.ts isInstance: in the model graph, or a SKOS subject of a shapes graph), in one or
  * two queries. Reason: isInstance reads the store once per data graph and term (§11.3 readBudgetMs).
  */
 export function instancesAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
@@ -149,7 +150,7 @@ export function instancesAmong(g: ModelGraph, iris: Iterable<string>): Set<strin
 }
 
 /**
- * The home graph of each IRI (ModelGraph.homeOf: the model graph, or the first shapes graph in order in which it is a SKOS subject),
+ * The home graph of each IRI (vocabulary.ts homeOf: the model graph, or the first shapes graph in order in which it is a SKOS subject),
  * in one or two queries (§11.3 readBudgetMs: homeOf reads the store once per data graph and term).
  */
 export function homesAmong(g: ModelGraph, iris: Iterable<string>): Map<string, string> {

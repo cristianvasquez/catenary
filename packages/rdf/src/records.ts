@@ -8,9 +8,10 @@ import {
     ViewArrow, ViewCard, ViewCollection, ViewNote, ViewReference, localName, pills, termKey, termToJSON
 } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
-import { ModelGraph, P, cmp, labelFromIri } from './graph';
+import { ModelGraph, cmp } from './graph';
 import { elementId, relationId } from './ids';
 import { rdf, termKey as rdfTermKey } from './terms';
+import { P, labelFromIri } from './vocabulary';
 
 
 const TYPE = P.type.value, LABEL = P.label.value, PREF_LABEL = NS.skos + 'prefLabel';

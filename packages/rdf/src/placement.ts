@@ -4,11 +4,12 @@
 import { CommandResult, NS } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
 import { NEAR, Placement } from './files';
-import { ModelGraph, P, SKOS_TYPES, cmp, dataGraphIri, fileGraphIri, fileOfGraph, isVocabularyQuad } from './graph';
+import { ModelGraph, cmp, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
 import { elementTerm, relationTriple } from './ids';
 import type { Settings } from './settings';
 import { shapesIndexOf } from './shapes-read';
 import { rdf, tripleKey } from './terms';
+import { P, SKOS_TYPES, isVocabularyQuad } from './vocabulary';
 
 /** The files of a subject (most statements first): its statements of the model graph and of shapes graphs. */
 export function filesOfSubject(g: ModelGraph, t: Term): string[] {

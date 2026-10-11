@@ -5,12 +5,14 @@ import { shapeTargetMatches } from './shacl-targets';
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { Doc, NS, ShapesModel, View, boxes, emptyDoc } from '@catenary/model';
-import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, fileOfGraph, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
 import { homesAmong, inModelAmong, instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { ViewReadContext, readView, viewLabels } from './view-read';
+import { homeOf, vocabularySubjects, P, labelFromIri } from './vocabulary';
+import { isView, views as viewGraphs } from './views';
 
 export interface DocScope {
     /** Element ids: instances, relations, views and shape elements. A placement id of one of `views` stands for its element. */
@@ -102,7 +104,7 @@ function records(g: ModelGraph, doc: Doc, iris: string[]): void {
     const inModel = inModelAmong(g, iris);
     for (const s of iris) {
         const t = rdf.namedNode(s);
-        const home = inModel.has(s) ? g.model : g.homeOf(t);
+        const home = inModel.has(s) ? g.model : homeOf(g, t);
         if (home.equals(g.model)) {
             const e = statements.get('NamedNode ' + s);
             if (e) subjects.push(e);
@@ -136,14 +138,14 @@ function showingTerms(doc: Doc, elements: string[], instances: string[]): string
 function viewsPlacing(g: ModelGraph, terms: string[]): string[] {
     if (!terms.length) return [];
     return select(g, `${PREFIXES} SELECT DISTINCT ?g WHERE { VALUES ?e { ${terms.map(iri).join(' ')} } GRAPH ?g { ?n a view:Placement ; view:element ?e } }`)
-        .filter(r => r.g.termType === 'NamedNode' && g.isView(r.g.term)).map(r => elementId(r.g.term as NamedNode)).sort(cmp);
+        .filter(r => r.g.termType === 'NamedNode' && isView(g, r.g.term)).map(r => elementId(r.g.term as NamedNode)).sort(cmp);
 }
 
 /** The number of instances of the store: IRIs of the model graph with a type or a label, and the SKOS subjects of the shapes files. */
 export function instanceCount(g: ModelGraph): number {
     const model = select(g, `${PREFIXES} SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ${iri(g.model.value)} { ?s rdf:type|rdfs:label ?o }
         FILTER (isIRI(?s) && ?s != ${iri(MODEL_GRAPH)} && ?s != ${iri(g.model.value)}) }`)[0];
-    return Number(model?.n.value ?? 0) + g.vocabularySubjects().size;
+    return Number(model?.n.value ?? 0) + vocabularySubjects(g).size;
 }
 
 /** The label of each instance (rdfs:label, else skos:prefLabel, else from the IRI; the first literal in order), as `instanceRecords` gives it. */
@@ -158,7 +160,7 @@ export function instanceLabels(g: ModelGraph): Map<string, string> {
         else if (e.pref === undefined || cmp(r.l.value, e.pref) < 0) e.pref = r.l.value;
     }
     const labels = new Map([...out].map(([s, e]) => [s, e.label ?? e.pref ?? labelFromIri(s)]));
-    for (const [s, graph] of g.vocabularySubjects()) {
+    for (const [s, graph] of vocabularySubjects(g)) {
         const t = rdf.namedNode(s);
         const literals = (p: string) => g.match(t, rdf.namedNode(p), null, graph).filter(q => q.object.termType === 'Literal').map(q => q.object.value).sort(cmp);
         labels.set(s, literals(P.label.value)[0] ?? literals(NS.skos + 'prefLabel')[0] ?? labelFromIri(s));
@@ -249,7 +251,7 @@ const assemble = (labels: Map<string, string>, model: string[], untyped: Map<str
  * instances with several labels, graphs without a view, and the parts of each view (view-read.ts). The statements stay in the files.
  */
 export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {
-    return assemble(labelWarnings(g), modelGraphWarnings(g), untypedWarnings(g), graphWarnings(g), g.views().map(v => viewWarnings(g, v, shapes)));
+    return assemble(labelWarnings(g), modelGraphWarnings(g), untypedWarnings(g), graphWarnings(g), viewGraphs(g).map(v => viewWarnings(g, v, shapes)));
 }
 
 /** A patch of more quads than this (a load, a file read) reads all warnings again. */
@@ -290,7 +292,7 @@ export class DatasetWarnings {
     protected readAll(g: ModelGraph, shapes: ShapesModel): string[] {
         this.shapes = shapes;
         this.pending = [];
-        const views = new Map(g.views().map(v => [v.value, viewWarnings(g, v, shapes)]));
+        const views = new Map(viewGraphs(g).map(v => [v.value, viewWarnings(g, v, shapes)]));
         const kept = { labels: labelWarnings(g), model: modelGraphWarnings(g), untyped: untypedWarnings(g), graphs: graphWarnings(g), views, out: [] as string[] };
         kept.out = assemble(kept.labels, kept.model, kept.untyped, kept.graphs, views.values());
         this.kept = kept;
@@ -308,7 +310,7 @@ export class DatasetWarnings {
         }
         if (subjects.includes(MODEL_GRAPH)) kept.model = modelGraphWarnings(g);
         const other = changes.filter(c => !g.isDataGraph(c.quad.graph) && !g.isShapesGraph(c.quad.graph) && c.quad.graph.value !== VALIDATION_GRAPH);
-        if (other.some(c => !g.isView(c.quad.graph) || (c.quad.predicate.value === P.type.value && c.quad.object.value === VIEW_TYPE))) kept.graphs = graphWarnings(g);
+        if (other.some(c => !isView(g, c.quad.graph) || (c.quad.predicate.value === P.type.value && c.quad.object.value === VIEW_TYPE))) kept.graphs = graphWarnings(g);
         // The terms whose change can change the read of a view that places them.
         const relevant = new Set<string>();
         const literal = data.filter(c => c.quad.object.termType !== 'NamedNode').map(c => c.quad.subject.value);
@@ -331,7 +333,7 @@ export class DatasetWarnings {
             }
         }
         const views = new Map<string, ViewWarnings>();
-        for (const v of g.views()) {
+        for (const v of viewGraphs(g)) {
             const was = kept.views.get(v.value);
             views.set(v.value, !was || changedViews.has(v.value) || [...relevant].some(t => was.terms.has(t)) ? viewWarnings(g, v, shapes) : was);
         }

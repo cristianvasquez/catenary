@@ -5,6 +5,7 @@ import { rdf } from '../src/terms';
 import { formData } from '../src/queries';
 import { DCT, DPROD, byLabel, doc, example, meta, run } from './helpers';
 import { executeCommand } from '../src/commands';
+import { modelTriples } from '../src/vocabulary';
 
 const LABEL = 'http://www.w3.org/2000/01/rdf-schema#label';
 
@@ -17,7 +18,7 @@ describe('SHACL form description', () => {
         expect(ps).toContain(LABEL);
         expect(ps).toContain(DPROD + 'inputPort');
         const fromDoc = describeInstance(d, inst, ps);
-        expect(descriptionKey(describeQuads(g.modelTriples(), inst.uri, ps))).toBe(descriptionKey(fromDoc));
+        expect(descriptionKey(describeQuads(modelTriples(g), inst.uri, ps))).toBe(descriptionKey(fromDoc));
         expect(descriptionCommand(inst, fromDoc, fromDoc)).toBeUndefined();
     });
 
@@ -27,7 +28,7 @@ describe('SHACL form description', () => {
         const inst = d.instances[byLabel(g, 'Product usage data')];
         const ps = formPredicates(primaryClass(m, inst.types)!);
         const data = await rdf.io.dataset.fromText('application/n-triples', formData(g, rdf.namedNode(inst.uri)));
-        expect(descriptionKey(describeQuads(data, inst.uri, ps))).toBe(descriptionKey(describeQuads(g.modelTriples(), inst.uri, ps)));
+        expect(descriptionKey(describeQuads(data, inst.uri, ps))).toBe(descriptionKey(describeQuads(modelTriples(g), inst.uri, ps)));
         // Link candidates: the example has no shapes graph, so no property shape names a class (sh:class) and there are none.
         // properties.test.ts tests the candidates with shapes.
         expect(new Set([...data].map(q => q.subject.value))).toEqual(new Set([inst.uri]));
@@ -43,7 +44,7 @@ describe('SHACL form description', () => {
         const api = d.instances[byLabel(g, 'Events API')];
         const query = d.instances[byLabel(g, 'Query service')];
         // Form output: other description, other label, input ports Events API + Query service (Metrics API removed).
-        const quads = g.modelTriples().filter(q => !(q.subject.equals(s) && [DCT + 'description', LABEL, DPROD + 'inputPort'].includes(q.predicate.value)));
+        const quads = modelTriples(g).filter(q => !(q.subject.equals(s) && [DCT + 'description', LABEL, DPROD + 'inputPort'].includes(q.predicate.value)));
         quads.push(rdf.quad(s, rdf.namedNode(DCT + 'description'), rdf.literal('New text')));
         quads.push(rdf.quad(s, rdf.namedNode(LABEL), rdf.literal('Usage metrics ')));
         quads.push(rdf.quad(s, rdf.namedNode(DPROD + 'inputPort'), rdf.namedNode(api.uri)));

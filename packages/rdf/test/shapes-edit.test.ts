@@ -11,11 +11,12 @@ import { migrationCount } from '../src/shape-ops';
 import { SKOLEM_BASE, skolemize } from '../src/skolem';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
-import { emptyMetamodel, metamodelFromQuads } from '../src/shapes';
+import { emptyMetamodel, metamodelFromQuads, shapesTriples, vocabularyQuads } from '../src/shapes';
 import { S } from '../src/shapes-read';
 import { elementId } from '../src/ids';
 const NS_SKOS = 'http://www.w3.org/2004/02/skos/core#';
 import { DCAT, DCT, parseQuads, run } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 const TTL = readFileSync(new URL('./fixtures/dcat-shapes.ttl', import.meta.url), 'utf8');
 const FILE = '/tmp/dcat-shapes.ttl';
@@ -24,7 +25,7 @@ const GRAPH = rdf.namedNode(fileGraphIri(FILE));
 
 /** The shapes file as the store reads it: blank nodes replaced by IRIs (see skolem.ts). */
 async function load(data = ''): Promise<ModelGraph> {
-    const g = new ModelGraph(new OxigraphStore());
+    const g = newModelGraph(new OxigraphStore());
     g.setShapesGraphs([...g.shapesGraphs(), GRAPH]);
     for (const q of skolemize(await parseQuads(TTL)).quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
     for (const q of data ? await parseQuads(data) : []) g.store.add(rdf.quad(q.subject, q.predicate, q.object, g.model));
@@ -656,7 +657,7 @@ describe('shape edits', () => {
         // A scheme property of Dataset; the metamodel (shapes + vocabulary of the data) has a relation to the concepts of Status.
         const dataset = shapeId(g, EX + 'Dataset');
         exec(g, { kind: 'createPropertyShape', shape: dataset, path: { kind: 'iri', iri: 'urn:name:status' }, range: { kind: 'scheme', schemes: [statusUri] } });
-        const meta = metamodelFromQuads([...g.shapesTriples(), ...g.vocabularyQuads()]);
+        const meta = metamodelFromQuads([...shapesTriples(g), ...vocabularyQuads(g)]);
         const rel = meta.classes.find(c => c.iri === DCAT + 'Dataset')!.relations.find(r => r.path === 'urn:name:status')!;
         expect(rel).toMatchObject({ targetClass: NS_SKOS + 'Concept', valueSet: statusUri, values: [draft] });
         const pId = Object.values(project(g).doc.instances).find(i => i.uri === 'urn:p')!.id;

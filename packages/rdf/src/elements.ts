@@ -3,21 +3,23 @@
 
 import { labelProblem } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
-import { ModelGraph, P } from './graph';
+import { ModelGraph } from './graph';
 import { elementTerm } from './ids';
 import * as ops from './ops';
 import { S } from './shapes-read';
 import * as shapes from './shape-ops';
 import { rdf } from './terms';
+import { viewSubject } from './views';
+import { homeOf, P } from './vocabulary';
 
 const { ok, fail, gone } = ops;
 
 /** The subject that carries the label of an element, and the predicate and graph for a first label. */
 function labelTarget(g: ModelGraph, id: string): { s: NamedNode; predicate: NamedNode; graph: NamedNode; concept?: boolean } | undefined {
     const view = ops.viewTerm(g, id);
-    if (view) return { s: g.viewSubject(view) as NamedNode, predicate: P.label, graph: view };
+    if (view) return { s: viewSubject(g, view) as NamedNode, predicate: P.label, graph: view };
     const instance = ops.instanceTerm(g, id);
-    if (instance) return { s: instance, predicate: P.label, graph: g.homeOf(instance) };
+    if (instance) return { s: instance, predicate: P.label, graph: homeOf(g, instance) };
     const idx = shapes.shapesIndex(g);
     const shape = idx.nodeShape.get(id);
     if (shape) return { s: shape.term, predicate: S.name, graph: shape.graph };

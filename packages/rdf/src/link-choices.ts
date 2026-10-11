@@ -8,6 +8,7 @@ import { elementId, elementTerm } from './ids';
 import { shapeTargetMatches } from './shacl-targets';
 import { NOT_REPORT, compareLabels, construct, iri, labels, rows, str, thingHead, things } from './sparql';
 import { rdf } from './terms';
+import { isInstance } from './vocabulary';
 
 /** Candidates of a section at most. */
 export const LINK_LIMIT = 50;
@@ -101,7 +102,7 @@ export function shapeTargetChoices(g: ModelGraph, doc: Doc, viewId: string, from
     const shape = doc.shapes.nodeShapes[element];
     if (shape) {
         const matches = shapeTargetMatches(g, { shapes: [shape.uri] }).filter(m => m.node.termType === 'NamedNode'
-            && g.isInstance(rdf.namedNode(m.node.value)) && !shown.has(elementId(rdf.namedNode(m.node.value))));
+            && isInstance(g, rdf.namedNode(m.node.value)) && !shown.has(elementId(rdf.namedNode(m.node.value))));
         if (!matches.length) return undefined;
         const names = labels(g, matches.map(m => m.node.value));
         return {

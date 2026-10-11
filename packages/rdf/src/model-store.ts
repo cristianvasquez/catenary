@@ -18,8 +18,8 @@ import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
 import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
-import { ChangeScope, Classified, classify, keepsReads, mergeRecords, tierOf } from './change';
-import { GraphChange, ModelGraph, P, Patch, VALIDATION_GRAPH, V } from './graph';
+import { ChangeScope, Classified, VALIDATION_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
+import { GraphChange, ModelGraph, Patch } from './graph';
 import { History } from './history';
 import { elementId, elementTerm } from './ids';
 import { importFiles } from './import';
@@ -33,13 +33,16 @@ import { ImportCopies, Saver, Writer } from './saver';
 import { DatasetWarnings, DocScope, NeighborCount, fileReferences, hiddenNeighborCounts, instanceCount, scopedDoc, updateHiddenNeighborCounts } from './scoped-doc';
 import { Settings, createWorkspace } from './settings';
 import { withCount } from './shape-ops';
-import { Metamodel, buildVocabulary, emptyMetamodel } from './shapes';
+import { Metamodel, buildVocabulary, emptyMetamodel, shapesTriples, vocabularyQuads } from './shapes';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
 import { rdf } from './terms';
 import { TracedStore, tracer } from './trace';
 import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
 import { readView } from './view-read';
+import { views, V } from './views';
+import { P } from './vocabulary';
+import { newModelGraph } from './model-graph';
 
 /** A patch with more quads than this (a load, a file read) reads the hidden neighbor counts of each view again. */
 const NEIGHBOR_PATCH_LIMIT = 2000;
@@ -173,7 +176,7 @@ export class ModelStore {
     protected newGraph(): { graph: ModelGraph; guard: TrapGuard } {
         const guard: TrapGuard = new TrapGuard(this.newStore(), trap => this.trapped(trap, guard));
         this.guard ??= guard;
-        return { graph: new ModelGraph(new TracedStore(guard)), guard };
+        return { graph: newModelGraph(new TracedStore(guard)), guard };
     }
 
     /**
@@ -683,7 +686,7 @@ export class ModelStore {
     }
 
     get files(): WorkspaceFiles {
-        return this.settings ? this.settings.info(this.graph.views().map(v => elementId(v)), this.saver!.savedState()) : { files: [], views: [] };
+        return this.settings ? this.settings.info(views(this.graph).map(v => elementId(v)), this.saver!.savedState()) : { files: [], views: [] };
     }
 
     /** The file for new subjects when "near" finds no file (settings.ts). */
@@ -749,9 +752,9 @@ export class ModelStore {
      * vocabulary of the shapes graphs and of the model graph. `dataset`: the shapes and the vocabulary, for the form (validation reads the shapes graphs, validationInput).
      */
     protected rebuildMetamodel(): void {
-        const shapes = this.graph.shapesTriples();
+        const shapes = shapesTriples(this.graph);
         // The vocabulary (concept schemes, concepts) is part of the metamodel: the targets of scheme properties.
-        const vocabulary = this.graph.vocabularyQuads().map(q => rdf.quad(q.subject, q.predicate, q.object));
+        const vocabulary = vocabularyQuads(this.graph).map(q => rdf.quad(q.subject, q.predicate, q.object));
         const sources = this.settings?.shapeSources() ?? [];
         const dataset = rdf.dataset([...shapes, ...vocabulary]);
         this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset)), source: sources.join(', ') || undefined, dataset };

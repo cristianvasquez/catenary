@@ -11,6 +11,7 @@ import { elementId } from '../src/ids';
 import { ModelStore } from '../src/model-store';
 import { rdf } from '../src/terms';
 import { docOf } from './helpers';
+import { newModelGraph } from '../src/model-graph';
 
 // spec/manifest.hs §11.3 Change propagation and §9 validates: the rules of change.ts, one function each.
 
@@ -20,7 +21,7 @@ const change = (c: Partial<SnapshotChange> & { reason: SnapshotChange['reason'] 
 
 /** A graph with a data graph, a shapes graph and one view. */
 function graph(): ModelGraph {
-    const g = new ModelGraph(new OxigraphStore());
+    const g = newModelGraph(new OxigraphStore());
     g.setDataGraphs([data]);
     g.setShapesGraphs([shapes]);
     g.transact(x => { x.add(view, rdf.namedNode(NS.rdf + 'type'), rdf.namedNode(NS.view + 'View'), view); return { ok: true }; });

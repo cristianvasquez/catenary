@@ -4,12 +4,13 @@ import { readShapes } from '../src/shapes-read';
 import { rdf } from '../src/terms';
 import { viewRead } from '../src/view-read';
 import { byLabel, doc, example } from './helpers';
+import { shapesAndVocabulary } from '../src/shapes';
 
 describe('view read (SPARQL rows of one view)', () => {
     it('the read model of one view equals that view in the read model of the whole model', async () => {
         const g = await example();
         const full = doc(g);
-        const shapes = readShapes(g.shapesAndVocabulary()).model;
+        const shapes = readShapes(shapesAndVocabulary(g)).model;
         for (const view of Object.values(full.views)) {
             const part = viewRead({ g, shapes }, rdf.namedNode(view.uri));
             expect(Object.keys(part.views)).toEqual([view.id]);
@@ -28,7 +29,7 @@ describe('view read (SPARQL rows of one view)', () => {
         const members = new Set(boxes(ctx, 'card').map(n => n.element));
         const outside = Object.values(full.relations).filter(r => members.has(r.subject) && !members.has(r.object));
         expect(outside.length).toBeGreaterThan(0);
-        const part = viewRead({ g, shapes: readShapes(g.shapesAndVocabulary()).model }, rdf.namedNode(ctx.uri));
+        const part = viewRead({ g, shapes: readShapes(shapesAndVocabulary(g)).model }, rdf.namedNode(ctx.uri));
         for (const r of outside) expect(part.relations[r.id]).toBeUndefined();
         expect(Object.keys(part.relations).length).toBeGreaterThan(0);
     });
