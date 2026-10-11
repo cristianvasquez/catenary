@@ -443,7 +443,9 @@ updatesAtShow changes = if changes > 0 then 1 else 0
 law_hiddenCanvasRefreshesOnce :: Int -> Bool
 law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
 -- | A reveal (Open in… Canvas, Go to) on a canvas that was hidden selects and centers the element after the update of the show.
--- Reason: the center used the model of before the hide, and a card placed while hidden was not in it (view-editors.ts whenPlaced).
+-- The show is a request: its answer gives the model revision after that update, and the reveal waits for it (at most 2 s).
+-- Reason: the center used the model of before the hide. A card placed while hidden was not in it, and a card moved while hidden
+-- had its old position (view-widget.ts whenShowUpdated, handlers.ts VisibleSetAction).
 revealWaitsFor :: Int -> Int                       -- changes while hidden -> updates that the reveal waits for
 law_revealAfterShowUpdate :: Int -> Bool
 law_revealAfterShowUpdate changes = revealWaitsFor changes == updatesAtShow changes

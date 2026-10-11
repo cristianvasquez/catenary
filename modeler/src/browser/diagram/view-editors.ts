@@ -10,6 +10,7 @@ import { Occurrence, labelProblem, panelsUnchanged } from '@catenary/model';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel } from '../selection-model';
 import { DiagramIds, diagramIds } from './diagram-ids';
+import { ViewDiagramWidget } from './view-widget';
 import { FontPreferences } from './font-preferences';
 import { setCardScaleAction } from './card-scale';
 
@@ -239,7 +240,9 @@ export class ViewEditors implements FrontendApplicationContribution {
         const w = await this.open(viewId, mode);
         // A view opened now has no model yet: the diagram ids (the placement of a card or an edge) and a CenterAction need it.
         await w.actionDispatcher.onceModelInitialized();
-        // A canvas that was hidden gets the changes of that time after it shows (law_hiddenCanvasRefreshesOnce): wait for the elements.
+        // A canvas that was hidden gets the changes of that time after it shows (law_hiddenCanvasRefreshesOnce): wait for that update,
+        // then for the elements (law_revealAfterShowUpdate).
+        if (w instanceof ViewDiagramWidget) await w.whenShowUpdated();
         await this.whenPlaced(w, elements);
         const ids = elements.map(id => this.placementOf(w, id));
         this.selection.set({ view: viewId, ids });

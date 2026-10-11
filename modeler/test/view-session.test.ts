@@ -17,7 +17,7 @@ import { elementId } from '../../packages/rdf/src/ids';
 import { rdf } from '../../packages/rdf/src/terms';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
-import { ChangeBoundsHandler, DeleteHandler, PasteHandler } from '../src/node/glsp/handlers';
+import { ChangeBoundsHandler, DeleteHandler, PasteHandler, SetVisibleAction, SetVisibleHandler, VisibleSetAction } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
@@ -35,7 +35,7 @@ async function client(store: ModelStore, viewId: string) {
         dispatchAll: vi.fn(async (actions: Action[]) => { sent.push(...actions); })
     };
     const sessions = { addListener: vi.fn(), removeListener: vi.fn() };
-    const session = Object.assign(new ViewSession(), { state, submission, dispatcher, sessions, clientId: viewId });
+    const session = Object.assign(new ViewSession(), { state, submission, dispatcher, sessions, clientId: viewId, modelState });
     const refresh = vi.spyOn(session, 'refresh');
     session.start(viewId);
     await session.refresh();
@@ -377,6 +377,23 @@ describe('model changes reaching view clients', () => {
         expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
         expect(a.elements().some(e => e.id === edge.id)).toBe(false);
         expect((a.elements().find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
+    });
+
+    it('law_revealAfterShowUpdate: the show of a hidden canvas answers with the revision of its update; a move while hidden is in it', async () => {
+        const a = await client(store, first);
+        const card = a.elements().find(e => key(e) === instance) as GNodeSchema;
+        const handler = Object.assign(new SetVisibleHandler(), { session: a.session });
+        await handler.execute({ kind: SetVisibleAction.KIND, visible: false } as Action);
+        edit({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 1234, y: 567 }] });
+        const [answer] = await handler.execute({ kind: SetVisibleAction.KIND, visible: true, requestId: 'r1' } as Action) as VisibleSetAction[];
+        const update = a.sent.filter(UpdateModelAction.is);
+        expect(update).toHaveLength(1);
+        expect(answer).toEqual({ kind: VisibleSetAction.KIND, responseId: 'r1', revision: update[0].newRoot.revision });
+        expect((update[0].newRoot.children!.find(e => key(e) === instance) as GNodeSchema).position).toEqual({ x: 1234, y: 567 });
+        // Nothing changed: the answer gives the revision that the client has, and no update.
+        expect(await handler.execute({ kind: SetVisibleAction.KIND, visible: true, requestId: 'r2' } as Action)).toEqual([{ kind: VisibleSetAction.KIND, responseId: 'r2', revision: update[0].newRoot.revision }]);
+        expect(await handler.execute({ kind: SetVisibleAction.KIND, visible: false } as Action)).toEqual([]);
+        expect(a.sent.filter(UpdateModelAction.is)).toHaveLength(1);
     });
 
     it('law_hiddenCanvasRefreshesOnce: a hidden canvas collects changes and gets one update when it is shown', async () => {

@@ -155,6 +155,7 @@ export class ViewSession {
     @inject(ActionDispatcher) protected readonly dispatcher: ActionDispatcher;
     @inject(ClientSessionManager) protected readonly sessions: ClientSessionManager;
     @inject(ClientId) protected readonly clientId: string;
+    @inject(ModelState) protected readonly modelState: ModelState;
 
     protected muted = false;
     protected started = false;
@@ -194,12 +195,17 @@ export class ViewSession {
         this.sessions.addListener(sessionListener, this.clientId);
     }
 
-    /** The client shows or hides the canvas. A show after changes sends one update. */
-    setVisible(visible: boolean): Promise<void> {
+    /**
+     * The client shows or hides the canvas. A show after changes sends one update. Resolves with the revision of the model that the
+     * client has after the show: a reveal centers after that revision (ui-manifest §3.2 law_revealAfterShowUpdate).
+     */
+    async setVisible(visible: boolean): Promise<number> {
         this.visible = visible;
-        if (!visible || !this.refreshDue) return Promise.resolve();
-        this.refreshDue = false;
-        return this.refresh();
+        if (visible && this.refreshDue) {
+            this.refreshDue = false;
+            await this.refresh();
+        }
+        return this.modelState.root?.revision ?? 0;
     }
 
     /** Send the current graph and dirty state to the client. */

@@ -291,13 +291,24 @@ export namespace SetVisibleAction {
     export const KIND = 'catenarySetVisible';
 }
 
+/** The answer to a SetVisibleAction with a requestId: the revision of the model that the client has after the show. */
+export interface VisibleSetAction extends Action {
+    kind: typeof VisibleSetAction.KIND;
+    responseId: string;
+    revision: number;
+}
+export namespace VisibleSetAction {
+    export const KIND = 'catenaryVisibleSet';
+}
+
 @injectable()
 export class SetVisibleHandler implements ActionHandler {
     @inject(ViewSession) protected readonly session: ViewSession;
     readonly actionKinds = [SetVisibleAction.KIND];
 
     async execute(action: Action): Promise<Action[]> {
-        await this.session.setVisible((action as SetVisibleAction).visible !== false);
-        return [];
+        const revision = await this.session.setVisible((action as SetVisibleAction).visible !== false);
+        const requestId = (action as { requestId?: string }).requestId;
+        return requestId ? [{ kind: VisibleSetAction.KIND, responseId: requestId, revision } as VisibleSetAction] : [];
     }
 }

@@ -2,10 +2,11 @@
 // is not the full widget: GLSP must get the bounds of the SVG, not of the widget node.
 // The server learns when the canvas is shown or hidden (a tab behind another one): a hidden canvas gets one update when shown.
 
-import { Bounds, InitializeCanvasBoundsAction } from '@eclipse-glsp/client';
+import { Bounds, InitializeCanvasBoundsAction, RequestAction, ResponseAction } from '@eclipse-glsp/client';
 import { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { Message, Widget } from '@theia/core/lib/browser';
 import { injectable } from '@theia/core/shared/inversify';
+import { afterRevision } from './after-revision';
 
 /** Client action to the GLSP server: the canvas is shown or hidden (handlers.ts SetVisibleAction). */
 export const SET_VISIBLE = 'catenarySetVisible';
@@ -14,10 +15,31 @@ export const SET_VISIBLE = 'catenarySetVisible';
 export class ViewDiagramWidget extends GLSPDiagramWidget {
     protected canvasObserver?: ResizeObserver;
 
-    /** The client learns the server actions when the diagram loads: a dispatch before the model is initialized has no handler. */
+    /** Resolves when the client model has the update of the last show (or at once): see `whenShowUpdated`. */
+    protected showUpdate: Promise<void> = Promise.resolve();
+
+    /**
+     * The client learns the server actions when the diagram loads: a dispatch before the model is initialized has no handler. A show
+     * is a request: the answer gives the revision of the model after the update of the show (handlers.ts VisibleSetAction).
+     */
     protected sendVisible(visible: boolean): void {
         const dispatcher = this.actionDispatcher;
-        dispatcher.onceModelInitialized().then(() => dispatcher.dispatch({ kind: SET_VISIBLE, visible } as never)).catch(() => { /* the session is closed */ });
+        const initialized = dispatcher.onceModelInitialized();
+        if (!visible) {
+            initialized.then(() => dispatcher.dispatch({ kind: SET_VISIBLE, visible } as never)).catch(() => { /* the session is closed */ });
+            return;
+        }
+        const answer = initialized.then(() => dispatcher.request({ kind: SET_VISIBLE, visible, requestId: RequestAction.generateRequestId() } as never));
+        this.showUpdate = afterRevision(answer.then(r => (r as ResponseAction & { revision: number }).revision),
+            () => this.editorContext.modelRoot.revision ?? 0, l => this.editorContext.onModelRootChanged(l));
+    }
+
+    /**
+     * Resolves when the client model has the update that the last show of the canvas sent, at most after 2 s. A reveal centers after
+     * it: a card that moved while the canvas was hidden has its new position (ui-manifest §3.2 law_revealAfterShowUpdate).
+     */
+    whenShowUpdated(): Promise<void> {
+        return this.showUpdate;
     }
 
     protected override onAfterShow(msg: Message): void {
