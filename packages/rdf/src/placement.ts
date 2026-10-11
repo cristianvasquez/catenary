@@ -20,6 +20,25 @@ export function filesOfSubject(g: ModelGraph, t: Term): string[] {
     return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
 }
 
+/**
+ * The files of several subjects (filesOfSubject of each), in one query (§11.3 readBudgetMs): for a read of n instances, not one
+ * store read per instance.
+ */
+export function filesOfSubjects(g: ModelGraph, subjects: Iterable<string>): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    const values = [...new Set(subjects)];
+    if (!values.length) return out;
+    const counts = new Map<string, Map<string, number>>();
+    for (const r of g.select(`SELECT ?s ?g (COUNT(*) AS ?n) WHERE { VALUES ?s { ${values.map(s => `<${s}>`).join(' ')} } GRAPH ?g { ?s ?p ?o } } GROUP BY ?s ?g`)) {
+        if (!(g.isDataGraph(r.g) && !r.g.equals(g.model) || g.isShapesGraph(r.g))) continue;
+        const count = counts.get(r.s.value) ?? counts.set(r.s.value, new Map()).get(r.s.value)!;
+        const f = fileOfGraph(r.g.value);
+        count.set(f, (count.get(f) ?? 0) + Number(r.n.value));
+    }
+    for (const s of values) out.set(s, [...counts.get(s) ?? []].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f));
+    return out;
+}
+
 /** The file of a subject, else of the statements that refer to it (a new nested value). Undefined: nothing places it yet. */
 export function nearFiles(g: ModelGraph, s: Term): Set<string> | undefined {
     const own = filesOfSubject(g, s);

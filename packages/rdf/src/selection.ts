@@ -7,7 +7,7 @@ import { ModelGraph, VALIDATION_GRAPH, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
-import { connections, construct, iri, rows, statements, things } from './sparql';
+import { connections, construct, iri, rows, statements, statementsByTerm, things } from './sparql';
 import { rdf, termKey } from './terms';
 
 const buckets: Record<ElementKind, keyof Pick<Selected, 'instances' | 'relations' | 'views' | 'groups' | 'notes' | 'references' | 'collections' | 'arrows' | 'shapes' | 'properties' | 'constraints' | 'valueSets'>> = {
@@ -102,15 +102,39 @@ export function selected(g: ModelGraph, index: ShapesIndex, selection: ModelSele
     return answer;
 }
 
-/** Subject statements, or object statements when none exist. A relation uses its triple. */
+/** Subject statements, or object statements when none exist. A relation uses its triple. One element of `statementsOfAll`. */
 export function statementsOf(g: ModelGraph, index: () => ShapesIndex, id: string): Quad[] {
-    const triple = relationTriple(id);
-    if (triple) return g.match(triple.s, triple.p, triple.o);
+    return statementsOfAll(g, index, [id]).get(id) ?? [];
+}
+
+/**
+ * The statements of each element with their graphs (not the report): a relation, the statements of its triple; another element, the
+ * statements of its term as subject, or as object when there are none. Three queries for all elements (§11.3 readBudgetMs).
+ */
+export function statementsOfAll(g: ModelGraph, index: () => ShapesIndex, ids: Iterable<string>): Map<string, Quad[]> {
+    const out = new Map<string, Quad[]>();
+    const triples = new Map<string, string[]>(), termIds = new Map<string, string[]>();
     const idx = index();
-    const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
-    if (!t) return [];
-    const own = g.match(t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
-    return own.length ? own : g.match(null, null, t).filter(q => !q.graph.equals(rdf.namedNode(VALIDATION_GRAPH)));
+    for (const id of new Set(ids)) {
+        const triple = relationTriple(id);
+        if (triple) { const key = `${iri(triple.s.value)} ${iri(triple.p.value)} ${iri(triple.o.value)}`; triples.set(key, [...triples.get(key) ?? [], id]); continue; }
+        const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
+        if (!t) { out.set(id, []); continue; }
+        termIds.set(t.value, [...termIds.get(t.value) ?? [], id]);
+    }
+    if (triples.size) {
+        const found = new Map<string, Quad[]>();
+        for (const r of rows(g, `SELECT ?s ?p ?o ?g WHERE { VALUES (?s ?p ?o) { ${[...triples.keys()].map(k => `(${k})`).join(' ')} } GRAPH ?g { ?s ?p ?o } }`)) {
+            const key = `${iri(r.s.value)} ${iri(r.p.value)} ${iri(r.o.value)}`;
+            found.set(key, [...found.get(key) ?? [], rdf.quad(r.s as Quad_Subject, r.p as NamedNode, r.o as Quad_Object, r.g as NamedNode)]);
+        }
+        for (const [key, list] of triples) for (const id of list) out.set(id, found.get(key) ?? []);
+    }
+    if (termIds.size) {
+        const found = statementsByTerm(g, termIds.keys());
+        for (const [term, list] of termIds) for (const id of list) out.set(id, found.get(term) ?? []);
+    }
+    return out;
 }
 
 /** Text positions, best first: own block, property entry, then the containing shape. */
@@ -131,30 +155,39 @@ export function textTargets(idx: ShapesIndex, id: string): TextTarget[] {
     return t?.termType === 'NamedNode' ? [{ subject: t.value }] : [];
 }
 
-/** Source files of an element, most statements first. */
+/** Source files of an element, most statements first. One element of `filesOfElements`. */
 export function filesOfElement(g: ModelGraph, idx: () => ShapesIndex, settings: Settings | undefined, id: string): string[] {
-    const count = new Map<string, number>();
-    for (const q of statementsOf(g, idx, id)) for (const f of settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
-    return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
+    return filesOfElements(g, idx, settings, [id]).get(id) ?? [];
 }
 
+/** The files of the statements, most statements first. */
+const filesOfQuads = (settings: Settings | undefined, quads: Quad[]): string[] => {
+    const count = new Map<string, number>();
+    for (const q of quads) for (const f of settings?.filesOfQuad(q) ?? []) count.set(f, (count.get(f) ?? 0) + 1);
+    return [...count].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
+};
+
 /**
- * Source files of several elements (filesOfElement of each id): one query for the subject statements of all terms, one for the
- * object statements of the terms without any, grouped by graph (§11.3 readBudgetMs). A relation, or a term with statements in the
- * logical model graph itself, takes the per-element path.
+ * Source files of several elements: one query for the subject statements of all terms, one for the object statements of the terms
+ * without any, grouped by graph (§11.3 readBudgetMs). The relations, and the terms with statements in the logical model graph itself,
+ * take their statements in three more queries (statementsOfAll).
  */
 export function filesOfElements(g: ModelGraph, index: () => ShapesIndex, settings: Settings | undefined, ids: string[]): Map<string, string[]> {
     const result = new Map<string, string[]>();
-    const one = (id: string) => { result.set(id, filesOfElement(g, index, settings, id)); };
+    const byStatements: string[] = [];
     const termIds = new Map<string, string[]>();
     const idx = index();
     for (const id of new Set(ids)) {
-        if (relationTriple(id)) { one(id); continue; }
+        if (relationTriple(id)) { byStatements.push(id); continue; }
         const t = idx.property.get(id)?.term ?? idx.constraint.get(id)?.owner ?? elementTerm(id);
         if (!t) { result.set(id, []); continue; }
         termIds.set(t.value, [...termIds.get(t.value) ?? [], id]);
     }
-    if (!termIds.size) return result;
+    const finish = () => {
+        if (byStatements.length) for (const [id, quads] of statementsOfAll(g, index, byStatements)) result.set(id, filesOfQuads(settings, quads));
+        return result;
+    };
+    if (!termIds.size) return finish();
     const counts = new Map<string, Map<string, number>>();
     const fromModel = new Set<string>();
     const scan = (terms: string[], bound: 's' | 'o') => {
@@ -174,9 +207,9 @@ export function filesOfElements(g: ModelGraph, index: () => ShapesIndex, setting
     const objectsOnly = [...termIds.keys()].filter(t => !counts.has(t) && !fromModel.has(t));
     if (objectsOnly.length) scan(objectsOnly, 'o');
     for (const [term, list] of termIds) {
-        if (fromModel.has(term)) { list.forEach(one); continue; }
+        if (fromModel.has(term)) { byStatements.push(...list); continue; }
         const files = [...counts.get(term) ?? []].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([f]) => f);
         for (const id of list) result.set(id, files);
     }
-    return result;
+    return finish();
 }

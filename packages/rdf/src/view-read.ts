@@ -76,53 +76,93 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     const doc = emptyDoc();
     doc.shapes = ctx.shapes;
     const shows = !elements && showsShapes(g, view);
-    // Resolve only the requested placements. Shape parts also need their owner card.
+    // Resolve only the requested placements. Shape parts also need their owner card. The store reads of this resolution come in
+    // one query each for all elements (§11.3 readBudgetMs): the view statements of the element terms, the frames among them and
+    // their contents, the collections with a term as member, the placements of the requested terms.
     const requested = new Set<string>();
     const placementIds = new Set<string>();
+    const list = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(', ');
+    const values = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(' ');
+    // The value sets by member IRI once, not a scan of the value sets for each element.
+    const setsOfMember = new Map<string, string[]>();
+    for (const set of Object.values(ctx.shapes.valueSets)) for (const m of set.members) setsOfMember.set(m.uri, [...setsOfMember.get(m.uri) ?? [], set.uri]);
+    // The collections (any graph) with a term as member, for the terms that `add` sees.
+    const memberOf = new Map<string, string[]>();
+    const readMembers = (terms: Iterable<string>) => {
+        const missing = [...new Set(terms)].filter(t => !memberOf.has(t));
+        if (!missing.length) return;
+        for (const t of missing) memberOf.set(t, []);
+        for (const r of select(g, `${PREFIXES} SELECT ?c ?m WHERE { VALUES ?m { ${values(missing)} } GRAPH ?mg { ?c view:member ?m } }`)) {
+            memberOf.get(r.m.value)!.push(r.c.value);
+        }
+    };
     const add = (id: string) => {
         const part = ctx.shapes.properties[id] ?? ctx.shapes.constraints[id];
         const owner = part && ctx.shapes.nodeShapes[part.owner];
         const term = elementTerm(id);
         if (term) {
             requested.add(term.value);
-            for (const set of Object.values(ctx.shapes.valueSets)) if (set.members.some(m => m.uri === term.value)) requested.add(set.uri);
-            for (const q of g.match(null, rdf.namedNode(NS.view + 'member'), term)) requested.add(q.subject.value);
+            for (const set of setsOfMember.get(term.value) ?? []) requested.add(set);
+            for (const c of memberOf.get(term.value) ?? []) requested.add(c);
         }
         if (owner) requested.add(owner.uri);
         if (part && "uri" in part && part.uri) requested.add(part.uri);
         const triple = relationTriple(id);
         if (triple) { requested.add(triple.s.value); requested.add(triple.o.value); }
     };
-    for (const id of elements ?? []) {
-        add(id);
-        const term = elementTerm(id);
-        if (!term) continue;
-        for (const q of g.match(term, null, null, view)) {
-            placementIds.add(term.value);
-            if (q.predicate.value === NS.view + 'element' && q.object.termType === 'NamedNode') add(elementId(q.object));
-            if (q.predicate.value === NS.rdf + 'reifies' && q.object.termType === 'Quad') {
-                for (const t of [q.object.subject, q.object.object]) if (t.termType === 'NamedNode') requested.add(t.value);
-            }
+    /** The placements of each IRI in the view graph (one query for all IRIs). */
+    const placementsOf = (iris: Iterable<string>): Map<string, string[]> => {
+        const out = new Map<string, string[]>();
+        const terms = [...new Set(iris)];
+        if (!terms.length) return out;
+        for (const r of select(g, `${PREFIXES} SELECT ?pl ?e WHERE { VALUES ?e { ${values(terms)} } GRAPH ${V} { ?pl view:element ?e } }`)) {
+            out.set(r.e.value, [...out.get(r.e.value) ?? [], r.pl.value]);
         }
-    }
-    const list = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(', ');
-    const values = (iris: Iterable<string>) => [...iris].map(s => `<${s}>`).join(' ');
-    for (const id of placementIds) {
-        const node = rdf.namedNode(id);
-        const target = g.match(node, rdf.namedNode(NS.view + 'element'), null, view)[0]?.object;
-        if (target?.termType !== 'NamedNode' || !g.match(target, P.type, rdf.namedNode(NS.view + 'Frame')).length) continue;
-        const number = (name: string, fallback: number) => Number(g.match(node, rdf.namedNode(NS.view + name), null, view)[0]?.object.value ?? fallback);
-        const x = number('x', 0), y = number('y', 0), width = number('width', 400), height = number('height', 300);
-        for (const r of select(g, `${PREFIXES} SELECT ?e WHERE { GRAPH ${V} {
+        return out;
+    };
+    if (elements) {
+        const ids = [...new Set(elements)];
+        const terms = new Map(ids.flatMap(id => { const t = elementTerm(id); return t ? [[id, t.value] as const] : []; }));
+        // The view statements of the element terms: the targets of placements, the triples of placed relations.
+        const viewRows = terms.size ? select(g, `${PREFIXES} SELECT ?s ?p ?o ?ts ?to WHERE { VALUES ?s { ${values(terms.values())} } GRAPH ${V} { ?s ?p ?o }
+            BIND (SUBJECT(?o) AS ?ts) BIND (OBJECT(?o) AS ?to) }`) : [];
+        const statementsOf = new Map<string, typeof viewRows>();
+        for (const r of viewRows) statementsOf.set(r.s.value, [...statementsOf.get(r.s.value) ?? [], r]);
+        const targets = viewRows.flatMap(r => r.p.value === NS.view + 'element' && r.o.termType === 'NamedNode' ? [r.o.value] : []);
+        // The frames among the placed terms, with their geometry, and the placements inside each frame.
+        const frames = terms.size ? select(g, `${PREFIXES} SELECT ?pl ?x ?y ?w ?h WHERE { VALUES ?pl { ${values(statementsOf.keys())} }
+            GRAPH ${V} { ?pl view:element ?t OPTIONAL { ?pl view:x ?x } OPTIONAL { ?pl view:y ?y } OPTIONAL { ?pl view:width ?w } OPTIONAL { ?pl view:height ?h } }
+            GRAPH ?fg { ?t a view:Frame } }`) : [];
+        const seenFrames = new Set<string>();
+        const boxes = frames.filter(f => !seenFrames.has(f.pl.value) && seenFrames.add(f.pl.value)).map(f => {
+            const number = (t: Plain | undefined, fallback: number) => { const n = Number(t?.value ?? fallback); return isNaN(n) ? fallback : n; };
+            const x = number(f.x, 0), y = number(f.y, 0);
+            return `(${x} ${y} ${x + number(f.w, 400)} ${y + number(f.h, 300)})`;
+        });
+        const inFrames = boxes.length ? select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE { VALUES (?fx ?fy ?fx2 ?fy2) { ${boxes.join(' ')} } GRAPH ${V} {
             ?pl a view:Placement ; view:element ?e .
             OPTIONAL { ?pl view:x ?x } OPTIONAL { ?pl view:y ?y }
             OPTIONAL { ?pl view:width ?w } OPTIONAL { ?pl view:height ?h }
-            FILTER (COALESCE(?x, 0) >= ${x} && COALESCE(?y, 0) >= ${y}
-                && COALESCE(?x, 0) + COALESCE(?w, 640) <= ${x + width}
-                && COALESCE(?y, 0) + COALESCE(?h, 320) <= ${y + height})
-        } }`)) add(elementId(r.e.term as NamedNode));
+            FILTER (COALESCE(?x, 0) >= ?fx && COALESCE(?y, 0) >= ?fy
+                && COALESCE(?x, 0) + COALESCE(?w, 640) <= ?fx2
+                && COALESCE(?y, 0) + COALESCE(?h, 320) <= ?fy2)
+        } }`).map(r => elementId(r.e.term as NamedNode)) : [];
+        readMembers([...terms.values(), ...targets, ...inFrames.flatMap(id => elementTerm(id)?.value ?? [])]);
+        for (const id of ids) {
+            add(id);
+            const term = terms.get(id);
+            if (term === undefined) continue;
+            for (const r of statementsOf.get(term) ?? []) {
+                placementIds.add(term);
+                if (r.p.value === NS.view + 'element' && r.o.termType === 'NamedNode') add(elementId(r.o.term as NamedNode));
+                if (r.p.value === NS.rdf + 'reifies' && r.ts && r.to) {
+                    for (const t of [r.ts, r.to]) if (t.termType === 'NamedNode') requested.add(t.value);
+                }
+            }
+        }
+        inFrames.forEach(add);
+        for (const pls of placementsOf(requested).values()) pls.forEach(pl => placementIds.add(pl));
     }
-    if (elements) for (const iri of requested) for (const q of g.match(null, rdf.namedNode(NS.view + 'element'), rdf.namedNode(iri), view)) placementIds.add(q.subject.value);
     // Placements and group members are the bounded subject set. Avoid a correlated placement query for each object.
     const placed = new Set(select(g, `${PREFIXES} SELECT DISTINCT ?e WHERE {
         ${elements ? `VALUES ?pl { ${values(placementIds)} }` : ''}
@@ -180,10 +220,11 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings);
 
     if (elements) {
-        for (const iri of placed) for (const q of g.match(null, rdf.namedNode(NS.view + 'element'), rdf.namedNode(iri), view)) placementIds.add(q.subject.value);
-        for (const id of Object.keys(doc.relations)) {
-            const t = relationTriple(id)!;
-            for (const q of g.match(null, rdf.namedNode(NS.rdf + 'reifies'), rdf.quad(t.s, t.p, t.o), view)) placementIds.add(q.subject.value);
+        for (const pls of placementsOf(placed).values()) pls.forEach(pl => placementIds.add(pl));
+        // The placements of the relations of the read model: one query for all triples.
+        const triples = Object.keys(doc.relations).map(id => { const t = relationTriple(id)!; return `(<${t.s.value}> <${t.p.value}> <${t.o.value}>)`; });
+        if (triples.length) for (const r of select(g, `${PREFIXES} SELECT ?pl WHERE { VALUES (?s ?p ?o) { ${triples.join(' ')} } GRAPH ${V} { ?pl rdf:reifies <<( ?s ?p ?o )>> } }`)) {
+            placementIds.add(r.pl.value);
         }
     }
     const placementScope = (variable: string) => elements ? `VALUES ?${variable} { ${values(placementIds)} }` : '';

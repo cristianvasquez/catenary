@@ -2,8 +2,9 @@
 // caller gives the variable names. `n` makes the helper variables of a fragment unique when a query uses it more than once.
 
 import { NS } from '@catenary/model';
-import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, labelFromIri } from './graph';
+import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, labelFromIri } from './graph';
+import { rdf } from './terms';
 
 export const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}> PREFIX view: <${NS.view}>`;
 
@@ -145,4 +146,47 @@ export function instancesAmong(g: ModelGraph, iris: Iterable<string>): Set<strin
         GRAPH ?sg { { ?s rdf:type ?t FILTER (?t IN (skos:ConceptScheme, skos:Concept, skos:Collection)) } UNION { ?s skos:inScheme|skos:topConceptOf ?y } }
         FILTER (?sg IN (${shapes.map(t => iri(t.value)).join(', ')})) }`)) found.add(r.s.value);
     return found;
+}
+
+/**
+ * The home graph of each IRI (ModelGraph.homeOf: the model graph, or the first shapes graph in order in which it is a SKOS subject),
+ * in one or two queries (§11.3 readBudgetMs: homeOf reads the store once per data graph and term).
+ */
+export function homesAmong(g: ModelGraph, iris: Iterable<string>): Map<string, string> {
+    const values = [...new Set(iris)];
+    const out = new Map<string, string>();
+    if (!values.length) return out;
+    const inModel = inModelAmong(g, values);
+    const rest = values.filter(s => !inModel.has(s)), shapes = g.shapesGraphs();
+    const vocabulary = new Map<string, string>();
+    if (rest.length && shapes.length) for (const r of rows(g, `SELECT ?s ?sg WHERE { VALUES ?s { ${rest.map(iri).join(' ')} }
+        GRAPH ?sg { { ?s rdf:type ?t FILTER (?t IN (skos:ConceptScheme, skos:Concept, skos:Collection)) } UNION { ?s skos:inScheme|skos:topConceptOf ?y } }
+        FILTER (?sg IN (${shapes.map(t => iri(t.value)).join(', ')})) }`)) {
+        const was = vocabulary.get(r.s.value);
+        if (was === undefined || cmp(r.sg.value, was) < 0) vocabulary.set(r.s.value, r.sg.value);
+    }
+    for (const s of values) out.set(s, inModel.has(s) ? g.model.value : vocabulary.get(s) ?? g.model.value);
+    return out;
+}
+
+/**
+ * The statements of several terms with their graphs, by term: as subject, and (`objects`) as object for the terms without any as
+ * subject (selection.ts statementsOf). Not the report graph. Two queries for all terms.
+ */
+export function statementsByTerm(g: ModelGraph, terms: Iterable<string>, objects = true): Map<string, Quad[]> {
+    const values = [...new Set(terms)];
+    const out = new Map<string, Quad[]>();
+    if (!values.length) return out;
+    const read = (list: string[], bound: 's' | 'o') => {
+        for (const r of rows(g, `SELECT ?s ?p ?o ?g WHERE { VALUES ?${bound} { ${list.map(iri).join(' ')} } GRAPH ?g { ?s ?p ?o } FILTER (?g != ${NOT_REPORT}) }`)) {
+            const key = r[bound].value;
+            const quads = out.get(key) ?? [];
+            quads.push(rdf.quad(r.s as Quad_Subject, r.p as NamedNode, r.o as Quad_Object, r.g as NamedNode));
+            out.set(key, quads);
+        }
+    };
+    read(values, 's');
+    const objectsOnly = objects ? values.filter(s => !out.has(s)) : [];
+    if (objectsOnly.length) read(objectsOnly, 'o');
+    return out;
 }

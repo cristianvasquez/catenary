@@ -5,13 +5,14 @@ import type { ExplorerPlugin, ExplorerPort } from '@catenary/explorer';
 import { EXPLORER_PAGE, ExplorerPage, ExplorerPath, ExplorerRow, fuzzyMatch, iriId, shortIri } from '@catenary/model';
 import { rdfsExplorer } from '@catenary/rdfs';
 import { shaclExplorer } from '@catenary/shacl/backend';
-import type { Term } from '@rdfjs/types';
+import type { Quad, Term } from '@rdfjs/types';
 import * as path from 'path';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { elementTerm, relationTriple } from './ids';
 import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
-import { labels } from './sparql';
+import { statementsOfAll } from './selection';
+import { labels, statementsByTerm } from './sparql';
 import { rdf, termKey } from './terms';
 
 /** One file scope, kept until the dataset changes. */
@@ -98,13 +99,28 @@ export function iriOf(idx: ShapesIndex, id: string): string | undefined {
     return t?.termType === 'NamedNode' ? t.value : undefined;
 }
 
-/** Whether a file holds statements of the element or the triple of a relation. */
+/** Whether a file holds statements of the element or the triple of a relation. One element of `elementsInFile`. */
 export function elementInFile(ctx: ExplorerContext, id: string, file: string): boolean {
-    const ws = ctx.settings;
+    return elementsInFile(ctx, [id], file).has(id);
+}
+
+/**
+ * The ids among `ids` with a statement (a relation: its triple) in `file`. The statements of all ids come in a bounded number of
+ * queries (selection.ts statementsOfAll), not one store read per id (§11.3 readBudgetMs).
+ */
+export function elementsInFile(ctx: ExplorerContext, ids: string[], file: string): Set<string> {
+    const ws = ctx.settings, out = new Set<string>();
     const known = ws?.knownFile(path.resolve(ctx.folder, file));
-    if (!ws || !known) return false;
-    const rel = relationTriple(id);
-    const term = ctx.idx.property.get(id)?.term ?? elementTerm(id);
-    const quads = rel ? ctx.g.match(rel.s, rel.p, rel.o) : term ? ctx.g.match(term) : [];
-    return quads.some(q => ws.filesOfQuad(q).includes(known));
+    if (!ws || !known || !ids.length) return out;
+    const inFile = (quads: Quad[] | undefined) => !!quads?.some(q => ws.filesOfQuad(q).includes(known));
+    const relations: string[] = [], byTerm = new Map<string, string[]>();
+    for (const id of new Set(ids)) {
+        if (relationTriple(id)) { relations.push(id); continue; }
+        const term = (ctx.idx.property.get(id)?.term ?? elementTerm(id))?.value;
+        if (term !== undefined) byTerm.set(term, [...byTerm.get(term) ?? [], id]);
+    }
+    for (const [id, quads] of statementsOfAll(ctx.g, () => ctx.idx, relations)) if (inFile(quads)) out.add(id);
+    const subjects = statementsByTerm(ctx.g, byTerm.keys(), false);
+    for (const [term, list] of byTerm) if (inFile(subjects.get(term))) for (const id of list) out.add(id);
+    return out;
 }

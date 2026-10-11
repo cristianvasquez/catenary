@@ -8,7 +8,7 @@ import { Doc, NS, ShapesModel, View, boxes, elementOfId, emptyDoc } from '@caten
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
-import { inModelAmong, instancesAmong } from './sparql';
+import { homesAmong, inModelAmong, instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { ViewReadContext, readView, viewLabels } from './view-read';
 
@@ -54,14 +54,16 @@ export function scopedDoc(ctx: ViewReadContext, scope: DocScope): Doc {
     const selectedViews = (scope.selectionViews ?? []).filter((v): v is string => !!v);
     selectedViews.forEach(v => readPart(v, scope.elements ?? []));
 
-    // Elements: a placement id of a read view stands for its element.
-    const elements = [...new Set((scope.elements ?? []).map(id => {
-        for (const v of [...views, ...selectedViews]) {
-            const e = elementOfId(doc.views[v], id);
-            if (e !== id) return e;
-        }
-        return id;
-    }))];
+    // Elements: a placement id of a read view stands for its element. The placements of the read views by id once (elementOfId
+    // scans the boxes of a view for each id).
+    const elementOf = new Map<string, string>();
+    for (const v of [...views, ...selectedViews].reverse()) {
+        const view = doc.views[v];
+        if (!view) continue;
+        for (const e of view.edges) if (e.id) elementOf.set(e.id, e.relation);
+        for (const b of view.boxes) if (b.kind === 'card') elementOf.set(b.id, b.element);
+    }
+    const elements = [...new Set((scope.elements ?? []).map(id => elementOf.get(id) ?? id))];
     // The instance check of all element terms in one query, not one read per data graph and term.
     const terms = elements.flatMap(id => { const t = relationTriple(id); return (t ? [t.s, t.o] : [elementTerm(id)]).flatMap(x => x?.termType === 'NamedNode' ? [x.value] : []); });
     const instances = new Set<string>(instancesAmong(g, terms));
@@ -203,18 +205,18 @@ export function readWarnings(g: ModelGraph, shapes: ShapesModel): string[] {
  * view does not show. The rule of `hiddenNeighborCounts` (@catenary/model) on SPARQL rows of the cards, without the records of all instances.
  */
 export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: View): Map<string, { in: number; out: number; targets?: number }> {
+    // The instance test of all cards in one request (§11.3 readBudgetMs), not one store read per card.
+    const cardTerms = boxes(view, 'card').flatMap(b => { const t = elementTerm(b.element); return t?.termType === 'NamedNode' ? [{ b, t }] : []; });
+    const cardInstances = instancesAmong(g, cardTerms.map(c => c.t.value));
     const cards = new Map<string, string>();
-    for (const b of view.boxes) {
-        if (b.kind !== 'card') continue;
-        const t = elementTerm(b.element);
-        if (t?.termType === 'NamedNode' && g.isInstance(t)) cards.set(t.value, b.element);
-    }
+    for (const { b, t } of cardTerms) if (cardInstances.has(t.value)) cards.set(t.value, b.element);
     const out = new Map<string, { in: number; out: number; targets?: number }>();
     const placed = new Set(boxes(view, 'card').map(b => b.element));
     // One request for all shape cards, not one per card.
     const placedShapes = Object.values(shapes.nodeShapes).filter(s => placed.has(s.id));
-    const hidden = placedShapes.length ? shapeTargetMatches(g, { shapes: placedShapes.map(s => s.uri) }).filter(m => m.node.termType === 'NamedNode'
-        && g.isInstance(rdf.namedNode(m.node.value)) && !placed.has(elementId(rdf.namedNode(m.node.value)))) : [];
+    const targets = placedShapes.length ? shapeTargetMatches(g, { shapes: placedShapes.map(s => s.uri) }).filter(m => m.node.termType === 'NamedNode') : [];
+    const targetInstances = instancesAmong(g, targets.map(m => m.node.value));
+    const hidden = targets.filter(m => targetInstances.has(m.node.value) && !placed.has(elementId(rdf.namedNode(m.node.value))));
     for (const shape of placedShapes) {
         const targets = hidden.filter(m => m.shape === shape.uri).length;
         if (targets) out.set(shape.id, { in: 0, out: 0, targets });
@@ -228,23 +230,24 @@ export function hiddenNeighborCounts(g: ModelGraph, shapes: ShapesModel, view: V
         for (const m of shapes.valueSets[b.element]?.members ?? []) shownIris.add(m.uri);
     }
     const shown = (iri: string) => cards.has(iri) || shownIris.has(iri);
-    const instance = new Map<string, boolean>(), home = new Map<string, string>();
-    const isInstance = (iri: string) => instance.get(iri) ?? instance.set(iri, g.isInstance(rdf.namedNode(iri))).get(iri)!;
-    const homeOf = (iri: string) => home.get(iri) ?? home.set(iri, g.homeOf(rdf.namedNode(iri)).value).get(iri)!;
     const graphs = [...g.dataGraphs(), ...g.shapesGraphs()].map(t => iri(t.value)).join(', ');
     const values = [...cards.keys()].map(iri).join(' ');
     const others = new Map<string, { in: Set<string>; out: Set<string> }>();
+    const found = select(g, `${PREFIXES} SELECT DISTINCT ?s ?x ?g ?dir WHERE { VALUES ?s { ${values} }
+        { GRAPH ?g { ?s ?p ?x } BIND ("out" AS ?dir) } UNION { GRAPH ?g { ?x ?p ?s } BIND ("in" AS ?dir) }
+        FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`);
+    // The homes and the instance test of all neighbors in one request each, not one store read per row.
+    const homes = homesAmong(g, found.flatMap(r => [r.s.value, r.x.value]));
+    const neighborInstances = instancesAmong(g, found.map(r => r.x.value));
     const add = (self: string, dir: 'in' | 'out', other: string) => {
-        if (other === self || !isInstance(other) || shown(other)) return;
+        if (other === self || !neighborInstances.has(other) || shown(other)) return;
         const o = others.get(self) ?? others.set(self, { in: new Set(), out: new Set() }).get(self)!;
         o[dir].add(other);
     };
-    for (const r of select(g, `${PREFIXES} SELECT DISTINCT ?s ?x ?g ?dir WHERE { VALUES ?s { ${values} }
-        { GRAPH ?g { ?s ?p ?x } BIND ("out" AS ?dir) } UNION { GRAPH ?g { ?x ?p ?s } BIND ("in" AS ?dir) }
-        FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`)) {
+    for (const r of found) {
         const dir = r.dir.value as 'in' | 'out';
         // A relation is a statement of the graph of its subject (the model graph, or the shapes graph of a SKOS subject).
-        const owner = homeOf(dir === 'out' ? r.s.value : r.x.value);
+        const owner = homes.get(dir === 'out' ? r.s.value : r.x.value);
         if (owner === g.model.value ? !g.isDataGraph(r.g) : r.g.value !== owner) continue;
         add(r.s.value, dir, r.x.value);
     }

@@ -7,9 +7,9 @@ import {
     occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
 import { absolutePath, pathKey } from 'rdf-files';
-import { ActionContext, placements, selectionActions } from './actions';
+import { ActionContext, selectionActions } from './actions';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
-import { ExplorerContext, ExplorerScope, elementInFile, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
+import { ExplorerContext, ExplorerScope, elementsInFile, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
 import { enclosingWorkspace, positionIn } from './files';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
@@ -20,9 +20,10 @@ import { filesOfSubject } from './placement';
 import { properties } from './properties';
 import { dataPredicates, formData, hiddenRelations, knownClasses as readKnownClasses, selectionLinks, viewCounts, viewDescription as readViewDescription } from './queries';
 import { reportProblems } from './report-read';
+import { ReadFacts } from './read-context';
 import { DocScope, instanceLabels } from './scoped-doc';
 import { search } from './search';
-import { filesOfElement, filesOfElements, selected, textTargets } from './selection';
+import { selected, textTargets } from './selection';
 import { Settings } from './settings';
 import { Metamodel, formShapes } from './shapes';
 import { ShapesIndex } from './shapes-read';
@@ -42,9 +43,15 @@ export interface ReadContext {
     explorerScopes(): Map<string, ExplorerScope>;
 }
 
-/** Frontend reads. The coordinator supplies state and retains event-keyed caches. */
+/**
+ * Frontend reads. The coordinator supplies state and retains event-keyed caches. The facts that several reads share (read-context.ts)
+ * are kept here on the data event: a read of n elements asks the store a bounded number of times, not once per element (§11.3).
+ */
 export class PanelReads implements ModelQueries {
-    constructor(private readonly ctx: ReadContext) {}
+    private readonly facts: ReadFacts;
+    constructor(private readonly ctx: ReadContext) {
+        this.facts = new ReadFacts({ get graph() { return ctx.graph; }, get settings() { return ctx.settings; }, shapesIndex: () => ctx.shapesIndex() });
+    }
     private get graph() { return this.ctx.graph; }
     private get metamodel() { return this.ctx.metamodel; }
     private get settings() { return this.ctx.settings; }
@@ -89,12 +96,18 @@ export class PanelReads implements ModelQueries {
     }
 
     explorerElements(key: string, file?: string): string[] {
-        return this.file ? explorerElements(explorerPort(this.explorerContext(), file), key).filter(id => !file || elementInFile(this.explorerContext(), id, file)) : [];
+        return this.file ? this.inFile(explorerElements(explorerPort(this.explorerContext(), file), key), file) : [];
     }
 
     explorerDrag(selection: ExplorerDrag): string[] {
-        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])]
-            .filter(id => !selection.file || elementInFile(this.explorerContext(), id, selection.file));
+        return this.inFile([...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])], selection.file);
+    }
+
+    /** The ids with statements in `file` (all of them without a file), in one read of the statements of all ids. */
+    private inFile(ids: string[], file?: string): string[] {
+        if (!file) return ids;
+        const found = elementsInFile(this.explorerContext(), ids, file);
+        return ids.filter(id => found.has(id));
     }
 
     properties(id?: string): ElementProperties | undefined {
@@ -137,7 +150,7 @@ export class PanelReads implements ModelQueries {
 
     appearance(viewId: string, ids: string[]): AppearanceData | undefined {
         const doc = this.scoped({ elements: ids, selectionViews: [viewId] }), view = doc.views[viewId];
-        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta) };
+        return view && { ...appearanceData(doc, this.meta, view, ids), hidden: hiddenRelations(this.graph, viewId, this.meta, iris => this.facts.instancesAmong(iris)) };
     }
 
     occurrence(ids: string[], view?: string): Occurrence | undefined {
@@ -150,7 +163,7 @@ export class PanelReads implements ModelQueries {
 
     links(ids: string[], view?: string): SelectionLinks {
         const idx = this.shapesIndex();
-        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view);
+        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view, iris => this.facts.instancesAmong(iris));
     }
 
     shapesText(): string {
@@ -159,7 +172,7 @@ export class PanelReads implements ModelQueries {
 
     async openTargets(id: string): Promise<OpenTarget[]> {
         if (!this.file) return [];
-        const files = filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id);
+        const files = this.facts.filesOf([id]).get(id) ?? [];
         const sources = await Promise.all(files.map(async (path): Promise<OpenTarget> => ({ presentation: 'Source', path, ...await positionIn(path, textTargets(this.shapesIndex(), id)) })));
         const models = files.filter(f => this.explorerPaths(id, f).length).map((path): OpenTarget => ({ presentation: 'Model', path }));
         const shown = this.showing(id);
@@ -173,14 +186,14 @@ export class PanelReads implements ModelQueries {
         if (!this.file) return { actions: [], items: [], cards: [] };
         const doc = this.scoped({ elements: target.ids, selectionViews: [target.view] });
         const elements = target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id));
-        // The files of all elements in two queries, not one scan of the statements for each element.
-        const files = filesOfElements(this.graph, () => this.shapesIndex(), this.settings, elements);
+        // The files and the placements of all elements from the request context: a bounded number of queries, kept on the data event.
+        const files = this.facts.filesOf(elements);
         const ctx: ActionContext = {
-            g: this.graph, shapes: this.shapesIndex().model,
-            placements: placements(this.graph, this.shapesIndex().byTerm, elements),
+            g: this.graph, shapes: this.shapesIndex().model, shaped: this.facts.shapedClasses(),
+            placements: this.facts.placementsOf(elements),
             doc,
             viewOf: v => doc.views[v],
-            filesOf: id => files.get(id) ?? filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id)
+            filesOf: id => files.get(id) ?? this.facts.filesOf([id]).get(id) ?? []
         };
         return selectionActions(ctx, target);
     }
