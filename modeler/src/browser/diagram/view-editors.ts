@@ -239,6 +239,8 @@ export class ViewEditors implements FrontendApplicationContribution {
         const w = await this.open(viewId, mode);
         // A view opened now has no model yet: the diagram ids (the placement of a card or an edge) and a CenterAction need it.
         await w.actionDispatcher.onceModelInitialized();
+        // A canvas that was hidden gets the changes of that time after it shows (law_hiddenCanvasRefreshesOnce): wait for the elements.
+        await this.whenPlaced(w, elements);
         const ids = elements.map(id => this.placementOf(w, id));
         this.selection.set({ view: viewId, ids });
         await w.actionDispatcher.dispatch(CenterAction.create(ids, { animate: true, retainZoom: true }));
@@ -339,7 +341,16 @@ export class ViewEditors implements FrontendApplicationContribution {
 
     /** Resolves when the diagram of a view editor has all `ids` (the update of an edit comes after its result), or after `timeout` ms. */
     whenShown(widget: GLSPDiagramWidget, ids: string[], timeout = 2000): Promise<void> {
-        const shown = () => { const index = widget.editorContext.modelRoot.index; return ids.every(id => index.getById(id)); };
+        return this.whenDiagram(widget, index => ids.every(id => index.getById(id)), timeout);
+    }
+
+    /** Resolves when the diagram of a view editor places all `elements` (a card or an edge of each), or after `timeout` ms. */
+    whenPlaced(widget: GLSPDiagramWidget, elements: string[], timeout = 2000): Promise<void> {
+        return this.whenDiagram(widget, index => elements.every(id => index.getById(this.placementOf(widget, id))), timeout);
+    }
+
+    protected whenDiagram(widget: GLSPDiagramWidget, test: (index: { getById(id: string): unknown }) => boolean, timeout: number): Promise<void> {
+        const shown = () => test(widget.editorContext.modelRoot.index);
         if (shown()) return Promise.resolve();
         return new Promise(resolve => {
             const done = () => { clearTimeout(timer); listener.dispose(); resolve(); };

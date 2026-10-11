@@ -64,7 +64,7 @@ export class ActionContribution implements CommandContribution, MenuContribution
             registry.registerCommand({ id: a.id, label: a.label, category: 'Model' }, {
                 execute: (arg?: unknown) => this.run(a.id, target(arg)),
                 isVisible: (arg?: unknown) => !!this.service.state(a.id, target(arg)),
-                isEnabled: (arg?: unknown) => !!this.service.state(a.id, target(arg))?.enabled
+                isEnabled: (arg?: unknown) => this.service.enabled(a.id, target(arg))
             });
         }
         this.registerDetails(registry);
@@ -107,7 +107,8 @@ export class ActionContribution implements CommandContribution, MenuContribution
     protected async run(id: string, t: ActionTarget): Promise<void> {
         const { actions: states, items } = await this.service.fetch(t);
         const state = states.find(s => s.id === id);
-        if (!state) return;
+        // A gesture can run before the answer arrives (ActionService.enabled): an action that does not apply says so, not nothing.
+        if (!state) return this.messages.info(`${ACTIONS.find(a => a.id === id)?.label ?? id} does not apply to the selection.`) as unknown as void;
         if (!state.enabled) return this.messages.info(state.reason ?? 'The action cannot run now.') as unknown as void;
         const one = items[0];
         const view = t.view;

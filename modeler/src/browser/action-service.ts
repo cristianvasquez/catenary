@@ -122,6 +122,16 @@ export class ActionService {
         return this.get(target).actions.find(a => a.id === id);
     }
 
+    /**
+     * A command can run: the answer says so, or no answer has arrived yet. A gesture (a double-click, Enter, F12) must not wait for the
+     * quiet time of the window selection: the run asks at once and reports the reason when the action does not apply (ui-manifest §4.2).
+     */
+    enabled(id: string, target: ActionTarget): boolean {
+        const answer = this.answers.get(targetKey(target));
+        if (!answer) { this.ask(target); return true; }
+        return !!answer.actions.find(a => a.id === id)?.enabled;
+    }
+
     items(target: ActionTarget): ItemFacts[] {
         return this.get(target).items;
     }

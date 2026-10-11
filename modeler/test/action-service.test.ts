@@ -85,3 +85,16 @@ it('an explicit target (a menu, a row) and fetch for a menu go at once', async (
     vi.advanceTimersByTime(SELECTION_QUIET_MS);
     expect(sent).toHaveLength(2);
 });
+
+it('enabled: a command of the window selection can run before its answer arrives; after it, the answer decides', async () => {
+    const { service, replies, select } = fixture();
+    select(['i1']);
+    const target = service.selectionTarget();
+    // law_gestureNoQuietWait (ui-manifest §4.2): a double-click or Enter within the quiet time runs the command; its run asks at once.
+    expect(service.enabled('catenary.openIn', target)).toBe(true);
+    vi.advanceTimersByTime(SELECTION_QUIET_MS);
+    replies.shift()!({ actions: [{ id: 'catenary.openIn', enabled: false, reason: 'no' }], items: [], cards: [] } as SelectionActions);
+    await settle();
+    expect(service.enabled('catenary.openIn', target)).toBe(false);
+    expect(service.enabled('catenary.rename', target)).toBe(false);
+});

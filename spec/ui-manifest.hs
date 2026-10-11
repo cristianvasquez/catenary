@@ -442,6 +442,11 @@ updatesAtShow :: Int -> Int                        -- changes while hidden -> up
 updatesAtShow changes = if changes > 0 then 1 else 0
 law_hiddenCanvasRefreshesOnce :: Int -> Bool
 law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
+-- | A reveal (Open in… Canvas, Go to) on a canvas that was hidden selects and centers the element after the update of the show.
+-- Reason: the center used the model of before the hide, and a card placed while hidden was not in it (view-editors.ts whenPlaced).
+revealWaitsFor :: Int -> Int                       -- changes while hidden -> updates that the reveal waits for
+law_revealAfterShowUpdate :: Int -> Bool
+law_revealAfterShowUpdate changes = revealWaitsFor changes == updatesAtShow changes
 
 -- 3.3 Selection and highlights ------------------------------------------------------
 
@@ -536,6 +541,13 @@ selectionQuietMs = 100
 selectionReads :: [[Element]] -> [[Element]]     -- the changes of the selection within one quiet time; the selections read
 law_selectionReadsLastOnly :: [[Element]] -> Bool
 law_selectionReadsLastOnly changes = null changes || selectionReads changes == [last changes]
+-- | A gesture (a double-click, Enter, F12) does not wait for the quiet time. Before the answer arrives, its command is enabled.
+-- The run then asks at once. When the action does not apply, the run shows the reason. Reason: a double-click in the quiet time
+-- found no answer, and the command did not run (action-service.ts ActionService.enabled).
+commandEnabled :: Maybe Bool -> Bool               -- the answer for the action (enabled or not), or no answer yet
+commandEnabled = fromMaybe True
+law_gestureNoQuietWait :: Bool
+law_gestureNoQuietWait = commandEnabled Nothing
 law_oneCommandPerAction :: Action -> [Element] -> Bool
 law_oneCommandPerAction a xs = applicable a xs ==> length (commandsOf a xs) <= 1
 
@@ -1801,6 +1813,7 @@ arity = manifestOnly
 appliesTo = manifestOnly
 commandsOf = manifestOnly
 selectionReads = manifestOnly
+revealWaitsFor = manifestOnly
 controlTarget = manifestOnly
 controlCommand = manifestOnly
 isTextKey = manifestOnly

@@ -14,8 +14,10 @@ export const SET_VISIBLE = 'catenarySetVisible';
 export class ViewDiagramWidget extends GLSPDiagramWidget {
     protected canvasObserver?: ResizeObserver;
 
+    /** The client learns the server actions when the diagram loads: a dispatch before the model is initialized has no handler. */
     protected sendVisible(visible: boolean): void {
-        this.actionDispatcher.dispatch({ kind: SET_VISIBLE, visible } as never).catch(() => { /* the session is closed */ });
+        const dispatcher = this.actionDispatcher;
+        dispatcher.onceModelInitialized().then(() => dispatcher.dispatch({ kind: SET_VISIBLE, visible } as never)).catch(() => { /* the session is closed */ });
     }
 
     protected override onAfterShow(msg: Message): void {
