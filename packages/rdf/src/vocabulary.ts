@@ -1,5 +1,7 @@
 // The Catenary vocabulary of the model graph: common predicates, the SKOS vocabulary, the RDFS rules, instances, labels and IRIs in
-// use. Functions of a ModelGraph. This module fills graphRules (graph.ts) with metamodelQuad: graph.ts does not import it.
+// use. Functions of a ModelGraph. This module fills graphRules (graph.ts) with metamodelQuad: graph.ts does not import it. It loads
+// views.ts, so that one import of either module fills all the rules (the two modules import each other; they use the imports in
+// functions only).
 
 import { NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
@@ -7,6 +9,7 @@ import { nameFromURI, nameToURI } from 'canonical-md';
 import { MODEL_GRAPH, ModelGraph, cmp, graphRules, sorted } from './graph';
 import { isSkolem } from './skolem';
 import { rdf } from './terms';
+import { isView } from './views';
 
 export const P = {
     type: rdf.namedNode(RDF_TYPE),
@@ -128,8 +131,7 @@ export class UsedIris {
         if (this.except?.termType === 'NamedNode' && this.except.value === iri) return false;
         if (iri === MODEL_GRAPH || iri === this.g.model.value) return true;
         const t = rdf.namedNode(iri);
-        // The GraphFacts method (views.ts isView): vocabulary.ts does not import views.ts, which imports it.
-        return this.g.isView(t) || this.g.store.match(t).some(q => this.g.isDataGraph(q.graph) || this.g.isShapesGraph(q.graph));
+        return isView(this.g, t) || this.g.store.match(t).some(q => this.g.isDataGraph(q.graph) || this.g.isShapesGraph(q.graph));
     }
 
     add(iri: string): void {
