@@ -1429,14 +1429,15 @@ editorFor f Nothing = AsText f
 -- | Model explorer (ADR 0006): the sections come from explorer plugins (@catenary/explorer). The core has no section rules.
 -- Reason: a new vocabulary (SKOS) adds a plugin, not a special case in the explorer.
 -- A plugin query runs only when a folder opens. A folder shows its child count and reads pages of 100. A last "Show more" row reads the next page.
--- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in scope is not shown.
--- Classes: each object of rdf:type in scope, nested by written rdfs:subClassOf, then its direct instances. No inference, no hidden types.
--- Shapes: each node shape (typed sh:NodeShape, or a subject of sh:property), then its property shapes in sh:order, then by name.
--- A property shape row needs the node shape and the property shape in scope. Their statements can be in different files.
--- Reason: a property shape that another file states is a reference in this file (the scope rule below).
--- Classes include the vocabulary of view files (view:Placement). A data file has none: only its own subjects are in scope.
+-- Sections: Classes (@catenary/rdfs), then Shapes (@catenary/shacl). A section with no rows in the file is not shown.
+-- Classes: each object of an rdf:type statement of the file, nested by the rdfs:subClassOf statements of the file, then its direct
+-- instances. No inference, no hidden types.
+-- Shapes: each node shape of the file (typed sh:NodeShape, or a subject of sh:property), then the property shapes that the file
+-- states, in sh:order, then by name. A property shape that another file states has no row.
+-- Classes include the vocabulary of view files (view:Placement) in the document of a view file.
 -- An IRI has a row in each section that has it (a node shape is also an instance of sh:NodeShape). Reason: the data shows as written.
--- A class row and a node shape row are also elements: their selection is the class or the shape.
+-- A node shape row is also an element. A class row is an element only when the file has a statement about the class.
+-- Else it is a folder label: the type statement is in the file, the class statements are not.
 -- Rows have no view state and no violation counts. Properties shows the violations of the selected element.
 -- Open in → Model reveals a chosen path. Ordinary selection opens no folder. A repeated ancestor key stops expansion.
 -- Delete Elements Not Placed in a View walks the elements of a folder at all depths. It tests own placements and confirms first.
@@ -1454,12 +1455,22 @@ notPlaced :: Element -> Bool                        -- Delete Elements Not Place
 notPlaced e = null (placements e)
 
 -- | Model opens a document tree for a file. Reopening that presentation focuses the same tree.
--- No global Model explorer appears in the default layout. Find Element (§8.6) remains workspace-wide.
+-- No workspace-wide Model document exists. Find Element (§8.6) remains workspace-wide.
 -- Open in… goes between the Model document, the Source and the Canvas of an element (§4.7).
--- Workspace metadata stays outside the model index. Its Model document uses the existing explorer query.
--- Reason: presentation navigation must not change storage or explorer contents in this phase.
--- The scope uses source statements, not namespaces or named graphs. Referenced-only resources do not belong to the scope.
--- The filter shows one flat list of the element rows in scope whose name matches, best first, at most one page.
+-- Workspace metadata stays outside the model index. The workspace file is not a model file: its Model document has no rows.
+-- | The file rule: a Model document reads the store graphs of its file only. A model file has a data graph and a shapes graph.
+-- A view file has its view graphs. Each plugin query runs over these graphs. There is no subject filter and no cross-file exception.
+-- Every element row is a subject with a statement in that file. A subject that the file only refers to has no row.
+-- Reason: the document exists to move statements between files and onto canvases, and only the statements of the file can move from it.
+-- The labels of the rows come from the label rule over all files. A label is not a statement of the file.
+-- A Model document needs a file. A request without a file, or for a file that is not a model or view file, has no rows.
+-- Find Element (§8.6) is the workspace-wide list.
+fileRows :: [(Iri, FilePath)] -> FilePath -> [Iri]   -- statements as (subject, file), the file of the document
+fileRows stmts f = nub [s | (s, g) <- stmts, g == f]
+law_fileRowsOwnSubjects :: [(Iri, FilePath)] -> FilePath -> [Iri] -> Bool   -- the element rows of the document
+law_fileRowsOwnSubjects stmts f rowsShown = all (`elem` fileRows stmts f) rowsShown
+
+-- The filter shows one flat list of the element rows of the file whose name matches, best first, at most one page.
 -- Each row says where it is (its classes, its node shape). Reason: a filtered tree must read every folder of the file.
 -- Fuzzy matching takes characters in order, ranks word starts and consecutive matches, and highlights matching characters.
 -- Clearing the filter restores the tree and its expansion state. The filter does not change drag membership.
@@ -1472,7 +1483,8 @@ explorerFilterText (FilterTyping text) = text
 law_typeToFilter :: String -> Bool
 law_typeToFilter text = explorerFilterText (RowTyping text) == explorerFilterText (FilterTyping text)
 
--- A folder drag carries all descendant elements, including hidden rows, with duplicates removed.
+-- A folder drag carries all descendant elements, including hidden rows, with duplicates removed. These are subjects of the file:
+-- the drag has no second file test.
 -- A canvas drop places existing elements in one undo step. A folder drag never creates an instance.
 -- A file-tree drop confirms the total count and destination, then moves source statements in one undo step (§2.4).
 -- A same-file drop does nothing. File transfers require a file-scoped source tree.

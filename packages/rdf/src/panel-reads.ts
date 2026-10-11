@@ -9,7 +9,7 @@ import {
 import { absolutePath, pathKey } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
 import { copyAsRdf, prepareRdfPaste } from './clipboard';
-import { ExplorerContext, ExplorerScope, elementsInFile, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
+import { ExplorerContext, ExplorerScope, explorerChildren, explorerElements, explorerPaths, explorerPort, explorerSearch, iriOf } from './explorer';
 import { enclosingWorkspace, positionIn } from './files';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
@@ -40,7 +40,8 @@ export interface ReadContext {
     shapesIndex(): ShapesIndex;
     scoped(scope: DocScope): Doc;
     viewDoc(view: string): Doc;
-    explorerScopes(): Map<string, ExplorerScope>;
+    /** Unused: the explorer keeps no cache across requests. Remove with the entry in model-store.ts. */
+    explorerScopes?(): Map<string, ExplorerScope>;
 }
 
 /**
@@ -70,8 +71,7 @@ export class PanelReads implements ModelQueries {
 
     private explorerContext(): ExplorerContext {
         const reads = this;
-        return { g: this.graph, get idx() { return reads.shapesIndex(); }, settings: this.settings, folder: this.folder,
-            get scopes() { return reads.ctx.explorerScopes(); } };
+        return { g: this.graph, get idx() { return reads.shapesIndex(); }, settings: this.settings, folder: this.folder };
     }
     knownClasses() { return readKnownClasses(this.graph, this.metamodel); }
     viewDescription(viewId: string) { return readViewDescription(this.graph, this.file, viewId); }
@@ -82,32 +82,28 @@ export class PanelReads implements ModelQueries {
         return t?.termType === 'NamedNode' ? formData(this.graph, t, this.metamodel) : '';
     }
 
+    /** A Model document is the document of a file (§8.5 law_fileRowsOwnSubjects). No file: no rows. */
     explorerChildren(key?: string, file?: string, offset?: number): ExplorerPage {
-        return this.file ? explorerChildren(explorerPort(this.explorerContext(), file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
+        return this.file && file ? explorerChildren(explorerPort(this.explorerContext(), file), key ?? undefined, offset ?? 0) : { rows: [], total: 0 };
     }
 
     explorerSearch(text: string, file?: string): ExplorerRow[] {
-        return this.file ? explorerSearch(explorerPort(this.explorerContext(), file), text) : [];
+        return this.file && file ? explorerSearch(explorerPort(this.explorerContext(), file), text) : [];
     }
 
     explorerPaths(id: string, file?: string): ExplorerPath[] {
         const iri = iriOf(this.shapesIndex(), id);
-        return this.file && iri ? explorerPaths(explorerPort(this.explorerContext(), file), iri) : [];
+        return this.file && file && iri ? explorerPaths(explorerPort(this.explorerContext(), file), iri) : [];
     }
 
+    /** The element ids under a folder at any depth. Every row is a subject of the file (§8.5 law_fileRowsOwnSubjects). */
     explorerElements(key: string, file?: string): string[] {
-        return this.file ? this.inFile(explorerElements(explorerPort(this.explorerContext(), file), key), file) : [];
+        return this.file && file ? explorerElements(explorerPort(this.explorerContext(), file), key) : [];
     }
 
+    /** law_folderDragAll: the selected rows and the rows under the folders, once each. */
     explorerDrag(selection: ExplorerDrag): string[] {
-        return this.inFile([...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])], selection.file);
-    }
-
-    /** The ids with statements in `file` (all of them without a file), in one read of the statements of all ids. */
-    private inFile(ids: string[], file?: string): string[] {
-        if (!file) return ids;
-        const found = elementsInFile(this.explorerContext(), ids, file);
-        return ids.filter(id => found.has(id));
+        return [...new Set([...selection.ids, ...selection.folders.flatMap(key => this.explorerElements(key, selection.file))])];
     }
 
     properties(id?: string): ElementProperties | undefined {

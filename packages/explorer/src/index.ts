@@ -1,5 +1,6 @@
 // The Model explorer plugin contract. A plugin gives its top sections and the children of its own keys. The host owns the store,
-// the graph identities, the label rule, the element ids and the file scope. The plugin owns its queries. All values are JSON.
+// the graph identities, the label rule and the element ids. The host chooses the graphs: a file document gives only the graphs of its
+// file (`graph`), so each row is a subject that the file describes. The plugin owns its queries. All values are JSON.
 // The query port comes from @catenary/query.
 
 import type { QueryPort, QueryTerm } from '@catenary/query';
@@ -27,15 +28,13 @@ export interface ExplorerPath { keys: string[]; name: string }
 
 export type ExplorerTerm = QueryTerm;
 
-/** What the host gives to a plugin for one request: the query port, and the ids and scope of the explorer. */
+/** What the host gives to a plugin for one request: the query port over the graphs of the file, and the ids of the explorer. */
 export interface ExplorerPort extends QueryPort {
     /** The short form of an IRI with the prefixes of the workspace (`dcat:dataset`). */
     compact(iri: string): string;
     /** The element id of an IRI. */
     id(iri: string): string;
-    /** True when the subject is in the scope of the request (the file of the Model document). */
-    inScope(iri: string): boolean;
-    /** Keeps a value for this scope until the dataset changes. */
+    /** Keeps a value for this request. */
     memo<T>(key: string, compute: () => T): T;
 }
 
@@ -43,11 +42,11 @@ export interface ExplorerPort extends QueryPort {
 export interface ExplorerPlugin {
     /** Prefix of the keys of the plugin. No '/'. */
     id: string;
-    /** The top rows. A section with no rows in scope gives no row. */
+    /** The top rows. A section with no rows gives no row. */
     sections(port: ExplorerPort): ExplorerRow[];
     /** The children of a key of this plugin, in display order. */
     children(port: ExplorerPort, key: string): ExplorerRow[];
-    /** All element rows of the plugin in scope, for the filter. `description`: where the row is. One row per element. */
+    /** All element rows of the plugin, for the filter. `description`: where the row is. One row per element. */
     items(port: ExplorerPort): ExplorerRow[];
     /** The paths to the rows of an IRI. */
     paths(port: ExplorerPort, iri: string): ExplorerPath[];

@@ -253,6 +253,11 @@ export class ModelGraph {
         return !!t && t.termType === 'NamedNode' && this.shapes.has(t);
     }
 
+    /** The registered data graph and shapes graph of a model file (its store path). A view file has its view graph instead. */
+    graphsOfFile(file: string): NamedNode[] {
+        return [rdf.namedNode(dataGraphIri(file)), rdf.namedNode(fileGraphIri(file))].filter(g => this.isDataGraph(g) || this.isShapesGraph(g));
+    }
+
     has(q: Quad): boolean {
         return q.graph.equals(this.model) && this.data ? this.match(q.subject, q.predicate, q.object, this.model).length > 0 : this.store.has(q);
     }

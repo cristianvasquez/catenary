@@ -153,7 +153,7 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
-| | `explorer.ts` | Model explorer host: plugins, query port, file scopes, keys, pages, search and paths |
+| | `explorer.ts` | Model explorer host: plugins, the query port over the graphs of one file, keys, pages, search and paths |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, form shapes, shapes index, shape proposal and the shared SHACL query adapter |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |

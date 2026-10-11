@@ -32,7 +32,7 @@ afterEach(async () => { await store.idle(); store.close(); rmSync(dir, { recursi
 const move = (elements = [a]) => store.execute({ kind: 'moveElementsToFile', source: file('a'), destination: file('b'), ids: elements });
 
 describe('file explorer', () => {
-    it('scopes by supplied subject statements, not external references; the filter searches the scope', () => {
+    it('law_fileRowsOwnSubjects: the rows of a file are the subjects of its statements, not referenced objects; the filter searches the file', () => {
         expect(ids('a')).toEqual([a, b]);
         expect(ids('b')).toEqual([]);
         expect(ids('c')).toEqual([a]);
@@ -41,7 +41,8 @@ describe('file explorer', () => {
     });
     it('law_folderDragAll: resolves all contents and deduplicates overlapping selections', () => {
         expect(store.reads.explorerDrag({ file: file('a'), ids: [a], folders: [type, type] }).sort()).toEqual([a, b].sort());
-        expect(store.reads.explorerDrag({ file: file('b'), ids: [a], folders: [type] })).toEqual([]);
+        // The folder of a class that file b does not write has no rows there.
+        expect(store.reads.explorerDrag({ file: file('b'), ids: [], folders: [type] })).toEqual([]);
     });
     it('law_fileTransferOrigins: moves source statements only, persists, and supports one-step undo and redo', async () => {
         const before = await statements('a'), other = await statements('c'), destination = await statements('b');

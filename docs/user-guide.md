@@ -82,7 +82,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
 - Use **Open as…** or **Open beside…** in a pane toolbar or context menu.
 - Every model RDF file offers Source and Model. A view also offers Canvas. The workspace file also offers Settings.
-- The workspace Model pane uses the current explorer query. Workspace metadata stays outside the model index.
+- A Model pane shows only the subjects that its file describes, so you can move each row to another file or place it on a canvas. A class that the file only uses as a type is a folder, not an element. The workspace file has no Model rows.
 - A Model pane has a section for each vocabulary: **Classes** (classes, subclasses and instances as written) and **Shapes** (node shapes and their property shapes). A folder shows 100 rows at a time: click **Show more** for the next rows.
 - Type in the filter to get one list of the matching elements of the file. Each row says where it is. Escape clears the filter.
 

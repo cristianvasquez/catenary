@@ -7,7 +7,7 @@ import { RDF, RDFS } from '@catenary/query';
 const PREFIXES = `PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}>`;
 
 interface Classes {
-    /** Class -> its instances in scope. */
+    /** Class -> its instances (the subjects of the rdf:type statements of the port graphs). */
     members: Map<string, string[]>;
     /** Instance -> its classes. */
     types: Map<string, string[]>;
@@ -15,8 +15,10 @@ interface Classes {
     subs: Map<string, string[]>;
     /** Class -> its shown superclasses. */
     supers: Map<string, string[]>;
-    /** The classes with an instance in scope and their superclasses. */
+    /** The classes with an instance and their superclasses. */
     shown: Set<string>;
+    /** The shown classes that are subjects of a statement of the port graphs: only these rows are elements. */
+    described: Set<string>;
     /** Shown classes without a shown superclass (and one class of each subclass cycle). */
     tops: string[];
     names: Map<string, string>;
@@ -32,7 +34,6 @@ function classes(port: ExplorerPort): Classes {
     return port.memo('rdfs', () => {
         const members = new Map<string, string[]>(), types = new Map<string, string[]>();
         for (const r of port.select(`${PREFIXES} SELECT DISTINCT ?s ?c WHERE { ${port.graph('?s rdf:type ?c')} FILTER (isIRI(?s) && isIRI(?c)) }`)) {
-            if (!port.inScope(r.s.value)) continue;
             add(members, r.c.value, r.s.value);
             add(types, r.s.value, r.c.value);
         }
@@ -59,14 +60,20 @@ function classes(port: ExplorerPort): Classes {
             tops.push(c);
             reach(c);
         }
+        const described = new Set<string>();
+        if (shown.size) for (const r of port.select(`SELECT DISTINCT ?c WHERE { VALUES ?c { ${[...shown].map(c => `<${c}>`).join(' ')} } ${port.graph('?c ?p ?o')} }`)) {
+            described.add(r.c.value);
+        }
         const names = port.labels([...shown, ...types.keys()]);
-        return { members, types, subs, supers, shown, tops, names };
+        return { members, types, subs, supers, shown, described, tops, names };
     });
 }
 
 function classRow(port: ExplorerPort, data: Classes, c: string): ExplorerRow {
     const count = (data.subs.get(c)?.length ?? 0) + (data.members.get(c)?.length ?? 0);
-    return { key: 'class:' + c, name: data.names.get(c)!, folder: count > 0, element: port.id(c), count, icon: 'symbol-class', tooltip: c };
+    // A class that the file only names (the object of its rdf:type) is a folder label, not an element: its statements are elsewhere.
+    const element = data.described.has(c) ? port.id(c) : undefined;
+    return { key: 'class:' + c, name: data.names.get(c)!, folder: count > 0, ...(element ? { element } : {}), count, icon: 'symbol-class', tooltip: c };
 }
 
 function instanceRow(port: ExplorerPort, data: Classes, s: string): ExplorerRow {
@@ -116,7 +123,7 @@ export const rdfsExplorer: ExplorerPlugin = {
     items(port) {
         const data = classes(port);
         return [
-            ...[...data.shown].map(c => ({ ...classRow(port, data, c), folder: false, description: 'Class' })),
+            ...[...data.described].map(c => ({ ...classRow(port, data, c), folder: false, description: 'Class' })),
             ...[...data.types].filter(([s]) => !data.shown.has(s))
                 .map(([s, cs]) => ({ ...instanceRow(port, data, s), description: cs.map(c => data.names.get(c)).join(', ') }))
         ];

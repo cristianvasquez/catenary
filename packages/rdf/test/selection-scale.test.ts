@@ -162,11 +162,12 @@ describe('selection reads of a few hundred placements (§11.3 law readBudgetMs)'
         expect(plan.answer.lines.length).toBeGreaterThan(0);
     });
 
-    it('explorerDrag of a file: the file test of each element with a bounded number of store reads, not one per element', () => {
-        const { answer, sparql, reads } = measure('explorerDrag', () => store.reads.explorerDrag({ ids: elements, folders: [], file: 'data.ttl' }));
-        expect(sparql).toBeLessThanOrEqual(6);
+    it('explorerDrag of a class folder of a file: the rows of the file with a bounded number of store reads, not one per element', () => {
+        const folders = ['rdfs/classes'];
+        const { answer, sparql, reads } = measure('explorerDrag', () => store.reads.explorerDrag({ ids: [], folders, file: 'data.ttl' }));
+        expect(sparql).toBeLessThanOrEqual(8);
         expect(reads).toBeLessThanOrEqual(20);
-        expect(answer).toEqual(elements);
-        expect(store.reads.explorerDrag({ ids: elements, folders: [], file: 'shapes.ttl' })).toEqual([]);
+        expect(answer.sort()).toEqual([...elements].sort());
+        expect(store.reads.explorerDrag({ ids: [], folders, file: 'shapes.ttl' })).toEqual([iriId('urn:x:ThingShape')]);
     });
 });

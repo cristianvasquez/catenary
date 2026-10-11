@@ -5,19 +5,21 @@ import type { ExplorerPlugin, ExplorerPort } from '@catenary/explorer';
 import { EXPLORER_PAGE, ExplorerPage, ExplorerPath, ExplorerRow, fuzzyMatch, iriId, shortIri } from '@catenary/model';
 import { rdfsExplorer } from '@catenary/rdfs';
 import { shaclExplorer } from '@catenary/shacl/backend';
-import type { Quad, Term } from '@rdfjs/types';
+import type { Term } from '@rdfjs/types';
 import * as path from 'path';
-import { ModelGraph, VALIDATION_GRAPH } from './graph';
-import { elementTerm, relationTriple } from './ids';
+import { ModelGraph } from './graph';
+import { elementTerm } from './ids';
 import type { Settings } from './settings';
 import type { ShapesIndex } from './shapes-read';
-import { statementsOfAll } from './selection';
-import { labels, statementsByTerm } from './sparql';
+import { labels } from './sparql';
 import { rdf, termKey } from './terms';
 
-/** One file scope, kept until the dataset changes. */
-export interface ExplorerScope { subjects?: Set<string>; memo: Map<string, unknown> }
-export interface ExplorerContext { g: ModelGraph; idx: ShapesIndex; settings?: Settings; folder: string; scopes: Map<string, ExplorerScope> }
+/**
+ * The explorer reads the graphs of one file. `ExplorerScope` is kept only for the unused cache entry of model-store.ts
+ * (`explorerScopes`): remove both together.
+ */
+export type ExplorerScope = unknown;
+export interface ExplorerContext { g: ModelGraph; idx: ShapesIndex; settings?: Settings; folder: string }
 
 /** The sections of the Model explorer, in display order. */
 export const EXPLORER_PLUGINS: readonly ExplorerPlugin[] = [rdfsExplorer, shaclExplorer];
@@ -66,61 +68,33 @@ export function explorerElements(port: ExplorerPort, key: string): string[] {
     return [...ids];
 }
 
-/** Plugin port with file subjects and memo values kept by the coordinator's event cache. */
-export function explorerPort(ctx: ExplorerContext, file?: string): ExplorerPort {
-    const scopes = ctx.scopes;
-    let scope = scopes.get(file ?? '');
-    if (!scope) scopes.set(file ?? '', scope = { subjects: file ? subjectsOfFile(ctx, file) : undefined, memo: new Map() });
-    const { subjects, memo } = scope;
-    const byTerm = ctx.idx.byTerm;
+/**
+ * The store graphs of a file (ui-manifest §8.5 law_fileRowsOwnSubjects): the data graph and the shapes graph of a model file, the view
+ * graphs of a view file. An unknown file has none.
+ */
+export function graphsOfFile(ctx: ExplorerContext, file: string): string[] {
+    const ws = ctx.settings, known = ws?.knownFile(path.resolve(ctx.folder, file));
+    if (!ws || !known) return [];
+    const views = [...ws.viewFiles].filter(([, f]) => f.path === known).map(([g]) => g);
+    return [...ctx.g.graphsOfFile(known).map(g => g.value), ...views];
+}
+
+/** The plugin port of one request: the plugin queries read the graphs of the file only. The memo lives for the request. */
+export function explorerPort(ctx: ExplorerContext, file: string): ExplorerPort {
+    const memo = new Map<string, unknown>(), byTerm = ctx.idx.byTerm;
+    const graphs = graphsOfFile(ctx, file).map(g => `<${g}>`).join(' ');
     return {
         select: query => ctx.g.select(query) as unknown as Record<string, Term>[],
-        graph: (pattern, v = '?g') => `GRAPH ${v} { ${pattern} } FILTER (${v} != <${VALIDATION_GRAPH}>)`,
+        graph: (pattern, v = '?g') => `VALUES ${v} { ${graphs} } GRAPH ${v} { ${pattern} }`,
         labels: iris => labels(ctx.g, [...iris]),
         compact: shortIri,
         id: iri => byTerm.get(termKey(rdf.namedNode(iri))) ?? iriId(iri),
-        inScope: iri => !subjects || subjects.has(iri),
         memo: <T>(key: string, compute: () => T) => (memo.has(key) ? memo.get(key) : memo.set(key, compute()).get(key)) as T
     };
-}
-
-/** IRI subjects of the statements of one file. */
-export function subjectsOfFile(ctx: ExplorerContext, file: string): Set<string> {
-    const ws = ctx.settings, subjects = new Set<string>();
-    const known = ws?.knownFile(path.resolve(ctx.folder, file));
-    if (!ws || !known) return subjects;
-    for (const q of ctx.g.quads()) if (q.subject.termType === 'NamedNode' && !subjects.has(q.subject.value) && ws.filesOfQuad(q).includes(known)) subjects.add(q.subject.value);
-    return subjects;
 }
 
 /** A property shape uses its indexed term. Other elements use the IRI of the id. */
 export function iriOf(idx: ShapesIndex, id: string): string | undefined {
     const t = idx.property.get(id)?.term ?? elementTerm(id);
     return t?.termType === 'NamedNode' ? t.value : undefined;
-}
-
-/** Whether a file holds statements of the element or the triple of a relation. One element of `elementsInFile`. */
-export function elementInFile(ctx: ExplorerContext, id: string, file: string): boolean {
-    return elementsInFile(ctx, [id], file).has(id);
-}
-
-/**
- * The ids among `ids` with a statement (a relation: its triple) in `file`. The statements of all ids come in a bounded number of
- * queries (selection.ts statementsOfAll), not one store read per id (§11.3 readBudgetMs).
- */
-export function elementsInFile(ctx: ExplorerContext, ids: string[], file: string): Set<string> {
-    const ws = ctx.settings, out = new Set<string>();
-    const known = ws?.knownFile(path.resolve(ctx.folder, file));
-    if (!ws || !known || !ids.length) return out;
-    const inFile = (quads: Quad[] | undefined) => !!quads?.some(q => ws.filesOfQuad(q).includes(known));
-    const relations: string[] = [], byTerm = new Map<string, string[]>();
-    for (const id of new Set(ids)) {
-        if (relationTriple(id)) { relations.push(id); continue; }
-        const term = (ctx.idx.property.get(id)?.term ?? elementTerm(id))?.value;
-        if (term !== undefined) byTerm.set(term, [...byTerm.get(term) ?? [], id]);
-    }
-    for (const [id, quads] of statementsOfAll(ctx.g, () => ctx.idx, relations)) if (inFile(quads)) out.add(id);
-    const subjects = statementsByTerm(ctx.g, byTerm.keys(), false);
-    for (const [term, list] of byTerm) if (inFile(subjects.get(term))) for (const id of list) out.add(id);
-    return out;
 }
