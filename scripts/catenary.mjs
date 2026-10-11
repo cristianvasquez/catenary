@@ -36,6 +36,8 @@ function fail(message, code = 2) {
 /** Write to stdout, then exit. A pipe takes a large write in several steps: process.exit right after the write cuts the output at 64 KiB. */
 function finish(text, code) {
     process.exitCode = code;
+    // A reader that closes the pipe early (| head) gives EPIPE: not an error of the command.
+    process.stdout.on('error', e => process.exit(e.code === 'EPIPE' ? code : 1));
     process.stdout.write(text, () => process.exit(code));
 }
 
