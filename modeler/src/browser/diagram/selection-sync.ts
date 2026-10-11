@@ -8,7 +8,7 @@ import { SelectAction } from '@eclipse-glsp/client';
 import { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { ApplicationShell, FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { ownerOfLabel, panelsUnchanged } from '@catenary/model';
+import { LABEL_SUFFIX, ownerOfLabel, panelsUnchanged } from '@catenary/model';
 import { VIEW_SCHEME } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel, sameIds } from '../selection-model';
@@ -105,7 +105,8 @@ export class DiagramSelectionSync implements FrontendApplicationContribution {
         const root = w.editorContext.modelRoot.id;
         for (let el = target; el && el !== w.node; el = el.parentElement) {
             if (!el.id?.startsWith(prefix)) continue;
-            const raw = el.id.slice(prefix.length), id = ids.has(raw) ? raw : ownerOfLabel(raw);
+            // A label (a group title, a card name) selects its owner, also when the index holds the label itself. A leaf keeps its id.
+            const raw = el.id.slice(prefix.length), id = raw.endsWith(LABEL_SUFFIX) ? raw.slice(0, -LABEL_SUFFIX.length) : raw;
             if (id !== root && ids.has(id)) return id;
         }
         return undefined;

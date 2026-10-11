@@ -195,6 +195,18 @@ describe('selection sync (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow)',
         expect([...A.highlight.ids]).toEqual(['pb']);
     });
 
+    it('law_oneSelectionPerWindow: a Ctrl press on the title of a group adds the group, also when the index holds the label', async () => {
+        const { selection, sync, A, B } = setup();
+        A.async = B.async = true;
+        B.ids = diagramIds([{ id: 'qa', element: 'a' }, { id: 'qb', element: 'b' }, { id: 'qg' }, { id: 'qg_label' }]);
+        A.click(selection, 'pa');
+        await settle();
+        A.node.contains = () => false;
+        ctrlPress(sync, B, 'qg_label');
+        await settle();
+        expect(selection.selection).toEqual({ view: 'B', ids: ['qa', 'qg'] });
+    });
+
     it('law_oneSelectionPerWindow: a Ctrl click on another element of the highlighting canvas adds it; that canvas becomes the origin', async () => {
         const { selection, sync, A, B } = setup();
         A.async = B.async = true;
