@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Doc, copyFromView, viewReferencesTo, boxes, cardOf, placementOfId } from '@catenary/model';
-import { V, placementIri } from '../src/graph';
+
 import { elementId } from '../src/ids';
 import type { Term } from '@rdfjs/types';
 import { executeCommand } from '../src/commands';
@@ -8,6 +8,7 @@ import { canonical, writeTrig } from '../src/trig';
 import { project } from './project-full';
 import { rdf } from '../src/terms';
 import { doc, emptyGraph, load, run } from './helpers';
+import { views, arrows, connectorOf, V, placementIri } from '../src/views';
 
 const meta = { classes: [] };
 const elementIdOf = (t: Term) => elementId(t as Parameters<typeof elementId>[0]);
@@ -209,12 +210,12 @@ describe('arrows', () => {
     it('stores an arrow as a statement between the note mark and the instance, shown by a placement; both go with the last placement', () => {
         const { g, view, note, card } = setup();
         const arrow = run(g, meta, { kind: 'createArrow', view, from: note, to: card }) as string;
-        const v = g.views()[0];
+        const v = views(g)[0];
         const mark = g.object(g.match(null, V.element).find(q => elementIdOf(q.subject) === note)!.subject, V.element, v)!;
         const instance = g.match(null, null, null, g.model).find(q => elementIdOf(q.subject) === card)!.subject;
         expect(g.match(mark, V.arrow, instance, v)).toHaveLength(1);
-        expect(elementIdOf(g.arrows(v)[0])).toBe(arrow);
-        const t = g.connectorOf(g.arrows(v)[0], v)!;
+        expect(elementIdOf(arrows(g, v)[0])).toBe(arrow);
+        const t = connectorOf(g, arrows(g, v)[0], v)!;
         expect([t.subject, t.predicate, t.object].map(x => x.value)).toEqual([mark.value, V.arrow.value, instance.value]);
         run(g, meta, { kind: 'removeFromView', view, ids: [arrow] });
         expect(g.match(null, V.arrow)).toEqual([]);
@@ -362,13 +363,13 @@ describe('IRIs of view elements (ADR 0011)', () => {
         const note = run(g, meta, { kind: 'createNote', view, text: 'hello', at: { x: 0, y: 0 } }) as string;
         const card = run(g, meta, { kind: 'createInstance', classIri: 'urn:C', label: 'A', view, at: { x: 600, y: 0 } }) as string;
         run(g, meta, { kind: 'createArrow', view, from: note, to: card });
-        const v = g.views()[0];
+        const v = views(g)[0];
         const check = (graph: typeof v) => {
             const placements = g.subjects(rdf.namedNode(P_TYPE), V.Placement, graph);
             expect(placements.length).toBe(3);
             for (const p of placements) {
                 expect(g.objects(p, V.view, graph).map(t => t.value)).toEqual([graph.value]);
-                const placed = g.object(p, V.element, graph) ?? g.connectorOf(p, graph)!;
+                const placed = g.object(p, V.element, graph) ?? connectorOf(g, p, graph)!;
                 expect(p.value).toBe(placementIri(graph.value, placed).value);
             }
             const mark = g.subjects(rdf.namedNode(P_TYPE), V.Note, graph)[0];
@@ -378,7 +379,7 @@ describe('IRIs of view elements (ADR 0011)', () => {
         expect(iriOf(note)).toMatch(/\/p\/[0-9a-f]{12}$/);
 
         run(g, meta, { kind: 'duplicateView', id: view });
-        const copy = g.views().find(x => !x.equals(v))!;
+        const copy = views(g).find(x => !x.equals(v))!;
         check(copy);
         expect(g.match(null, null, null, copy).filter(q => !q.subject.equals(copy)).every(q => q.subject.value.startsWith(copy.value + '/'))).toBe(true);
 

@@ -2,7 +2,7 @@
 import { Classes, NS, PasteBox, Point, RdfCopy, RdfPaste, TYPES, iriId, layoutPastedBoxes, nkey, selection, termToJSON, toSchema } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { canonical, parseRdfSync } from 'rdf-files';
-import { ModelGraph, P, V } from './graph';
+import { ModelGraph } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { serializeRdf } from './files';
 import { figureTermOf, listTermOf } from './figure-edits';
@@ -12,6 +12,9 @@ import { skolemize } from './skolem';
 import { rdf, termKey, tripleKey } from './terms';
 import { readView } from './view-read';
 import { shapePart } from './loader';
+import { shapesTarget } from './shapes';
+import { homeOf, ownedBy, P } from './vocabulary';
+import { nodeOf, V } from './views';
 
 const formats = ['application/trig', 'application/n-quads', 'application/ld+json', 'application/rdf+xml', 'text/n3'];
 const accepted = new Set(['text/turtle', 'application/n-triples', ...formats]);
@@ -45,7 +48,7 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
     for (const q of quads) {
         if (g.match(q.subject, q.predicate, q.object).some(existing => g.isDataGraph(existing.graph) || g.isShapesGraph(existing.graph))) continue;
         const existing = g.match(q.subject).find(existing => g.isShapesGraph(existing.graph));
-        const graph = existing?.graph ?? (shapeSubjects.has(termKey(q.subject)) ? g.shapesTarget() : g.homeOf(q.subject));
+        const graph = existing?.graph ?? (shapeSubjects.has(termKey(q.subject)) ? shapesTarget(g) : homeOf(g, q.subject));
         if (!graph) return ops.fail('No file is configured for new shapes.');
         g.add(q.subject, q.predicate, q.object, graph);
     }
@@ -73,7 +76,7 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
         for (const end of [link.start, link.end]) {
             if (!end || end.fs.kind !== 'Box' || end.placedAs.termType !== 'NamedNode') continue;
             const element = rdf.namedNode(end.placedAs.value), view = ops.viewTerm(g, viewId)!;
-            if (g.nodeOf(view, element)) continue;
+            if (nodeOf(g, view, element)) continue;
             const p = ops.addPlacement(g, view, element);
             ops.writeBox(g, view, p, { ...at, ...ops.cardSize(g, elementId(element)) });
             placed.push(elementId(p));
@@ -87,7 +90,7 @@ export function pasteRdf(g: ModelGraph, viewId: string, text: string, flatten: b
             const figure = vf.derivation.figures.find(f => f.fs.kind === 'Box' && f.focus.value === end.value);
             if (!figure || figure.placedAs.termType !== 'NamedNode') continue;
             const term = rdf.namedNode(figure.placedAs.value), view = ops.viewTerm(g, viewId)!;
-            if (g.nodeOf(view, term)) continue;
+            if (nodeOf(g, view, term)) continue;
             const p = ops.addPlacement(g, view, term);
             ops.writeBox(g, view, p, { ...at, ...ops.cardSize(g, elementId(term)) });
             placed.push(elementId(p));
@@ -109,7 +112,7 @@ export function layoutNewPlacements(g: ModelGraph, meta: Classes, viewId: string
         if (!child.type.startsWith('node:') || child.private || child.type === TYPES.LOGIC) continue;
         const direct = elementTerm(child.id);
         const term = figureTermOf(g, child.id);
-        const placement = direct && g.has(rdf.quad(direct, V.view, view, view)) ? direct : term && g.nodeOf(view, term);
+        const placement = direct && g.has(rdf.quad(direct, V.view, view, view)) ? direct : term && nodeOf(g, view, term);
         if (!placement) continue;
         const id = elementId(placement as NamedNode), position = child.position as Point, size = child.size as { width: number; height: number };
         if (!position || !size) continue;
@@ -160,7 +163,7 @@ export async function copyAsRdf(g: ModelGraph, viewId: string, ids: string[]): P
                 && (['property', 'and', 'or', 'xone', 'not', 'in', 'languageIn', 'ignoredProperties', 'alternativePath'].some(p => q.predicate.value === NS.sh + p)
                     || ['first', 'rest'].some(p => q.predicate.value === NS.rdf + p))
                 && g.match(q.object, null, null, q.graph).length && g.match(null, null, q.object).filter(domain).every(r => r.subject.equals(s));
-            if (g.ownedBy(q.object, s, q.graph) || shapePart) describe(q.object);
+            if (ownedBy(g, q.object, s, q.graph) || shapePart) describe(q.object);
         }
     };
     const stored = readView(g, viewId).views[viewId];

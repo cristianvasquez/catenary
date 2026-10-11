@@ -16,10 +16,12 @@ import {
 } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
-import { GraphChange, ModelGraph, cmp, fileOfGraph, labelFromIri } from './graph';
+import { GraphChange, ModelGraph, cmp, fileOfGraph } from './graph';
 import { constraintId, elementId, propertyShapeId } from './ids';
 import { isSkolem } from './skolem';
 import { rdf, termKey } from './terms';
+import { shapesAndVocabulary } from './shapes';
+import { labelFromIri } from './vocabulary';
 
 const SH = NS.sh;
 const n = (iri: string) => rdf.namedNode(iri);
@@ -68,7 +70,7 @@ const indexes = new WeakMap<ModelGraph, { event: GraphChange; index: ShapesIndex
 export function shapesIndexOf(g: ModelGraph): ShapesIndex {
     const cached = indexes.get(g);
     if (cached?.event === g.keys.shapes) return cached.index;
-    const index = readShapes(g.shapesAndVocabulary());
+    const index = readShapes(shapesAndVocabulary(g));
     indexes.set(g, { event: g.keys.shapes, index });
     return index;
 }

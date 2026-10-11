@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { NS, iriId } from '@catenary/model';
 import { executeCommand } from '../src/commands';
-import { P } from '../src/graph';
+
 import { relationId } from '../src/ids';
 import { rdf } from '../src/terms';
 import { canonical } from '../src/trig';
 import { doc, load } from './helpers';
+import { P } from '../src/vocabulary';
 
 const EX = 'http://example.org/';
 const TEXT = `

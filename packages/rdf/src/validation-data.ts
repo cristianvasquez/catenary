@@ -4,13 +4,15 @@
 
 import { NS, Violation } from '@catenary/model';
 import type { Quad, Term } from '@rdfjs/types';
-import { ModelGraph, P, V, dataGraphIri, isVocabularyQuad } from './graph';
+import { ModelGraph, dataGraphIri } from './graph';
 import { elementId, elementTerm } from './ids';
-import { Metamodel } from './shapes';
+import { Metamodel, shapesTriples } from './shapes';
 import { ShapesIndex } from './shapes-read';
 import { ShaclResult, violationsOf } from './validate';
 import { Settings } from './settings';
 import { rdf, termKey, tripleKey } from './terms';
+import { modelTriples, isInstance, P, isVocabularyQuad } from './vocabulary';
+import { V } from './views';
 
 const toTriple = (q: Quad) => rdf.quad(q.subject, q.predicate, q.object);
 const skos = (local: string) => rdf.namedNode(NS.skos + local);
@@ -138,16 +140,16 @@ export class ValidationData {
     validationInput(): { data: Quad[]; shapes: Quad[] } | undefined {
         const mode = this.settings?.validation;
         if (mode === 'off') return undefined;
-        const shapes = this.graph.shapesTriples();
+        const shapes = shapesTriples(this.graph);
         if (mode !== 'views') {
             this.validated = undefined;
-            return { data: validationInput((this.settings && validationTriples(this.graph, this.settings)) ?? this.graph.modelTriples(), shapes), shapes };
+            return { data: validationInput((this.settings && validationTriples(this.graph, this.settings)) ?? modelTriples(this.graph), shapes), shapes };
         }
         const focus = this.validationFocus(), keys = new Set(focus.keys());
         const data = validationTriples(this.graph, this.settings!, keys) ?? [];
         // Checked: an instance on an open view with statements in the data (not one that only imported files describe).
         const subjects = new Set(data.map(q => termKey(q.subject)));
-        this.validated = [...focus].filter(([k, t]) => subjects.has(k) && this.graph.isInstance(t)).length;
+        this.validated = [...focus].filter(([k, t]) => subjects.has(k) && isInstance(this.graph, t)).length;
         return { data: validationInput(data, shapes, keys), shapes };
     }
 
@@ -156,7 +158,7 @@ export class ValidationData {
         const idx = this.ctx.shapesIndex();
         return violationsOf(results, this.ctx.metamodel, iri => {
             const t = rdf.namedNode(iri);
-            return this.graph.isInstance(t) ? elementId(t) : undefined;
+            return isInstance(this.graph, t) ? elementId(t) : undefined;
         }, t => idx.byTerm.get(termKey(t)));
     }
 

@@ -9,10 +9,12 @@ import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { absolutePath, isInside, knownPath, pathKey, portableRelative } from 'rdf-files';
 import { Manifest, NEAR, Placement, VIEW_EXT, defaultPlacement, defaultViewsFolder, globRegExp, manifestQuads, serializeRdf, writeProblem } from './files';
-import { Change, ModelGraph, P, SKOS_TYPES, V, cmp, dataGraphIri, fileGraphIri, fileOfGraph, mint } from './graph';
+import { Change, ModelGraph, cmp, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
 import { elementTerm } from './ids';
 import { rdf, termKey, tripleKey } from './terms';
 import { canonical, writeTrig } from './trig';
+import { views, V } from './views';
+import { label, P, SKOS_TYPES, mint } from './vocabulary';
 
 export const PLACE_KINDS = ['shapes', 'concepts', 'instances'] as const;
 
@@ -209,7 +211,7 @@ export class Settings {
     assignViewFiles(): void {
         const folder = this.newViewFolder ?? defaultViewsFolder(this.workspace.path);
         const taken = new Set([...this.viewFiles.values()].map(f => f.path));
-        for (const v of this.graph.views()) {
+        for (const v of views(this.graph)) {
             if (this.viewFiles.has(v.value)) continue;
             if (this.newViewFile && !taken.has(this.newViewFile)) {
                 taken.add(this.newViewFile);
@@ -217,7 +219,7 @@ export class Settings {
                 this.newViewFile = undefined;
                 continue;
             }
-            const base = this.graph.label(v, v).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'view';
+            const base = label(this.graph, v, v).replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'view';
             let file = path.join(folder, `${base}${VIEW_EXT}`);
             for (let i = 2; taken.has(file) || existsSync(file); i++) file = path.join(folder, `${base}-${i}${VIEW_EXT}`);
             taken.add(file);

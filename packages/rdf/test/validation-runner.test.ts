@@ -10,6 +10,7 @@ import { rdf } from '../src/terms';
 import { DPROD, emptyGraph, load, meta } from './helpers';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modelTriples, isInstance } from '../src/vocabulary';
 
 /** The compiled worker (pnpm check builds packages/rdf/lib): the bundled backend runs the same code next to its bundle. */
 const WORKER = join(process.cwd(), 'packages', 'rdf', 'lib', 'validation-worker.js');
@@ -35,8 +36,8 @@ const stub = (graph: ModelGraph = emptyGraph()): ValidationSource => ({
 });
 /** A coordinator like the store's, the mode All: the data of `g`, the shapes of `metamodel` (the fixture keeps them apart). */
 const sourceOf = (g: ModelGraph, metamodel: Metamodel): ValidationSource => ({
-    graph: g, input: () => ({ data: validationInput(g.modelTriples(), metamodel.dataset), shapes: [...metamodel.dataset] }),
-    violations: rs => validation.violationsOf(rs, metamodel, iri => g.isInstance(rdf.namedNode(iri)) ? elementId(rdf.namedNode(iri)) : undefined)
+    graph: g, input: () => ({ data: validationInput(modelTriples(g), metamodel.dataset), shapes: [...metamodel.dataset] }),
+    violations: rs => validation.violationsOf(rs, metamodel, iri => isInstance(g, rdf.namedNode(iri)) ? elementId(rdf.namedNode(iri)) : undefined)
 });
 
 describe('ValidationRunner', () => {

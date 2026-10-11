@@ -6,9 +6,11 @@ import {
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import type { TermMap } from 'rdf-ext';
-import { MODEL_GRAPH, ModelGraph, P, V, cmp, sorted } from '../src/graph';
+import { MODEL_GRAPH, ModelGraph, cmp, sorted } from '../src/graph';
 import { elementId, relationId } from '../src/ids';
 import { rdf } from '../src/terms';
+import { label as labelOf, P } from '../src/vocabulary';
+import { isView, viewSubject, groups as groupsOf, connectorOf, V } from '../src/views';
 
 
 /** Order of quads (subject, predicate, object) by IRI. */
@@ -24,7 +26,7 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
     const relations: Quad[] = [];
     for (const [s, id] of instanceIds) {
         const inst: Instance = {
-            id, label: g.label(s), uri: s.value,
+            id, label: labelOf(g, s), uri: s.value,
             types: sorted(rdf.termSet(g.objects(s, P.type))).map(t => t.value),
             fields: {}
         };
@@ -60,7 +62,7 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
 
     for (const graph of graphs(g)) {
         if (graph.equals(g.model)) continue;
-        if (!g.isView(graph)) {
+        if (!isView(g, graph)) {
             warnings.push(`graph ${graph.value} has no view:View, kept in the file, not shown`);
             continue;
         }
@@ -73,7 +75,7 @@ export function projectReference(g: ModelGraph): { doc: Doc; warnings: string[] 
 function projectView(
     g: ModelGraph, graph: NamedNode, instanceIds: TermMap<NamedNode, string>, relationIds: TermMap<Quad, string>, warnings: string[]
 ): View {
-    const label = g.label(g.viewSubject(graph)!, graph);
+    const label = labelOf(g, viewSubject(g, graph)!, graph);
     const view: View = { id: elementId(graph), label, uri: graph.value, boxes: [], edges: [], arrows: [] };
     const obj = (s: Term, p: Term) => g.object(s, p, graph);
     const str = (s: Term, p: Term) => obj(s, p)?.value;
@@ -82,13 +84,13 @@ function projectView(
 
     // A frame is a mark: its label is on the mark, its box and color on the placement.
     const mark = (s: Term) => obj(s, V.element);
-    const groups = g.groups(graph).map(s => ({ s, label: g.match(mark(s) as NamedNode, P.label)[0]?.object.value ?? '', ...box(s, GROUP_SIZE), color: str(s, V.color) }));
+    const groups = groupsOf(g, graph).map(s => ({ s, label: g.match(mark(s) as NamedNode, P.label)[0]?.object.value ?? '', ...box(s, GROUP_SIZE), color: str(s, V.color) }));
     groups.sort((a, b) => a.y - b.y || a.x - b.x || cmp(a.label, b.label) || cmp(a.s.value, b.s.value));
     const groupBoxes = groups.map(({ s, color, label, ...rest }): ViewGroup => ({ kind: 'group', id: elementId(s as NamedNode), ...rest, ...(color ? { color } : {}), label }));
 
     const nodes = rdf.termMap<NamedNode, ViewCard>();
-    const ofRelation = (s: Term) => !obj(s, V.element) && !!g.connectorOf(s, graph);
-    const isMarkOrView = (s: Term) => { const e = mark(s); return !!e && (g.isView(e) || [V.Frame, V.Note, V.FileRef, V.EntityGroup].some(t => g.match(e as NamedNode, P.type, t).length > 0)); };
+    const ofRelation = (s: Term) => !obj(s, V.element) && !!connectorOf(g, s, graph);
+    const isMarkOrView = (s: Term) => { const e = mark(s); return !!e && (isView(g, e) || [V.Frame, V.Note, V.FileRef, V.EntityGroup].some(t => g.match(e as NamedNode, P.type, t).length > 0)); };
     for (const s of g.subjects(P.type, V.Placement, graph).filter(s => !ofRelation(s) && !isMarkOrView(s))) {
         const target = obj(s, V.element);
         const instance = target && instanceIds.get(target);
@@ -102,7 +104,7 @@ function projectView(
     const edges: { triple: Quad; layout: EdgeLayout }[] = [];
     const placed = new Set<string>();
     for (const s of g.subjects(P.type, V.Placement, graph).filter(ofRelation)) {
-        const t = g.connectorOf(s, graph);
+        const t = connectorOf(g, s, graph);
         const triple = t ? rdf.quad(t.subject as NamedNode, t.predicate as NamedNode, t.object) : undefined;
         const relation = triple && relationIds.get(triple);
         if (!triple || !relation) { warnings.push(`${label}: placement of an unknown relation kept in the file, not shown`); continue; }

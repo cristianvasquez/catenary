@@ -5,11 +5,13 @@ import {
     Doc, NS, PREFIXES as PREFIX_TABLE, emptyDoc
 } from '@catenary/model';
 import type { Term } from '@rdfjs/types';
-import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, cmp, fileOfGraph, labelFromIri } from '../src/graph';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, cmp, fileOfGraph } from '../src/graph';
 import { elementId } from '../src/ids';
 import { Plain, Resource, Row, cardIdsOf, first, instanceRecords, key, projectView, select } from '../src/records';
 import { readShapes } from '../src/shapes-read';
 import { rdf } from '../src/terms';
+import { shapesAndVocabulary } from '../src/shapes';
+import { vocabularySubjects, P, labelFromIri } from '../src/vocabulary';
 
 export interface Projection { doc: Doc; warnings: string[] }
 
@@ -23,7 +25,7 @@ const TYPE = P.type.value, LABEL = P.label.value, CONFORMS_TO = P.conformsTo.val
  */
 const shapesRead = new WeakMap<ModelGraph, { key: string; shapes: Doc['shapes'] }>();
 function shapesOf(g: ModelGraph): Doc['shapes'] {
-    const quads = g.shapesAndVocabulary();
+    const quads = shapesAndVocabulary(g);
     const key = JSON.stringify(PREFIX_TABLE) + '\n' + quads.map(q => `${key4(q.subject)} ${q.predicate.value} ${key4(q.object)} ${q.graph.value}`).join('\n');
     const cached = shapesRead.get(g);
     if (cached?.key === key) return cached.shapes;
@@ -52,10 +54,10 @@ export function project(g: ModelGraph): Projection {
     if (conformsTo) doc.conformsTo = conformsTo.value;
 
     // Instance: an IRI subject (not the model graph IRI) with an rdf:type or an rdfs:label; and a SKOS subject of a shapes graph
-    // (ModelGraph.isInstance), with its statements of that graph.
+    // (vocabulary.ts isInstance), with its statements of that graph.
     const plain = (t: Term): Plain => ({ termType: t.termType, value: t.value, term: t });
     const files = new Map<string, string>();
-    const vocabulary = [...g.vocabularySubjects()].map(([iri, graph]) => {
+    const vocabulary = [...vocabularySubjects(g)].map(([iri, graph]) => {
         files.set(iri, fileOfGraph(graph.value));
         const rows = g.match(rdf.namedNode(iri), null, null, graph).map(q => ({ s: plain(q.subject), p: plain(q.predicate), o: plain(q.object) }));
         return { s: rows[0].s, rows };

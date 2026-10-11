@@ -3,8 +3,10 @@
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
-import { ModelGraph, P, SKOS_TYPES } from '../src/graph';
+import { ModelGraph } from '../src/graph';
 import { rdf } from '../src/terms';
+import { shapesAndVocabulary } from '../src/shapes';
+import { P, SKOS_TYPES } from '../src/vocabulary';
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}>`;
 
@@ -61,6 +63,6 @@ export function viewPart(g: ModelGraph, view: NamedNode): Quad[] {
               BIND(${M} AS ?g) }
         }`);
     const part = rows.map(r => rdf.quad(r.s as Quad['subject'], r.p as Quad['predicate'], r.o as Quad['object'], r.g as NamedNode));
-    return showsShapes ? [...part, ...g.shapesAndVocabulary()] : part;
+    return showsShapes ? [...part, ...shapesAndVocabulary(g)] : part;
 }
 

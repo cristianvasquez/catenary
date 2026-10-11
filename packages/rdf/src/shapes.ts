@@ -3,12 +3,46 @@
 // file reads no SHACL property shape for them.
 
 import { ANY_RESOURCE, ClassDef, Classes, ConceptDef, NS, SchemeDef, localName, pluginFormShape, pluginParts } from '@catenary/model';
-import type { Quad, Term } from '@rdfjs/types';
+import type { NamedNode, Quad, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset, Grapoi } from 'rdf-ext';
 import { OxigraphStore } from 'rdf-files';
 import { AUTHORING_PLUGINS, authoringMetamodel } from './authoring';
 import { ModelGraph } from './graph';
 import { rdf } from './terms';
+import { P, SKOS_TYPES } from './vocabulary';
+
+/**
+ * The graph for new node shapes: the primary shapes graph, else the first one. The primary graph can be empty (an empty
+ * shapes file): shapesGraphs() finds only graphs with quads.
+ */
+export function shapesTarget(g: ModelGraph): NamedNode | undefined {
+    return g.primaryShapes ?? g.shapesGraphs()[0];
+}
+
+/** Quads of all shapes graphs, with their graphs. */
+export function shapesQuads(g: ModelGraph): Quad[] {
+    return g.shapesGraphs().flatMap(sg => g.match(null, null, null, sg));
+}
+
+/**
+ * SKOS vocabulary of the model graph: the statements of its concept schemes, concepts and collections (subjects with one of these
+ * types), with their graph. Concepts in the data file are instances too; the shapes read and the metamodel also use these quads.
+ */
+export function vocabularyQuads(g: ModelGraph): Quad[] {
+    const subjects = rdf.termSet<Term>();
+    for (const t of SKOS_TYPES) for (const q of g.match(null, P.type, t, g.model)) subjects.add(q.subject);
+    return [...subjects].flatMap(s => g.match(s as Quad_Subject, null, null, g.model));
+}
+
+/** Shapes quads and the SKOS vocabulary of the model graph. */
+export function shapesAndVocabulary(g: ModelGraph): Quad[] {
+    return [...shapesQuads(g), ...vocabularyQuads(g)];
+}
+
+/** Triples of all shapes graphs (the union of the shapes files). */
+export function shapesTriples(g: ModelGraph): Quad[] {
+    return shapesQuads(g).map(q => rdf.quad(q.subject, q.predicate, q.object));
+}
 
 export interface Metamodel extends Classes {
     source?: string;             // file name or IRI of the shapes file

@@ -76,7 +76,7 @@ export class ReadFacts {
         return out;
     }
 
-    /** The IRIs among `iris` that are instances (ModelGraph.isInstance), the IRIs not asked before in one request. */
+    /** The IRIs among `iris` that are instances (vocabulary.ts isInstance), the IRIs not asked before in one request. */
     instancesAmong(of: Iterable<string>): Set<string> {
         // `of` can be an iterator (one pass): read it once.
         const g = this.fresh(), iris = [...of];

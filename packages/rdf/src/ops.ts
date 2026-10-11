@@ -8,11 +8,13 @@ import {
     pillSize, pills, rangeText
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
-import { ModelGraph, P, V, mint, placementIri, viewPartBase } from './graph';
+import { ModelGraph } from './graph';
 import { skolemIri } from './skolem';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { shapesCardTerm, shapesIndex } from './shape-ops';
 import { jsonToTerm, mapTerm, rdf } from './terms';
+import { isInstance, homeOf, label, usedIris, ownedBy, P, mint } from './vocabulary';
+import { isView, connectorOf, markIri, views, viewSubject, nodeOf, connectorPlacements, edgeOf, V, placementIri, viewPartBase } from './views';
 
 export type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
 export const ok = <T>(value: T): Result<T> => ({ ok: true, value });
@@ -27,7 +29,7 @@ const integer = (n: number) => rdf.literal(String(Math.round(n) || 0), rdf.named
 
 export function instanceTerm(g: ModelGraph, id: string): NamedNode | undefined {
     const t = elementTerm(id);
-    return g.isInstance(t) ? t : undefined;
+    return isInstance(g, t) ? t : undefined;
 }
 
 /** A node shape, value set or property shape with an IRI: drawn as a shape element. */
@@ -56,7 +58,7 @@ export function pillTerm(g: ModelGraph, id: string): NamedNode | undefined {
 
 export function viewTerm(g: ModelGraph, id: string): NamedNode | undefined {
     const t = elementTerm(id);
-    return t?.termType === 'NamedNode' && g.isView(t) ? t : undefined;
+    return t?.termType === 'NamedNode' && isView(g, t) ? t : undefined;
 }
 
 /** Types of marks (spec/ui-manifest.hs §2.2): elements kept by their placements. */
@@ -78,11 +80,11 @@ export function elementOf(g: ModelGraph, view: NamedNode, placement: Term): Name
  */
 export function elementIdOf(g: ModelGraph, id: string): string {
     const t = elementTerm(id);
-    const view = t && g.match(t, P.type, V.Placement).find(q => g.isView(q.graph))?.graph;
+    const view = t && g.match(t, P.type, V.Placement).find(q => isView(g, q.graph))?.graph;
     if (!t || !view) return id;
     const e = elementOf(g, view as NamedNode, t);
-    if (e) return markType(g, e) || g.isView(e) ? id : elementId(e);
-    const c = g.connectorOf(t, view);
+    if (e) return markType(g, e) || isView(g, e) ? id : elementId(e);
+    const c = connectorOf(g, t, view);
     return c && !c.predicate.equals(V.arrow) ? relationId(c.subject as NamedNode, c.predicate as NamedNode, c.object as NamedNode) : id;
 }
 
@@ -94,8 +96,8 @@ export function markType(g: ModelGraph, e: Term): NamedNode | undefined {
 /** Kind of a placement: the type of its mark, `V.View` for a placement of a view, `V.arrow` for an arrow, undefined for a card or relation. */
 export function placementKind(g: ModelGraph, view: NamedNode, placement: Term): NamedNode | undefined {
     const e = elementOf(g, view, placement);
-    if (!e) return g.connectorOf(placement, view)?.predicate.equals(V.arrow) ? V.arrow : undefined;
-    return g.isView(e) ? V.View : markType(g, e);
+    if (!e) return connectorOf(g, placement, view)?.predicate.equals(V.arrow) ? V.arrow : undefined;
+    return isView(g, e) ? V.View : markType(g, e);
 }
 
 /** The graph that holds the statements of a mark (its type statement). */
@@ -114,7 +116,7 @@ export function viewElementTerm(g: ModelGraph, view: NamedNode, id: string, type
 
 /** A new mark of `type` in a view graph, with its content statements. */
 function newMark(g: ModelGraph, view: NamedNode, type: NamedNode, content: [NamedNode, Quad_Object][]): NamedNode {
-    const m = g.markIri(view);
+    const m = markIri(g, view);
     g.add(m, P.type, type, view);
     for (const [p, o] of content) g.add(m, p, o, view);
     return m;
@@ -131,7 +133,7 @@ function newPlacement(g: ModelGraph, view: NamedNode, element: NamedNode, box: P
 /** Remove a placement. A mark or an arrow without placements is deleted (spec/ui-manifest.hs §2.2, kept by placements). */
 export function removePlacement(g: ModelGraph, view: NamedNode, placement: Quad_Subject): void {
     const e = elementOf(g, view, placement);
-    const t = g.connectorOf(placement, view);
+    const t = connectorOf(g, placement, view);
     const arrow = t?.predicate.equals(V.arrow) ? [t.subject, t.object] : undefined;
     g.removeMatches(placement, null, null, view);
     if (e && markType(g, e) && g.match(null, V.element, e).length === 0) g.removeMatches(e, null, null, markGraph(g, e));
@@ -145,7 +147,7 @@ function arrowPlacements(g: ModelGraph, s: Term, o: Term): Quad[] {
 
 export function relationTerms(g: ModelGraph, id: string): { s: NamedNode; p: NamedNode; o: NamedNode } | undefined {
     const r = relationTriple(id);
-    return r && g.isInstance(r.s) && g.isInstance(r.o) && g.has(rdf.quad(r.s, r.p, r.o, g.homeOf(r.s))) ? r : undefined;
+    return r && isInstance(g, r.s) && isInstance(g, r.o) && g.has(rdf.quad(r.s, r.p, r.o, homeOf(g, r.s))) ? r : undefined;
 }
 
 export function typesOf(g: ModelGraph, s: Term): string[] {
@@ -164,7 +166,7 @@ function relationProblem(g: ModelGraph, meta: Classes, s: NamedNode, p: string, 
     if (s.equals(o)) return 'A relation from an element to itself is not supported.';
     // A scheme or collection target: `o` must be in it now (the metamodel list can be older than a concept created in this command).
     const permitted = permittedRelations(meta, typesOf(g, s), typesOf(g, o)).filter(r => !r.valueSet || inValueSet(g, r.valueSet, o));
-    if (!permitted.some(r => r.path === p)) return `No shape or RDFS rule permits this relation from "${g.label(s)}" to "${g.label(o)}".`;
+    if (!permitted.some(r => r.path === p)) return `No shape or RDFS rule permits this relation from "${label(g, s)}" to "${label(g, o)}".`;
     return undefined;
 }
 
@@ -186,13 +188,13 @@ const IRI_SYNTAX = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"{}|^`\\]*$/;
 
 export function iriProblem(g: ModelGraph, iri: string, self?: Term): string | undefined {
     if (!IRI_SYNTAX.test(iri)) return 'Not an absolute IRI.';
-    if (g.usedIris(self).has(iri)) return 'This IRI is already used by another element or by the model graph.';
+    if (usedIris(g, self).has(iri)) return 'This IRI is already used by another element or by the model graph.';
     return undefined;
 }
 
 /** Mint an IRI from a label that no other element uses: "label", then "label-2", "label-3", ... */
 export function mintFree(g: ModelGraph, label: string, self?: Term): string {
-    const used = g.usedIris(self);
+    const used = usedIris(g, self);
     let iri = mint(label);
     for (let i = 2; used.has(iri); i++) iri = mint(`${label}-${i}`);
     return iri;
@@ -222,7 +224,7 @@ export function replaceTerm(g: ModelGraph, from: NamedNode, to: NamedNode, skip?
 function renameViewElements(g: ModelGraph, from: NamedNode, to: NamedNode): void {
     const has = (t: Term): boolean => t.equals(to) || (t.termType === 'Quad' && (has(t.subject) || has(t.object)));
     const fromM = viewPartBase(from.value, 'm');
-    for (const view of g.views()) {
+    for (const view of views(g)) {
         for (const q of g.match(null, P.type, null, view)) {
             const e = q.subject as NamedNode;
             let next: NamedNode | undefined;
@@ -278,7 +280,7 @@ export function setUri(g: ModelGraph, id: string, uri: string | undefined): Resu
     const view = viewTerm(g, id);
     const el = instanceTerm(g, id) ?? view;
     if (!el) return gone('element', id);
-    const value = uri?.trim() || mintFree(g, view ? g.label(g.viewSubject(view)!, view) : g.label(el), el);
+    const value = uri?.trim() || mintFree(g, view ? label(g, viewSubject(g, view)!, view) : label(g, el), el);
     if (value === el.value) return ok(id);
     const problem = iriProblem(g, value, el);
     if (problem) return fail(problem);
@@ -304,15 +306,15 @@ export function setStatements(g: ModelGraph, meta: Classes, id: string, values: 
         }
         for (const o of objects) {
             const t = jsonToTerm(o);
-            const problem = g.isInstance(t) && relationProblem(g, meta, s, p, t);
+            const problem = isInstance(g, t) && relationProblem(g, meta, s, p, t);
             if (problem) return fail(problem);
         }
-        const predicate = rdf.namedNode(p), home = g.homeOf(s);
+        const predicate = rdf.namedNode(p), home = homeOf(g, s);
         const keep = rdf.termSet(objects.map(jsonToTerm));
         for (const q of [...g.match(s, predicate, null, home)]) {
             if (keep.has(q.object)) continue;
             g.remove(q);
-            if (g.isInstance(q.object)) removeEdgeLayouts(g, s, predicate, q.object);
+            if (isInstance(g, q.object)) removeEdgeLayouts(g, s, predicate, q.object);
         }
         for (const o of keep) g.add(s, predicate, o, home);
     }
@@ -330,12 +332,12 @@ export function copyInstance(g: ModelGraph, id: string, label: string): Result<s
     if (problem) return fail(problem);
     const copy = rdf.namedNode(mintFree(g, label));
     // The copy goes to the graph of the source (a concept of a shapes file stays in that file).
-    const home = g.homeOf(s);
+    const home = homeOf(g, s);
     // An owned object `<from>-x` is copied as `<to>-x`.
     const copyTree = (from: Quad_Subject, to: NamedNode): void => {
         for (const q of [...g.match(from, null, null, home)]) {
-            if (from.equals(s) && (q.predicate.equals(P.label) || q.predicate.equals(PREF_LABEL) || g.isInstance(q.object))) continue;
-            if (g.ownedBy(q.object, from, home)) {
+            if (from.equals(s) && (q.predicate.equals(P.label) || q.predicate.equals(PREF_LABEL) || isInstance(g, q.object))) continue;
+            if (ownedBy(g, q.object, from, home)) {
                 const o = skolemIri();
                 copyTree(q.object, o);
                 g.add(to, q.predicate, o, home);
@@ -349,9 +351,9 @@ export function copyInstance(g: ModelGraph, id: string, label: string): Result<s
     return ok(elementId(copy));
 }
 
-/** Remove the quads of a subject in a graph, and of the objects that it owns (`ModelGraph.ownedBy`). */
+/** Remove the quads of a subject in a graph, and of the objects that it owns (`ownedBy`, vocabulary.ts). */
 export function removeTree(g: ModelGraph, s: Term, graph: Term): void {
-    const owned = g.match(s, null, null, graph).map(q => q.object).filter(o => g.ownedBy(o, s, graph));
+    const owned = g.match(s, null, null, graph).map(q => q.object).filter(o => ownedBy(g, o, s, graph));
     g.removeMatches(s, null, null, graph);
     for (const o of owned) removeTree(g, o, graph);
 }
@@ -360,20 +362,20 @@ export function removeTree(g: ModelGraph, s: Term, graph: Term): void {
 export function deleteInstance(g: ModelGraph, id: string): void {
     const s = instanceTerm(g, id);
     if (!s) return;
-    const home = g.homeOf(s);
+    const home = homeOf(g, s);
     removeTree(g, s, home);
     g.removeMatches(null, null, s, g.model);
     // A SKOS subject of a shapes file: also the statements of that file that refer to it (skos:broader, skos:member, …), not RDF list cells.
     if (!home.equals(g.model)) for (const q of g.match(null, null, s, home)) if (!q.predicate.equals(RDF_FIRST)) g.remove(q);
-    for (const view of g.views()) dropFromView(g, view, s);
+    for (const view of views(g)) dropFromView(g, view, s);
 }
 
 /** Remove the node of an instance (or node shape), its edge layouts and its collection membership from one view graph. */
 export function dropFromView(g: ModelGraph, view: NamedNode, s: NamedNode): void {
-    const node = g.nodeOf(view, s);
+    const node = nodeOf(g, view, s);
     if (node) removeTree(g, node, view);
     g.removeMatches(null, V.member, s, view);
-    for (const c of g.connectorPlacements(view)) if (c.triple.subject.equals(s) || c.triple.object.equals(s)) removeTree(g, c.placement, view);
+    for (const c of connectorPlacements(g, view)) if (c.triple.subject.equals(s) || c.triple.object.equals(s)) removeTree(g, c.placement, view);
 }
 
 // ------------------------------------------------------------------ view membership and layout
@@ -419,7 +421,7 @@ export function addToView(g: ModelGraph, viewId: string, instanceId: string, at:
     size ??= cardSize(g, instanceId);
     const s = cardTerm(g, instanceId);
     if (!s) return fail('A view shows instances, node shapes, concept schemes, collections, properties with an IRI and pills.');
-    if (g.nodeOf(view, s)) return fail(`"${g.label(s)}" is already in view "${g.label(g.viewSubject(view)!, view)}".`);
+    if (nodeOf(g, view, s)) return fail(`"${label(g, s)}" is already in view "${label(g, viewSubject(g, view)!, view)}".`);
     const node = addPlacement(g, view, s);
     writeBox(g, view, node, { ...at, ...size });
     return ok(undefined);
@@ -427,15 +429,15 @@ export function addToView(g: ModelGraph, viewId: string, instanceId: string, at:
 
 /** The placement of a connector (a relation, an arrow) in a view; a new one if there is none. */
 function placeConnector(g: ModelGraph, view: NamedNode, s: NamedNode, p: NamedNode, o: NamedNode): Quad_Subject {
-    const found = g.edgeOf(view, s, p, o);
+    const found = edgeOf(g, view, s, p, o);
     if (found) return found;
     const e = addPlacement(g, view, rdf.quad(s, p, o));
     return e;
 }
 
 function removeEdgeLayouts(g: ModelGraph, s: Term, p: Term, o: Term): void {
-    for (const view of g.views()) {
-        const e = g.edgeOf(view, s, p, o);
+    for (const view of views(g)) {
+        const e = edgeOf(g, view, s, p, o);
         if (e) removeTree(g, e, view);
     }
 }
@@ -449,7 +451,7 @@ export function setEdgeLayout(g: ModelGraph, viewId: string, relationId: string,
     if (!view) return gone('view', viewId);
     if (!r) return gone('relation', relationId);
     if (patch.hidden) {
-        const e = g.edgeOf(view, r.s, r.p, r.o);
+        const e = edgeOf(g, view, r.s, r.p, r.o);
         if (e) removeTree(g, e, view);
         return ok(undefined);
     }
@@ -490,17 +492,17 @@ export function placeConnectors(g: ModelGraph): void {
         else if (g.isDataGraph(q.graph) || q.predicate.equals(V.arrow)) relations.push(q);
     }
     for (const { view, s } of placed) {
-        if (!g.nodeOf(view, s)) continue;
+        if (!nodeOf(g, view, s)) continue;
         const touching = [...g.match(s, null, null, g.model), ...g.match(null, null, s, g.model), ...g.match(s, V.arrow), ...g.match(null, V.arrow, s)];
         for (const q of touching) {
             const other = q.subject.equals(s) ? q.object : q.subject;
-            if (other.termType === 'NamedNode' && g.nodeOf(view, other) && isConnector(g, q)) placeConnector(g, view, q.subject as NamedNode, q.predicate as NamedNode, q.object as NamedNode);
+            if (other.termType === 'NamedNode' && nodeOf(g, view, other) && isConnector(g, q)) placeConnector(g, view, q.subject as NamedNode, q.predicate as NamedNode, q.object as NamedNode);
         }
     }
     for (const q of relations) {
         if (!isConnector(g, q)) continue;
-        for (const view of g.views()) {
-            if (g.nodeOf(view, q.subject) && g.nodeOf(view, q.object)) placeConnector(g, view, q.subject as NamedNode, q.predicate as NamedNode, q.object as NamedNode);
+        for (const view of views(g)) {
+            if (nodeOf(g, view, q.subject) && nodeOf(g, view, q.object)) placeConnector(g, view, q.subject as NamedNode, q.predicate as NamedNode, q.object as NamedNode);
         }
     }
 }
@@ -514,8 +516,8 @@ export function createRelation(g: ModelGraph, meta: Classes, subject: string, pr
     const problem = relationProblem(g, meta, s, predicate, o);
     if (problem) return fail(problem);
     const p = rdf.namedNode(predicate);
-    if (g.has(rdf.quad(s, p, o, g.homeOf(s)))) return fail('This relation exists already.');
-    g.add(s, p, o, g.homeOf(s));
+    if (g.has(rdf.quad(s, p, o, homeOf(g, s)))) return fail('This relation exists already.');
+    g.add(s, p, o, homeOf(g, s));
     return ok(relationId(s, p, o));
 }
 
@@ -532,13 +534,13 @@ export function reconnectRelation(g: ModelGraph, meta: Classes, id: string, end:
     if (s.equals(r.s) && o.equals(r.o)) return ok(id);
     const problem = relationProblem(g, meta, s, r.p.value, o);
     if (problem) return fail(problem);
-    if (g.has(rdf.quad(s, r.p, o, g.homeOf(s)))) return fail('This relation exists already.');
-    g.remove(rdf.quad(r.s, r.p, r.o, g.homeOf(r.s)));
-    g.add(s, r.p, o, g.homeOf(s));
-    for (const view of g.views()) {
-        const e = g.edgeOf(view, r.s, r.p, r.o);
+    if (g.has(rdf.quad(s, r.p, o, homeOf(g, s)))) return fail('This relation exists already.');
+    g.remove(rdf.quad(r.s, r.p, r.o, homeOf(g, r.s)));
+    g.add(s, r.p, o, homeOf(g, s));
+    for (const view of views(g)) {
+        const e = edgeOf(g, view, r.s, r.p, r.o);
         if (!e) continue;
-        if (!g.nodeOf(view, s) || !g.nodeOf(view, o)) {
+        if (!nodeOf(g, view, s) || !nodeOf(g, view, o)) {
             removeTree(g, e, view);
             continue;
         }
@@ -551,7 +553,7 @@ export function reconnectRelation(g: ModelGraph, meta: Classes, id: string, end:
 export function deleteRelation(g: ModelGraph, id: string): void {
     const r = relationTerms(g, id);
     if (!r) return;
-    g.remove(rdf.quad(r.s, r.p, r.o, g.homeOf(r.s)));
+    g.remove(rdf.quad(r.s, r.p, r.o, homeOf(g, r.s)));
     removeEdgeLayouts(g, r.s, r.p, r.o);
 }
 
@@ -571,8 +573,8 @@ export function createView(g: ModelGraph, label: string): Result<string> {
 export function duplicateView(g: ModelGraph, id: string): Result<string> {
     const source = viewTerm(g, id);
     if (!source) return gone('view', id);
-    const subject = g.viewSubject(source)!;
-    const copy = createView(g, `${g.label(subject, source)} copy`);
+    const subject = viewSubject(g, source)!;
+    const copy = createView(g, `${label(g, subject, source)} copy`);
     if (!copy.ok) return copy;
     const target = viewTerm(g, copy.value)!;
     const description = g.match(subject, V.description, null, source)[0]?.object;
@@ -581,7 +583,7 @@ export function duplicateView(g: ModelGraph, id: string): Result<string> {
     // Marks first: a placement IRI derives from what it places, and a placement can place a mark (or an arrow between marks).
     const map = rdf.termMap<Term, NamedNode>();
     const typed = g.match(null, P.type, null, source).filter(q => !q.subject.equals(subject));
-    for (const q of typed) if (!q.object.equals(V.Placement) && !map.has(q.subject)) map.set(q.subject, g.markIri(target));
+    for (const q of typed) if (!q.object.equals(V.Placement) && !map.has(q.subject)) map.set(q.subject, markIri(g, target));
     // Also inside triple terms: an arrow between two marks of the view reifies a triple of their new IRIs.
     const t = <T extends Term>(x: T): T => mapTerm(x, y => map.get(y) ?? y);
     for (const q of typed) {
@@ -600,7 +602,7 @@ export function deleteView(g: ModelGraph, id: string): void {
     const view = viewTerm(g, id);
     if (!view) return;
     // Placements of this view in other views (view references) go before the view disappears.
-    for (const source of g.views()) if (!source.equals(view)) for (const ref of g.subjects(V.element, view, source)) removePlacement(g, source, ref);
+    for (const source of views(g)) if (!source.equals(view)) for (const ref of g.subjects(V.element, view, source)) removePlacement(g, source, ref);
     g.removeMatches(null, null, null, view);
 }
 
@@ -629,7 +631,7 @@ export function createViewReference(g: ModelGraph, viewId: string, targetId: str
     if (!view) return gone('view', viewId);
     if (!target) return gone('view', targetId);
     // A view reference is a placement of the view (spec/ui-manifest.hs §2.1). A view places it once.
-    if (g.nodeOf(view, target)) return fail(`View "${g.label(target, target)}" is already in view "${g.label(view, view)}".`);
+    if (nodeOf(g, view, target)) return fail(`View "${label(g, target, target)}" is already in view "${label(g, view, view)}".`);
     return ok(elementId(newPlacement(g, view, target, { ...at, ...DEFAULT_VIEW_REFERENCE_SIZE })));
 }
 
@@ -730,14 +732,14 @@ export function createArrow(g: ModelGraph, viewId: string, fromId: string, toId:
     const isNote = (b: Term) => !!placementKind(g, view, b)?.equals(V.Note);
     if (!isNote(from) && !isNote(to)) return fail('An arrow starts or ends at a note.');
     const x = elementOf(g, view, from)!, y = elementOf(g, view, to)!;
-    if (g.edgeOf(view, x, V.arrow, y)) return fail('This arrow exists already.');
+    if (edgeOf(g, view, x, V.arrow, y)) return fail('This arrow exists already.');
     if (g.match(x, V.arrow, y).length === 0) g.add(x, V.arrow, y, view);
     return ok(elementId(placeConnector(g, view, x, V.arrow, y) as NamedNode));
 }
 
 /** Remove the placements of arrows whose ends the view does not place any more (the arrow goes with its last placement). Runs after each command. */
 export function pruneArrows(g: ModelGraph): void {
-    for (const { placement, triple, view } of g.connectorPlacements()) {
+    for (const { placement, triple, view } of connectorPlacements(g)) {
         if (!triple.predicate.equals(V.arrow)) continue;
         const x = triple.subject, y = triple.object;
         if (!shownIn(g, view, x) || !shownIn(g, view, y) || g.match(x as NamedNode, V.arrow, y).length === 0) removePlacement(g, view, placement);
@@ -746,7 +748,7 @@ export function pruneArrows(g: ModelGraph): void {
 
 /** The view shows the element: its placement, or the placement of an entity group that has it as a member (ADR 0014, C1). */
 function shownIn(g: ModelGraph, view: NamedNode, x: Term): boolean {
-    return !!g.nodeOf(view, x) || g.match(null, V.member, x).some(q => !!g.nodeOf(view, q.subject));
+    return !!nodeOf(g, view, x) || g.match(null, V.member, x).some(q => !!nodeOf(g, view, q.subject));
 }
 
 // ------------------------------------------------------------------ collections (view only)
@@ -756,9 +758,9 @@ function shownIn(g: ModelGraph, view: NamedNode, x: Term): boolean {
  * placements of its relations (the group draws them as bundles). An arrow keeps its placement: it ends at the group.
  */
 function unplaceMember(g: ModelGraph, view: NamedNode, m: NamedNode): void {
-    const node = g.nodeOf(view, m);
+    const node = nodeOf(g, view, m);
     if (node) removeTree(g, node, view);
-    for (const c of g.connectorPlacements(view)) {
+    for (const c of connectorPlacements(g, view)) {
         if (!c.triple.predicate.equals(V.arrow) && (c.triple.subject.equals(m) || c.triple.object.equals(m))) removeTree(g, c.placement, view);
     }
 }
@@ -768,7 +770,7 @@ export function createCollection(g: ModelGraph, viewId: string, instanceIds: str
     const view = viewTerm(g, viewId);
     if (!view) return gone('view', viewId);
     // In the view: a card, or a member of an entity group of the view (it has no placement, ADR 0014 C1).
-    const members = instanceIds.map(id => instanceTerm(g, id)).filter((s): s is NamedNode => !!s && (!!g.nodeOf(view, s) || g.match(null, V.member, s, view).length > 0));
+    const members = instanceIds.map(id => instanceTerm(g, id)).filter((s): s is NamedNode => !!s && (!!nodeOf(g, view, s) || g.match(null, V.member, s, view).length > 0));
     if (members.length === 0) return fail('Select the cards to collect.');
     for (const m of members) for (const q of g.match(null, V.member, m, view)) g.remove(q);
     const group = newMark(g, view, V.EntityGroup, members.map(m => [V.member, m]));
@@ -805,7 +807,7 @@ export function uncollect(g: ModelGraph, viewId: string, id: string, instanceIds
     // A released member gets its placement again (a file before ADR 0014 can still have one).
     members.forEach((m, i) => {
         g.remove(rdf.quad(mark, V.member, m, graph));
-        writeBox(g, view, g.nodeOf(view, m) ?? addPlacement(g, view, m), { ...places[i], ...DEFAULT_SIZE });
+        writeBox(g, view, nodeOf(g, view, m) ?? addPlacement(g, view, m), { ...places[i], ...DEFAULT_SIZE });
     });
     if (g.objects(mark, V.member, graph).length === 0) removePlacement(g, view, c);
     return ok(members.map(m => elementId(m)));
@@ -816,7 +818,7 @@ const BOX_TYPES = [...MARK_TYPES, V.View];
 /** The subject that holds the box of a card (by instance id), group, note, view reference or collection in a view. */
 function boxSubject(g: ModelGraph, view: NamedNode, id: string): Quad_Subject | undefined {
     const s = cardTerm(g, id);
-    return s ? g.nodeOf(view, s) : viewElementTerm(g, view, id, BOX_TYPES);
+    return s ? nodeOf(g, view, s) : viewElementTerm(g, view, id, BOX_TYPES);
 }
 
 /** Bounding box around some cards, groups, notes and view references of a view, with a margin (for "group the selection"). */
@@ -842,7 +844,7 @@ export function setBounds(g: ModelGraph, viewId: string, bounds: ({ id: string }
     // An element drawn without a placement gets one at the place where it was moved (an "in" or "one of" box: its list term).
     for (const b of bounds) {
         const s = cardTerm(g, b.id);
-        if (s && !g.nodeOf(view, s)) addToView(g, viewId, b.id, { x: 0, y: 0 });
+        if (s && !nodeOf(g, view, s)) addToView(g, viewId, b.id, { x: 0, y: 0 });
     }
     const moved = rdf.termSet<Quad_Subject>();
     for (const b of bounds) {

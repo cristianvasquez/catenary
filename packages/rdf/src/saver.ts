@@ -15,6 +15,7 @@ import { rdf } from './terms';
 import { canonical, writeTrig } from './trig';
 import { skolemize } from './skolem';
 import { tracer } from './trace';
+import { views } from './views';
 
 /** The coordinator supplies the current workspace and the shared file queue. */
 export interface WriterPort {
@@ -207,7 +208,7 @@ export class Saver {
         };
         try {
             for (const f of s.modelFiles.values()) if (!f.error) await onDisk(f, saved.files.has(f.path), () => this.filesTriples([f.path]).get(f.path)!, now.files.get(f.path)!);
-            for (const v of this.graph.views()) {
+            for (const v of views(this.graph)) {
                 const f = s.viewFiles.get(v.value);
                 if (f) await onDisk(f, saved.views.has(v.value), () => this.viewTriples(v), now.views.get(v.value)!, v);
             }
@@ -292,7 +293,7 @@ export class Saver {
         const value = {
             workspace: canonical(manifestQuads(s.manifest(), s.workspace.path)),
             files: new Map([...s.modelFiles.keys()].map(f => [f, reuse(f) ?? canonical(triples.get(f)!)])),
-            views: new Map(this.graph.views().map(v => [v.value, (fresh('v:' + v.value) ? before?.views.get(v.value) : undefined) ?? canonical(this.viewTriples(v))]))
+            views: new Map(views(this.graph).map(v => [v.value, (fresh('v:' + v.value) ? before?.views.get(v.value) : undefined) ?? canonical(this.viewTriples(v))]))
         };
         this.cache = { event, canonical: value };
         this.stale = new Set();

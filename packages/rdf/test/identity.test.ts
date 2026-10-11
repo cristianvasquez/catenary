@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { boxes, inView } from '@catenary/model';
-import { mint, ModelGraph } from '../src/graph';
+import { ModelGraph } from '../src/graph';
 import * as ids from '../src/ids';
 import { renameElement } from '../src/elements';
 import * as ops from '../src/ops';
 import { writeTrig } from '../src/trig';
 import { DCAT, DPROD, byLabel, doc, emptyGraph, example, load, meta, value } from './helpers';
+import { mint } from '../src/vocabulary';
 
 const iri = (g: ModelGraph, id: string) => { const d = doc(g); return (d.instances[id] ?? d.views[id]).uri; };
 

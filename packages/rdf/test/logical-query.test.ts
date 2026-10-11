@@ -1,9 +1,11 @@
 import { expect, it } from 'vitest';
 import { OxigraphStore } from 'rdf-files';
-import { ModelGraph, P, V } from '../src/graph';
+import { ModelGraph } from '../src/graph';
 import { rdf } from '../src/terms';
 import { elementId } from '../src/ids';
 import { readView } from '../src/view-read';
+import { P } from '../src/vocabulary';
+import { V } from '../src/views';
 
 it('keeps placed instances when an IRI contains a quote before a logical GRAPH pattern (kata r5dd)', () => {
     const g = new ModelGraph(new OxigraphStore());

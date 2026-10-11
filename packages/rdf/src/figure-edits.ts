@@ -6,13 +6,15 @@
 
 import { LEAF_SUFFIX, NotationPlacement, ONE_OF_WIDTH, Placements, Range, ViewFigures, arrival, dataArrival, iriId, nkey, removal, sha256Hex, unescapeId } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
-import { ModelGraph, P, V } from './graph';
+import { ModelGraph } from './graph';
 import { tracer } from './trace';
 import { elementId } from './ids';
 import * as ops from './ops';
 import { keyTerm, viewFiguresOf } from './notations';
 import { S, shapesIndexOf } from './shapes-read';
 import { rdf } from './terms';
+import { views as viewGraphs, nodeOf, edgeOf, V } from './views';
+import { P } from './vocabulary';
 
 const SH = 'http://www.w3.org/ns/shacl#';
 
@@ -117,15 +119,15 @@ function rekeyLists(g: ModelGraph): void {
         }
     }
     if (!moves.length) return;
-    for (const view of g.views()) {
+    for (const view of viewGraphs(g)) {
         // Take all old placements first: two lists can swap their terms.
-        const taken = moves.map(m => ({ m, node: g.nodeOf(view, m.from) })).filter(x => x.node).map(({ m, node }) => {
+        const taken = moves.map(m => ({ m, node: nodeOf(g, view, m.from) })).filter(x => x.node).map(({ m, node }) => {
             const props = g.match(node!, null, null, view).filter(q => !q.predicate.equals(V.element) && !q.predicate.equals(P.type) && !q.predicate.equals(V.view));
             ops.removeTree(g, node!, view);
             return { m, props };
         });
         for (const { m, props } of taken) {
-            if (!m.to || g.nodeOf(view, m.to)) continue;
+            if (!m.to || nodeOf(g, view, m.to)) continue;
             const node = ops.addPlacement(g, view, m.to);
             for (const q of props) g.add(node, q.predicate, q.object, view);
         }
@@ -181,7 +183,7 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
     if (!added.size && !removed.size && !created.size && !lists) return;
     if (lists) rekeyLists(g);
 
-    const views = created.size || lists ? g.views() : [...new Set([...added.keys(), ...removed.keys()])].map(v => rdf.namedNode(v));
+    const views = created.size || lists ? viewGraphs(g) : [...new Set([...added.keys(), ...removed.keys()])].map(v => rdf.namedNode(v));
     tracer.note(`added ${added.size} views; removed ${removed.size} views; created ${created.size}; lists ${lists}; scanned ${views.length} views`);
     for (const view of views) {
         const vf = tracer.span('refresh', 'derive and join figures', () => {
@@ -223,7 +225,7 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
                 }
             }
             for (const k of gone) { const iri = iriOfKey(k); if (iri) ops.dropFromView(g, view, rdf.namedNode(iri)); else removeStatementPlacement(g, view, vf, k); }
-            for (const k of add) if (!g.nodeOf(view, rdf.namedNode(iriOfKey(k)!))) ops.addPlacement(g, view, rdf.namedNode(iriOfKey(k)!));
+            for (const k of add) if (!nodeOf(g, view, rdf.namedNode(iriOfKey(k)!))) ops.addPlacement(g, view, rdf.namedNode(iriOfKey(k)!));
             tracer.note(`figures ${vf.derivation.figures.length}; placements ${vf.placed.size}; removed ${gone.size}; added ${add.size}`);
         });
     }
@@ -232,7 +234,7 @@ function syncFiguresNow(g: ModelGraph, arrivals: boolean): void {
 function removeStatementPlacement(g: ModelGraph, view: NamedNode, _vf: ViewFigures, k: string): void {
     const t = keyTerm(k);
     if (t.termType !== 'Triple') return;
-    const e = g.edgeOf(view, rdf.namedNode(t.subject.value), rdf.namedNode(t.predicate.value), rdf.namedNode(t.object.value));
+    const e = edgeOf(g, view, rdf.namedNode(t.subject.value), rdf.namedNode(t.predicate.value), rdf.namedNode(t.object.value));
     if (e) ops.removeTree(g, e, view);
 }
 
@@ -262,14 +264,14 @@ export function showAsLine(g: ModelGraph, viewId: string, id: string, at: { x: n
             const mp = shapes.properties[m];
             if (mp && !PRIVATE.includes(mp.range.kind)) i += placeEnd(g, view, mp.uri!, mp.range, { x: at.x, y: at.y + i * 120 }) ? 1 : 0;
         }
-        if (!g.nodeOf(view, hub)) ops.addPlacement(g, view, hub);
+        if (!nodeOf(g, view, hub)) ops.addPlacement(g, view, hub);
         return undefined;
     }
     if (!p?.uri) return 'This property shape has no IRI. Reload the shapes file: the editor replaces blank nodes by IRIs.';
     if (PRIVATE.includes(p.range.kind)) return 'A property with a datatype, a node kind or no range is a row. It shows as a line only as a member of a logical constraint.';
     placeEnd(g, view, p.uri, p.range, at);
     const line = rdf.namedNode(p.uri);
-    if (!g.nodeOf(view, line)) ops.addPlacement(g, view, line);
+    if (!nodeOf(g, view, line)) ops.addPlacement(g, view, line);
     return undefined;
 }
 
@@ -282,11 +284,11 @@ function placeEnd(g: ModelGraph, view: NamedNode, property: string, range: Range
     else if (range.kind === 'class') {
         // Several node shapes of the class: one that the view shows, else the first by ID (as the engine, joinState).
         const candidates = Object.values(shapes.nodeShapes).filter(n => n.targetClass === range.class).sort((a, b) => a.id.localeCompare(b.id));
-        const shape = candidates.find(n => g.nodeOf(view, rdf.namedNode(n.uri))) ?? candidates[0];
+        const shape = candidates.find(n => nodeOf(g, view, rdf.namedNode(n.uri))) ?? candidates[0];
         term = rdf.namedNode(shape?.uri ?? range.class);
     } else if (range.kind === 'scheme') term = range.schemes[0] ? rdf.namedNode(range.schemes[0]) : undefined;
     else if (range.kind === 'collection') term = rdf.namedNode(range.collection);
-    if (!term || g.nodeOf(view, term)) return false;
+    if (!term || nodeOf(g, view, term)) return false;
     // A list box ("in", "one of") grows to its rows; an "in" box is drawn as a pill of its text.
     const size = ops.cardTerm(g, elementId(term)) && !term.value.startsWith(ops.LIST_PREFIX) ? ops.cardSize(g, elementId(term)) : { width: ONE_OF_WIDTH, height: 120 };
     const node = ops.addPlacement(g, view, term);
