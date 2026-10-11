@@ -1,6 +1,7 @@
 // RDF file formats by file extension: read, canonical form, and write. The same content gives the same bytes.
 
 import type { Quad } from '@rdfjs/types';
+import { Parser } from 'n3';
 import { canonicalNQuads, triplify } from 'rdf-serialization';
 import * as path from 'path';
 import { fileIri } from './paths';
@@ -39,6 +40,14 @@ export async function parseRdf(text: string, file: string): Promise<Quad[]> {
     if (!f) throw new Error(`unknown RDF format (extensions: ${RDF_EXTENSIONS.join(', ')})`);
     const dataset = await rdf.io.dataset.fromText(f.mediaType, text, { baseIRI: fileIri(file) });
     return [...dataset];
+}
+
+/**
+ * Parse a Turtle or TriG text without streams: the same N3.js parser as `parseRdf`, several times faster on a large file (the check of
+ * a text patch). `file` gives the base IRI.
+ */
+export function parseTurtleText(text: string, file: string): Quad[] {
+    return new Parser({ baseIRI: fileIri(file) }).parse(text);
 }
 
 /** The quads without duplicates (a dataset; the key keeps the direction of a literal). */

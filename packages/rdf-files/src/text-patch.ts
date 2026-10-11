@@ -8,8 +8,11 @@
 // blocks at the end. What the patcher cannot address gives a reason and no text (the caller writes the whole file).
 // Only the statements of the subjects that change are read (the caller checks the result by a read of the new text). The syntax tree
 // of the last patched text of each file is kept: the next patch of that text parses only the changed parts (tree-sitter incremental parse).
+// TriG with one graph block (a view file): with `graph`, the blocks inside that graph block are patched the same way. Prefixes stay at the
+// top. A second graph block, a statement outside the graph block, or a statement without a final `.` inside it: no text.
+// `patchTurtleDiff` takes the changes from the caller (StatementDiff) instead of the two full sets: a large file is not compared twice.
 
-import type { Quad, Term } from '@rdfjs/types';
+import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import { Edit, Language, Node, Parser, Point, Tree } from 'web-tree-sitter';
@@ -191,19 +194,44 @@ async function keepTree(file: string, text: string, tree: Tree, edits: readonly 
     trees.set(file, { text: out, tree: next });
 }
 
-/** Triples indexed by subject key. */
+const quadKey = (q: Quad) => `${termKey(q.subject)} ${termKey(q.predicate)} ${termKey(q.object)}`;
+
+/** Triples indexed by subject key and by triple key. */
 class Triples {
     readonly out = new Map<string, Quad[]>();
-    readonly keys = new Set<string>();
+    readonly quads = new Map<string, Quad>();
     constructor(quads: Quad[]) {
         for (const q of quads) {
             const s = termKey(q.subject), k = `${s} ${termKey(q.predicate)} ${termKey(q.object)}`;
-            if (this.keys.has(k)) continue;
-            this.keys.add(k);
+            if (this.quads.has(k)) continue;
+            this.quads.set(k, q);
             (this.out.get(s) ?? this.out.set(s, []).get(s)!).push(q);
         }
     }
     props(k: string) { return this.out.get(k) ?? []; }
+}
+
+/**
+ * The changes of the statements of a text, when the caller knows them (then the patch does not compare two full sets): the statements
+ * `removed` and `added` (none in both), `after`: the statements of a subject after the change (the block of a new subject), and
+ * `had`: whether a subject had statements before the change (a subject with statements has a block in the text).
+ */
+export interface StatementDiff {
+    removed: Quad[];
+    added: Quad[];
+    after(subject: Term): Quad[];
+    had(subject: Term): boolean;
+}
+
+/** The diff from the triples `before` to the triples `after`. */
+function diffOf(before: Quad[], after: Quad[]): StatementDiff {
+    const old = new Triples(before), next = new Triples(after);
+    return {
+        removed: [...old.quads].filter(([k]) => !next.quads.has(k)).map(([, q]) => q),
+        added: [...next.quads].filter(([k]) => !old.quads.has(k)).map(([, q]) => q),
+        after: s => next.props(termKey(s)),
+        had: s => old.props(termKey(s)).length > 0
+    };
 }
 
 /**
@@ -261,14 +289,39 @@ interface Statement {
 /**
  * Change `text` (Turtle; `file` gives the base IRI) from the triples `before` to the triples `after` (default graph). `before` must
  * be the read of `text`. `prefixes` (prefix → namespace): for new terms that the prefixes of the file do not compact; the file gets their directives.
+ * `graph`: the text is TriG with one graph block of this name, and `before` and `after` are its statements (in the default graph or in `graph`).
  */
-export async function patchTurtle(text: string, file: string, before: Quad[], after: Quad[], prefixes: Readonly<Record<string, string>> = {}): Promise<PatchResult> {
-    if ([...before, ...after].some(q => q.graph.termType !== 'DefaultGraph')) return { ok: false, reason: 'a named graph in a Turtle file' };
-    const old = new Triples(before), next = new Triples(after);
-    const removed = [...old.keys].filter(k => !next.keys.has(k)), added = [...next.keys].filter(k => !old.keys.has(k));
+export async function patchTurtle(text: string, file: string, before: Quad[], after: Quad[], prefixes: Readonly<Record<string, string>> = {}, graph?: NamedNode): Promise<PatchResult> {
+    const outside = graphProblem([...before, ...after], graph);
+    if (outside) return { ok: false, reason: outside };
+    return patch(text, file, diffOf(before, after), prefixes, graph);
+}
+
+/** `patchTurtle` with the changes known to the caller (`diff`): it reads the blocks of the changed subjects only. */
+export async function patchTurtleDiff(text: string, file: string, diff: StatementDiff, prefixes: Readonly<Record<string, string>> = {}, graph?: NamedNode): Promise<PatchResult> {
+    const outside = graphProblem([...diff.removed, ...diff.added], graph);
+    if (outside) return { ok: false, reason: outside };
+    return patch(text, file, diff, prefixes, graph);
+}
+
+/** The reason when a quad is not in the default graph or in `graph`. */
+function graphProblem(quads: Quad[], graph?: NamedNode): string | undefined {
+    const inGraph = (q: Quad) => q.graph.termType === 'DefaultGraph' || (graph !== undefined && q.graph.equals(graph));
+    return quads.every(inGraph) ? undefined : graph ? `a statement outside the graph <${graph.value}>` : 'a named graph in a Turtle file';
+}
+
+async function patch(text: string, file: string, diff: StatementDiff, prefixes: Readonly<Record<string, string>>, graph?: NamedNode): Promise<PatchResult> {
+    const quadOf = new Map<string, Quad>();
+    for (const q of diff.added) quadOf.set(quadKey(q), q);
+    const added = [...quadOf.keys()];
+    const removed: string[] = [];
+    for (const q of diff.removed) {
+        const k = quadKey(q);
+        if (quadOf.has(k)) return { ok: false, reason: `a statement removed and added: ${k}` };
+        quadOf.set(k, q);
+        removed.push(k);
+    }
     if (!removed.length && !added.length) return { ok: true, text };
-    const quadKey = (q: Quad) => `${termKey(q.subject)} ${termKey(q.predicate)} ${termKey(q.object)}`;
-    const quadOf = new Map([...before, ...after].map(q => [quadKey(q), q]));
     /** The subjects whose statements change: only their blocks are read. */
     const changing = new Set([...removed, ...added].map(k => termKey(quadOf.get(k)!.subject)));
     const tree = await treeOf(file, text);
@@ -277,22 +330,16 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
     const statements: Statement[] = [];
     const scopes: { end: number; resolver: Resolver }[] = [{ end: 0, resolver: new Resolver(r.base) }];
     const at = (offset: number): Resolver => scopes.filter(s => s.end <= offset).slice(-1)[0].resolver;
+    /** The graph block of a TriG text (`graph` given) and the position of its `}`. */
+    let block: { node: Node; close: number; first?: Node } | undefined;
     try {
-        for (const n of kids(tree.rootNode)) {
-            if (n.type === 'comment') continue;
-            if (n.type === 'directive') {
-                r.directive(n);
-                const resolver = new Resolver(r.base);
-                resolver.prefixes = new Map(r.prefixes);
-                scopes.push({ end: n.endIndex, resolver });
-                continue;
-            }
-            if (n.type !== 'triple') return { ok: false, reason: `${n.type} at line ${n.startPosition.row + 1}: only Turtle is supported` };
+        /** Read the statement `n` (a `triple` node) when its subject changes. A reason: the text cannot be patched. */
+        const scan = (n: Node): string | undefined => {
             const first = kids(n)[0]!;
-            if (first.type === 'reified_triple') return { ok: false, reason: `reified triple at line ${n.startPosition.row + 1}: not supported by the text patch` };
+            if (first.type === 'reified_triple') return `reified triple at line ${n.startPosition.row + 1}: not supported by the text patch`;
             const subject = first.type === 'subject' ? r.key(first) : undefined;
-            if (!subject || subject.startsWith('_:')) return { ok: false, reason: `blank node at line ${n.startPosition.row + 1}` };
-            if (!changing.has(subject)) continue;
+            if (!subject || subject.startsWith('_:')) return `blank node at line ${n.startPosition.row + 1}`;
+            if (!changing.has(subject)) return undefined;
             const st: Statement = { node: n, subject, properties: [] };
             const lists = kids(n).slice(1).filter(c => c.type === 'property_list');
             for (const list of lists) {
@@ -308,7 +355,41 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
                 }
             }
             statements.push(st);
+            return undefined;
+        };
+        const line = (n: Node) => `line ${n.startPosition.row + 1}`;
+        for (const n of kids(tree.rootNode)) {
+            if (n.type === 'comment') continue;
+            if (n.type === 'directive') {
+                r.directive(n);
+                const resolver = new Resolver(r.base);
+                resolver.prefixes = new Map(r.prefixes);
+                scopes.push({ end: n.endIndex, resolver });
+                continue;
+            }
+            if (n.type === 'graph') {
+                if (!graph) return { ok: false, reason: `graph block at ${line(n)}: only Turtle is supported` };
+                if (block) return { ok: false, reason: `a second graph block at ${line(n)}` };
+                const name = kids(n).find(c => c.type === 'iri_reference' || c.type === 'prefixed_name');
+                if (!name || r.key(name) !== termKey(graph)) return { ok: false, reason: `graph block at ${line(n)}: not the graph <${graph.value}>` };
+                const close = n.children.find(c => c?.type === '}');
+                if (!close) return { ok: false, reason: `graph block at ${line(n)}: not closed` };
+                block = { node: n, close: close.startIndex };
+                for (const c of kids(n)) {
+                    if (c === name || c.type === 'comment') continue;
+                    if (c.type !== 'triple') return { ok: false, reason: `${c.type} at ${line(c)}: not a statement with a final "." in the graph block` };
+                    block.first ??= c;
+                    const reason = scan(c);
+                    if (reason) return { ok: false, reason };
+                }
+                continue;
+            }
+            if (graph) return { ok: false, reason: `${n.type} at ${line(n)}: a statement outside the graph <${graph.value}>` };
+            if (n.type !== 'triple') return { ok: false, reason: `${n.type} at ${line(n)}: only Turtle is supported` };
+            const reason = scan(n);
+            if (reason) return { ok: false, reason };
         }
+        if (graph && !block) return { ok: false, reason: `no graph block <${graph.value}> in the text` };
     } catch (e) {
         return { ok: false, reason: (e as Error).message };
     }
@@ -325,13 +406,23 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
     for (const s of scopes) s.resolver.fallback = fallback;
 
     const terms = new Map<string, Term>();
-    for (const q of [...after, ...before]) for (const t of [q.subject, q.predicate, q.object]) if (!terms.has(termKey(t))) terms.set(termKey(t), t);
+    const know = (q: Quad) => { for (const t of [q.subject, q.predicate, q.object]) if (!terms.has(termKey(t))) terms.set(termKey(t), t); };
+    for (const q of quadOf.values()) know(q);
 
     const simple = [...removed.map(key => ({ key, op: 'remove' as const })), ...added.map(key => ({ key, op: 'add' as const }))];
 
     // ------------------------------------------------------------ text generation
 
-    const unit = /\n([ \t]+)\S/.exec(text)?.[1] ?? '    ';
+    // Indentation: `unit` for the properties of a block, `blockIndent` for a block in a graph block (the indentation of its first statement).
+    /** The whitespace at the start of the line, when `index` is the first text of its line; else ''. */
+    const lead = (index: number): string => {
+        let i = index;
+        while (i > 0 && (text[i - 1] === ' ' || text[i - 1] === '\t')) i--;
+        return i === 0 || text[i - 1] === '\n' ? text.slice(i, index) : '';
+    };
+    const blockIndent = block?.first ? lead(block.first.startIndex) : '';
+    const found = block ? /\n([ \t]+)\S/.exec(text.slice(block.first?.startIndex ?? block.node.startIndex, block.close))?.[1] : /\n([ \t]+)\S/.exec(text)?.[1];
+    const unit = found && found.length > blockIndent.length ? found : blockIndent + '    ';
     // The punctuation of the file: `p o ;` or `p o;`, `s p o .` or `s p o.` (the one it has most).
     const count = (re: RegExp) => (text.match(re) ?? []).length;
     const semi = count(/\S;[ \t]*(#.*)?\n/g) > count(/\s;[ \t]*(#.*)?\n/g) ? ';' : ' ;';
@@ -342,10 +433,10 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
         return t;
     };
     const object = (k: string, offset: number): string => at(offset).write(termOf(k));
-    /** `p o1, o2` for each predicate of subject `k`: rdf:type first, then in the order of the triples. */
-    const propertyTexts = (k: string, g: Triples, offset: number): string[] => {
+    /** `p o1, o2` for each predicate of the statements `quads` of one subject: rdf:type first, then in the order of the triples. */
+    const propertyTexts = (quads: Quad[], offset: number): string[] => {
         const byP = new Map<string, Quad[]>();
-        for (const q of g.props(k)) (byP.get(termKey(q.predicate)) ?? byP.set(termKey(q.predicate), []).get(termKey(q.predicate))!).push(q);
+        for (const q of quads) { know(q); (byP.get(termKey(q.predicate)) ?? byP.set(termKey(q.predicate), []).get(termKey(q.predicate))!).push(q); }
         const order = [...byP.keys()].sort((a, b) => Number(b === TYPE) - Number(a === TYPE));
         return order.map(p => `${at(offset).write(byP.get(p)![0].predicate, true)} ${byP.get(p)!.map(q => object(termKey(q.object), offset)).join(', ')}`);
     };
@@ -363,8 +454,10 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
             i = j;
         }
     };
-    const removeStatement = (st: Statement) =>
-        edits.push([st.node.startIndex, text.startsWith('\n', st.node.endIndex) ? st.node.endIndex + 1 : st.node.endIndex, '']);
+    /** Remove a block with its line: the indentation before it (a block in a graph block) and the line break after it. */
+    const removeStatement = (st: Statement) => {
+        edits.push([st.node.startIndex - lead(st.node.startIndex).length, text.startsWith('\n', st.node.endIndex) ? st.node.endIndex + 1 : st.node.endIndex, '']);
+    };
     const indentOf = (st: Statement) => /\n([ \t]+)\S/.exec(text.slice(st.node.startIndex, st.node.endIndex))?.[1] ?? unit;
     let tail = '';
 
@@ -379,9 +472,11 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
         const own = statements.filter(st => st.subject === s);
         if (!own.length) {
             // No block in the text: a new subject. Its triples were nowhere in the text, else it has a block.
-            if (old.props(s).length) return { ok: false, reason: `subject without a block in the text: ${s}` };
-            const all = propertyTexts(s, next, text.length);
-            if (all.length) tail += `\n${at(text.length).write(termOf(s))} ${all.join(`${semi}\n${unit}`)}${dot}\n`;
+            const subject = termOf(s);
+            if (diff.had(subject)) return { ok: false, reason: `subject without a block in the text: ${s}` };
+            const end = block ? block.close : text.length;
+            const all = propertyTexts(diff.after(subject), end);
+            if (all.length) tail += `\n${blockIndent}${at(end).write(termOf(s))} ${all.join(`${semi}\n${unit}`)}${dot}\n`;
             continue;
         }
         // Text objects: removed, or replaced by an added object of the same predicate.
@@ -441,7 +536,11 @@ export async function patchTurtle(text: string, file: string, before: Quad[], af
             }
         });
     }
-    if (tail) edits.push([text.length, text.length, (text.endsWith('\n') || !text ? '' : '\n') + tail]);
+    if (tail && block) {
+        // New blocks before the `}`: after a blank line, and with the blank line before the `}` kept.
+        const pre = text.slice(0, block.close);
+        edits.push([block.close, block.close, pre.endsWith('\n\n') ? tail.slice(1) + '\n' : pre.endsWith('{\n') ? tail.slice(1) : pre.endsWith('\n') || pre.endsWith('{') ? tail : '\n' + tail]);
+    } else if (tail) edits.push([text.length, text.length, (text.endsWith('\n') || !text ? '' : '\n') + tail]);
     if (needed.size) {
         const top = kids(tree.rootNode).filter(n => n.type !== 'comment');
         const first = top.findIndex(n => n.type !== 'directive');

@@ -79,3 +79,13 @@ declare module 'shacl-engine' {
     }
 }
 
+
+// `n3` is imported by rdf-files (formats.ts). tsconfig.test.json compiles rdf-files from its sources, without its private shims.
+declare module 'n3' {
+    import type { Quad } from '@rdfjs/types';
+    /** The N3.js parser (Turtle, TriG, N-Triples, N-Quads and N3), without streams. */
+    export class Parser {
+        constructor(options?: { baseIRI?: string; format?: string });
+        parse(text: string): Quad[];
+    }
+}

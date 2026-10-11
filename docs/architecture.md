@@ -23,7 +23,7 @@ This document describes the structure of the code and the flow of data. The exac
 1. Open: the backend lists the model files, parses them, replaces blank nodes with skolem IRIs and loads the quads into the store. Each quad graph records its file and role.
 2. Read: each panel and each view session asks the backend for what it shows. The backend answers with a SPARQL query, and builds a request-scoped read model when a rule needs one. No component holds a copy of the whole model.
 3. Edit: the frontend or a GLSP handler sends one `EditCommand`. The store runs it in one synchronous transaction and produces one patch (added and removed quads) and one undo step.
-4. Write: the file queue writes the patch to the files that hold the statements, as a Turtle text patch when possible, else as a whole file. Then it makes a Git commit of those files.
+4. Write: the file queue writes the patch to the files that hold the statements, as a text patch when possible (Turtle, or the graph block of a TriG view file), else as a whole file. Then it makes a Git commit of those files.
 5. Notify: each patch produces one event with its changed graphs and elements. Caches retain the last event that affects their input. Connections receive snapshots with event sequence numbers, file state and change scope. A panel or view session reads again only when the scope touches it.
 6. Validate: 250 ms after a data or shape change, SHACL runs in a worker thread. The report goes to the unsaved graph `urn:trellis:validation`.
 
@@ -141,7 +141,7 @@ Paths are relative to the directory in the first column.
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |
 | `packages/rdf-files/src` | `store.ts`, `oxigraph-store.ts`, `trap.ts`, `terms.ts` | Quad store port, Oxigraph store, the trap guard (a WebAssembly trap stops the store; ModelStore then reads the files again, manifest §3.4), term keys |
-| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, Turtle text patches and statement positions |
+| | `formats.ts`, `listing.ts`, `paths.ts`, `text-patch.ts` | Formats, canonical write, file listing, text patches of Turtle and of a TriG graph block, statement positions |
 | | `file-sync.ts`, `git.ts` | File queue, folder watch, atomic writes, Git status and commits |
 | `packages/rdf/src` | `model-store.ts`, `graph.ts`, `history.ts` | Store coordination, transactions, shared patch events, undo and redo. ModelStore exposes PanelReads for query dispatch and wires file operations through ports. History records final file graphs, including transfers. |
 | | `panel-reads.ts` | Frontend query host: request-scoped reads, panel rules and prompt data. RPC and CLI dispatch queries here. ModelStore retains event-keyed caches. |
@@ -185,7 +185,8 @@ Paths are relative to the directory in the first column.
 
 - Each edit, undo and redo queues a write. The queue runs file operations one at a time.
 - A Turtle file gets a text patch: only the blocks of the changed subjects change. Catenary parses the result again and compares it with the expected RDF before it accepts it.
-- Other formats, TriG view files and failed patches get a whole-file write: first in the style of the file, then with the canonical writer as fallback.
+- A TriG view file (one graph block) gets the same text patch inside its graph block. The prefixes, comments and the other blocks stay byte for byte. The comparison checks the graph of each statement. The saver gives the patch the net changes of the view since its last write (`patchTurtleDiff`), so the patch does not compare two full statement sets.
+- Other formats and failed patches get a whole-file write: for Turtle first in the style of the file, then with the canonical writer as fallback.
 - Writes go to temporary files, then rename. Cross-file rollback is not required. A partial-save failure must report its cause and keep unwritten changes pending for retry (open check STORE2).
 - Catenary refuses to overwrite a file whose disk text differs from its last read or write.
 - The watcher reads changed files 150 ms after the last event. It does not read when each event is a file that Catenary wrote and that is unchanged since. A read from disk clears the undo history.

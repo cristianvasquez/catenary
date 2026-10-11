@@ -6,7 +6,8 @@ import { CommandResult, PREFIXES } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
-import { OwnWrites, SerialQueue, commitFiles, gitChanges, patchTurtle, pathKey, portableRelative, readUnchanged, writeAll } from 'rdf-files';
+import { OwnWrites, SerialQueue, StatementDiff, commitFiles, gitChanges, parseTurtleText, patchTurtle, patchTurtleDiff, pathKey, portableRelative, readUnchanged, tripleKey, writeAll } from 'rdf-files';
+import type { Change } from './graph';
 import { IMPORT_FOLDER, manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
 import { ModelGraph, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
 import { OnDisk, Saved, Settings } from './settings';
@@ -47,13 +48,13 @@ export class Writer {
     /** Write the changed files and commit them. Keep a failure visible until success. */
     async write(): Promise<CommandResult> {
         const ws = this.port.saver();
-        const r: CommandResult = ws ? await ws.save() : { ok: false, error: 'No workspace is open.' };
+        const r: CommandResult = ws ? await tracer.span('file', 'save', () => ws.save()) : { ok: false, error: 'No workspace is open.' };
         // A write does not change the dataset: the caches stay (only the dirty state changes).
         if (r.ok) this.port.saved();
         const notes = [...new Set(this.commitNotes.splice(0))];
         const warningCount = this.port.warnings.length;
         const files = ws?.committable() ?? [];
-        const error = r.ok ? await commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`) : `Not written: ${r.error}`;
+        const error = r.ok ? await tracer.span('file', 'commit', () => commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`)) : `Not written: ${r.error}`;
         if (r.ok && !error) ws!.written = [];
         if (error) this.commitNotes.unshift(...notes);
         if (error !== this.writeError || this.port.warnings.length !== warningCount) {
@@ -96,6 +97,22 @@ export class ImportCopies<T extends { name: string; quads?: Quad[] }> {
 
 interface Canonical { workspace: string; files: Map<string, string>; views: Map<string, string> }
 
+/** The net changes of the statements of a view since its last write: a statement added and removed again is not a change. */
+class NetDiff {
+    readonly removed = new Map<string, Quad>();
+    readonly added = new Map<string, Quad>();
+    apply(op: Change['op'], q: Quad): void {
+        const k = tripleKey(q), [from, to] = op === 'add' ? [this.removed, this.added] : [this.added, this.removed];
+        if (!from.delete(k)) to.set(k, q);
+    }
+    /** These changes, then `later`. */
+    then(later: NetDiff): NetDiff {
+        for (const q of later.removed.values()) this.apply('remove', q);
+        for (const q of later.added.values()) this.apply('add', q);
+        return this;
+    }
+}
+
 const EMPTY = canonical([]);
 
 const toTriple = (q: Quad) => rdf.quad(q.subject, q.predicate, q.object);
@@ -113,14 +130,20 @@ export class Saver {
      * change of the store marks its graphs, so that the next save computes the canonical form of the files it touched only.
      */
     protected stale: Set<string> | 'all' = 'all';
+    /** The net changes of each view (IRI) since its last write, from that write on: the text patch of the view file reads only their blocks. */
+    protected pending = new Map<string, NetDiff>();
 
     constructor(protected readonly graph: ModelGraph, protected readonly settings: Settings, protected readonly note: (text: string) => void) {
-        graph.onDidChange(event => this.touch(event.patch.map(c => c.quad)));
+        graph.onDidChange(event => {
+            this.touch(event.patch.map(c => c.quad));
+            for (const c of event.patch) if (!this.graph.isDataGraph(c.quad.graph) && !this.graph.isShapesGraph(c.quad.graph)) this.pending.get(c.quad.graph.value)?.apply(c.op, toTriple(c.quad));
+        });
     }
 
     /** Compute every file again at the next `current` (after a read of files). */
     forget(): void {
         this.stale = 'all';
+        this.pending.clear();
     }
 
     /** A file differs from the saved one. */
@@ -142,7 +165,7 @@ export class Saver {
 
     /** Write the changed files (all or none, see `writeAll`). The caller commits `written`. */
     async save(): Promise<CommandResult> {
-        const s = this.settings, saved = this.savedState();
+        const s = this.settings, saved = tracer.span('file', 'saved state', () => this.savedState());
         const problem = [...saved.files].map(f => writeProblem(f)).find(p => !!p);
         if (problem) return { ok: false, error: `${problem}. Convert the file to Turtle first.` };
         const kept = [...saved.files, ...[...saved.views].map(v => s.viewFiles.get(v)?.path)].find(f => f && s.noWrite.has(f));
@@ -151,12 +174,32 @@ export class Saver {
         const now = this.current();
         type Write = { file: string; text: string; done: () => void };
         const writes: Write[] = [];
+        // The pending changes of the views of this save: the changes that come later go to a new diff. A failed save puts them back.
+        const taken = new Map<string, NetDiff>();
+        const failed = (error: string): CommandResult => {
+            for (const [v, diff] of taken) this.pending.set(v, diff.then(this.pending.get(v)!));
+            return { ok: false, error };
+        };
         // A file is written when it changed. `graph`: a view file, written as TriG with one graph (the view).
         const onDisk = async (f: OnDisk & { path: string; saved?: string }, changed: boolean, triples: () => Quad[], content: string, graph?: NamedNode) => {
             if (!changed) return;
             const all = triples();
-            const text = await this.fileText(f, all, content, graph);
-            writes.push({ file: f.path, text, done: () => Object.assign(f, { saved: content, text, triples: all, blanks: 0 }) });
+            let diff: StatementDiff | undefined;
+            if (graph) {
+                const net = this.pending.get(graph.value);
+                if (net) {
+                    taken.set(graph.value, net);
+                    this.pending.set(graph.value, new NetDiff());
+                    diff = { removed: [...net.removed.values()], added: [...net.added.values()],
+                        after: subject => this.graph.match(subject, null, null, graph).map(toTriple), had: subject => !!f.triples?.some(q => q.subject.equals(subject)) };
+                }
+            }
+            const text = await this.fileText(f, all, content, graph, diff);
+            writes.push({ file: f.path, text, done: () => {
+                Object.assign(f, { saved: content, text, triples: all, blanks: 0 });
+                // From this write on, the changes of the view are known.
+                if (graph) { taken.delete(graph.value); if (!this.pending.has(graph.value)) this.pending.set(graph.value, new NetDiff()); }
+            } });
         };
         try {
             for (const f of s.modelFiles.values()) if (!f.error) await onDisk(f, saved.files.has(f.path), () => this.filesTriples([f.path]).get(f.path)!, now.files.get(f.path)!);
@@ -165,21 +208,21 @@ export class Saver {
                 if (f) await onDisk(f, saved.views.has(v.value), () => this.viewTriples(v), now.views.get(v.value)!, v);
             }
         } catch (e) {
-            return { ok: false, error: (e as Error).message };
+            return failed((e as Error).message);
         }
         const w = s.workspace;
         if (saved.workspace) {
             const text = await writeTrig(manifestQuads(s.manifest(), w.path));
             writes.push({ file: w.path, text, done: () => Object.assign(w, { saved: now.workspace, text }) });
         }
-        if (s.retired) return { ok: false, error: 'Another workspace was opened during the save.' };
+        if (s.retired) return failed('Another workspace was opened during the save.');
         // All files or none: temporary files first, then a rename of each.
-        const error = writes.length ? await writeAll(writes, ({ file, text, done }) => {
+        const error = writes.length ? await tracer.span('file', 'write files', () => writeAll(writes, ({ file, text, done }) => {
             this.ownWrites.note(file, text);
             this.written.push(file);
             done();
-        }, '.catenary-tmp') : undefined;
-        if (error) return { ok: false, error };
+        }, '.catenary-tmp')) : undefined;
+        if (error) return failed(error);
         for (const v of saved.deleted) {
             const f = s.viewFiles.get(v)!;
             try {
@@ -262,22 +305,24 @@ export class Saver {
     }
 
     /**
-     * The new text of a file with `triples`. Turtle that Catenary read or wrote before: the old text with a patch (text-patch.ts), checked
-     * by a read of the new text. Else, or when the patch is refused or wrong: the whole file. A file changed on disk since Catenary read
-     * or wrote it is not written (error). `expected`: the canonical form of `triples` (the save has it).
+     * The new text of a file with `triples`. Turtle, or a TriG view file (`graph`: its one graph), that Catenary read or wrote before: the
+     * old text with a patch (text-patch.ts), checked by a read of the new text. Else, or when the patch is refused or wrong: the whole
+     * file. A file changed on disk since Catenary read or wrote it is not written (error). `expected`: the canonical form of `triples` (the save has it).
+     * `diff`: the changes since the last write, when known: then the patch reads only their blocks.
      */
-    protected async fileText(f: OnDisk & { path: string }, triples: Quad[], expected: string, graph?: NamedNode): Promise<string> {
+    protected async fileText(f: OnDisk & { path: string }, triples: Quad[], expected: string, graph?: NamedNode, diff?: StatementDiff): Promise<string> {
         const problem = this.settings.writeProblemOf(f.path);
         if (problem) throw new Error(problem);
         // Undefined: not on disk (a new file, or removed): write it.
         const disk = await readUnchanged(f.path, f.text);
-        const whole = () => serializeRdf(graph ? triples.map(q => rdf.quad(q.subject, q.predicate, q.object, graph)) : triples, f.path);
-        if (graph || !/\.ttl$/i.test(f.path)) return whole();
+        const whole = () => tracer.span('file', 'whole file', () => serializeRdf(graph ? triples.map(q => rdf.quad(q.subject, q.predicate, q.object, graph)) : triples, f.path));
+        if (!(graph ? /\.trig$/i : /\.ttl$/i).test(f.path)) return whole();
         if (disk !== undefined && f.triples) {
-            const r = await patchTurtle(disk, f.path, f.triples, triples, PREFIXES);
-            if (r.ok && await sameTriples(r.text, f.path, expected)) return r.text;
+            const r = await tracer.span('file', 'text patch', () => diff ? patchTurtleDiff(disk, f.path, diff, PREFIXES, graph) : patchTurtle(disk, f.path, f.triples!, triples, PREFIXES, graph));
+            if (r.ok && await tracer.span('file', 'read back', () => sameTriples(r.text, f.path, expected, graph))) return r.text;
             this.note(`${path.basename(f.path)}: written as a whole (${r.ok ? 'the patch did not read back as the model' : r.reason}).`);
         }
+        if (graph) return whole();
         // The whole file in the style of the patcher: the prefixes that it uses, then one block for each subject.
         const header = Object.entries(PREFIXES).map(([p, ns]) => `@prefix ${p}: <${ns}> .`).join('\n') + '\n';
         const generated = await patchTurtle(header, f.path, [], triples);
@@ -292,10 +337,12 @@ export class Saver {
     }
 }
 
-/** `text` reads back as the triples whose canonical form is `expected`. */
-async function sameTriples(text: string, file: string, expected: string): Promise<boolean> {
+/** `text` reads back as the triples whose canonical form is `expected`; with `graph`, each one in that graph. */
+async function sameTriples(text: string, file: string, expected: string, graph?: NamedNode): Promise<boolean> {
     try {
-        return canonical((await parseRdf(text, file)).map(toTriple)) === expected;
+        const quads = /\.(ttl|trig)$/i.test(file) ? parseTurtleText(text, file) : await parseRdf(text, file);
+        if (graph ? !quads.every(q => q.graph.equals(graph)) : quads.some(q => q.graph.termType !== 'DefaultGraph')) return false;
+        return canonical(quads.map(toTriple)) === expected;
     } catch {
         return false;
     }

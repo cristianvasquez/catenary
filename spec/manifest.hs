@@ -1448,10 +1448,14 @@ law_viewPatchWritesOneFile b op =
 
 -- 10.2 Write form -----------------------------------------------------------------------
 
--- | Write form: a Turtle text patch where possible. It reads only the blocks of the changed subjects and keeps the
+-- | Write form: a text patch where possible. It reads only the blocks of the changed subjects and keeps the
 -- syntax tree of the last patched text of each file. Each candidate is parsed again and compared with the expected RDF.
--- Else the whole file: first in the style of the file, then the canonical writer as fallback. A fallback is reported.
--- No text patch for TriG (view files are written whole) and for a text with blank nodes.
+-- Turtle: the blocks of the file. A TriG view file (one graph block, §2.3): the blocks inside the graph block, compared with the graph.
+-- The saver keeps the net statement changes of each view since its last write: the view patch gets them and does not compare
+-- the two full statement sets. A reload of the files forgets them (the next write compares the full sets).
+-- Else the whole file: first in the style of the file (Turtle only), then the canonical writer as fallback. A fallback is reported.
+-- No text patch for a text with blank nodes, for TriG with a second graph block or a statement outside the graph block,
+-- and for a statement without a final "." inside the graph block.
 -- Limit: the fallback can change comments, prefixes and statement order.
 -- Refuse an overwrite when the disk text differs from the last read or write. A watcher reload can drop pending edits, with a warning.
 -- Prepare temporary files, then rename. A failed rename can leave earlier files written.
@@ -1462,11 +1466,26 @@ crossFileRollbackRequired = False
 data WriteForm = TextPatch | WholeInStyle | Canonical deriving Eq
 parsesTo :: Format -> String -> [Quad] -> Bool       -- the text parses to exactly these quads
 hasBlankNodes :: String -> Bool
+oneGraphBlock :: String -> Bool                      -- TriG: directives, then one graph block of statements with a final ".", nothing else
+patchable :: Format -> String -> Bool
+patchable Turtle old = not (hasBlankNodes old)
+patchable TriG old = not (hasBlankNodes old) && oneGraphBlock old
+patchable _ _ = False
 writeForm :: Format -> String -> [Quad] -> Maybe String -> Maybe String -> WriteForm
 writeForm fmt old expected patched styled
-  | fmt == Turtle, not (hasBlankNodes old), Just t <- patched, parsesTo fmt t expected = TextPatch
-  | Just t <- styled, parsesTo fmt t expected = WholeInStyle
+  | patchable fmt old, Just t <- patched, parsesTo fmt t expected = TextPatch
+  | fmt == Turtle, Just t <- styled, parsesTo fmt t expected = WholeInStyle
   | otherwise = Canonical
+-- | A text patch keeps the text outside the blocks of the changed subjects byte for byte: directives, comments and the other
+-- blocks, in their order. In a TriG view file the graph block stays, with its name.
+textOutside :: String -> [Iri] -> String             -- the text without the blocks of these subjects
+changedSubjects :: [Quad] -> [Quad] -> [Iri]         -- the subjects of the statements that differ between before and after
+law_graphPatchKeepsText :: Format -> String -> [Quad] -> [Quad] -> Maybe String -> Bool
+law_graphPatchKeepsText fmt old before after patched =
+  let changed = changedSubjects before after
+  in case patched of
+       Just t | patchable fmt old -> textOutside t changed == textOutside old changed
+       _ -> True
 -- | Any written text parses to the expected RDF.
 law_writeIsFaithful :: Format -> String -> [Quad] -> Maybe String -> Maybe String -> String -> Bool
 law_writeIsFaithful fmt old expected patched styled canonical =
@@ -1835,3 +1854,6 @@ keptDoc = manifestOnly
 sameDoc = manifestOnly
 onDidChange = manifestOnly
 snapshotOf = manifestOnly
+oneGraphBlock = manifestOnly
+textOutside = manifestOnly
+changedSubjects = manifestOnly
