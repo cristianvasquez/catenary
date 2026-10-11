@@ -9,7 +9,7 @@ import {
 } from '@catenary/model';
 import { ModelGraph, VALIDATION_GRAPH } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
-import { shapeable, unshapedClasses } from './shape-proposal';
+import { shapeable, shapedClasses } from './shape-proposal';
 import { termKey } from './terms';
 
 /** Element id -> ids of the views with a placement of it (a card: view:element; a relation: rdf:reifies of its triple). */
@@ -41,8 +41,10 @@ export function placements(g: ModelGraph, byTerm: Map<string, string>, ids?: str
         if (!s) result.set(id, s = new Set());
         s.add(elementId(view as NamedNode));
     };
-    const terms = ids && [...new Set(ids.flatMap(id => [...byTerm].filter(([, value]) => value === id).map(([key]) => key.slice(1, -1))
-        .concat(elementTerm(id)?.value ?? [])))];
+    // The property shape terms of each id once, not one scan of byTerm per id.
+    const termsOf = new Map<string, string[]>();
+    if (ids) for (const [key, value] of byTerm) termsOf.set(value, [...termsOf.get(value) ?? [], key.slice(1, -1)]);
+    const terms = ids && [...new Set(ids.flatMap(id => (termsOf.get(id) ?? []).concat(elementTerm(id)?.value ?? [])))];
     const triples = ids?.flatMap(id => { const t = relationTriple(id); return t ? [`(<${t.s.value}> <${t.p.value}> <${t.o.value}>)`] : []; });
     for (const r of select({ g }, 'PREFIX view: <' + NS.view + '> SELECT ?v ?e WHERE { ' + (terms ? 'VALUES ?e { ' + terms.map(s => '<' + s + '>').join(' ') + ' } ' : '') + 'GRAPH ?v { ?pl view:element ?e } FILTER (isIRI(?e)) }')) {
         add(byTerm.get(termKey(r.e as NamedNode)) ?? elementId(r.e as NamedNode), r.v);
@@ -74,17 +76,42 @@ export function kindsOf(doc: Doc, view: View | undefined, id: string): ElementKi
 type ClassFacts = Pick<ItemFacts, 'types' | 'classShapes' | 'unshaped'>;
 
 /**
- * rdf:type of an IRI element, any graph except the SHACL report. A class: the node shapes that target it, and itself when there is
- * none. Another element: its types in the model graph that no node shape targets.
+ * rdf:type of each IRI element, any graph except the SHACL report. A class: the node shapes that target it, and itself when there is
+ * none. Another element: its types in the model graph that no node shape targets. Three queries for all terms and the shaped classes
+ * once per request (§11.3 readBudgetMs): not two queries and every shapes quad for each selected id.
  */
-function classFacts(ctx: ActionContext, term: NamedNode): ClassFacts {
-    const t = `<${term.value}>`;
-    const types = select(ctx, `SELECT DISTINCT ?c WHERE { GRAPH ?g { ${t} a ?c } FILTER (isIRI(?c) && ?g != <${VALIDATION_GRAPH}>) }`).map(r => r.c.value);
-    const isClass = types.some(c => [NS.rdfs + 'Class', 'http://www.w3.org/2002/07/owl#Class'].includes(c))
-        || ctx.g.select(`${PREFIXES} SELECT ?x WHERE { { GRAPH ?g { ?x a ${t} } FILTER (?g != <${VALIDATION_GRAPH}>) } UNION { GRAPH ?h { ?x sh:targetClass ${t} } } } LIMIT 1`).length > 0;
-    if (!isClass) return { types, unshaped: unshapedClasses(ctx.g, [term]) };
-    const classShapes = Object.values(ctx.shapes.nodeShapes).filter(s => s.targetClass === term.value).map(s => s.id);
-    return { types, classShapes, unshaped: classShapes.length || !shapeable(term.value) ? [] : [term.value] };
+function classFactsOf(ctx: ActionContext, terms: NamedNode[]): Map<string, ClassFacts> {
+    const facts = new Map<string, ClassFacts>();
+    if (!terms.length) return facts;
+    const values = [...new Set(terms.map(t => `<${t.value}>`))].join(' ');
+    const report = `<${VALIDATION_GRAPH}>`;
+    const group = (rows: Record<string, Term>[], s: string, c: string) => {
+        const out = new Map<string, string[]>();
+        for (const r of rows) {
+            const list = out.get(r[s].value) ?? [];
+            if (!list.includes(r[c].value)) out.set(r[s].value, [...list, r[c].value]);
+            else out.set(r[s].value, list);
+        }
+        return out;
+    };
+    const types = group(select(ctx, `SELECT ?s ?c WHERE { VALUES ?s { ${values} } GRAPH ?g { ?s a ?c } FILTER (isIRI(?c) && ?g != ${report}) }`), 's', 'c');
+    const modelTypes = group(select(ctx, `SELECT DISTINCT ?s ?c WHERE { VALUES ?s { ${values} } GRAPH <${ctx.g.model.value}> { ?s a ?c } FILTER (isIRI(?c)) }`), 's', 'c');
+    const classes = new Set(select(ctx, `SELECT DISTINCT ?c WHERE { VALUES ?c { ${values} } { GRAPH ?g { ?x a ?c } FILTER (?g != ${report}) } UNION { GRAPH ?h { ?x sh:targetClass ?c } } }`)
+        .map(r => r.c.value));
+    const shaped = shapedClasses(ctx.g);
+    const shapesOf = new Map<string, string[]>();
+    for (const s of Object.values(ctx.shapes.nodeShapes)) if (s.targetClass) shapesOf.set(s.targetClass, [...shapesOf.get(s.targetClass) ?? [], s.id]);
+    for (const term of terms) {
+        const ts = types.get(term.value) ?? [];
+        const isClass = ts.some(c => [NS.rdfs + 'Class', 'http://www.w3.org/2002/07/owl#Class'].includes(c)) || classes.has(term.value);
+        if (!isClass) {
+            facts.set(term.value, { types: ts, unshaped: (modelTypes.get(term.value) ?? []).filter(c => !shaped.has(c) && shapeable(c)).sort() });
+            continue;
+        }
+        const classShapes = shapesOf.get(term.value) ?? [];
+        facts.set(term.value, { types: ts, classShapes, unshaped: classShapes.length || !shapeable(term.value) ? [] : [term.value] });
+    }
+    return facts;
 }
 
 /** The facts of the items of a target. A placement id of `target.view` gives its element. */
@@ -92,13 +119,16 @@ export function selectionFacts(ctx: ActionContext, target: ActionTarget): Select
     const { doc } = ctx;
     const view = target.view ? ctx.viewOf(target.view) : undefined;
     const scope = view ? target.view : undefined;
-    const items = [...new Set(target.ids)].map((id): ItemFacts => {
+    const ids = [...new Set(target.ids)];
+    const termOf = (element: string) => !doc.relations[element] && !doc.shapes.properties[element] && !doc.shapes.constraints[element] ? elementTerm(element) : undefined;
+    const classFacts = classFactsOf(ctx, ids.flatMap(id => termOf(elementOfId(view, id)) ?? []));
+    const items = ids.map((id): ItemFacts => {
         const element = elementOfId(view, id);
         const kinds = kindsOf(doc, view, element);
         // A mark is known only by its view: its kind comes from the selected id (its placement) in that view.
         if (!kinds.length && element !== id) kinds.push(...kindsOf(doc, view, id));
-        const term = !doc.relations[element] && !doc.shapes.properties[element] && !doc.shapes.constraints[element] ? elementTerm(element) : undefined;
-        const { types, classShapes, unshaped }: ClassFacts = term ? classFacts(ctx, term) : { types: [], unshaped: [] };
+        const term = termOf(element);
+        const { types, classShapes, unshaped }: ClassFacts = (term && classFacts.get(term.value)) ?? { types: [], unshaped: [] };
         const views = ctx.placements.get(element) ?? new Set<string>();
         const p = doc.shapes.properties[element];
         return {

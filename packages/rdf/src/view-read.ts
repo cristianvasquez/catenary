@@ -10,6 +10,7 @@ import { MODEL_GRAPH, ModelGraph, P, SKOS_MEMBERSHIP, SKOS_TYPES, VALIDATION_GRA
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
 import { shapesIndexOf } from './shapes-read';
+import { instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { tracer } from './trace';
 
@@ -163,9 +164,12 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
             }
         }
     }
+    // The instance check of the placed terms in one query, and the subjects by value: no scan per placed term.
+    const placedInstances = elements ? instancesAmong(g, placed) : new Set<string>();
+    const subjectValues = new Set(subjects.map(s => s.s.value));
     if (elements) for (const iri of placed) {
-        if (!g.isInstance(rdf.namedNode(iri))) continue;
-        if (subjects.some(s => s.s.value === iri)) continue;
+        if (!placedInstances.has(iri)) continue;
+        if (subjectValues.has(iri)) continue;
         const home = g.homeOf(rdf.namedNode(iri));
         if (home.equals(g.model)) continue;
         const rows = g.match(rdf.namedNode(iri), null, null, home).map(q => ({ s: { termType: q.subject.termType, value: q.subject.value, term: q.subject } as Plain,

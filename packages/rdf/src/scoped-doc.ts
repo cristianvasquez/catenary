@@ -8,6 +8,7 @@ import { Doc, NS, ShapesModel, View, boxes, elementOfId, emptyDoc } from '@caten
 import { MODEL_GRAPH, ModelGraph, P, VALIDATION_GRAPH, fileOfGraph, labelFromIri, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
+import { inModelAmong, instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { ViewReadContext, readView, viewLabels } from './view-read';
 
@@ -61,11 +62,9 @@ export function scopedDoc(ctx: ViewReadContext, scope: DocScope): Doc {
         }
         return id;
     }))];
-    const instances = new Set<string>();
-    for (const id of elements) {
-        const t = relationTriple(id);
-        for (const x of t ? [t.s, t.o] : [elementTerm(id)]) if (x?.termType === 'NamedNode' && g.isInstance(x)) instances.add(x.value);
-    }
+    // The instance check of all element terms in one query, not one read per data graph and term.
+    const terms = elements.flatMap(id => { const t = relationTriple(id); return (t ? [t.s, t.o] : [elementTerm(id)]).flatMap(x => x?.termType === 'NamedNode' ? [x.value] : []); });
+    const instances = new Set<string>(instancesAmong(g, terms));
     const own = [...instances];
     if (scope.neighbors && own.length) for (const x of neighbors(g, own)) instances.add(x);
     if (instances.size && (scope.neighbors || [...instances].some(s => !doc.instances[elementId(rdf.namedNode(s))]))) records(g, doc, [...instances]);
@@ -81,7 +80,8 @@ export function neighbors(g: ModelGraph, subjects: string[]): string[] {
         VALUES ?s { ${subjects.map(iri).join(' ')} }
         { GRAPH ?g { ?s ?p ?x } } UNION { GRAPH ?g { ?x ?p ?s } }
         FILTER (isIRI(?x) && ?g IN (${graphs}) && ?p NOT IN (rdf:type, rdfs:label)) }`);
-    return found.map(r => r.x.value).filter(x => g.isInstance(rdf.namedNode(x)));
+    const instances = instancesAmong(g, found.map(r => r.x.value));
+    return found.map(r => r.x.value).filter(x => instances.has(x));
 }
 
 /**
@@ -97,9 +97,10 @@ function records(g: ModelGraph, doc: Doc, iris: string[]): void {
     }
     const files = new Map<string, string>();
     const subjects: Statements[] = [];
+    const inModel = inModelAmong(g, iris);
     for (const s of iris) {
         const t = rdf.namedNode(s);
-        const home = g.homeOf(t);
+        const home = inModel.has(s) ? g.model : g.homeOf(t);
         if (home.equals(g.model)) {
             const e = statements.get('NamedNode ' + s);
             if (e) subjects.push(e);

@@ -22,7 +22,7 @@ import { dataPredicates, formData, hiddenRelations, knownClasses as readKnownCla
 import { reportProblems } from './report-read';
 import { DocScope, instanceLabels } from './scoped-doc';
 import { search } from './search';
-import { filesOfElement, selected, textTargets } from './selection';
+import { filesOfElement, filesOfElements, selected, textTargets } from './selection';
 import { Settings } from './settings';
 import { Metamodel, formShapes } from './shapes';
 import { ShapesIndex } from './shapes-read';
@@ -172,12 +172,15 @@ export class PanelReads implements ModelQueries {
     selectionActions(target: ActionTarget): SelectionActions {
         if (!this.file) return { actions: [], items: [], cards: [] };
         const doc = this.scoped({ elements: target.ids, selectionViews: [target.view] });
+        const elements = target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id));
+        // The files of all elements in two queries, not one scan of the statements for each element.
+        const files = filesOfElements(this.graph, () => this.shapesIndex(), this.settings, elements);
         const ctx: ActionContext = {
             g: this.graph, shapes: this.shapesIndex().model,
-            placements: placements(this.graph, this.shapesIndex().byTerm, target.ids.map(id => elementOfId(target.view ? doc.views[target.view] : undefined, id))),
+            placements: placements(this.graph, this.shapesIndex().byTerm, elements),
             doc,
             viewOf: v => doc.views[v],
-            filesOf: id => filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id)
+            filesOf: id => files.get(id) ?? filesOfElement(this.graph, () => this.shapesIndex(), this.settings, id)
         };
         return selectionActions(ctx, target);
     }

@@ -528,6 +528,14 @@ applicable a xs = case arity a of
   AtLeast n -> length xs >= n && all (appliesTo a) xs
   EmptySelection -> null xs
 commandsOf :: Action -> [Element] -> [EditCommand]   -- what one run of an applicable action sends
+-- | The reads of the window selection (RPC selected and selectionActions) wait for a quiet time after its last change: a marquee or
+-- a shift-click sequence sends one read of each, of the last selection. A read for a menu or an action goes at once. Reason: each
+-- change sent two reads, and they queued up on the backend thread for seconds in a large view (manifest §11.3 readBudgetMs).
+selectionQuietMs :: Int
+selectionQuietMs = 100
+selectionReads :: [[Element]] -> [[Element]]     -- the changes of the selection within one quiet time; the selections read
+law_selectionReadsLastOnly :: [[Element]] -> Bool
+law_selectionReadsLastOnly changes = null changes || selectionReads changes == [last changes]
 law_oneCommandPerAction :: Action -> [Element] -> Bool
 law_oneCommandPerAction a xs = applicable a xs ==> length (commandsOf a xs) <= 1
 
@@ -1781,3 +1789,4 @@ embedDestination = manifestOnly
 slug = manifestOnly
 lastName = manifestOnly
 sha256Hex = manifestOnly
+selectionReads = manifestOnly

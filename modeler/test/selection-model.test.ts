@@ -3,7 +3,7 @@ import { Emitter } from '@theia/core/lib/common/event';
 import { Doc, ModelSelection, ModelSnapshot, View, emptyDoc, boxes } from '@catenary/model';
 import { resolveSelection, selectionInView } from '../../packages/model/test/doc-reference';
 import { ModelFrontend } from '../src/browser/model-client';
-import { SelectionModel } from '../src/browser/selection-model';
+import { SELECTION_QUIET_MS, SelectionModel } from '../src/browser/selection-model';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
 const view = (id: string, instances: string[], extra: Partial<View> = {}): View =>
@@ -33,11 +33,14 @@ function selectionModel() {
     };
     const s = Object.assign(new SelectionModel(), { model: model as unknown as ModelFrontend });
     (s as unknown as { init(): void }).init();
+    // The selection follows the change after its quiet time: wait for the resolution that the change brings.
     const push = async (d: Doc, snap: ModelSnapshot) => {
         current = d;
         model.snapshot = snap;
+        const resolved = new Promise<void>(r => { const l = s.onDidResolve(() => { l.dispose(); r(); }); });
         snapshots.fire(snap);
-        await vi.waitFor(() => expect(s.resolved.ids).toEqual(s.selection.ids));
+        await resolved;
+        expect(s.resolved.ids).toEqual(s.selection.ids);
     };
     return { s, push, model, snapshots };
 }
@@ -163,6 +166,31 @@ describe('selection model', () => {
         await Promise.resolve();
         pending[0](resolveSelection(doc(), { ids: ['a'] }));
         expect(await action).toEqual(current);
+    });
+
+    it('law_selectionReadsLastOnly: a sequence of selection changes sends one read, of the last selection, after the quiet time', async () => {
+        vi.useFakeTimers();
+        try {
+            const { s, model } = selectionModel();
+            const selected = vi.spyOn(model.service, 'selected');
+            s.set({ view: 'A', ids: ['a'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            s.set({ view: 'A', ids: ['a', 'b'] });
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS - 1);
+            expect(selected).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(selected.mock.calls.map(([sel]) => sel.ids)).toEqual([['a', 'b']]);
+            expect(s.resolved.instances).toEqual(['a', 'b']);
+            // An action asks at once, and the quiet read joins it: one read.
+            s.set({ view: 'A', ids: ['b'] });
+            const action = s.resolve();
+            expect(selected).toHaveBeenCalledTimes(2);
+            expect((await action).instances).toEqual(['b']);
+            await vi.advanceTimersByTimeAsync(SELECTION_QUIET_MS);
+            expect(selected).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('an answer for an older selection does not replace the resolved selection', async () => {

@@ -3,7 +3,7 @@
 
 import { NS } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { ModelGraph, VALIDATION_GRAPH, labelFromIri } from './graph';
+import { MODEL_GRAPH, ModelGraph, VALIDATION_GRAPH, labelFromIri } from './graph';
 
 export const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}> PREFIX view: <${NS.view}>`;
 
@@ -125,3 +125,24 @@ export const compareLabels = (a: string, b: string) => {
     return x < y ? -1 : x > y ? 1 : a < b ? 1 : a > b ? -1 : 0;
 };
 
+
+/** The IRIs of `iris` with an rdf:type or an rdfs:label in the model graph (ModelGraph.inModel), in one query. */
+export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
+    const values = [...new Set(iris)].filter(s => s !== g.model.value);
+    if (!values.length) return new Set();
+    return new Set(rows(g, `SELECT DISTINCT ?s WHERE { VALUES ?s { ${values.map(iri).join(' ')} } GRAPH ${iri(g.model.value)} { ?s rdf:type|rdfs:label ?x } }`).map(r => r.s.value));
+}
+
+/**
+ * The IRIs of `iris` that are instances (ModelGraph.isInstance: in the model graph, or a SKOS subject of a shapes graph), in one or
+ * two queries. Reason: isInstance reads the store once per data graph and term (§11.3 readBudgetMs).
+ */
+export function instancesAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {
+    const values = [...new Set(iris)].filter(s => s !== g.model.value && s !== MODEL_GRAPH);
+    const found = inModelAmong(g, values);
+    const rest = values.filter(s => !found.has(s)), shapes = g.shapesGraphs();
+    if (rest.length && shapes.length) for (const r of rows(g, `SELECT DISTINCT ?s WHERE { VALUES ?s { ${rest.map(iri).join(' ')} }
+        GRAPH ?sg { { ?s rdf:type ?t FILTER (?t IN (skos:ConceptScheme, skos:Concept, skos:Collection)) } UNION { ?s skos:inScheme|skos:topConceptOf ?y } }
+        FILTER (?sg IN (${shapes.map(t => iri(t.value)).join(', ')})) }`)) found.add(r.s.value);
+    return found;
+}
