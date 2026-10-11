@@ -791,7 +791,7 @@ law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b o
 
 -- 5.3 History ---------------------------------------------------------------------------
 
--- | The history model (packages/rdf/src/history.ts). The head of a stack is its top.
+-- | The history model (packages/rdf-core/src/history.ts). The head of a stack is its top.
 -- A command records its patch, the entry of the migration queue that it applied and the entries that it proposed.
 -- A command without a quad patch changes nothing. Undo and redo restore its file graphs and migration queue.
 -- A read from disk (open, reload, a watcher change) clears the history (§10.4).

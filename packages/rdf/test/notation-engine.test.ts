@@ -11,7 +11,7 @@ import { VALIDATION_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
 import { keyTerm, nquads, readNotations, storeIndex, storeInput, viewFiguresOf } from '../src/notations';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { fileURLToPath } from 'node:url';
 

@@ -254,6 +254,9 @@ importers:
       canonical-md:
         specifier: ^0.3.0
         version: 0.3.0
+      rdf-core:
+        specifier: workspace:*
+        version: link:../rdf-core
       rdf-ext:
         specifier: ^2.6.0
         version: 2.6.0
@@ -269,6 +272,25 @@ importers:
       shaclxtract:
         specifier: ^0.1.0
         version: 0.1.0
+    devDependencies:
+      '@rdfjs/types':
+        specifier: ^2.0.1
+        version: 2.0.1
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.4)(terser@5.51.2)(yaml@2.9.1)
+
+  packages/rdf-core:
+    dependencies:
+      rdf-ext:
+        specifier: ^2.6.0
+        version: 2.6.0
+      rdf-files:
+        specifier: workspace:*
+        version: link:../rdf-files
     devDependencies:
       '@rdfjs/types':
         specifier: ^2.0.1

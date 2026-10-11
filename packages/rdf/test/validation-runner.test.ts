@@ -133,7 +133,7 @@ describe('the validator (spec/manifest.hs §9 validator)', () => {
 
     it('is pure: it imports nothing from the store or the workspace', () => {
         const src = readFileSync(join(__dirname, '..', 'src', 'validate.ts'), 'utf8');
-        expect([...src.matchAll(/from '\.\/([\w-]+)'/g)].map(x => x[1]).sort()).toEqual(['skolem', 'terms']);
+        expect([...src.matchAll(/from '\.\/([\w-]+)'/g)].map(x => x[1]).sort()).toEqual(['terms']); // skolemize comes from rdf-core
     });
 
     it('without shapes gives an empty report (law_validatorNoShapes)', async () => {

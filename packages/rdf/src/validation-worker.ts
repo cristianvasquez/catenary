@@ -3,7 +3,7 @@
 // or { id, error }.
 
 import { parentPort } from 'worker_threads';
-import { PlainTerm, plainToQuads, quadsToPlain } from './plain-quads';
+import { PlainTerm, plainToQuads, quadsToPlain } from 'rdf-core';
 import { validate } from './validate';
 
 parentPort?.on('message', async (m: { id: number; data: PlainTerm[]; shapes: PlainTerm[] }) => {

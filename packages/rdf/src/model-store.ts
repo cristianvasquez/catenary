@@ -9,7 +9,7 @@ import { applicabilityOf } from './queries';
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, ModelSnapshot, PREFIXES, SnapshotChange,
+    ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, MigrationChange, ModelSnapshot, PREFIXES, SnapshotChange,
     ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, cardOf, idIri, prefixesProblem, setPrefixes
 } from '@catenary/model';
 import * as path from 'path';
@@ -20,7 +20,7 @@ import { executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
 import { ChangeScope, Classified, VALIDATION_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
 import { GraphChange, ModelGraph, Patch } from './graph';
-import { History } from './history';
+import { History } from 'rdf-core';
 import { elementId, elementTerm } from './ids';
 import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
@@ -113,7 +113,7 @@ export class ModelStore {
     protected settings?: Settings;
     protected loader?: Loader;
     protected saver?: Saver;
-    protected readonly history = new History();
+    protected readonly history = new History<MigrationChange>();
     protected readonly validationData = (() => {
         const store = this;
         return new ValidationData({

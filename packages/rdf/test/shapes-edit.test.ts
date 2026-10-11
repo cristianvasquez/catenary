@@ -8,7 +8,7 @@ import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { viewRead } from '../src/view-read';
 import { migrationCount } from '../src/shape-ops';
-import { SKOLEM_BASE, skolemize } from '../src/skolem';
+import { SKOLEM_BASE, skolemize } from 'rdf-core';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { emptyMetamodel, metamodelFromQuads, shapesTriples, vocabularyQuads } from '../src/shapes';

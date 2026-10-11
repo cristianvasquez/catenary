@@ -16,6 +16,9 @@
       "rdf-files": [
         "packages/rdf-files/src/index.ts"
       ],
+      "rdf-core": [
+        "packages/rdf-core/src/index.ts"
+      ],
       "@catenary/contracts": [
         "packages/contracts/src/index.ts"
       ],

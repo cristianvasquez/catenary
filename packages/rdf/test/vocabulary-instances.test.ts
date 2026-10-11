@@ -7,7 +7,7 @@ import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { formData } from '../src/queries';
 import { emptyMetamodel } from '../src/shapes';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { DCAT, parseQuads, run } from './helpers';
 import { newModelGraph } from '../src/model-graph';

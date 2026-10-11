@@ -25,7 +25,8 @@
     "shaclxtract": "^0.1.0",
     "@catenary/shacl": "workspace:*",
     "@catenary/contracts": "workspace:*",
-    "@catenary/rdfs": "workspace:*"
+    "@catenary/rdfs": "workspace:*",
+    "rdf-core": "workspace:*"
   },
   "devDependencies": {
     "@rdfjs/types": "^2.0.1",

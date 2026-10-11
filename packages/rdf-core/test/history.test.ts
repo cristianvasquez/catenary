@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { MigrationChange } from '@catenary/model';
 import type { Patch } from '../src/graph';
 import { History } from '../src/history';
 import { rdf } from '../src/terms';
 
 const patch = (n: string): Patch => [{ op: 'add', quad: rdf.quad(rdf.namedNode('urn:s'), rdf.namedNode('urn:p'), rdf.literal(n)) }];
-const proposal = (from: string): { change: MigrationChange; reason: string } => ({ change: { kind: 'renameClass', from, to: from + '2' }, reason: 'test' });
+type Rename = { kind: 'renameClass'; from: string; to: string };
+const proposal = (from: string): { change: Rename; reason: string } => ({ change: { kind: 'renameClass', from, to: from + '2' }, reason: 'test' });
 
 describe('History', () => {
     it('undo and redo move one step and restore the patch queue of that step', () => {
-        const h = new History();
+        const h = new History<Rename>();
         h.record(patch('1'), undefined, [proposal('A')]);
         h.record(patch('2'), undefined, []);
         expect(h.migrations.map(m => m.id)).toEqual(['m1']);
@@ -23,7 +23,7 @@ describe('History', () => {
     });
 
     it('a new step clears redo; an applied entry leaves the queue; a command without a patch is not a step', () => {
-        const h = new History();
+        const h = new History<Rename>();
         h.record(patch('1'), undefined, [proposal('A'), proposal('B')]);
         h.take('undo');
         h.take('redo');
@@ -37,7 +37,7 @@ describe('History', () => {
     });
 
     it('keeps the last 200 steps; dismiss and clear', () => {
-        const h = new History();
+        const h = new History<Rename>();
         for (let i = 0; i < 205; i++) h.record(patch(String(i)), undefined, i === 204 ? [proposal('A')] : []);
         let n = 0;
         while (h.take('undo')) n++;

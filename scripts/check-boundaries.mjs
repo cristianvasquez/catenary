@@ -4,7 +4,8 @@
 //  2. rdf-files imports no Catenary package: other projects use it.
 //  3. The browser side and the shared side of the Theia extension do not import @catenary/rdf.
 //  4. @catenary/contracts imports no Catenary package. A vocabulary plugin (shacl, rdfs) imports only @catenary/contracts.
-//  5. packages/rdf/src/graph.ts (the transaction core) imports only change.ts, skolem.ts and terms.ts of packages/rdf.
+//  5. rdf-core imports only rdf-files, rdf-serialization, RDF libraries and Node built-ins: other projects use it.
+//  6. packages/rdf-core/src/graph.ts (the transaction core) imports only terms.ts of rdf-core.
 // Exit code 1 on a violation.
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { builtinModules } from 'module';
@@ -12,7 +13,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const packages = ['packages/contracts', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf', 'modeler'];
+const packages = ['packages/contracts', 'packages/shacl', 'packages/rdfs', 'packages/model', 'packages/rdf-serialization', 'packages/rdf-files', 'packages/rdf-core', 'packages/rdf', 'modeler'];
 const forbidden = [
     { dir: 'packages/shacl/src/common', module: '@catenary/shacl/backend', why: 'shared SHACL rules must not load the backend' },
     { dir: 'modeler/src/browser', module: '@catenary/shacl/backend', why: 'the browser reads SHACL through RPC' },
@@ -29,9 +30,13 @@ const onlyCatenary = [
     { dir: 'packages/shacl/src', allowed: ['@catenary/contracts'], why: 'a vocabulary plugin sees only the contracts' },
     { dir: 'packages/rdfs/src', allowed: ['@catenary/contracts'], why: 'a vocabulary plugin sees only the contracts' }
 ];
+// The only packages that the files under `dir` can import, besides their own files and Node built-ins.
+const onlyPackages = [
+    { dir: 'packages/rdf-core/src', allowed: ['rdf-files', 'rdf-serialization', 'rdf-ext', '@rdfjs/types', 'n3', 'oxigraph'], why: 'rdf-core is generic: other projects use it' }
+];
 // The only modules of the same package that `file` can import.
 const onlyLocal = [
-    { file: 'packages/rdf/src/graph.ts', allowed: ['change', 'skolem', 'terms'], why: 'the transaction core imports no vocabulary or view module' }
+    { file: 'packages/rdf-core/src/graph.ts', allowed: ['terms'], why: 'the transaction core imports no other module' }
 ];
 
 const files = dir => readdirSync(dir).flatMap(f => {
@@ -60,6 +65,11 @@ for (const pkg of packages) {
             }
             for (const o of onlyLocal) {
                 if (rel === o.file && s.startsWith('.') && !o.allowed.includes(path.relative(path.dirname(file), path.resolve(path.dirname(file), s)).split(path.sep).join('/'))) {
+                    errors.push(`${rel}: imports ${s} (${o.why})`);
+                }
+            }
+            for (const o of onlyPackages) {
+                if (rel.startsWith(o.dir + '/') && !s.startsWith('.') && !builtinModules.includes(s.replace(/^node:/, '').split('/')[0]) && !o.allowed.includes(packageName(s))) {
                     errors.push(`${rel}: imports ${s} (${o.why})`);
                 }
             }

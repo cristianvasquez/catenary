@@ -1,0 +1,40 @@
+{
+  "name": "rdf-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A quad store with graph roles, transactions with a patch log, undo, redo and change events; skolemization, term helpers, plain quads for worker threads. Node only. No Catenary dependency.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cristianvasquez/catenary.git",
+    "directory": "packages/rdf-core"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "readme.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "watch": "tsc -w",
+    "test": "vitest run --config ../../vitest.config.mts packages/rdf-core/test"
+  },
+  "dependencies": {
+    "rdf-ext": "^2.6.0",
+    "rdf-files": "workspace:*"
+  },
+  "devDependencies": {
+    "@rdfjs/types": "^2.0.1",
+    "@types/node": "^22",
+    "vitest": "^3.2.4"
+  }
+}

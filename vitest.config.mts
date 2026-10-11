@@ -19,7 +19,8 @@ export default defineConfig({
             '@catenary/rdfs': fileURLToPath(new URL('./packages/rdfs/src/index.ts', import.meta.url)),
             '@catenary/model': fileURLToPath(new URL('./packages/model/src/index.ts', import.meta.url)),
             '@catenary/rdf': fileURLToPath(new URL('./packages/rdf/src/index.ts', import.meta.url)),
-            'rdf-files': fileURLToPath(new URL('./packages/rdf-files/src/index.ts', import.meta.url))
+            'rdf-files': fileURLToPath(new URL('./packages/rdf-files/src/index.ts', import.meta.url)),
+            'rdf-core': fileURLToPath(new URL('./packages/rdf-core/src/index.ts', import.meta.url))
         }
     },
     test: {

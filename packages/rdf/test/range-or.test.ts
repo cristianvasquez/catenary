@@ -4,7 +4,7 @@ import { ModelGraph, fileGraphIri } from '../src/graph';
 import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { emptyMetamodel, metamodelFromQuads } from '../src/shapes';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { executeCommand } from '../src/commands';

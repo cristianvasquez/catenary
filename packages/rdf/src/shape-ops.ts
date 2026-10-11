@@ -13,7 +13,7 @@ import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
 import { Result, dropFromView, fail, gone, iriProblem, ok, replaceTerm } from './ops';
 import { S, ShapesIndex, shapesIndexOf } from './shapes-read';
-import { isSkolem } from './skolem';
+import { isSkolem } from 'rdf-core';
 import { rdf } from './terms';
 import { usedIris, P, UsedIris, mint } from './vocabulary';
 import { views, edgeOf } from './views';

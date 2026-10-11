@@ -8,7 +8,7 @@ import { Violation } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { Worker } from 'worker_threads';
 import { ModelGraph, Patch, VALIDATION_GRAPH } from './graph';
-import { PlainTerm, plainToQuads, quadsToPlain } from './plain-quads';
+import { PlainTerm, plainToQuads, quadsToPlain } from 'rdf-core';
 import { rdf } from './terms';
 import { tracer } from './trace';
 import { ShaclResult, ValidationReport, validate } from './validate';

@@ -1,24 +1,25 @@
-// Undo, redo and the patch queue. One EditCommand = one patch = one undo step. Each step keeps the patch queue before and after it.
+// Undo, redo and the patch queue. One command = one patch = one undo step. Each step keeps the patch queue before and after it.
+// `C`: the type of a proposed change in the queue (Catenary: a data migration of a shape edit).
 
-import type { Migration, MigrationChange } from '@catenary/model';
 import type { Patch } from './graph';
 
 const UNDO_LIMIT = 200;
 
-export type QueueEntry = Omit<Migration, 'count'>;
+/** One entry of the patch queue: an id that History gives, the reason, and the proposed change. */
+export type QueueEntry<C> = { id: string; reason: string } & C;
 
 /** One undo step: the patch, and the patch queue before and after it. */
-export interface Step {
+export interface Step<C = {}> {
     patch: Patch;
     transferFiles: string[];
-    queue: [QueueEntry[], QueueEntry[]];
+    queue: [QueueEntry<C>[], QueueEntry<C>[]];
 }
 
-export class History {
+export class History<C extends object = {}> {
     /** The patch queue. */
-    migrations: QueueEntry[] = [];
-    protected undoStack: Step[] = [];
-    protected redoStack: Step[] = [];
+    migrations: QueueEntry<C>[] = [];
+    protected undoStack: Step<C>[] = [];
+    protected redoStack: Step<C>[] = [];
     protected seq = 0;
 
     get canUndo(): boolean { return this.undoStack.length > 0; }
@@ -28,7 +29,7 @@ export class History {
      * Record a command. The queue loses the entry that the command applied (`applied`) and gets the entries that it proposed. A command
      * without a patch changes nothing (its proposed entries still use ids).
      */
-    record(patch: Patch, applied: string | undefined, proposed: { change: MigrationChange; reason: string }[], transferFiles: string[] = []): void {
+    record(patch: Patch, applied: string | undefined, proposed: { change: C; reason: string }[], transferFiles: string[] = []): void {
         const before = this.migrations;
         let queue = applied ? before.filter(m => m.id !== applied) : before;
         queue = [...queue, ...proposed.map(p => ({ id: `m${++this.seq}`, reason: p.reason, ...p.change }))];
@@ -40,13 +41,13 @@ export class History {
     }
 
     /** The step that `take` would give, without a move. */
-    peek(reason: 'undo' | 'redo'): Step | undefined {
+    peek(reason: 'undo' | 'redo'): Step<C> | undefined {
         const from = reason === 'undo' ? this.undoStack : this.redoStack;
         return from[from.length - 1];
     }
 
     /** The step to undo or redo, moved to the other stack; undefined: none. The patch queue goes back to its state of that step. */
-    take(reason: 'undo' | 'redo'): Step | undefined {
+    take(reason: 'undo' | 'redo'): Step<C> | undefined {
         const [from, to] = reason === 'undo' ? [this.undoStack, this.redoStack] : [this.redoStack, this.undoStack];
         const step = from.pop();
         if (!step) return undefined;

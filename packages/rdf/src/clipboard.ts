@@ -8,7 +8,7 @@ import { serializeRdf } from './files';
 import { figureTermOf, listTermOf } from './figure-edits';
 import { viewFiguresOf } from './notations';
 import * as ops from './ops';
-import { skolemize } from './skolem';
+import { skolemize } from 'rdf-core';
 import { rdf, termKey, tripleKey } from './terms';
 import { readView } from './view-read';
 import { shapePart } from './loader';

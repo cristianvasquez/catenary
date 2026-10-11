@@ -8,7 +8,7 @@ import { OxigraphStore } from 'rdf-files';
 import { links, selectionLinks } from '../src/queries';
 import { readShapes } from '../src/shapes-read';
 import { scopedDoc } from '../src/scoped-doc';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { doc, example, meta, parseQuads } from './helpers';
 import { shapesAndVocabulary } from '../src/shapes';

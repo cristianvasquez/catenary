@@ -5,7 +5,7 @@ import type { Quad } from '@rdfjs/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseRdf, serializeRdf } from '../src/files';
 import { ModelStore } from '../src/model-store';
-import { skolemize } from '../src/skolem';
+import { skolemize } from 'rdf-core';
 import { canonical, parseTrig, writeTrig } from '../src/trig';
 import { MODEL_GRAPH } from '../src/graph';
 import { docOf } from './helpers';

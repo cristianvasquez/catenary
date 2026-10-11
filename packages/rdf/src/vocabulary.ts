@@ -6,7 +6,7 @@ import { NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { nameFromURI, nameToURI } from 'canonical-md';
 import { MODEL_GRAPH, ModelGraph, cmp, sorted } from './graph';
-import { isSkolem } from './skolem';
+import { isSkolem } from 'rdf-core';
 import { rdf } from './terms';
 
 export const P = {

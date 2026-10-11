@@ -6,8 +6,10 @@ import type { Quad, Term } from '@rdfjs/types';
 import { ChangeReason, ChangeTier, Doc, NS, SnapshotChange } from '@catenary/model';
 import { elementId } from './ids';
 
-/** The SHACL report of the last validation (ADR 0007): derived, not saved, not in undo, not in the canonical form. */
-export const VALIDATION_GRAPH = 'urn:trellis:validation';
+import { VALIDATION_GRAPH } from 'rdf-core';
+
+/** The SHACL report of the last validation (rdf-core graph.ts). */
+export { VALIDATION_GRAPH };
 /** Placement geometry and style do not change figure derivation. */
 export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
 

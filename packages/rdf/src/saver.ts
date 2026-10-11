@@ -13,7 +13,7 @@ import { ModelGraph, dataGraphIri, fileGraphIri, fileOfGraph } from './graph';
 import { OnDisk, Saved, Settings } from './settings';
 import { rdf } from './terms';
 import { canonical, writeTrig } from './trig';
-import { skolemize } from './skolem';
+import { skolemize } from 'rdf-core';
 import { tracer } from './trace';
 import { views } from './views';
 
