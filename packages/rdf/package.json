@@ -21,7 +21,7 @@
     "canonical-md": "^0.3.0",
     "rdf-ext": "^2.6.0",
     "rdf-files": "workspace:*",
-    "shacl-engine": "1.1.2",
+    "shacl-engine": "1.1.3",
     "shaclxtract": "^0.1.0",
     "@catenary/shacl": "workspace:*",
     "@catenary/contracts": "workspace:*",

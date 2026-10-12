@@ -47,11 +47,15 @@ packageExtensions:
       '@types/react': '^18.3.0'
       '@types/react-dom': '^18.3.0'
 
+# One Turtle serializer for direct use and for @rdfjs/formats (rdf-ext). 1.1.6 has the list fix (spec/open.md RDF2).
+overrides:
+  '@rdfjs/serializer-turtle': 1.1.6
+
 patchedDependencies:
-  '@rdfjs/serializer-turtle@1.1.5': patches/@rdfjs__serializer-turtle@1.1.5.patch
-  # Fixes not released upstream: (1) a complex SHACL path is decided by structure, not by term type, because Catenary skolemizes path nodes (AGENTS.md).
-  # (2) A shape can have more than one sh:not. (3) sh:qualifiedValueShape validates the property value when sh:node reaches it.
-  'shacl-engine@1.1.2': patches/shacl-engine@1.1.2.patch
+  # Fix not released upstream: a complex SHACL path is decided by structure, not by term type, because Catenary skolemizes path nodes (AGENTS.md).
+  'shacl-engine@1.1.3': patches/shacl-engine@1.1.3.patch
 
 minimumReleaseAgeExclude:
   - shaclxtract@0.1.0
+  - '@rdfjs/serializer-turtle@1.1.6'
+  - shacl-engine@1.1.3

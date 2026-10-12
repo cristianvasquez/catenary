@@ -33,7 +33,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@rdfjs/serializer-turtle": "1.1.5",
+    "@rdfjs/serializer-turtle": "1.1.6",
     "@rdfjs/to-ntriples": "3.0.1",
     "rdf-canonize": "5.0.0",
     "rdf-ext": "2.6.0",
