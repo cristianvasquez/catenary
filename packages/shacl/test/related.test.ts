@@ -15,6 +15,11 @@ ex:Other ex:p ex:o .
 ex:T1 sh:targetClass ex:C .
 ex:T2 sh:targetClass ex:C .
 ex:P sh:path ex:q ; sh:targetClass ex:C .
+ex:D a rdfs:Class ; sh:targetNode ex:x .
+ex:U sh:targetClass ex:D .
+ex:E a rdfs:Class ; ex:p ex:o .
+ex:R sh:node ex:E .
+ex:V sh:targetClass ex:E .
 `;
 
 /** A port over one graph. The element id of an IRI is 'id:' + IRI. */
@@ -49,8 +54,15 @@ describe('Same target class (ui-manifest §8.8 law_sameTargetClass)', () => {
         expect(rows(['P'])).toEqual([]);
     });
 
+    it('an implicit class-target shape found by sh:targetNode or by sh:node lists the sh:targetClass shape, and back', () => {
+        expect(rows(['D'])).toEqual(['same-target-class U ex:D']);
+        expect(rows(['U'])).toEqual(['same-target-class D ex:D']);
+        expect(rows(['E'])).toEqual(['same-target-class V ex:E']);
+        expect(rows(['V'])).toEqual(['same-target-class E ex:E']);
+    });
+
     it('law_sameTargetClass: a selected shape is never in its section, and the relation is symmetric', () => {
-        const all = ['S1', 'S2', 'S3', 'A', 'T1', 'T2', 'P'];
+        const all = ['S1', 'S2', 'S3', 'A', 'T1', 'T2', 'P', 'D', 'U', 'E', 'V', 'R'];
         const related = (s: string) => rows([s]).map(r => r.split(' ')[1]);
         for (const a of all) {
             expect(related(a)).not.toContain(a);

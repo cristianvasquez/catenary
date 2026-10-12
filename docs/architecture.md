@@ -238,6 +238,7 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 | `packages/rdf/test/store.test.ts`, `packages/rdf-files/test/trap.test.ts` | `law_trapReadsFilesOnce`, `law_trapStopsStoreCalls` |
 | `packages/rdf-files/test/text-patch.test.ts`, `packages/rdf/test/review-save.test.ts` | `law_graphPatchKeepsText` |
 | `packages/rdf/test/explorer.test.ts`, `packages/rdf/test/file-explorer.test.ts` | `law_fileRowsOwnSubjects` |
+| `packages/shacl/test/related.test.ts` | `law_sameTargetClass` |
 | `modeler/test/selection-sync.test.ts`, `modeler/test/diagram-ids.test.ts`, `modeler/test/selection-model.test.ts` | `law_oneSelectionPerWindow`, `law_highlightKeys`, `law_selectionReadsLastOnly` |
 | `modeler/test/after-revision.test.ts` | `law_revealAfterShowUpdate` |
 | `modeler/test/action-service.test.ts` | `law_selectionReadsLastOnly`, `law_gestureNoQuietWait` |

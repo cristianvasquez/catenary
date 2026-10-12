@@ -8,14 +8,16 @@ const PREFIXES = `PREFIX sh: <${SH}> PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}>
 
 /**
  * Node shape -> its target classes, by both target forms. One query for the request. A node shape as the host reads it
- * (shapes-read.ts): rdf:type sh:NodeShape, a target, sh:property or a logical constraint, and no sh:path.
+ * (shapes-read.ts): rdf:type sh:NodeShape, a target, sh:node, sh:property or a logical constraint, or the object of sh:node, and no
+ * sh:path. The object of sh:node needs a target class here, so it has statements.
  */
 function targetClasses(port: ExplorerPort): Map<string, Set<string>> {
     return port.memo('shacl-target-classes', () => {
         const classes = new Map<string, Set<string>>();
         for (const r of port.select(`${PREFIXES} SELECT DISTINCT ?s ?c WHERE {
                 { ${port.graph('?s rdf:type sh:NodeShape', '?g1')} }
-                UNION { ${port.graph('?s sh:targetClass|sh:targetSubjectsOf|sh:property|sh:or|sh:xone|sh:and|sh:not ?x', '?g1')} }
+                UNION { ${port.graph('?s sh:targetClass|sh:targetSubjectsOf|sh:targetObjectsOf|sh:targetNode|sh:node|sh:property|sh:or|sh:xone|sh:and|sh:not ?x', '?g1')} }
+                UNION { ${port.graph('?r sh:node ?s', '?g1')} }
                 { ${port.graph('?s sh:targetClass ?c', '?g2')} }
                 UNION { ${port.graph('?s rdf:type ?k', '?g2')} VALUES ?k { rdfs:Class owl:Class } BIND (?s AS ?c) }
                 FILTER NOT EXISTS { ${port.graph('?s sh:path ?path', '?g3')} }
