@@ -80,7 +80,10 @@ export interface NodeShape extends ShapeTargets {
     uri: string;
     label: string;                  // sh:name, else rdfs:label, else the local name
     closed?: boolean;
+    /** sh:description, else rdfs:comment (pickLabel). */
     description?: string;
+    /** Language tag of the literal that `description` shows; undefined: a plain literal. An edit replaces that literal only. */
+    descriptionLanguage?: string;
     /** Shapes file that holds the shape (absolute path, or the graph IRI when unknown). */
     file: string;
     /** Property shapes: sh:property and the members of logical constraints, in id order. */
@@ -98,8 +101,14 @@ export interface PropertyShape {
     /** Logical constraint that holds it (a list member), else it is an sh:property of the owner. */
     constraint?: string;
     path: PathJSON;
+    /** sh:name (pickLabel in the workspace language). */
     name?: string;
+    /** Language tag of the literal that `name` shows; undefined: a plain literal. An edit replaces that literal only. */
+    nameLanguage?: string;
+    /** sh:description (pickLabel in the workspace language). */
     description?: string;
+    /** Language tag of the literal that `description` shows; undefined: a plain literal. */
+    descriptionLanguage?: string;
     minCount?: number;
     maxCount?: number;
     range: Range;

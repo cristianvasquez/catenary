@@ -12,7 +12,7 @@
 
 import {
     LogicalConstraint, LogicalOperator, NODE_KINDS, NS, NodeKind, NodeShape, PathJSON, PropertyShape, Range, ShapesModel, SimpleRange, TermJSON, compactIri,
-    emptyShapes, formatPath, isValueSetRange, pickLabel, termToJSON
+    emptyShapes, formatPath, isValueSetRange, pickLabel, pickLabelLiteral, termToJSON
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
@@ -79,8 +79,14 @@ export function shapesIndexOf(g: ModelGraph): ShapesIndex {
 export function readShapes(quads: Iterable<Quad>, language?: string): ShapesIndex {
     const ds: Dataset = rdf.dataset([...quads]);
     /** The label rule (pickLabel) over the objects of `predicates` (IRIs), in that order. */
-    const pick = (s: Term, predicates: readonly string[]) => pickLabel(predicates.map(p => [...ds.match(s, rdf.namedNode(p))].map(q => q.object)
-        .filter((o): o is Literal => o.termType === 'Literal').map(o => ({ value: o.value, language: o.language }))), language);
+    const literals = (s: Term, predicates: readonly string[]) => predicates.map(p => [...ds.match(s, rdf.namedNode(p))].map(q => q.object)
+        .filter((o): o is Literal => o.termType === 'Literal').map(o => ({ value: o.value, language: o.language })));
+    const pick = (s: Term, predicates: readonly string[]) => pickLabel(literals(s, predicates), language);
+    /** pick, with the language tag of the picked literal (undefined: plain) for the edit of that literal. */
+    const pickText = (s: Term, predicates: readonly string[]) => {
+        const l = pickLabelLiteral(literals(s, predicates), language);
+        return { value: l?.value, language: l?.language || undefined };
+    };
     const objects = (s: Term, p: NamedNode) => [...ds.match(s, p)].map(q => q.object).sort((a, b) => cmp(a.value, b.value));
     const one = (s: Term, p: NamedNode) => objects(s, p)[0];
     const int = (s: Term, p: NamedNode) => { const v = one(s, p)?.value; return v === undefined || isNaN(Number(v)) ? undefined : Number(v); };
@@ -247,9 +253,10 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
         }
         raw = raw.filter(r => r !== 'rdf:type sh:PropertyShape');
         const languageIn = list(one(ps, S.languageIn)).map(t => t.value);
+        const name = pickText(ps, [S.name.value]), description = pickText(ps, [S.description.value]);
         return {
             path: p, pathKey: formatPath(p, iri => `<${iri}>`), rangeKey, range,
-            name: str(ps, S.name), description: str(ps, S.description),
+            name: name.value, nameLanguage: name.language, description: description.value, descriptionLanguage: description.language,
             minCount: int(ps, S.minCount), maxCount: int(ps, S.maxCount),
             nodeKind: range.kind === 'nodeKind' ? undefined : nodeKind, nodeRef,
             pattern: str(ps, S.pattern), minLength: int(ps, S.minLength), maxLength: int(ps, S.maxLength),
@@ -276,6 +283,7 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
         const subjectTargets = objects(s, S.targetSubjectsOf);
         const objectTargets = objects(s, S.targetObjectsOf);
         const nodeTargets = objects(s, S.targetNode).map(termToJSON).filter((t): t is TermJSON => !!t);
+        const description = pickText(s, [S.description.value, S.comment.value]);
         const shape: NodeShape = {
             id, uri: s.value,
             // sh:name first: a rename of a node shape writes sh:name (elements.ts labelTarget).
@@ -287,7 +295,7 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
             targetNodes: nodeTargets.length ? nodeTargets : undefined,
             targetSubjectsOf: subjectTargets.length ? [...new Set(subjectTargets.map(t => t.value))].sort() : undefined,
             closed: str(s, S.closed) === 'true' || undefined,
-            description: str(s, S.description) ?? str(s, S.comment),
+            description: description.value, descriptionLanguage: description.language,
             file: fileOfGraph(graph.value), properties: [], constraints: [],
             raw: rawOf(s, NODE_KNOWN).filter(r => r !== 'rdf:type sh:NodeShape')
         };

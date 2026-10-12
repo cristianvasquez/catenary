@@ -970,7 +970,8 @@ unnamedLabel kind = firstFree (\i -> "unnamed " ++ lower kind ++ " " ++ show i)
 labelPredicates :: [Iri]
 labelPredicates = ["rdfs:label", "skos:prefLabel", "sh:name"]
 -- | The one label rule (packages/model/src/labels.ts pickLabel): of the literals of the first label predicate that has any (one list
--- per predicate, labelPredicates order; a node shape and a value set put the predicate of their rename first), a literal in the workspace language (equal tag or a subtag, case-insensitive), else one without a language, else
+-- per predicate, labelPredicates order; a node shape and a value set put the predicate of their rename first; the name and description
+-- of a property shape read sh:name and sh:description only, the description of a node shape sh:description then rdfs:comment), a literal in the workspace language (equal tag or a subtag, case-insensitive), else one without a language, else
 -- the smallest (compareLabels); several in one step: the smallest. Reason: every read shows the same label, in the language of the workspace.
 pickLabel :: Maybe String -> [[(String, Maybe String)]] -> Maybe String   -- language, (value, language tag) per predicate
 pickLabel lang lists = case filter (not . null) lists of
@@ -1201,6 +1202,19 @@ ownerOf :: Backend -> Id -> Maybe Id                 -- the node shape of a prop
 law_ownerFixed :: Backend -> Id -> PropertyShapePatch -> Bool
 law_ownerFixed b p patch =
   let (r, b') = step b (Execute (SetPropertyShape p patch Nothing)) in not (failed r) ==> ownerOf b' p == ownerOf b p
+-- | An edit of sh:name or sh:description replaces the literal that the Doc shows (same language tag) and keeps the others.
+-- Reason: a shape named in several languages is not reduced to one by an edit. The Doc shows the pickLabel literal (§6.2) and its tag.
+-- An empty value removes that literal only. A shape without a literal gets a plain literal. The same rule applies to the sh:description of a node shape (setNodeShape).
+shapeLiterals :: Backend -> Id -> Iri -> [(String, Maybe String)]   -- shape, predicate: its literals (value, language tag)
+shownLiteral :: Backend -> Id -> Iri -> Maybe (String, Maybe String) -- the literal that the Doc shows (name, description)
+textPatch :: Iri -> String -> PropertyShapePatch                    -- a patch that sets sh:name or sh:description to a trimmed value
+law_nameEditKeepsOtherLanguages :: Backend -> Id -> Iri -> String -> Bool
+law_nameEditKeepsOtherLanguages b p predicate v =
+  let (r, b') = step b (Execute (SetPropertyShape p (textPatch predicate v) Nothing))
+      shown = shownLiteral b p predicate
+      after = shapeLiterals b' p predicate
+      others = filter ((/= shown) . Just) (shapeLiterals b p predicate)
+  in not (failed r) ==> (all (`elem` after) others && (null v || (v, snd =<< shown) `elem` after))
 
 -- | Subject targets form a union. Keep every predicate because any one can select a focus node.
 subjectTargetMatches :: [Iri] -> [Iri] -> Bool  -- target predicates, predicates on a subject
@@ -1880,6 +1894,9 @@ isPlacementQuad = manifestOnly
 compareLabels = manifestOnly
 docInstanceLabel = manifestOnly
 iriLabel = manifestOnly
+shapeLiterals = manifestOnly
+shownLiteral = manifestOnly
+textPatch = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

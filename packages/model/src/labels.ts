@@ -23,13 +23,17 @@ export const compareLabels = (a: string, b: string) => {
  * the smallest. Undefined: no literal (the caller uses the name from the IRI).
  */
 export function pickLabel(literals: LabelLiteral[][], language?: string): string | undefined {
+    return pickLabelLiteral(literals, language)?.value;
+}
+
+/** pickLabel, with the language tag of the picked literal: an edit replaces that literal (spec/manifest.hs law_nameEditKeepsOtherLanguages). */
+export function pickLabelLiteral(literals: LabelLiteral[][], language?: string): LabelLiteral | undefined {
     const candidates = literals.find(l => l.length);
     if (!candidates) return undefined;
     const sorted = [...candidates].sort((a, b) => compareLabels(a.value, b.value));
     const want = language?.trim().toLowerCase();
     const tag = (l: LabelLiteral) => (l.language ?? '').toLowerCase();
-    const found = (want ? sorted.find(l => tag(l) === want || tag(l).startsWith(want + '-')) : undefined) ?? sorted.find(l => !tag(l)) ?? sorted[0];
-    return found.value;
+    return (want ? sorted.find(l => tag(l) === want || tag(l).startsWith(want + '-')) : undefined) ?? sorted.find(l => !tag(l)) ?? sorted[0];
 }
 
 /** "subject — predicate → object". */

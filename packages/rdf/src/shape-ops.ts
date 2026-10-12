@@ -308,7 +308,8 @@ export function createNodeShape(g: ModelGraph, label: string, targetClass?: stri
 
 
 export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): Result {
-    const shape = shapesIndex(g).nodeShape.get(id);
+    const idx = shapesIndex(g);
+    const shape = idx.nodeShape.get(id), before = idx.model.nodeShapes[id];
     if (!shape) return gone('node shape', id);
     const { term: s, graph } = shape;
     if (patch.targetClass !== undefined) {
@@ -333,8 +334,21 @@ export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): 
         // rdf:type is on every instance: a closed shape ignores it.
         if (patch.closed && !g.object(s, S.ignoredProperties, graph)) g.add(s, S.ignoredProperties, writeList(g, [P.type], graph, s.value + '-ignoredProperties'), graph);
     }
-    if (patch.description !== undefined) g.set(s, S.description, patch.description.trim() ? rdf.literal(patch.description.trim()) : undefined, graph);
+    if (patch.description !== undefined) replaceShownLiteral(g, s, S.description, graph, before?.description, before?.descriptionLanguage, patch.description);
     return ok(undefined);
+}
+
+/**
+ * Replace the literal of (s, p) that the Doc shows (`shown`, with its language tag; undefined: plain) by `next` with the same tag.
+ * Empty `next`: remove that literal only. The other literals stay (spec/manifest.hs law_nameEditKeepsOtherLanguages).
+ */
+function replaceShownLiteral(g: ModelGraph, s: Quad_Subject, p: NamedNode, graph: NamedNode, shown: string | undefined, language: string | undefined, next: string | null | undefined): void {
+    const tag = language ?? '';
+    if (shown !== undefined) {
+        for (const q of g.match(s, p, null, graph)) if (q.object.termType === 'Literal' && q.object.value === shown && q.object.language === tag) g.remove(q);
+    }
+    const value = next?.trim();
+    if (value) g.add(s, p, tag ? rdf.literal(value, tag) : rdf.literal(value), graph);
 }
 
 /** Delete a node shape: its statements, its property shapes, sh:node references to it, and its cards in all views. */
@@ -422,8 +436,8 @@ export function setPropertyShape(g: ModelGraph, id: string, patch: PropertyShape
     if ('maxCount' in patch) num(S.maxCount, patch.maxCount);
     if ('minLength' in patch) num(S.minLength, patch.minLength);
     if ('maxLength' in patch) num(S.maxLength, patch.maxLength);
-    if ('name' in patch) text(S.name, patch.name);
-    if ('description' in patch) text(S.description, patch.description);
+    if ('name' in patch) replaceShownLiteral(g, ps, S.name, graph, before.name, before.nameLanguage, patch.name);
+    if ('description' in patch) replaceShownLiteral(g, ps, S.description, graph, before.description, before.descriptionLanguage, patch.description);
     if ('pattern' in patch) text(S.pattern, patch.pattern);
     if ('languageIn' in patch) {
         clear(g, ps, S.languageIn, graph);

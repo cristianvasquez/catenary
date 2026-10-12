@@ -158,7 +158,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
 - **Locked files**: globs of locked (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
 - **Validation**: select what SHACL validation checks after each change. Off shows no problems and no badges. Open views checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. All checks the whole model. The status bar shows the mode.
-- **Label language**: type a language tag, for example `en` or `sv`. Labels in this language show first (rdfs:label, skos:prefLabel, sh:name). `en` also takes `en-GB`. Empty: a label without a language, else the first in order. A change reads the files again.
+- **Label language**: type a language tag, for example `en` or `sv`. Labels in this language show first (rdfs:label, skos:prefLabel, sh:name). `en` also takes `en-GB`. Empty: a label without a language, else the first in order. A change reads the files again. The Name and Description fields of a property shape, and the Description field of a node shape, edit the literal in that language and keep the literals in other languages.
 
 The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 
