@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { FanEdge, Pt, Rect, along, cubicAt, curveAt, curvePath, curveSegments, facingPoint, fanOut, linePath, nearestSegment, port, routeSides } from '../src/browser/diagram/edge-route';
+import { FanEdge, PORT_INSET, Pt, Rect, along, cubicAt, curveAt, curvePath, curveSegments, facingPoint, fanOut, fanPitch, linePath, nearestSegment, port, portSpan, routeSides } from '../src/browser/diagram/edge-route';
+import { edgeGeometry } from '../src/browser/diagram/edge-chrome';
 
 const box = { x: 0, y: 0, width: 200, height: 100 };
 
@@ -87,11 +88,39 @@ it('fanOut: the edges of one side of a box take separate ports, in the order of 
     // The only edge of the left side, and the only edge into each target: in the middle.
     expect(offsets.get('e-left')!.from).toBe(0);
     expect(offsets.get('e-up')!.to).toBe(0);
-    // Zoomed out, the pitch grows so that it stays 48 px on screen.
-    expect(fanOut([edge('e-down', 'down', down), edge('e-up', 'up', up)], 0.5).get('e-down')!.from).toBe(48);
+    // Zoomed out, the pitch grows so that it stays 48 px on screen: 96 units at zoom 0.5, on a side that has room for it.
+    const tall = { ...a, height: 300 };
+    const tallEdge = (id: string, target: string, targetBox: Rect) => ({ ...edge(id, target, targetBox), sourceBox: tall });
+    expect(fanOut([tallEdge('e-down', 'down', down), tallEdge('e-up', 'up', up)], 0.5).get('e-down')!.from).toBe(48);
+    // The span rule: a side 100 units high has 68 units for ports, so the pitch shrinks to 68 and the ports stay inside the side.
+    expect(fanOut([edge('e-down', 'down', down), edge('e-up', 'up', up)], 0.5).get('e-down')!.from).toBe(34);
     // A top side reserves the width of the longest label.
     const top = fanOut([{ ...edge('x', 'up', box(0, -400)), name: 'a-long-property-name' }, edge('y', 'up2', box(100, -400))], 1);
     expect(Math.abs(top.get('x')!.from - top.get('y')!.from)).toBeGreaterThan(48);
     // A self edge without bends keeps its arch ports: it takes no port of the group.
     expect(fanOut([{ ...edge('s', 'a', a) }], 1).size).toBe(0);
+});
+
+it('fanPitch (UI §7.4): the preferred pitch, reduced to span / (n - 1) when the ports do not fit, at least 4 units', () => {
+    expect(fanPitch(168, 1, 96)).toBe(96);
+    expect(fanPitch(168, 2, 96)).toBe(96);
+    expect(fanPitch(68, 4, 96)).toBeCloseTo(68 / 3);
+    expect(fanPitch(0, 4, 96)).toBe(4);
+    expect(portSpan({ x: 0, y: 0, width: 200, height: 100 }, 'right')).toBe(100 - 2 * PORT_INSET);
+});
+
+it('fanOut with edgeGeometry: four parallel edges between 100-unit cards at zoom 0.5 end on four distinct ports inside each side', () => {
+    const a = { x: 0, y: 0, width: 200, height: 100 }, b = { x: 600, y: 0, width: 200, height: 100 };
+    const ids = ['e1', 'e2', 'e3', 'e4'];
+    const edges: FanEdge[] = ids.map(id => ({ id, source: 'a', target: 'b', sourceBox: a, targetBox: b, fromSide: '', toSide: '', vertices: [], name: id }));
+    const offsets = fanOut(edges, 0.5);
+    // Without the span rule the offsets would be -144, -48, 48, 144 and the clamp would merge them in pairs at the corners.
+    expect(ids.map(id => offsets.get(id)!.from)).toEqual([-34, -34 / 3, 34 / 3, 34].map(x => expect.closeTo(x, 6)));
+    const geometry = ids.map((id, lane) => edgeGeometry({ source: a, target: b, fromSide: '', toSide: '', lane, lanes: 4, offsets: offsets.get(id), zoom: 0.5, name: id, style: 'direct' }));
+    const p1 = geometry.map(g => g.p1), p2 = geometry.map(g => g.p2);
+    expect(new Set(p1.map(p => p.y)).size).toBe(4);
+    expect(new Set(p2.map(p => p.y)).size).toBe(4);
+    for (const p of p1) { expect(p.x).toBe(200); expect(p.y).toBeGreaterThanOrEqual(a.y + PORT_INSET); expect(p.y).toBeLessThanOrEqual(a.y + a.height - PORT_INSET); }
+    for (const p of p2) { expect(p.x).toBe(600); expect(p.y).toBeGreaterThanOrEqual(b.y + PORT_INSET); expect(p.y).toBeLessThanOrEqual(b.y + b.height - PORT_INSET); }
+    expect(new Set(geometry.map(g => g.path)).size).toBe(4);
 });

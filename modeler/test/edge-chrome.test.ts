@@ -36,6 +36,20 @@ describe('route (UI §7.4)', () => {
         expect(g.p2).toEqual({ x: 450, y: 100 });
     });
 
+    it('fan-out ports that fit in the side get no tangent push: the curve leaves the port along the normal', () => {
+        const g = edgeGeometry({ ...props, offsets: { from: -30, to: 20 } });
+        // The first cubic starts at p1 and its first control point is on the normal of the right side (same y).
+        const c1 = /^M[^C]+C([^,]+),([^ ]+)/.exec(g.path)!;
+        expect(Number(c1[2])).toBeCloseTo(g.p1.y);
+    });
+
+    it('a self edge keeps its spread ports when offsets are given', () => {
+        const g = edgeGeometry({ ...props, target: source, self: true, offsets: { from: -30, to: 20 } });
+        const spread = Math.min(source.width / 3, 60);
+        expect(g.p1).toEqual({ x: source.x + source.width / 2 + spread, y: 0 });
+        expect(g.p2).toEqual({ x: source.x + source.width / 2 - spread, y: 0 });
+    });
+
     it('direct: straight segments through the bends', () => {
         const vertices = [{ x: 300, y: 400 }];
         const g = edgeGeometry({ ...props, vertices, style: 'direct' });

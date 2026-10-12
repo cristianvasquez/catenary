@@ -26,10 +26,17 @@ export function nearestSide(b: Rect, p: Pt): Side {
     return d.reduce((m, x) => (x[1] < m[1] ? x : m))[0];
 }
 
-/** Point on a side of `b`, `offset` from its middle, kept 16 units inside the corners. */
+/** Model units between a port and the corner of its side (UI §7.4 portInset). */
+export const PORT_INSET = 16;
+/** Minimum model units between two ports of one side (UI §7.4 minPortPitch). */
+export const MIN_PORT_PITCH = 4;
+/** The length of a side of `b` that ports can take: the side less the inset at each corner. */
+export const portSpan = (b: Rect, side: Side) => Math.max(0, (side === 'top' || side === 'bottom' ? b.width : b.height) - 2 * PORT_INSET);
+
+/** Point on a side of `b`, `offset` from its middle, kept PORT_INSET units inside the corners. */
 export function port(b: Rect, side: Side, offset: number): Pt {
-    const span = side === 'top' || side === 'bottom' ? b.width : b.height;
-    offset = Math.max(-Math.max(0, span / 2 - 16), Math.min(Math.max(0, span / 2 - 16), offset));
+    const half = portSpan(b, side) / 2;
+    offset = Math.max(-half, Math.min(half, offset));
     switch (side) {
         case 'top': return { x: b.x + b.width / 2 + offset, y: b.y };
         case 'bottom': return { x: b.x + b.width / 2 + offset, y: b.y + b.height };
@@ -136,6 +143,11 @@ export function routeSides(source: Rect, target: Rect, fromSide: Side | '', toSi
     };
 }
 
+/** The pitch of `n` ports on a side of `span` usable units (UI §7.4 fanPitch): `preferred`, reduced so that the ports fit, at least MIN_PORT_PITCH. */
+export function fanPitch(span: number, n: number, preferred: number): number {
+    return n < 2 ? preferred : Math.max(MIN_PORT_PITCH, Math.min(preferred, span / (n - 1)));
+}
+
 export interface FanEdge {
     id: string;
     source: string;
@@ -151,15 +163,17 @@ export interface FanEdge {
 /**
  * Port offsets of the edges of a diagram (UI §7.4): the edges that leave or enter one side of one box fan out along that side, in the
  * order of the point they go to (the first bend, else the other box), so that no two share a port. The pitch is readable on screen:
- * `pitch` screen px, or the width of the longest label on a top or bottom side. A self edge without bends keeps its own arch ports.
+ * `pitch` screen px, or the width of the longest label on a top or bottom side. When the ports at that pitch do not fit in the side
+ * (portSpan), the pitch shrinks to span / (n - 1), at least MIN_PORT_PITCH: the ports stay distinct whenever the span allows it. Clamping
+ * each offset alone would merge the outer ports. A self edge without bends keeps its own arch ports.
  */
 export function fanOut(edges: readonly FanEdge[], zoom: number, pitch = 48, font = 18): Map<string, { from: number; to: number }> {
     const k = 1 / (zoom > 0 ? zoom : 1);
     type Entry = { id: string; end: 'from' | 'to'; at: number; name: string };
-    const groups = new Map<string, { side: Side; entries: Entry[] }>();
-    const add = (box: string, side: Side, e: Entry) => {
-        const key = `${box} ${side}`;
-        const g = groups.get(key) ?? groups.set(key, { side, entries: [] }).get(key)!;
+    const groups = new Map<string, { box: Rect; side: Side; entries: Entry[] }>();
+    const add = (id: string, box: Rect, side: Side, e: Entry) => {
+        const key = `${id} ${side}`;
+        const g = groups.get(key) ?? groups.set(key, { box, side, entries: [] }).get(key)!;
         g.entries.push(e);
     };
     const toward = (p: Pt, side: Side) => side === 'top' || side === 'bottom' ? p.x : p.y;
@@ -168,15 +182,16 @@ export function fanOut(edges: readonly FanEdge[], zoom: number, pitch = 48, font
         const self = e.source === e.target;
         if (self && !e.vertices.length) continue;
         const { fromSide, toSide } = routeSides(e.sourceBox, e.targetBox, e.fromSide, e.toSide, e.vertices, self);
-        add(e.source, fromSide, { id: e.id, end: 'from', at: toward(e.vertices[0] ?? center(e.targetBox), fromSide), name: e.name });
-        add(e.target, toSide, { id: e.id, end: 'to', at: toward(e.vertices[e.vertices.length - 1] ?? center(e.sourceBox), toSide), name: e.name });
+        add(e.source, e.sourceBox, fromSide, { id: e.id, end: 'from', at: toward(e.vertices[0] ?? center(e.targetBox), fromSide), name: e.name });
+        add(e.target, e.targetBox, toSide, { id: e.id, end: 'to', at: toward(e.vertices[e.vertices.length - 1] ?? center(e.sourceBox), toSide), name: e.name });
     }
     const out = new Map<string, { from: number; to: number }>();
     const fontK = Math.max(font, 11 * k);
-    for (const { side, entries } of groups.values()) {
+    for (const { box, side, entries } of groups.values()) {
         entries.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id) || a.end.localeCompare(b.end));
         const longest = Math.max(0, ...entries.map(e => e.name.length));
-        const step = side === 'top' || side === 'bottom' ? Math.max(pitch * k, longest * fontK * 0.65 + 24 * k) : Math.max(pitch * k, fontK * 2.5);
+        const preferred = side === 'top' || side === 'bottom' ? Math.max(pitch * k, longest * fontK * 0.65 + 24 * k) : Math.max(pitch * k, fontK * 2.5);
+        const step = fanPitch(portSpan(box, side), entries.length, preferred);
         entries.forEach((e, i) => {
             const o = out.get(e.id) ?? out.set(e.id, { from: 0, to: 0 }).get(e.id)!;
             o[e.end] = (i - (entries.length - 1) / 2) * step;

@@ -102,7 +102,8 @@ export function edgeGeometry(p: Pick<EdgeProps, 'source' | 'target' | 'fromSide'
         return { path: curvePath([seg]), p1, p2, n1, n2, label: curveAt([seg], 0.5), tail: curveAt([seg], 0.88), points };
     }
     if (!curved) return { path: linePath(points), p1, p2, n1, n2, label: along(points, 0.5), tail: along(points, tailAt), points };
-    // Lane separation when a small card clamps its ports: push the end tangents apart.
+    // Lane separation when a small card clamps its ports (the lane fallback): push the end tangents apart. The fan-out offsets fit in the
+    // side (edge-route.ts fanPitch), so the ports are the fan-out ports and the push is zero for them.
     const push = (b: Box, side: Side, at: Pt, offset: number) => side === 'top' || side === 'bottom'
         ? { x: (b.x + b.width / 2 + offset - at.x) * 4 / 3, y: 0 }
         : { x: 0, y: (b.y + b.height / 2 + offset - at.y) * 4 / 3 };
