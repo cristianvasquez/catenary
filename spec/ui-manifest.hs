@@ -1751,9 +1751,13 @@ resolveEmbed views iri = lookup iri views
 -- The root is the common ancestor folder of the sources. A folder source counts as itself, a file source as its parent folder.
 -- A folder source includes its subfolders. Hidden folders (a name that starts with ".") and linked folders are not read.
 -- Hidden files in other folders are documents. A file source is a document when it has a Markdown name.
--- A folder dialog asks for the destination. It starts at the last destination of the same root (window storage).
+-- The command shows a confirmation dialog: the destination with "Choose…" (a folder dialog), the documents of the check as a tree
+-- with a checkbox per document and per folder, the counts of checked documents and of views, and the problems of the check.
+-- All documents are checked at the start. The destination starts at the last destination of the same root (window storage).
+-- Export is disabled without a destination or without a checked document. The export writes the checked documents only.
 -- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. The first argument is a JSON string or a list of
--- strings, for example '["/abs/a.md","/abs/folder"]'. Without arguments it uses the navigator selection and asks.
+-- strings, for example '["/abs/a.md","/abs/folder"]'. With both arguments there is no dialog, and all documents are exported.
+-- Without arguments it uses the navigator selection and shows the dialog.
 -- The export reads and checks everything, renders each embedded view once, and then writes. A check error writes nothing.
 -- Check errors: a source that does not exist, an unresolved embed (with its file, line and IRI), a destination that is the root
 -- or is in it (real paths, so a link does not hide it), a destination that is a file, and a conflict (§9.3).
@@ -1770,6 +1774,10 @@ parentFolder :: FilePath -> FilePath
 commonFolder :: FilePath -> FilePath -> FilePath     -- the deepest folder that contains both folders
 law_oneFolderIsRoot :: FilePath -> Bool              -- one folder source: the export of that folder
 law_oneFolderIsRoot p = isFolder p ==> exportRoot [p] == p
+exportedDocuments :: [FilePath] -> [FilePath] -> [FilePath]   -- the listed documents of the check, the unchecked documents
+exportedDocuments listed excluded = filter (`notElem` excluded) listed
+law_excludedNotWritten :: [FilePath] -> [FilePath] -> FilePath -> Bool   -- an unchecked document is not written
+law_excludedNotWritten listed excluded d = d `elem` excluded ==> d `notElem` exportedDocuments listed excluded
 exportZoom :: Double
 exportZoom = 1
 svgName :: Iri -> FilePath                           -- the last name of the IRI and a hash of the whole IRI: a label does not change it

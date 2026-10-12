@@ -205,7 +205,11 @@ Export Markdown… writes the selected Markdown files and folders to another fol
 
 1. Select the Markdown files and folders in the file navigator.
 2. Right-click the selection and select Export Markdown….
-3. Select the destination folder. The dialog starts at the last destination of the same root.
+3. In the Export Markdown dialog, select Choose… and select the destination folder. The dialog starts with the last destination of the same root.
+4. Clear the checkbox of each document that you do not want to export. A folder checkbox changes all documents of the folder.
+5. Select Export.
+
+The dialog shows the number of checked documents and of views, and the problems of the check. Export is not available without a destination or without a checked document.
 
 The root is the deepest folder that contains the selection. The export keeps the folder structure under the root and the text of each document. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection, handles or edit controls. Links to exported documents do not change. Catenary copies linked images and attachments: a file under the root goes to the same path, and a file outside the root goes to `_resources/`.
 

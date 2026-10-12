@@ -1234,6 +1234,36 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.equal(await menuItem('Export Markdown…').count(), 0);
   await page.keyboard.press('Escape');
 
+  // Without arguments: the navigator selection, and the confirmation dialog with a checkbox per document. The export writes the
+  // checked documents only. The destination comes from the real Theia folder dialog ("Choose…"): its path input works headless.
+  await navNode(page, 'Architecture.md').first().click();
+  await navNode(page, 'Data model.md').first().click({ modifiers: ['Control'] });
+  run = cliRaw('run', 'catenary.exportMarkdown');
+  assert.equal(run.status, 'waiting', JSON.stringify(run));
+  assert.equal(run.prompt.kind, 'dialog');
+  assert.equal(run.prompt.title, 'Export Markdown');
+  for (const part of ['Architecture.md', 'Data model.md', 'No folder selected', '2 documents, 2 views']) assert.ok(run.prompt.text.includes(part), `${part}: ${run.prompt.text}`);
+  assert.deepEqual(run.prompt.buttons, ['Cancel', 'Export']);
+  const exportDialog = page.locator('.dialogOverlay', { has: page.locator('.catenary-export-dialog') });
+  assert.equal(await exportDialog.locator('.dialogControl button.main').isDisabled(), true, 'no destination: Export is disabled');
+  const exportRow = label => exportDialog.locator('.catenary-export-tree .catenary-export-row', { has: page.locator('.catenary-export-label', { hasText: new RegExp(`^${label.replace(/[.]/g, '\\.')}$`) }) });
+  await exportRow('Data model.md').locator('input[type=checkbox]').uncheck();
+  assert.ok(cliRaw('prompt').text.includes('1 document, 2 views'), 'the summary counts the checked documents');
+  const outDialog = path.join(dir, 'out-dialog');
+  fs.mkdirSync(outDialog);
+  await exportDialog.getByRole('button', { name: 'Choose…', exact: true }).click();
+  const folderDialog = page.locator('.dialogOverlay', { has: page.locator('.theia-LocationInputToggle') });
+  await folderDialog.locator('.theia-LocationInputToggle').click();
+  await folderDialog.locator('.theia-LocationTextInput').fill(dir);
+  await folderDialog.locator('.theia-LocationTextInput').press('Enter');
+  await folderDialog.locator('.theia-TreeNode', { has: page.locator('.theia-TreeNodeSegmentGrow', { hasText: /^out-dialog$/ }) }).click();
+  await folderDialog.locator('.dialogControl button.main').click();
+  await exportDialog.locator('.catenary-export-path', { hasText: outDialog }).waitFor();
+  await exportDialog.locator('.dialogControl button.main:not([disabled])').click();
+  for (let i = 0; i < 100 && !fs.existsSync(path.join(outDialog, 'Architecture.md')); i++) await page.waitForTimeout(100);
+  assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the checked document is exported');
+  assert.equal(fs.existsSync(path.join(outDialog, 'Data model.md')), false, 'an unchecked document is not exported');
+
   // A label change does not break an embed: the export resolves by IRI.
   assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: second.id, label: 'Renamed view' })).result.ok, true);
   const out = path.join(dir, 'out');
