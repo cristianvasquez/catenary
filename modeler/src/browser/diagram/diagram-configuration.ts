@@ -11,7 +11,7 @@ import {
 import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, CommandService, MessageService } from '@theia/core';
 import { Container, inject, injectable } from '@theia/core/shared/inversify';
-import { TYPES as CATENARY, boxOf, ownerOfLabel } from '@catenary/model';
+import { TYPES as CATENARY, boxOf, ownerOfLabel, selection } from '@catenary/model';
 import { DIAGRAM_TYPE, PASTE_RESULT, viewIdOfUri } from '../../common/protocol';
 import { SelectionModel } from '../selection-model';
 import { ModelActions } from '../actions';
@@ -26,7 +26,7 @@ import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
 import { canvasKeyTargets } from './diagram-ids';
-import { CutMark, cutMark, cutMessage } from './cut-mark';
+import { CLIP_ID_KEY, CutMark, asCopyClip, cutMark, cutMessage } from './cut-mark';
 import { CutMarkPostprocessor, CutMarkRedrawCommand, CutMarkStartup, PasteResultHandler } from './cut-mark-canvas';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
@@ -240,10 +240,17 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         if (!event.clipboardData || !view || !this.shouldCopy(event)) return;
         const clipboardId = generateUuid(), ids = this.keyTargets('cut');
         event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
-        this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' })))
-            .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
+        // The clip carries its id (the paste reply names it). A cut canceled before the clip arrives stores it as a copy.
+        this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' }))).then(action => {
+            const data = { ...action.clipboardData, [CLIP_ID_KEY]: clipboardId };
+            this.clipboardService.put(this.mark.clipboardId === clipboardId ? data : asCopyClip(data), clipboardId);
+        });
         this.mark.set(view, ids, clipboardId);
         this.messages.info(cutMessage(ids.length));
+        // The clip includes the boxes inside a selected frame and the cards of an entity group: mark them too.
+        void this.model.service.view(view).then(stored => {
+            if (stored && this.mark.clipboardId === clipboardId) this.mark.set(view, [...new Set([...ids, ...selection(stored, ids).map(b => b.id)])], clipboardId);
+        });
         event.preventDefault();
     }
 

@@ -3,13 +3,13 @@
 
 import {
     Action, CommandExecutionContext, CommandReturn, GModelElement, GModelRoot, IActionDispatcher, IActionHandler, IDiagramOptions,
-    IDiagramStartup, IVNodePostprocessor, SystemCommand, TYPES, ViewerOptions, setClass
+    IAsyncClipboardService, IDiagramStartup, IVNodePostprocessor, SystemCommand, TYPES, ViewerOptions, setClass
 } from '@eclipse-glsp/client';
 import { MessageService } from '@theia/core';
 import { inject, injectable, preDestroy } from '@theia/core/shared/inversify';
 import type { VNode } from 'snabbdom';
 import { PasteResultAction, viewIdOfUri } from '../../common/protocol';
-import { ALREADY_IN_VIEW, CutMark, pasteMessage } from './cut-mark';
+import { ALREADY_IN_VIEW, CutMark, asCopyClip, pasteMessage } from './cut-mark';
 
 export const CUT_MARK_CLASS = 'cut-marked';
 
@@ -72,6 +72,7 @@ export class CutMarkStartup implements IDiagramStartup {
     @inject(TYPES.IActionDispatcher) protected readonly dispatcher: IActionDispatcher;
     @inject(TYPES.ViewerOptions) protected readonly viewer: ViewerOptions;
     @inject(TYPES.IDiagramOptions) protected readonly options: IDiagramOptions;
+    @inject(TYPES.IAsyncClipboardService) protected readonly clipboard: IAsyncClipboardService;
     protected listener?: { dispose(): void };
     protected onKey?: (event: KeyboardEvent) => void;
 
@@ -84,6 +85,9 @@ export class CutMarkStartup implements IDiagramStartup {
         });
         this.onKey = event => {
             if (event.key !== 'Escape' || !this.mark.marked || !base.contains(event.target as Node)) return;
+            // Escape cancels the cut: the clip stays as a copy, so a later paste does not move.
+            const id = this.mark.clipboardId, data = id ? this.clipboard.get(id) : undefined;
+            if (id && data) this.clipboard.put(asCopyClip(data), id);
             this.mark.apply({ kind: 'escape' });
             event.preventDefault();
             event.stopPropagation();
@@ -108,6 +112,7 @@ export class PasteResultHandler implements IActionHandler {
         const r = action as PasteResultAction;
         const cutAll = r.mode === 'cut' && r.alreadyInView;
         this.messages.info(cutAll ? ALREADY_IN_VIEW : pasteMessage(r.placed, r.skipped, r.missing));
-        if (r.mode === 'cut') this.mark.apply({ kind: 'paste', outcome: r.alreadyInView ? 'alreadyInView' : 'moved' });
+        // A reply of an earlier cut does not clear the mark of a newer one.
+        if (r.mode === 'cut' && r.clipboardId === this.mark.clipboardId) this.mark.apply({ kind: 'paste', outcome: r.alreadyInView ? 'alreadyInView' : 'moved' });
     }
 }

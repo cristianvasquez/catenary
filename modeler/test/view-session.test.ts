@@ -480,17 +480,17 @@ describe('model changes reaching view clients', () => {
         edit({ kind: 'delete', ids: [gone] });
         const c = await client(store, second);
         const handler = Object.assign(new PasteHandler(), { session: c.session });
-        const paste = (data: unknown) => handler.createCommand(PasteOperation.create({
-            clipboardData: { [VIEW_CLIP_FORMAT]: JSON.stringify(data) },
+        const paste = (data: unknown, extra: Record<string, string> = {}) => handler.createCommand(PasteOperation.create({
+            clipboardData: { [VIEW_CLIP_FORMAT]: JSON.stringify(data), ...extra },
             editorContext: { selectedElementIds: [], lastMousePosition: { x: 0, y: 0 } }
         }));
         await paste(clip);
         expect(c.sent.filter(a => a.kind === PASTE_RESULT)).toEqual([{ kind: PASTE_RESULT, mode: 'copy', placed: 1, skipped: 1, missing: 1, alreadyInView: false }]);
-        // A cut clip that the view shows completely: no command, the reply only.
+        // A cut clip that the view shows completely: no command, the reply only. The reply names the clip of the cut.
         c.sent.length = 0;
         const before = store.snapshot();
-        await paste(copyFromView(docOf(store), first, [instance, other], 'cut')!);
-        expect(c.sent).toEqual([{ kind: PASTE_RESULT, mode: 'cut', placed: 0, skipped: 2, missing: 0, alreadyInView: true }]);
+        await paste(copyFromView(docOf(store), first, [instance, other], 'cut')!, { clipboardId: 'clip-1' });
+        expect(c.sent).toEqual([{ kind: PASTE_RESULT, mode: 'cut', placed: 0, skipped: 2, missing: 0, alreadyInView: true, clipboardId: 'clip-1' }]);
         expect(store.snapshot()).toEqual(before);
         expect(cardOf(docOf(store).views[first], instance)).toBeDefined();
     });

@@ -958,6 +958,7 @@ releaseAll v g = Uncollect v g Nothing
 -- The paste of the marked clip moves the elements (moveBetweenViews, one undo step).
 -- The mark is window state. A new cut replaces it. A copy, Escape on a canvas, a window close and a paste that moves clear it.
 -- Undo does not change the mark: the cut ran no command. A refused paste keeps the mark.
+-- Escape cancels the cut: the clip stays as a copy, so a later paste places and does not move. The mark covers the whole clip.
 -- Messages: a cut of N elements shows "N elements cut. Paste moves them. Escape cancels." (for 1: "1 element cut. Paste moves it.").
 -- A paste shows "Placed N." then " Skipped N already in this view." and " N missing from this model." when not zero.
 -- A paste of a cut clip into a canvas that shows all of its elements runs no command, shows "Already in this view." and clears the mark.

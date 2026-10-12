@@ -47,6 +47,8 @@ export interface PasteResultAction {
     skipped: number;
     missing: number;
     alreadyInView: boolean;
+    /** The clip id of a cut, from the clipboard data: the client clears the mark only for this clip. */
+    clipboardId?: string;
 }
 export const PASTE_RESULT = 'catenaryPasteResult';
 

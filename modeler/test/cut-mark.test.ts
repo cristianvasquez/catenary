@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CutMark, MarkEvent, NO_MARK, cutMessage, markAfter, pasteMessage } from '../src/browser/diagram/cut-mark';
+import { VIEW_CLIP_FORMAT } from '@catenary/model';
+import { CutMark, MarkEvent, NO_MARK, asCopyClip, cutMessage, markAfter, pasteMessage } from '../src/browser/diagram/cut-mark';
 
 // The cut mark (spec/ui-manifest.hs §5.8): window state with no command and no undo step.
 
@@ -34,6 +35,14 @@ describe('cut mark', () => {
         expect(seen).toHaveBeenCalledTimes(2);
         expect(seen.mock.calls[1][0]).toMatchObject({ view: 'v' });
         expect(mark.marked).toBe(false);
+    });
+
+    it('a canceled cut keeps its clip as a copy: a later paste places and does not move', () => {
+        const data = { format: VIEW_CLIP_FORMAT, [VIEW_CLIP_FORMAT]: JSON.stringify({ mode: 'cut', source: 'urn:v', boxes: [], edges: [] }), clipboardId: 'c1' };
+        const copy = asCopyClip(data);
+        expect(JSON.parse(copy[VIEW_CLIP_FORMAT])).toEqual({ mode: 'copy', source: 'urn:v', boxes: [], edges: [] });
+        expect(copy.clipboardId).toBe('c1');
+        expect(asCopyClip({ format: 'x' })).toEqual({ format: 'x' });
     });
 
     it('messages: exact text, singular for one element, zero counts left out', () => {

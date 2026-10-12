@@ -219,7 +219,8 @@ export class PasteHandler extends OperationHandler {
         if (within) for (const b of clip.boxes) if (b.kind === 'card') before.delete(model.placementOfId(this.session.view, model.iriId(b.id)));
         const skipped = within ? 0 : shownBoxes(this.session.view, clip);
         const result = (placed: number, missing: number): PasteResultAction =>
-            ({ kind: PASTE_RESULT, mode: clip.mode, placed, skipped, missing, alreadyInView: placed === 0 && missing === 0 });
+            ({ kind: PASTE_RESULT, mode: clip.mode, placed, skipped, missing, alreadyInView: placed === 0 && missing === 0,
+                ...(op.clipboardData.clipboardId ? { clipboardId: op.clipboardData.clipboardId } : {}) });
         // The view shows all of them: no command, the reply only (ui-manifest §5.8).
         if (skipped > 0 && skipped === clip.boxes.length) {
             await this.session.send(result(0, 0));

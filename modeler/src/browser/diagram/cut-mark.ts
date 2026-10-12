@@ -3,6 +3,7 @@
 // the window, no command and no undo step. cut-mark-canvas.ts draws it and reads Escape and the paste reply.
 
 import { Emitter } from '@theia/core/lib/common/event';
+import { VIEW_CLIP_FORMAT } from '@catenary/model';
 
 /** The marked clip: the source view, the diagram ids of its placements in that view, the clip id. No view: no mark. */
 export interface CutMarkState {
@@ -45,6 +46,20 @@ export function cutMessage(n: number): string {
 /** The status message of a paste: the placed count, then the skipped and the missing counts when they are not zero. */
 export function pasteMessage(placed: number, skipped: number, missing: number): string {
     return `Placed ${placed}.` + (skipped ? ` Skipped ${skipped} already in this view.` : '') + (missing ? ` ${missing} missing from this model.` : '');
+}
+
+/** The key of the clip id in the clipboard data of a cut: the server echoes it in its paste reply (PasteResultAction). */
+export const CLIP_ID_KEY = 'clipboardId';
+
+/** The clipboard data of a canceled cut: the same clip in copy mode, so that a later paste places and does not move. */
+export function asCopyClip<T extends Record<string, string>>(data: T): T {
+    const json = data[VIEW_CLIP_FORMAT];
+    if (!json) return data;
+    try {
+        return { ...data, [VIEW_CLIP_FORMAT]: JSON.stringify({ ...JSON.parse(json), mode: 'copy' }) };
+    } catch {
+        return data;
+    }
 }
 
 /** The message of a paste of a cut clip into a canvas that shows all of its elements. */
