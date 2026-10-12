@@ -1311,12 +1311,33 @@ law_edgeStrokeScales zoom width = edgeStrokeScreenWidth zoom width == zoom * wid
 
 -- | The edges that leave or enter one side of a box fan out along that side, in the order of the point they go to (the first bend,
 -- else the other box), so that no two share a port (parallel edges included). The pitch is a screen-space lane, so zoom does not
--- collapse labels and badges. A top or bottom side also reserves the estimated width of its longest label. Clamp ports inside each side.
+-- collapse labels and badges. A top or bottom side also reserves the estimated width of its longest label. The span rule below keeps
+-- the ports inside each side.
 -- Reason: edges that share a port put their labels on each other's hit paths (HIT1).
 directLanePitch :: Double -> Double -> Double
 directLanePitch zoom font = max (48 / max 0.001 zoom) (2.5 * font)
 law_onePortPerEdge :: [(Id, Side, Double)] -> Bool          -- the ports of one box: edge, side, offset
 law_onePortPerEdge ports = unique [(s, o) | (_, s, o) <- ports]
+
+-- | The span rule. The ports of one side lie in the side less portInset at each corner. When n ports at the preferred pitch do not fit
+-- in that span, the pitch shrinks to span / (n - 1), at least minPortPitch. The ports stay distinct whenever the span allows it.
+-- The clamp of each offset alone would merge the outer ports: four parallel edges between 100-unit cards at zoom 0.5 ended in two ports.
+-- Label overlap on a crowded side is a separate concern (see Limit above).
+portInset :: Double
+portInset = 16
+minPortPitch :: Double
+minPortPitch = 4
+portSpan :: Double -> Double                                 -- the length of the side
+portSpan side = max 0 (side - 2 * portInset)
+fanPitch :: Double -> Int -> Double -> Double                -- the usable room, the port count, the preferred pitch
+fanPitch _ n preferred | n < 2 = preferred
+fanPitch room n preferred = max minPortPitch (min preferred (room / fromIntegral (n - 1)))
+fanOffsets :: Double -> Int -> Double -> [Double]            -- the offsets of the n ports, centered on the side
+fanOffsets room n preferred = [(fromIntegral i - fromIntegral (n - 1) / 2) * fanPitch room n preferred | i <- [0 .. n - 1]]
+law_fanFits :: Double -> Int -> Double -> Bool               -- the ports fit in the room whenever minPortPitch allows it
+law_fanFits room n preferred = minPortPitch * fromIntegral (n - 1) > room || all (\o -> abs o <= room / 2 + 1e-9) (fanOffsets room n preferred)
+law_fanDistinct :: Double -> Int -> Double -> Bool
+law_fanDistinct room n preferred = preferred <= 0 || unique (fanOffsets room n preferred)
 
 -- | A self edge without bends is an arch above the top side, with its label at the apex. Parallel self edges get higher arches.
 -- With bends it is an ordinary route.
