@@ -435,15 +435,22 @@ export class ModelActions {
     }
 
     /** Copies of the elements `ids` of `view` beside their sources (manifest §6.4 Duplicate); selects the copies. */
-    duplicate(view: string, ids: string[]): Promise<CommandResult> {
-        return this.executeAndSelect(view, { kind: 'duplicate', view, ids });
+    async duplicate(view: string, ids: string[]): Promise<CommandResult> {
+        const w = await this.viewEditor(view);
+        const r = await this.model.execute({ kind: 'duplicate', view, ids });
+        // The copies are instance ids; their cards have placement ids (whenPlaced, not whenShown).
+        if (r.ok && r.ids?.length) {
+            await this.editors.whenPlaced(w, r.ids);
+            this.selection.set({ view, ids: r.ids });
+        }
+        return r;
     }
 
-    /** Run a command; on success, select `ids` (default: the created elements) in `view`, when the editor of `view` shows them. */
+    /** Run a command; on success, select `ids` (default: the created element) in `view`, when the editor of `view` shows them. */
     protected async executeAndSelect(view: string, command: EditCommand, ids?: string[]): Promise<CommandResult> {
         const w = await this.viewEditor(view);
         const r = await this.model.execute(command);
-        const select = ids ?? (r.ok ? r.ids ?? (r.id ? [r.id] : []) : []);
+        const select = ids ?? (r.ok && r.id ? [r.id] : []);
         if (r.ok && select.length) {
             await this.editors.whenShown(w, select);
             this.selection.set({ view, ids: select });
