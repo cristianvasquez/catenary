@@ -958,6 +958,16 @@ releaseAll v g = Uncollect v g Nothing
 -- | Clipboard: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. Paste goes to the last pointer position.
 -- The clip lives in window memory. The system clipboard holds its ID, not RDF. Another window or application cannot paste it.
 -- Browser context menus do not show clipboard commands. Copy and cut effects: spec/manifest.hs §6.4.
+-- A paste places the same elements (pasteIntoView). It never creates instances.
+-- A cut sends no command. It marks the clip, and the canvas of the source view dims the marked placements and their edges.
+-- The paste of the marked clip moves the elements (moveBetweenViews, one undo step).
+-- The mark is window state. A new cut replaces it. A copy, Escape on a canvas, a window close and a paste that moves clear it.
+-- Undo does not change the mark: the cut ran no command. A refused paste keeps the mark.
+-- Escape cancels the cut: the clip stays as a copy, so a later paste places and does not move. The mark covers the whole clip.
+-- Messages: a cut of N elements shows "N elements cut. Paste moves them. Escape cancels." (for 1: "1 element cut. Paste moves it.").
+-- A paste shows "Placed N." then " Skipped N already in this view." and " N missing from this model." when not zero.
+-- A paste of a cut clip into a canvas that shows all of its elements runs no command, shows "Already in this view." and clears the mark.
+-- Reason: a cut that changes nothing until the paste cannot leave the source half done.
 -- Copy as RDF appears in Edit and the canvas context menu. It copies readable Turtle without placement metadata.
 -- Raw RDF paste shows figures derived by the canvas notations. Default appearance applies to new placements only.
 -- Named graphs open a warning: flattening discards graph names. Flatten and paste continues; Cancel changes nothing.
@@ -972,6 +982,24 @@ flattenPasteAllowed :: Bool -> Bool -> Bool          -- has named graphs, consen
 flattenPasteAllowed named consent = not named || consent
 law_namedGraphPasteNeedsConsent :: Bool -> Bool
 law_namedGraphPasteNeedsConsent named = named ==> not (flattenPasteAllowed named False)
+data CutMark = NoMark | Marked Id [Id] ClipId deriving Eq          -- source view, its marked placements, clip ID
+data PasteOutcome = PasteMoved | PasteAllInView | PasteRefused deriving Eq
+data MarkEvent = MarkCut Id [Id] ClipId | MarkCopy | MarkEscape | MarkWindowClose | MarkUndo | MarkPaste PasteOutcome deriving Eq
+markAfter :: CutMark -> MarkEvent -> CutMark
+markAfter _ (MarkCut v ids c) = Marked v ids c
+markAfter m MarkUndo = m
+markAfter m (MarkPaste PasteRefused) = m
+markAfter _ _ = NoMark
+cutCommands :: [EditCommand]                       -- the commands that Ctrl+X sends: none, the paste moves
+cutCommands = []
+law_cutWithoutPasteChangesNothing :: Bool
+law_cutWithoutPasteChangesNothing = null cutCommands
+law_markClearsOnEvents :: CutMark -> MarkEvent -> Bool
+law_markClearsOnEvents m e = case e of
+  MarkCut v ids c -> markAfter m e == Marked v ids c
+  MarkUndo -> markAfter m e == m
+  MarkPaste PasteRefused -> markAfter m e == m
+  _ -> markAfter m e == NoMark
 
 -- 5.9 Notes -------------------------------------------------------------------------
 
@@ -1371,7 +1399,7 @@ selfLoopClearance zoom = max 80 (64 / max 0.001 zoom)
 -- 7.5 Layout ------------------------------------------------------------------------
 
 -- | Paste packs only new placements near the pointer. Existing placements remain fixed obstacles.
--- Copied frames move with their contents. Dimensions and appearance stay unchanged. A copy has no edge sides and no bends.
+-- Copied frames move with their contents. Dimensions and appearance stay unchanged. A copy keeps edge sides and colors and has no bends.
 -- Packing uses drawn sizes at the current card text scale and reserves space for private pills.
 -- After paste, fit the new placements into the viewport, with padding 40 and zoom at most 1.
 pasteFitPadding, pasteMaxZoom :: Double
