@@ -69,7 +69,7 @@ Open choices for the user:
 
 ## Feedback of a cut
 
-A cut marks the clip and the canvas shows the mark: the source placements and their edges dim to the inactive style of ADR 0015 (same as an inactive Links row), with a dashed outline. The mark stays until one of these events: a paste (the elements move), Escape on the canvas, a new Ctrl+C or Ctrl+X (the new clip replaces the mark), or a close of the window. Undo does not touch the mark: no command ran. The status bar shows "3 elements cut. Paste moves them. Escape cancels." A paste in the same canvas clears the mark with the message "Already in this view", nothing moves. The mark is window state (`CanvasHighlight`-like, `modeler/src/browser/diagram/`), not a model change, so it needs no command and no undo step.
+A cut marks the clip and the canvas shows the mark: the source placements and their edges dim to the inactive style of ADR 0015 (same as an inactive Links row), with a dashed outline. The mark stays until one of these events: a paste (the elements move), Escape on the canvas, a new Ctrl+C or Ctrl+X (the new clip replaces the mark), or a close of the window. Undo does not touch the mark: no command ran. The status bar shows "3 elements cut. Paste moves them. Escape cancels." A paste in the same canvas moves the elements to the pointer (manifest §6.4: a move with source equal to target). The message is "Placed N." and the mark clears. "Already in this view." shows only for another view that already shows all elements. Decision 2026-10-12: keep this; it is the same rule as a move between views. The mark is window state (`CanvasHighlight`-like, `modeler/src/browser/diagram/`), not a model change, so it needs no command and no undo step.
 
 ## Paste of a Turtle fragment without prefix declarations
 
@@ -84,3 +84,32 @@ Fix, in `prepareRdfPaste` (`packages/rdf/src/clipboard.ts`), untyped text only (
 Not proposed: a message that names the unknown prefixes, a fragment without a subject, and a `@base` for relative IRIs.
 
 Test: `packages/rdf/test/rdf-clipboard.test.ts`, a fragment with `ex:` and `sh:` only, no `@prefix`, parses with the table; a fragment with an unknown prefix still fails.
+
+## Decisions made
+
+- Duplicate places each copy beside its source, offset 40 px in x and y, same view. Key Ctrl+D, command `catenary.duplicate`, Edit menu and canvas context menu.
+- A pasted group creates a new group box, also when empty.
+- Node shapes: `duplicate` refuses them for now.
+- Prefix fallback: steps 1 and 2 only. No message that names unknown prefixes.
+- Transport (Turtle as `text/plain`, custom media type for the token) is a separate kata after the cut mark.
+
+## Kata round (2026-10-12)
+
+| Kata | Scope | Blocked by | Agent | State |
+|---|---|---|---|---|
+| k82b | Backend: reference-only paste, `moveBetweenViews`, `duplicate`, GLSP handlers, manifest §6.4 | | opus, medium | done, 2caccd4, roborev 107 fail (3 applied), 108 pass, merged |
+| hqez | Prefix-table fallback in `prepareRdfPaste` | | opus, medium | done, 188eaa5, roborev 105 fail (1 applied), 106 pass, merged |
+| n7gs | Client: cut mark, dim, Escape, status messages, ui-manifest §5.8, §7.5 | k82b | opus, medium | 847a64b merged (4d90935), roborev 111 fail (3 applied), 112 pass, 113 pass. closed. The e2e bend test failure is a pre-existing flake (E2E-1, kata 85wz), not n7gs |
+| rbzw | Client: Duplicate command, Ctrl+D, menus, ui-manifest §4.4 | k82b | opus, low | done, a403c6d, roborev 109 fail (1 applied), 110 (test request declined), merged, main 987 passed |
+| z26c | Transport: Turtle as text/plain, custom type token | n7gs | opus, medium | done, 6033e86, roborev 114 fail (1 applied), 115 pass, merged, main 998 passed, e2e 19 |
+| 85wz | E2E-1: the flaky bend e2e test, not clipboard | | not spawned, user decides | open |
+
+Agent contract: one worktree per kata under the session scratchpad, branch `kata/<id>-<slug>`, `pnpm verify`, commit `<id>: …`, wait for the roborev job, apply in-scope findings, comment out-of-scope ones, `kata close --done --commit`. No push, no merge. The orchestrator merges locally in dependency order.
+
+Main after round 1: bb0d38a, `pnpm verify` 987 passed. Deviations accepted in k82b: `isDiagramEdit` and `isViewEdit` updated for the new commands, a move removes the entity groups it empties, three old tests rewritten. Deviation accepted in hqez: plain text no longer enters the JSON-LD parser (it returned zero quads and hid the fallback).
+
+Open after rbzw: no test covers `ModelActions.duplicate` and its wait for the placements (`whenPlaced`). `ModelActions` has no unit harness. Ctrl+D and the menu entries are not checked in a browser (`pnpm verify --e2e` not run).
+
+Open after n7gs: a paste whose clip has elements missing from this model, into a view that already shows the rest, is refused by the backend with a warning instead of "Already in this view." Low priority.
+
+Main after round 2: 6033e86, `pnpm verify --e2e` 998 unit, 19 e2e passed. Open decision CLIP1 in spec/open.md (clipboard read on paste versus memory compare). Not committed by the orchestrator: this draft and spec/open.md (E2E-1, CLIP1).
