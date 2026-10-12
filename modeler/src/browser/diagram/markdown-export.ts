@@ -35,13 +35,15 @@ export class MarkdownExport {
     /**
      * Export the Markdown documents of the sources (files, and folders with their subfolders) under their common folder (the root).
      * Without `destination`: the confirmation dialog (destination, documents with checkboxes); the export writes the checked documents.
-     * With `destination` (CLI): no dialog, all documents. Unresolved view references stop the export before it writes. Returns the
+     * With `destination` (CLI): no dialog, all documents. Unresolved view references in the exported documents stop the export
+     * before it writes. A check without a root or without documents stops before the dialog. Returns the
      * result, undefined when the dialog was canceled.
      */
     async exportSelection(sources: string[], destination?: string): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
+        // Unresolved embeds do not stop here: the dialog lists them, and the user can uncheck their documents. The final check decides.
         const check = await this.model.service.checkMarkdownExport({ sources });
-        if (!check.ok) {
-            this.messages.error(checkMessage(check));
+        if (!check.root || !check.documents.length) {
+            this.messages.error(check.root && !check.error ? 'The selection has no Markdown documents.' : checkMessage(check));
             return check;
         }
         let dest = destination;

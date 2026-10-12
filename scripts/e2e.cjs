@@ -1249,16 +1249,20 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   const exportRow = label => exportDialog.locator('.catenary-export-tree .catenary-export-row', { has: page.locator('.catenary-export-label', { hasText: new RegExp(`^${label.replace(/[.]/g, '\\.')}$`) }) });
   await exportRow('Data model.md').locator('input[type=checkbox]').uncheck();
   assert.ok(cliRaw('prompt').text.includes('1 document, 2 views'), 'the summary counts the checked documents');
+  // Choose… opens the Theia folder dialog: go to `dir` with its path input, select the folder `name`, accept.
+  const chooseDestination = async name => {
+    fs.mkdirSync(path.join(dir, name));
+    await exportDialog.getByRole('button', { name: 'Choose…', exact: true }).click();
+    const folderDialog = page.locator('.dialogOverlay', { has: page.locator('.theia-LocationInputToggle') });
+    await folderDialog.locator('.theia-LocationInputToggle').click();
+    await folderDialog.locator('.theia-LocationTextInput').fill(dir);
+    await folderDialog.locator('.theia-LocationTextInput').press('Enter');
+    await folderDialog.locator('.theia-TreeNode', { has: page.locator('.theia-TreeNodeSegmentGrow', { hasText: new RegExp(`^${name}$`) }) }).click();
+    await folderDialog.locator('.dialogControl button.main').click();
+    await exportDialog.locator('.catenary-export-path', { hasText: path.join(dir, name) }).waitFor();
+  };
   const outDialog = path.join(dir, 'out-dialog');
-  fs.mkdirSync(outDialog);
-  await exportDialog.getByRole('button', { name: 'Choose…', exact: true }).click();
-  const folderDialog = page.locator('.dialogOverlay', { has: page.locator('.theia-LocationInputToggle') });
-  await folderDialog.locator('.theia-LocationInputToggle').click();
-  await folderDialog.locator('.theia-LocationTextInput').fill(dir);
-  await folderDialog.locator('.theia-LocationTextInput').press('Enter');
-  await folderDialog.locator('.theia-TreeNode', { has: page.locator('.theia-TreeNodeSegmentGrow', { hasText: /^out-dialog$/ }) }).click();
-  await folderDialog.locator('.dialogControl button.main').click();
-  await exportDialog.locator('.catenary-export-path', { hasText: outDialog }).waitFor();
+  await chooseDestination('out-dialog');
   await exportDialog.locator('.dialogControl button.main:not([disabled])').click();
   for (let i = 0; i < 100 && !fs.existsSync(path.join(outDialog, 'Architecture.md')); i++) await page.waitForTimeout(100);
   assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the checked document is exported');
@@ -1299,6 +1303,24 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.deepEqual(run.result.unresolved, [{ file: 'Broken.md', line: 3, iri: 'urn:name:No%20such%20view' }]);
   assert.ok(run.messages.some(m => m.text?.includes('Broken.md:3: urn:name:No%20such%20view')), JSON.stringify(run.messages));
   assert.equal(fs.existsSync(path.join(out, 'Broken.md')), false);
+
+  // The dialog opens also when a selected document has an unresolved embed: it lists the embed, and the user unchecks the document.
+  // It starts with the remembered destination of the root: `out`, of the last export of docs/.
+  await navigator(page, 'docs');
+  await navNode(page, 'Broken.md').first().waitFor();
+  await navNode(page, 'Broken.md').first().click();
+  await navNode(page, 'Architecture.md').first().click({ modifiers: ['Control'] });
+  run = cliRaw('run', 'catenary.exportMarkdown');
+  assert.equal(run.status, 'waiting', JSON.stringify(run));
+  assert.equal(run.prompt.title, 'Export Markdown');
+  for (const part of ['Broken.md:3: urn:name:No%20such%20view', '2 documents, 2 views', out]) assert.ok(run.prompt.text.includes(part), `${part}: ${run.prompt.text}`);
+  await exportRow('Broken.md').locator('input[type=checkbox]').uncheck();
+  const outBroken = path.join(dir, 'out-broken');
+  await chooseDestination('out-broken');
+  await exportDialog.locator('.dialogControl button.main:not([disabled])').click();
+  for (let i = 0; i < 100 && !fs.existsSync(path.join(outBroken, 'Architecture.md')); i++) await page.waitForTimeout(100);
+  assert.ok(fs.existsSync(path.join(outBroken, 'Architecture.md')), 'the checked document is exported');
+  assert.equal(fs.existsSync(path.join(outBroken, 'Broken.md')), false, 'the unchecked document with the unresolved embed is not exported');
 
   // A selection of a file and a folder: the root is their common folder (the workspace folder); the paths keep the folder names.
   const notes = path.join(workspace, 'notes');

@@ -1755,6 +1755,9 @@ resolveEmbed views iri = lookup iri views
 -- with a checkbox per document and per folder, the counts of checked documents and of views, and the problems of the check.
 -- All documents are checked at the start. The destination starts at the last destination of the same root (window storage).
 -- Export is disabled without a destination or without a checked document. The export writes the checked documents only.
+-- The dialog opens when the check gives a root and one or more documents, also with unresolved embeds. It lists them.
+-- A check without a root or without documents shows its error and stops. The export runs only when the checked documents
+-- have no unresolved embed: the check after Export uses the unchecked documents as exclude.
 -- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. The first argument is a JSON string or a list of
 -- strings, for example '["/abs/a.md","/abs/folder"]'. With both arguments there is no dialog, and all documents are exported.
 -- Without arguments it uses the navigator selection and shows the dialog.

@@ -209,13 +209,13 @@ Export Markdown… writes the selected Markdown files and folders to another fol
 4. Clear the checkbox of each document that you do not want to export. A folder checkbox changes all documents of the folder.
 5. Select Export.
 
-The dialog shows the number of checked documents and of views, and the problems of the check. Export is not available without a destination or without a checked document.
+The dialog shows the number of checked documents and of views, the unresolved embeds and the problems of the check. Export is not available without a destination or without a checked document. To export the other documents, clear the checkbox of each document with an unresolved embed.
 
 The root is the deepest folder that contains the selection. The export keeps the folder structure under the root and the text of each document. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection, handles or edit controls. Links to exported documents do not change. Catenary copies linked images and attachments: a file under the root goes to the same path, and a file outside the root goes to `_resources/`.
 
 The export stops and writes nothing in these cases:
 
-- An embed names a view that does not exist, for example after a change of the view IRI. The message gives the file, the line and the IRI.
+- An embed of a checked document names a view that does not exist, for example after a change of the view IRI. The message gives the file, the line and the IRI.
 - A selected file or folder does not exist.
 - The destination is the root or a folder in it.
 - The export would overwrite a file that an earlier export did not write, or a file that changed after that export.
