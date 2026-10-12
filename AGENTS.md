@@ -74,3 +74,13 @@ Commands that need no window: `status`, `model`, `rpc`, `exec`. The UI commands 
 - Update the document that owns a changed rule. Update `readme.md` for command changes and `docs/architecture.md` for file map changes. Use lowercase `readme.md`.
 - Report what changed, what was verified (with numbers) and what is open. Put open items in `spec/open.md`, and remove items that are done.
 - Commit only when the user asks.
+
+## After a commit: assess the roborev review
+
+Each commit starts a roborev review in the background. The commit is not done until its review is assessed.
+
+1. Run `roborev list --open` and `roborev show <job-id>` for the review of your commit. Wait for it if it is still running.
+2. Assess each finding against the code: correct, or not. Do not accept or reject a finding without reading the code it names.
+3. Fix each correct finding and verify again. Record a correct finding that you do not fix in `spec/open.md`.
+4. Report the findings, your assessment of each and what you did. A finding that you reject needs the reason.
+5. Close the review with `roborev close` only after that report.

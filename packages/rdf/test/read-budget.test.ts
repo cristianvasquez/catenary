@@ -23,7 +23,7 @@ const READ_BUDGET_MS = 50 * SLOWER;
  * Spans that still exceed the budget on this fixture, with the open.md row that owns the work and a ceiling that the span must keep
  * (a regression above it fails). Remove an entry when its span meets the budget. The panel reads of 600 elements are linear: the
  * scoped read of 600 placements and the JavaScript of the records (PERF7). The edit computes the snapshot of each window in its span:
- * `snapshot/files` compares the canonical form of the changed files with the saved one (PERF2).
+ * `snapshot/files` compares the canonical form of the changed files with the saved one. The execute ceiling below is accepted as is (kata 5f5r: will not fix).
  */
 const OVER_BUDGET: Record<string, { row: string; ceilingMs: number }> = {
     // 43 to 52 ms: at the budget, over it when other test files load the machine.
@@ -38,7 +38,7 @@ const OVER_BUDGET: Record<string, { row: string; ceilingMs: number }> = {
     selectionActions: { row: 'PERF7', ceilingMs: 400 },
     unplaced: { row: 'PERF7', ceilingMs: 400 },
     view: { row: 'PERF7', ceilingMs: 400 },
-    execute: { row: 'PERF2', ceilingMs: 400 }
+    execute: { row: 'none', ceilingMs: 400 }
 };
 /** The steps of a content change that 1hma brought within the budget: each one is held to it, also inside a span of OVER_BUDGET. */
 const CHANGE_STEPS = ['dataset warnings', 'instance file origins', 'data patch', 'hidden neighbors', 'figures', 'applicability'];
