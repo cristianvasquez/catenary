@@ -32,9 +32,9 @@ export async function prepareRdfPaste(text: string, mediaType: string | undefine
         if (r) return r;
     }
     // Untyped text only: a fragment without prefix lines reads the workspace table. The header is not stored (§2.5).
+    // A declaration in the text comes after the header and overrides it.
     if (!typed) {
-        const declared = new Set([...text.matchAll(/^\s*(?:@prefix|PREFIX)\s+([^\s:]*):/gm)].map(m => m[1]));
-        const header = Object.entries(prefixes).filter(([p]) => !declared.has(p)).map(([p, ns]) => `@prefix ${p}: <${ns}> .\n`).join('');
+        const header = Object.entries(prefixes).map(([p, ns]) => `@prefix ${p}: <${ns}> .\n`).join('');
         const r = header && await parsePaste('application/trig', header + text);
         if (r) return r;
     }

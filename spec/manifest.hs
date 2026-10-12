@@ -1119,7 +1119,7 @@ law_pasteCutReusesIris b v clip =
 -- Parsing replaces blank nodes with skolem IRIs (§1). Named graphs require consent before flattening and triple deduplication.
 -- Notations derive figures from the pasted subjects and statements. Arrival places their connectors, hubs and required endpoints.
 -- Data, placements and layout form one transaction and one undo step. Unsupported figures do not prevent data insertion.
--- Untyped text that fails to parse is parsed again with the workspace prefix table prepended; the table is not changed.
+-- Untyped text that fails to parse is parsed again with the workspace prefix table prepended. The table is not changed.
 modelRdf :: Backend -> [Quad]                       -- domain triples, graph normalized for comparison
 clipboardHasNamedGraphs :: String -> Bool           -- parsed clipboard N-Quads
 law_pasteRdfAdditive :: Backend -> Id -> String -> Bool -> Bool

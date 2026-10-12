@@ -65,7 +65,7 @@ describe('raw RDF clipboard', () => {
         expect(r).toEqual({ ok: false, error: 'The clipboard is not valid RDF. Use Turtle, TriG, N-Triples, N-Quads, JSON-LD, N3, or RDF/XML.' });
     });
 
-    it('keeps a prefix declaration of the fragment over the table', async () => {
+    it('a prefix declaration of the fragment overrides the table header', async () => {
         const r = prepared(await prepareRdfPaste(`@prefix ex: <urn:own#> .\n${fragment}`, undefined, table));
         const objects = parseRdfSync(r.rdf, 'application/n-quads').map(q => q.object.value).sort();
         expect(objects).toEqual([NS.sh + 'NodeShape', 'urn:own#C', 'urn:own#p']);
