@@ -5,7 +5,7 @@
 import {
     Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
-    pillSize, pills, rangeText, formatVertices, parseVertices
+    pillSize, pills, rangeText, formatVertices, parseVertices, nkey
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
@@ -15,6 +15,7 @@ import { shapesCardTerm, shapesIndex } from './shape-ops';
 import { jsonToTerm, mapTerm, rdf } from './terms';
 import { isInstance, homeOf, label, usedIris, ownedBy, P, mint } from './vocabulary';
 import { isView, connectorOf, markIri, views, viewSubject, nodeOf, connectorPlacements, edgeOf, V, placementIri, viewPartBase } from './views';
+import { viewFiguresOf } from './notations';
 
 export type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
 export const ok = <T>(value: T): Result<T> => ({ ok: true, value });
@@ -475,17 +476,42 @@ export function setEdgeLayout(g: ModelGraph, viewId: string, relationId: string,
     return ok(undefined);
 }
 
-/** The vertices of each connector placement of a view whose both ends are placements in `delta`, moved by that delta (both ends must move the same). */
+/**
+ * The bends of each edge placement of a view whose both ends move by one delta, moved by that delta (UI §7.4, movedBends). A connector
+ * (rdf:reifies): its ends are the placements of the statement ends. A property line (view:element): its ends are the placements of
+ * its start and end figures (the join of the view). A line with a private end moves with its start alone.
+ */
 function moveVertices(g: ModelGraph, view: NamedNode, delta: Map<string, { dx: number; dy: number }>): void {
-    for (const e of g.subjects(P.type, V.Placement, view)) {
-        const t = connectorOf(g, e, view);
-        if (!t) continue;
-        const a = nodeOf(g, view, t.subject), b = nodeOf(g, view, t.object);
-        const da = a && delta.get(a.value), db = b && delta.get(b.value);
-        if (!da || !db || da.dx !== db.dx || da.dy !== db.dy || (!da.dx && !da.dy)) continue;
+    if (![...delta.values()].some(d => d.dx || d.dy)) return;
+    const move = (e: Quad_Subject, da: { dx: number; dy: number } | undefined, db: { dx: number; dy: number } | undefined) => {
+        if (!da || !db || da.dx !== db.dx || da.dy !== db.dy || (!da.dx && !da.dy)) return;
         const points = parseVertices(g.objects(e, V.vertices, view)[0]?.value);
         if (points) writeString(g, view, e, V.vertices, formatVertices(points.map(p => ({ x: p.x + da.dx, y: p.y + da.dy }))));
+    };
+    const lines: Quad_Subject[] = [];
+    for (const e of g.subjects(V.vertices, null, view)) {
+        const t = connectorOf(g, e, view);
+        if (!t) { lines.push(e); continue; }
+        const a = nodeOf(g, view, t.subject), b = nodeOf(g, view, t.object);
+        move(e, a && delta.get(a.value), b && delta.get(b.value));
     }
+    if (lines.length === 0) return;
+    const vf = viewFiguresOf(g, view.value);
+    const placementOf = (f: { placedAs: TermJSON } | undefined) => f && vf.placed.get(nkey(f.placedAs))?.iri;
+    for (const l of vf.join.lines) {
+        const own = placementOf(l.figure), e = own && lines.find(x => x.value === own);
+        if (!e) continue;
+        const da = delta.get(placementOf(l.start) ?? ''), end = placementOf(l.end);
+        move(e, da, l.end ? delta.get(end ?? '') : da);
+    }
+}
+
+/** Apply Layout: the sides and bends of every edge placement of the view go (UI §7.5). */
+export function clearEdgeLayouts(g: ModelGraph, viewId: string): Result {
+    const view = viewTerm(g, viewId);
+    if (!view) return gone('view', viewId);
+    for (const p of [V.fromSide, V.toSide, V.vertices]) for (const e of g.subjects(p, null, view)) g.set(e, p, undefined, view);
+    return ok(undefined);
 }
 
 export function hideEdge(g: ModelGraph, viewId: string, relationId: string, hidden: boolean): Result {

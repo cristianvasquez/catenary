@@ -1278,9 +1278,10 @@ defaultEdgeStyle = Curved
 -- Double-click a bend: it goes. Bend handles show on hover or selection. A release after movement (bendMovePx) is one setEdgeLayout;
 -- a release without movement sends no command and keeps the drawn route (so a click on a handle changes nothing, and a double-click is
 -- one command: the removal). A refused setEdgeLayout (a locked view file, §4.9) restores the drawn route to the saved one, unless the
--- model was replaced or a newer bend gesture started on the edge. Apply Layout clears bends
--- with the sides. Reset route in Appearance clears the bends of the edge. Copy and paste drops bends. A move of both end boxes by one delta
--- (a frame, a selection) moves the bends with them; a move of one end keeps them.
+-- model was replaced or a newer bend gesture started on the edge. Apply Layout clears the bends and the sides of every edge of the view,
+-- a self edge and a property edge included. Reset route in Appearance clears the bends of the edge. Copy and paste drops bends. A move
+-- of both end boxes by one delta (a frame, a selection) moves the bends with them; a move of one end keeps them. The ends of a property
+-- edge are its owner card and its target box; a private pill end moves with the owner.
 -- Without an explicit side, the end faces its nearest bend; without bends, it faces the other card.
 data BendGesture = DragLine | DragBend Int | DoubleClickBend Int
 insertAt :: Int -> Point -> [Point] -> [Point]            -- after point i

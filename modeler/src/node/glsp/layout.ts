@@ -64,7 +64,7 @@ const GROUP_GAPS = [1.5, 1, 0.5];
  */
 type Item = { id: string; element?: string; box: Box; ext: Box; group: boolean };
 
-type Layout = { bounds: ({ id: string } & Rect)[]; edges: string[] };
+type Layout = { bounds: ({ id: string } & Rect)[] };
 /** `positions`: top-left corners of the ext boxes, relative to the top-left corner of the result. */
 type Placed = { positions: Map<string, { x: number; y: number }>; width: number; height: number };
 
@@ -187,13 +187,13 @@ export function components(ids: string[], links: [string, string][]): string[][]
     return [...groups.values()];
 }
 
-/** New boxes for the cards and groups of the view, and the edges whose sides are cleared. */
+/** New boxes for the cards and groups of the view. setLayout clears the sides and bends of every edge of the view. */
 /** `spacing`: px between boxes (Layered: twice that between layers; in a group: the largest of 1.5, 1, 0.5 × spacing or 40 px that fits). */
 /** `cardScale`: the card text scale of the client; drawn cards with rows grow with it. */
 export async function layoutView(part: Doc, viewId: string, showHidden: boolean, algorithm: LayoutAlgorithm = 'layered',
     spacing: number = LAYOUT_SPACING.default, cardScale = 1, notation?: ViewFigures, applicability?: GraphOptions['applicability']): Promise<Layout> {
     const view = part.views[viewId];
-    if (!view) return { bounds: [], edges: [] };
+    if (!view) return { bounds: [] };
     // Classes only give labels; sizes do not use them.
     const children = (toSchema(part, { classes: [] }, viewId, { showHidden, cardScale, violations: [], notation, applicability }).children ?? []) as ElementSchema[];
     // A member of a collection is not placed: the collection is (the drawn edges go to it). Else the card of the element (its placement
@@ -215,8 +215,8 @@ export async function layoutView(part: Doc, viewId: string, showHidden: boolean,
     // Links between boxes: the drawn property lines, relations and alternatives. An edge to a private pill links no box.
     const relations = children.filter(c => (c.type === TYPES.PROPERTY || c.type === TYPES.RELATION || c.type === TYPES.ALTERNATIVE || c.type === TYPES.BUNDLE || c.type === TYPES.TARGETING)
         && ids.has(c.sourceId as string) && ids.has(c.targetId as string) && c.sourceId !== c.targetId)
-        .map(c => ({ id: c.type === TYPES.RELATION ? String(c.element ?? c.id) : c.id, subject: c.sourceId as string, object: c.targetId as string, derived: c.type === TYPES.TARGETING }));
-    if (items.length === 0) return { bounds: [], edges: [] };
+        .map(c => ({ subject: c.sourceId as string, object: c.targetId as string }));
+    if (items.length === 0) return { bounds: [] };
     // Parent: the smallest group that contains the box (groupOf).
     const parent = new Map<string, string | undefined>(items.map(x => [x.id, groupOf(view, x.box, x.id)?.id]));
     const childrenOf = (id: string | undefined) => items.filter(x => parent.get(x.id) === id);
@@ -304,7 +304,7 @@ export async function layoutView(part: Doc, viewId: string, showHidden: boolean,
     // The content keeps its top-left corner (of the drawn boxes).
     await layout(undefined, Math.min(...items.map(i => i.ext.x)), Math.min(...items.map(i => i.ext.y)));
     // The drawn extent of a laid-out item at its new place (cards with rows are drawn taller than their stored box).
-    return { bounds: [...out.values()], edges: relations.filter(r => !r.derived).map(r => r.id) };
+    return { bounds: [...out.values()] };
 }
 
 /** Client action: lay out the view once. One setLayout command (one undo step), then a fit of the view to the new content. */
@@ -324,10 +324,10 @@ export class LayoutViewHandler implements ActionHandler {
     readonly actionKinds = [LayoutViewAction.KIND];
 
     async execute(action: LayoutViewAction): Promise<Action[]> {
-        const { bounds, edges } = await layoutView(this.session.part, this.session.viewId, this.session.state.showHidden, action.algorithm,
+        const { bounds } = await layoutView(this.session.part, this.session.viewId, this.session.state.showHidden, action.algorithm,
             layoutSpacing(action.spacing ?? LAYOUT_SPACING.default), this.session.state.cardScale, this.session.store.viewFigures(this.session.viewId), this.session.store.viewApplicability(this.session.part.views[this.session.viewId]));
         // The fit comes after the model update (ViewSession.edit): the viewport shows the new layout, not the area of the old one.
-        if (bounds.length > 0) await this.session.edit({ kind: 'setLayout', view: this.session.viewId, bounds, clearSides: edges },
+        if (bounds.length > 0) await this.session.edit({ kind: 'setLayout', view: this.session.viewId, bounds },
             () => [FitToScreenAction.create([], { padding: 40, maxZoom: 1, animate: true })]);
         return [];
     }
