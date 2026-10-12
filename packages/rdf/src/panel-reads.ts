@@ -2,7 +2,7 @@
 
 import {
     ActionTarget, AppearanceData, Choices, DeletePlan, Doc, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow, FileContent, GestureInfo,
-    MetamodelInfo, ModelQueries, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchHit, Selected, SelectionActions,
+    MetamodelInfo, ModelQueries, PREFIXES, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchHit, Selected, SelectionActions,
     SelectionLinks, ShapesModel, Showing, View, ViewGesture, appearanceData, deletePlan, elementOfId, elementRows, emptySelected, knownPredicates, neighborChoices, newLabel,
     occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
@@ -63,7 +63,7 @@ export class PanelReads implements ModelQueries {
     private shapesIndex() { return this.ctx.shapesIndex(); }
     private scoped(scope: DocScope) { return this.ctx.scoped(scope); }
     private viewDoc(view: string) { return this.ctx.viewDoc(view); }
-    prepareRdfPaste(text: string, mediaType?: string) { return prepareRdfPaste(text, mediaType); }
+    prepareRdfPaste(text: string, mediaType?: string) { return prepareRdfPaste(text, mediaType, { ...PREFIXES }); }
 
     copyAsRdf(viewId: string, ids: string[]) { return copyAsRdf(this.graph, viewId, ids); }
 

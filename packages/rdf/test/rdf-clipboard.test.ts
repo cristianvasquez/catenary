@@ -36,18 +36,43 @@ describe('raw RDF clipboard', () => {
         ['application/ld+json', '{"@context":{"p":"urn:p"},"@id":"urn:a","p":"value"}'],
         ['application/rdf+xml', `<rdf:RDF xmlns:rdf="${NS.rdf}" xmlns:e="urn:"><rdf:Description rdf:about="urn:a"><e:p>value</e:p></rdf:Description></rdf:RDF>`]
     ])('parses %s completely', async (mime, text) => {
-        const r = prepared(await prepareRdfPaste(text, mime));
+        const r = prepared(await prepareRdfPaste(text, mime, {}));
         expect(r.statements).toBe(1);
         expect(parseRdfSync(r.rdf, 'application/n-quads')[0].object.value).toBe('value');
     });
 
     it('detects RDF text, rejects broken RDF and plain JSON, and skolemizes blank nodes', async () => {
-        const r = prepared(await prepareRdfPaste('<urn:a> <urn:p> [ <urn:q> "nested" ] .'));
+        const r = prepared(await prepareRdfPaste('<urn:a> <urn:p> [ <urn:q> "nested" ] .', undefined, {}));
         const quads = parseRdfSync(r.rdf, 'application/n-quads');
         expect(quads).toHaveLength(2);
         expect(quads.every(q => q.subject.termType !== 'BlankNode' && q.object.termType !== 'BlankNode')).toBe(true);
-        expect((await prepareRdfPaste('<urn:a> <urn:p> "ok" . garbage')).ok).toBe(false);
-        expect((await prepareRdfPaste('{"value":1}')).ok).toBe(false);
+        expect((await prepareRdfPaste('<urn:a> <urn:p> "ok" . garbage', undefined, {})).ok).toBe(false);
+        expect((await prepareRdfPaste('{"value":1}', undefined, {})).ok).toBe(false);
+    });
+
+    const fragment = '<urn:S> a sh:NodeShape; sh:targetClass ex:C; sh:property ex:p .';
+    const table = { ex: 'urn:ex#', sh: NS.sh };
+
+    it('parses an untyped fragment without prefix lines with the workspace prefix table', async () => {
+        const r = prepared(await prepareRdfPaste(fragment, 'text/plain', table));
+        expect(r.statements).toBe(3);
+        const quads = parseRdfSync(r.rdf, 'application/n-quads');
+        expect(quads.map(q => q.object.value).sort()).toEqual([NS.sh + 'NodeShape', 'urn:ex#C', 'urn:ex#p']);
+    });
+
+    it('rejects the fragment when the table lacks one of its prefixes', async () => {
+        const r = await prepareRdfPaste(fragment, undefined, { sh: NS.sh });
+        expect(r).toEqual({ ok: false, error: 'The clipboard is not valid RDF. Use Turtle, TriG, N-Triples, N-Quads, JSON-LD, N3, or RDF/XML.' });
+    });
+
+    it('keeps a prefix declaration of the fragment over the table', async () => {
+        const r = prepared(await prepareRdfPaste(`@prefix ex: <urn:own#> .\n${fragment}`, undefined, table));
+        const objects = parseRdfSync(r.rdf, 'application/n-quads').map(q => q.object.value).sort();
+        expect(objects).toEqual([NS.sh + 'NodeShape', 'urn:own#C', 'urn:own#p']);
+    });
+
+    it('does not use the table for typed text', async () => {
+        expect((await prepareRdfPaste(fragment, 'text/turtle', table)).ok).toBe(false);
     });
 
     it('law_namedGraphConsent: requires consent and deduplicates flattened graphs without an earlier edit', async () => {
