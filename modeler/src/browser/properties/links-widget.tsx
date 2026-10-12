@@ -12,7 +12,7 @@ import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/li
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import React from '@theia/core/shared/react';
-import { ActionTarget, LinkElement, SelectionLinks, isTypedInstanceRow, panelsUnchanged } from '@catenary/model';
+import { ActionTarget, LinkElement, LinksFolder, SelectionLinks, isTypedInstanceRow, linksFolders, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ModelActions } from '../actions';
 import { ViewEditors } from '../diagram/view-editors';
@@ -154,20 +154,12 @@ export class LinksWidget extends TreeWidget {
             byView.set(v.view, e);
         }
         const viewRows = [...byView].sort(([, a], [, b]) => a.label.localeCompare(b.label));
-        const vf = folder('views', 'Views', ids, viewRows.length);
-        vf.tooltip = views3;
-        for (const [id, { label, elements, hidden }] of viewRows) {
-            const allHidden = hidden === elements.length;
-            add(vf, {
-                id: `view:${id}`, name: label, link: 'view', elements, view: id, muted: allHidden, tooltip: views3,
-                description: [id === current ? 'current' : '', many ? `${elements.length} of ${ids.length}` : '', allHidden ? 'hidden' : ''].filter(x => x).join(', ') || undefined
-            });
-        }
 
         // Outgoing and incoming: one row for each (predicate, other end), with the selected elements that have it.
-        // Incoming rdf:type rows go in a closed Instances folder: a class can have thousands of instances (UI §8.8).
-        for (const dir of ['out', 'in'] as const) {
-            const rows = new Map<string, LinkNode & { predicate: string; predicateName: string }>();
+        // Incoming rdf:type rows go in the closed top-level "Instances (rdf:type)" folder: a class can have thousands of instances (UI §8.8).
+        type StatementNode = LinkNode & { predicate: string; predicateName: string };
+        const statements = (dir: 'out' | 'in'): StatementNode[] => {
+            const rows = new Map<string, StatementNode>();
             for (const r of this.links.rows.filter(x => x.dir === dir)) {
                 const target = r.id;
                 const key = `${r.predicate} ${target ?? r.iri ?? `_${rows.size}`}`;
@@ -178,41 +170,63 @@ export class LinksWidget extends TreeWidget {
                     id: `${dir}:${key}`, name: r.name, link: dir, elements: [r.element],
                     relation: r.relation, target, predicate: r.predicate, predicateName: r.predicateName, muted: unknown || !target,
                     tooltip: `${r.predicate}${r.iri ? `\n${r.iri}` : ''}${unknown ? '\nNot declared in the shapes of this class.' : ''}${target ? '' : '\nNot an element of the model.'}`
-                } as LinkNode & { predicate: string; predicateName: string });
+                } as StatementNode);
             }
-            const list = [...rows.values()].map(n => ({
+            return [...rows.values()].map(n => ({
                 ...n, description: [n.predicateName, many ? (n.elements.length > 1 ? `${n.elements.length} of ${ids.length}` : `${dir === 'out' ? 'from' : 'to'} ${labels.get(n.elements[0])}`) : ''].filter(x => x).join(' · ')
             })).sort((a, b) => a.description!.localeCompare(b.description!) || (a.name ?? '').localeCompare(b.name ?? ''));
-            const f = folder(dir, dir === 'out' ? 'Outgoing' : 'Incoming', ids, list.length);
-            const typed: typeof list = [];
-            for (const n of list) {
-                if (isTypedInstanceRow({ dir, predicate: n.predicate })) typed.push(n);
-                else add(f, n);
-            }
-            if (typed.length) {
-                const tf = folder('in:instances', 'Instances (rdf:type)', [...new Set(typed.flatMap(n => n.elements))], typed.length, f, false);
-                tf.tooltip = 'Subjects of rdf:type statements to the selected elements.';
-                typed.forEach(n => add(tf, n));
-            }
-        }
+        };
+        const outgoing = statements('out');
+        const incomingAll = statements('in');
+        const typed = incomingAll.filter(n => isTypedInstanceRow({ dir: 'in', predicate: n.predicate }));
+        const incoming = incomingAll.filter(n => !typed.includes(n));
 
         const shapes = elements.filter(e => e.kind === 'shape');
-        if (shapes.length) {
-            const f = folder('instances', 'Instances', shapes.map(e => e.id), this.links.instances.length);
-            for (const row of this.links.instances) {
-                add(f, { id: `instance:${row.id}`, name: row.label, link: 'instance', elements: row.shapes, target: row.id });
-            }
-        }
-
-        // Ends of the selected relations.
+        const instances = shapes.length ? this.links.instances : [];
         const relations = elements.filter(e => e.ends);
-        if (relations.length) {
-            const ends = relations.flatMap(({ id, label, ends: x }) => [['from', x!.subject, x!.subjectLabel, id, label], ['to', x!.object, x!.objectLabel, id, label]] as const);
-            const ef = folder('ends', 'Ends', relations.map(e => e.id), ends.length);
-            for (const [side, target, name, id, label] of ends) {
-                add(ef, { id: `end:${side}:${id}`, name, link: 'end', elements: [id], target, description: many ? `${side} · ${label}` : side });
+
+        // Top-level folders in the order of UI §8.8 (`linksFolders`).
+        const render: Record<LinksFolder, () => void> = {
+            instances: () => {
+                const f = folder('instances', 'Instances', shapes.map(e => e.id), instances.length);
+                for (const row of instances) {
+                    add(f, { id: `instance:${row.id}`, name: row.label, link: 'instance', elements: row.shapes, target: row.id });
+                }
+            },
+            typed: () => {
+                const f = folder('in:instances', 'Instances (rdf:type)', [...new Set(typed.flatMap(n => n.elements))], typed.length, root, false);
+                f.tooltip = 'Subjects of rdf:type statements to the selected elements.';
+                typed.forEach(n => add(f, n));
+            },
+            views: () => {
+                const f = folder('views', 'Views', ids, viewRows.length);
+                f.tooltip = views3;
+                for (const [id, { label, elements, hidden }] of viewRows) {
+                    const allHidden = hidden === elements.length;
+                    add(f, {
+                        id: `view:${id}`, name: label, link: 'view', elements, view: id, muted: allHidden, tooltip: views3,
+                        description: [id === current ? 'current' : '', many ? `${elements.length} of ${ids.length}` : '', allHidden ? 'hidden' : ''].filter(x => x).join(', ') || undefined
+                    });
+                }
+            },
+            out: () => {
+                const f = folder('out', 'Outgoing', ids, outgoing.length);
+                outgoing.forEach(n => add(f, n));
+            },
+            in: () => {
+                const f = folder('in', 'Incoming', ids, incoming.length);
+                incoming.forEach(n => add(f, n));
+            },
+            // Ends of the selected relations.
+            ends: () => {
+                const ends = relations.flatMap(({ id, label, ends: x }) => [['from', x!.subject, x!.subjectLabel, id, label], ['to', x!.object, x!.objectLabel, id, label]] as const);
+                const f = folder('ends', 'Ends', relations.map(e => e.id), ends.length);
+                for (const [side, target, name, id, label] of ends) {
+                    add(f, { id: `end:${side}:${id}`, name, link: 'end', elements: [id], target, description: many ? `${side} · ${label}` : side });
+                }
             }
-        }
+        };
+        for (const f of linksFolders({ instances: instances.length, typed: typed.length, ends: relations.length > 0 })) render[f]();
         this.model.root = root;
     }
 

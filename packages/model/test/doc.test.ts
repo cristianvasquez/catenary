@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, NS, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, isTypedInstanceRow, kindName, kindOf, relationLabel, viewsShowing } from '../src';
+import { Doc, NS, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, isTypedInstanceRow, kindName, linksFolders, kindOf, relationLabel, viewsShowing } from '../src';
 import { unplacedInstances } from './doc-reference';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
@@ -97,5 +97,16 @@ describe('Links rows', () => {
         expect(isTypedInstanceRow({ dir: 'in', predicate: NS.rdf + 'type' })).toBe(true);
         expect(isTypedInstanceRow({ dir: 'out', predicate: NS.rdf + 'type' })).toBe(false);
         expect(isTypedInstanceRow({ dir: 'in', predicate: 'urn:p' })).toBe(false);
+    });
+
+    it('linksFolderOrder: instance folders first, each only when it has rows', () => {
+        // A selected class with instances.
+        expect(linksFolders({ instances: 0, typed: 3, ends: false })).toEqual(['typed', 'views', 'out', 'in']);
+        // A selected node shape with targets (and a class with instances: both instance folders).
+        expect(linksFolders({ instances: 2, typed: 0, ends: false })).toEqual(['instances', 'views', 'out', 'in']);
+        expect(linksFolders({ instances: 2, typed: 3, ends: true })).toEqual(['instances', 'typed', 'views', 'out', 'in', 'ends']);
+        // An element with no instances: no instance folders.
+        expect(linksFolders({ instances: 0, typed: 0, ends: false })).toEqual(['views', 'out', 'in']);
+        expect(linksFolders({ instances: 0, typed: 0, ends: true })).toEqual(['views', 'out', 'in', 'ends']);
     });
 });
