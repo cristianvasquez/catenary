@@ -20,21 +20,35 @@ const formats = ['application/trig', 'application/n-quads', 'application/ld+json
 const accepted = new Set(['text/turtle', 'application/n-triples', ...formats]);
 
 /** Parse completely before editing. Explicit MIME types do not fall back to another syntax. */
-export async function prepareRdfPaste(text: string, mediaType?: string): Promise<RdfPaste> {
+export async function prepareRdfPaste(text: string, mediaType: string | undefined, prefixes: Record<string, string>): Promise<RdfPaste> {
     if (!text.trim()) return { ok: false, error: 'The clipboard has no RDF statements.' };
     const mime = mediaType?.split(';')[0].trim();
     if (mime && mime !== 'text/plain' && !accepted.has(mime)) return { ok: false, error: 'This RDF clipboard format is not supported.' };
-    for (const format of mime && mime !== 'text/plain' ? [mime] : formats) {
+    const typed = !!mime && mime !== 'text/plain';
+    for (const format of typed ? [mime] : formats) {
         // Plain JSON is not implicitly RDF. A JSON-LD clipboard must declare its context.
-        if (format === 'application/ld+json' && !mime && !text.includes('"@context"')) continue;
-        try {
-            const quads = skolemize([...await rdf.io.dataset.fromText(format, text)]).quads;
-            if (!quads.length) return { ok: false, error: 'The clipboard has no RDF statements.' };
-            const namedGraphs = [...new Set(quads.filter(q => q.graph.termType !== 'DefaultGraph').map(q => q.graph.value))].sort();
-            return { ok: true, rdf: canonical(quads), namedGraphs, statements: quads.length };
-        } catch { /* Try the next syntax only for untyped clipboard text. */ }
+        if (format === 'application/ld+json' && !typed && !text.includes('"@context"')) continue;
+        const r = await parsePaste(format, text);
+        if (r) return r;
+    }
+    // Untyped text only: a fragment without prefix lines reads the workspace table. The header is not stored (§2.5).
+    // A declaration in the text comes after the header and overrides it.
+    if (!typed) {
+        const header = Object.entries(prefixes).map(([p, ns]) => `@prefix ${p}: <${ns}> .\n`).join('');
+        const r = header && await parsePaste('application/trig', header + text);
+        if (r) return r;
     }
     return { ok: false, error: 'The clipboard is not valid RDF. Use Turtle, TriG, N-Triples, N-Quads, JSON-LD, N3, or RDF/XML.' };
+}
+
+/** One syntax. Undefined: the text does not parse with it. */
+async function parsePaste(format: string, text: string): Promise<RdfPaste | undefined> {
+    try {
+        const quads = skolemize([...await rdf.io.dataset.fromText(format, text)]).quads;
+        if (!quads.length) return { ok: false, error: 'The clipboard has no RDF statements.' };
+        const namedGraphs = [...new Set(quads.filter(q => q.graph.termType !== 'DefaultGraph').map(q => q.graph.value))].sort();
+        return { ok: true, rdf: canonical(quads), namedGraphs, statements: quads.length };
+    } catch { return undefined; }
 }
 
 /** Add missing triples, preserve IRIs and place only figures that the pasted data describes. */

@@ -1136,6 +1136,7 @@ law_duplicateMintsNew b v ids = case fst (step b (Execute (Duplicate v ids))) of
 -- Parsing replaces blank nodes with skolem IRIs (§1). Named graphs require consent before flattening and triple deduplication.
 -- Notations derive figures from the pasted subjects and statements. Arrival places their connectors, hubs and required endpoints.
 -- Data, placements and layout form one transaction and one undo step. Unsupported figures do not prevent data insertion.
+-- Untyped text that fails to parse is parsed again with the workspace prefix table prepended. The table is not changed.
 modelRdf :: Backend -> [Quad]                       -- domain triples, graph normalized for comparison
 clipboardHasNamedGraphs :: String -> Bool           -- parsed clipboard N-Quads
 law_pasteRdfAdditive :: Backend -> Id -> String -> Bool -> Bool
@@ -1145,6 +1146,10 @@ law_pasteRdfAdditive b v text flatten =
 law_namedGraphConsent :: Backend -> Id -> String -> Bool
 law_namedGraphConsent b v text =
   clipboardHasNamedGraphs text ==> failed (fst (step b (Execute (PasteRdf v text False Nothing))))
+prefixTable :: Backend -> [(String, Iri)]           -- the snapshot prefixes.table
+rdfPasteQuery :: String -> String                   -- prepareRdfPaste of untyped clipboard text, as a query
+law_prefixFallbackReadsTableOnly :: Backend -> String -> Bool
+law_prefixFallbackReadsTableOnly b text = prefixTable (snd (runQuery b (rdfPasteQuery text))) == prefixTable b
 
 -- | Copy as RDF returns readable Turtle of selected resources, selected triples and owned nested values.
 -- Referenced descriptions require selection or ownership. Export excludes placement metadata and merges duplicate triples.
@@ -2016,3 +2021,5 @@ keptRead = manifestOnly
 freshRead = manifestOnly
 onDidChange = manifestOnly
 snapshotOf = manifestOnly
+prefixTable = manifestOnly
+rdfPasteQuery = manifestOnly
