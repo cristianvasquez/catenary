@@ -92,6 +92,27 @@ describe('collections (view only)', () => {
         expect(boxes(doc(g).views[target], 'card').map(n => n.element).sort()).toEqual(ids.slice(0, 2).sort());
     });
 
+    it('a paste skips an instance that an entity group of the target view holds', () => {
+        const { g, view, ids } = setup();
+        const source = run(g, meta, { kind: 'createView', label: 'Source' }) as string;
+        run(g, meta, { kind: 'addToView', view: source, ids: [ids[0]], at: { x: 0, y: 0 } });
+        run(g, meta, { kind: 'collect', view, ids: ids.slice(0, 2) });
+        const result = executeCommand(g, meta, { kind: 'pasteIntoView', view, clip: copyFromView(doc(g), source, [ids[0]])! });
+        expect(result.ok).toBe(false);
+        expect(boxes(doc(g).views[view], 'card').map(n => n.element)).toEqual([ids[2]]);
+    });
+
+    it('a move keeps an empty entity group that it does not empty', () => {
+        const { g, view, ids } = setup();
+        run(g, meta, { kind: 'collect', view, ids: ids.slice(0, 2) });
+        run(g, meta, { kind: 'delete', ids: ids.slice(0, 2) });
+        expect(boxes(doc(g).views[view], 'collection')).toMatchObject([{ members: [] }]);
+        const target = run(g, meta, { kind: 'createView', label: 'Target' }) as string;
+        const clip = copyFromView(doc(g), view, [ids[2]], 'cut')!;
+        run(g, meta, { kind: 'moveBetweenViews', from: clip.source, to: target, clip });
+        expect(boxes(doc(g).views[view], 'collection')).toHaveLength(1);
+    });
+
     it('adds an instance to a collection as one undo step; a member has no placement of its own', () => {
         const { g, view, ids } = setup();
         const id = run(g, meta, { kind: 'collect', view, ids: ids.slice(0, 2) }) as string;

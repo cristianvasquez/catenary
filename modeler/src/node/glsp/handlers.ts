@@ -204,6 +204,8 @@ export class PasteHandler extends OperationHandler {
             return undefined;
         }
         const before = new Set([...this.session.store.viewFigures(this.session.viewId)!.placed.values()].map(p => model.iriId(p.iri)));
+        // A move within this view re-places its cards (same placement ids): they arrive again.
+        if (clip.mode === 'cut' && model.iriId(clip.source) === this.session.viewId) for (const b of clip.boxes) if (b.kind === 'card') before.delete(model.placementOfId(this.session.view, model.iriId(b.id)));
         const at = op.editorContext.lastMousePosition, cardScale = this.session.state.cardScale;
         const command: model.EditCommand = clip.mode === 'cut'
             ? { kind: 'moveBetweenViews', from: clip.source, to: this.session.viewId, clip, at, cardScale }

@@ -62,8 +62,10 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
     const dx = at ? at.x - Math.min(...items.map(i => i.b.x)) : 0;
     const dy = at ? at.y - Math.min(...items.map(i => i.b.y)) : 0;
     const view = ops.viewTerm(g, viewId)!;
-    // A view places an element once: a card or a reference already in the view is skipped.
-    const inView = items.filter(({ b }) => (b.kind === 'card' && !!nodeOf(g, view, rdf.namedNode(b.id))) || (b.kind === 'reference' && !!nodeOf(g, view, rdf.namedNode(b.target!))));
+    // A view places an element once: a card, a member of an entity group of the view, or a reference already in the view is skipped.
+    const members = new Set(boxes(readView(g, viewId).views[viewId], 'collection').flatMap(c => c.members));
+    const inView = items.filter(({ b, id }) => (b.kind === 'card' && (!!nodeOf(g, view, rdf.namedNode(b.id)) || members.has(id)))
+        || (b.kind === 'reference' && !!nodeOf(g, view, rdf.namedNode(b.target!))));
     if (inView.length === items.length) return alreadyInView(items.length);
     const pasted: string[] = [];
     for (const { b, id } of items.filter(i => !inView.includes(i))) {
@@ -104,8 +106,11 @@ function viewIdOf(g: ModelGraph, view: string): string | undefined {
  * its members leaves too (as uncollect).
  */
 function moveBetweenViews(g: ModelGraph, from: string, to: string, clip: ViewClip, at?: Point): ops.Result<string[]> {
-    ops.removeViewElements(g, from, clip.boxes.flatMap(b => b.kind === 'card' ? (instanceId(g, b.id) ? [instanceId(g, b.id)!] : []) : [b.id]));
-    ops.removeViewElements(g, from, boxes(readView(g, from).views[from], 'collection').filter(c => c.members.length === 0).map(c => c.id));
+    const cards = clip.boxes.flatMap(b => b.kind === 'card' && instanceId(g, b.id) ? [instanceId(g, b.id)!] : []);
+    const collections = () => boxes(readView(g, from).views[from], 'collection');
+    const affected = new Set(collections().filter(c => c.members.some(m => cards.includes(m))).map(c => c.id));
+    ops.removeViewElements(g, from, [...cards, ...clip.boxes.filter(b => b.kind !== 'card').map(b => b.id)]);
+    ops.removeViewElements(g, from, collections().filter(c => affected.has(c.id) && c.members.length === 0).map(c => c.id));
     return pasteIntoView(g, to, clip, at);
 }
 

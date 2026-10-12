@@ -472,6 +472,19 @@ describe('model changes reaching view clients', () => {
         expect(cardOf(docOf(store).views[second], instance)).toEqual(existing);
     });
 
+    it('fits the cards that a cut and paste re-places within one view (UI §7.5)', async () => {
+        const clip = copyFromView(docOf(store), first, [instance], 'cut')!;
+        const a = await client(store, first);
+        const handler = Object.assign(new PasteHandler(), { session: a.session });
+        await handler.createCommand(PasteOperation.create({
+            clipboardData: { [VIEW_CLIP_FORMAT]: JSON.stringify(clip) },
+            editorContext: { selectedElementIds: [], lastMousePosition: { x: 30000, y: 30000 } }
+        }));
+        const moved = cardOf(docOf(store).views[first], instance)!;
+        expect([moved.x, moved.y]).toEqual([30000, 30000]);
+        expect(a.sent.find(FitToScreenAction.is)).toMatchObject({ elementIds: [moved.id] });
+    });
+
     it('updates a reference when the target view is renamed or deleted, including undo', async () => {
         const reference = edit({ kind: 'addViewReference', view: first, target: second, at: { x: 0, y: 0 } });
         const a = await client(store, first);
