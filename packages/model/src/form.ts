@@ -41,11 +41,18 @@ export function pluginForms(meta: Classes, types: string[]): { cls: ClassDef; so
     });
 }
 
-/** The statements that the form produced for `subject`. Blank-node objects are dropped (the model cannot store them). */
+/** An IRI with a scheme. shacl-form names a node that it generates (an empty sh:node field) with a relative IRI. */
+const ABSOLUTE_IRI = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
+/**
+ * The statements that the form produced for `subject`. Blank-node objects are dropped: the model cannot store them.
+ * Relative-IRI objects are dropped: they are nodes that the form generated, not values that the user gave.
+ */
 export function describeQuads(quads: Iterable<QuadLike>, subject: string, predicates: string[]): Description {
     const d: Description = Object.fromEntries(predicates.map(p => [p, [] as TermJSON[]]));
     for (const q of quads) {
         if (q.subject.termType !== 'NamedNode' || q.subject.value !== subject || !(q.predicate.value in d)) continue;
+        if (q.object.termType === 'NamedNode' && !ABSOLUTE_IRI.test(q.object.value)) continue;
         const t = termToJSON(q.object);
         if (t) d[q.predicate.value].push(t);
     }

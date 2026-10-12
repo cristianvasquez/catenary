@@ -72,4 +72,12 @@ describe('SHACL form description', () => {
         const r = executeCommand(g, m, { kind: 'setStatements', id: inst.id, values: { [DPROD + 'inputPort']: [{ termType: 'NamedNode', value: agent.uri }] } });
         expect(r.ok).toBe(false);
     });
+
+    // law_formSavesAbsoluteIrisOnly
+    it('a relative IRI value rejects the command with the predicate and the term', async () => {
+        const [g, m] = [await example(), await meta()];
+        const inst = doc(g).instances[byLabel(g, 'Product usage data')];
+        const r = executeCommand(g, m, { kind: 'setStatements', id: inst.id, values: { [DCT + 'description']: [{ termType: 'NamedNode', value: '3bc012f0-d183-4fa3-ac40-f5ab49ee2a75' }] } });
+        expect(r).toEqual({ ok: false, error: "dct:description: '3bc012f0-d183-4fa3-ac40-f5ab49ee2a75' is not an absolute IRI" });
+    });
 });

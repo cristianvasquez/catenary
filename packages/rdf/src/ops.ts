@@ -5,7 +5,7 @@
 import {
     Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
-    pillSize, pills, rangeText, formatVertices, parseVertices, nkey
+    pillSize, pills, rangeText, formatVertices, parseVertices, nkey, shortIri
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
@@ -306,6 +306,8 @@ export function setStatements(g: ModelGraph, meta: Classes, id: string, values: 
             if (problem) return fail(problem);
         }
         for (const o of objects) {
+            // Oxigraph throws on an IRI without a scheme ("No scheme found in an absolute IRI") at the first store access.
+            if (o.termType === 'NamedNode' && !IRI_SYNTAX.test(o.value)) return fail(`${shortIri(p)}: '${o.value}' is not an absolute IRI`);
             const t = jsonToTerm(o);
             const problem = isInstance(g, t) && relationProblem(g, meta, s, p, t);
             if (problem) return fail(problem);
