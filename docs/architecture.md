@@ -147,7 +147,7 @@ Paths are relative to the directory in the first column.
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
 | | `fuzzy.ts` | Ordered-character matching, match positions and ranking |
-| | `labels.ts`, `search.ts`, `paths.ts`, `selection.ts`, `prompts.ts` | Labels, Find Element hits, portable paths, selection by kind, dialog and picker content |
+| | `labels.ts`, `search.ts`, `paths.ts`, `selection.ts`, `prompts.ts` | Labels (`pickLabel`: the one label rule, in the workspace language), Find Element hits, portable paths, selection by kind, dialog and picker content |
 | | `markdown.ts` | View embeds in Markdown documents and the plan of a Markdown export |
 | | `notation.ts`, `notation-graph.ts`, `notation-join.ts`, `notation-schema.ts`, `sha256.ts` | Notation engine (ADR 0014): figures, join, removal, arrival; SHACL and value-set elements of the diagram |
 | `packages/rdf-serialization/src` | `index.js`, `browser/triplify.js`, `serializers/`, `utils.js` | Serializer exports, browser-safe TriG path, RDF 1.2 term helpers |

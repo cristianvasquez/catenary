@@ -12,9 +12,9 @@
 
 import {
     LogicalConstraint, LogicalOperator, NODE_KINDS, NS, NodeKind, NodeShape, PathJSON, PropertyShape, Range, ShapesModel, SimpleRange, TermJSON, compactIri,
-    emptyShapes, formatPath, isValueSetRange, termToJSON
+    LABEL_PREDICATES, emptyShapes, formatPath, isValueSetRange, pickLabel, termToJSON
 } from '@catenary/model';
-import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
+import type { Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
 import { GraphChange, ModelGraph, cmp, fileOfGraph } from './graph';
 import { constraintId, elementId, propertyShapeId } from './ids';
@@ -70,14 +70,17 @@ const indexes = new WeakMap<ModelGraph, { event: GraphChange; index: ShapesIndex
 export function shapesIndexOf(g: ModelGraph): ShapesIndex {
     const cached = indexes.get(g);
     if (cached?.event === g.keys.shapes) return cached.index;
-    const index = readShapes(shapesAndVocabulary(g));
+    const index = readShapes(shapesAndVocabulary(g), g.language);
     indexes.set(g, { event: g.keys.shapes, index });
     return index;
 }
 
-/** Read the shapes of `quads` (quads of the shapes graphs, with their graphs). */
-export function readShapes(quads: Iterable<Quad>): ShapesIndex {
+/** Read the shapes of `quads` (quads of the shapes graphs, with their graphs). `language`: of the labels (pickLabel). */
+export function readShapes(quads: Iterable<Quad>, language?: string): ShapesIndex {
     const ds: Dataset = rdf.dataset([...quads]);
+    /** The label rule (pickLabel) over the objects of `predicates` (IRIs), in that order. */
+    const pick = (s: Term, predicates: readonly string[]) => pickLabel(predicates.map(p => [...ds.match(s, rdf.namedNode(p))].map(q => q.object)
+        .filter((o): o is Literal => o.termType === 'Literal').map(o => ({ value: o.value, language: o.language }))), language);
     const objects = (s: Term, p: NamedNode) => [...ds.match(s, p)].map(q => q.object).sort((a, b) => cmp(a.value, b.value));
     const one = (s: Term, p: NamedNode) => objects(s, p)[0];
     const int = (s: Term, p: NamedNode) => { const v = one(s, p)?.value; return v === undefined || isNaN(Number(v)) ? undefined : Number(v); };
@@ -275,7 +278,7 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
         const nodeTargets = objects(s, S.targetNode).map(termToJSON).filter((t): t is TermJSON => !!t);
         const shape: NodeShape = {
             id, uri: s.value,
-            label: str(s, S.name) ?? str(s, S.label) ?? labelFromIri(s.value),
+            label: pick(s, [S.name.value, S.label.value]) ?? labelFromIri(s.value),
             nodes: objects(s, S.node).map(t => t.value),
             targetClass: targets[0]?.value,
             targetClasses: targets.length ? [...new Set(targets.map(t => t.value))].sort() : undefined,
@@ -342,11 +345,7 @@ export function readShapes(quads: Iterable<Quad>): ShapesIndex {
     }
 
     // Value sets: concept schemes and collections.
-    const labelOf = (t: Term) => {
-        const labels = [...ds.match(t, S.prefLabel)].map(q => q.object as Term & { language?: string });
-        const pick = labels.find(l => !l.language) ?? labels.find(l => l.language?.startsWith('en')) ?? labels[0];
-        return pick?.value ?? str(t, S.label) ?? labelFromIri(t.value);
-    };
+    const labelOf = (t: Term) => pick(t, LABEL_PREDICATES) ?? labelFromIri(t.value);
     for (const [kind, type] of [['scheme', S.ConceptScheme], ['collection', S.Collection]] as const) {
         for (const q of ds.match(null, S.type, type)) {
             const t = q.subject;

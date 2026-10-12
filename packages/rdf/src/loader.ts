@@ -2,7 +2,7 @@
 // the patch path of ModelGraph. A view file: its view graph. Another file: its shapes (shapePart) to the shapes graph of the file, the
 // other statements to its data graph. Blank nodes get IRIs (skolem.ts); a save writes the IRIs.
 
-import { DEFAULT_PREFIXES, NS, setPrefixes } from '@catenary/model';
+import { DEFAULT_PREFIXES, NS, pickLabel, setPrefixes } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
@@ -14,7 +14,7 @@ import { isSkolem, skolemize } from 'rdf-core';
 import { rdf, termKey } from './terms';
 import { canonical, parseTrig } from './trig';
 import { isView, V } from './views';
-import { P } from './vocabulary';
+import { P, labelLiterals } from './vocabulary';
 
 /**
  * Read a workspace file and its model files into `graph`. `ofFolder`: the folder was given; a workspace file that is not on disk is
@@ -209,7 +209,8 @@ export async function fileContent(file: string): Promise<{ workspace: boolean; v
     } catch (e) {
         return { workspace: false, views: [], viewFile: false, error: (e as Error).message };
     }
-    const label = (iri: string) => quads.find(q => q.subject.value === iri && q.predicate.equals(P.label) && q.object.termType === 'Literal')?.object.value ?? iri;
+    // The label rule (pickLabel) without the workspace language: the file is read before a workspace opens.
+    const label = (iri: string) => pickLabel(labelLiterals(p => quads.filter(q => q.subject.value === iri && q.predicate.value === p).map(q => q.object))) ?? iri;
     const views = declaredViews(quads).map(iri => ({ iri, label: label(iri) }));
     // viewFile: a view file that the read accepts (viewProblem).
     return { workspace: quads.some(q => q.graph.value === MANIFEST_GRAPH), views, viewFile: views.length > 0 && !viewProblem(quads) };

@@ -42,6 +42,8 @@ export class Settings {
     protected imported: string[];
     /** What SHACL validation checks (manifest ws:validation). */
     validation: ValidationMode;
+    /** The language of the labels (manifest ws:language); the graph reads it (ModelGraph.language). Undefined: not set. */
+    language?: string;
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
     prefixes?: Record<string, string>;
     /** The workspace file was removed or moved on disk: no watch, no reads, no writes until the next open. */
@@ -58,6 +60,8 @@ export class Settings {
         this.exclude = manifest.exclude;
         this.imported = manifest.imported;
         this.validation = manifest.validation ?? 'all';
+        this.language = manifest.language;
+        graph.language = manifest.language;
         this.prefixes = manifest.prefixes;
     }
 
@@ -105,6 +109,7 @@ export class Settings {
             exclude: [...this.exclude],
             imported: [...this.imported],
             validation: this.validation,
+            ...(this.language ? { language: this.language } : {}),
             files: [...this.modelFiles.values()].sort((a, b) => cmp(a.path, b.path))
                 .map(f => ({
                     path: f.path, dirty: saved.files.has(f.path), ...(f.error ? { error: f.error } : {}), ...(this.isImported(f.path) ? { imported: true } : {}),
@@ -147,7 +152,8 @@ export class Settings {
             ...(this.defaultFileSetting ? { defaultFile: this.defaultFileSetting } : {}), placement: { ...this.placement }, exclude: [...this.exclude],
             imported: [...this.imported],
             ...(this.prefixes ? { prefixes: this.prefixes } : {}),
-            ...(this.validation !== 'all' ? { validation: this.validation } : {})
+            ...(this.validation !== 'all' ? { validation: this.validation } : {}),
+            ...(this.language ? { language: this.language } : {})
         };
     }
 
@@ -302,10 +308,11 @@ export class Settings {
 
     /**
      * Check and apply settings of the manifest: the default file and the file of each kind (a model file, or a new RDF file in the
-     * workspace folder; a kind: also "near"), the exclude globs, the imported globs (§2.6). `reread`: the exclude globs changed, so the
-     * files must be read again. `saved`: what differs from the files (saver.ts).
+     * workspace folder; a kind: also "near"), the exclude globs, the imported globs (§2.6), the language of the labels (trimmed; empty
+     * clears it). `reread`: the exclude globs or the language changed, so the files must be read again. `saved`: what differs from the
+     * files (saver.ts).
      */
-    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }, saved: Saved): { error: string } | { reread: boolean } {
+    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }, saved: Saved): { error: string } | { reread: boolean } {
         if (settings.validation !== undefined && !VALIDATION_MODES.includes(settings.validation)) return { error: `Validation: "${settings.validation}" (use off, views or all).` };
         // Imported globs first: the files of new subjects are checked against the new globs. An error keeps the old globs.
         const was = this.imported;
@@ -316,12 +323,17 @@ export class Settings {
             this.imported = globs;
         }
         const r = this.applyPlaces(settings);
-        if ('error' in r) this.imported = was;
-        else {
-            if (settings.validation) this.validation = settings.validation;
-            this.graph.invalidate({ persisted: true, data: true });
+        if ('error' in r) {
+            this.imported = was;
+            return r;
         }
-        return r;
+        if (settings.validation) this.validation = settings.validation;
+        const language = settings.language === undefined ? this.language : settings.language.trim() || undefined;
+        const relabel = language !== this.language;
+        this.language = language;
+        this.graph.language = language;
+        this.graph.invalidate({ persisted: true, data: true });
+        return { reread: r.reread || relabel };
     }
 
     /** `applySettings` without the imported globs. */

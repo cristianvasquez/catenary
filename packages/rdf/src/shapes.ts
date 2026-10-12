@@ -2,7 +2,7 @@
 // shapes graphs, not this copy (spec/manifest.hs §9). The palette classes, links and fields come from the plugins (authoring.ts): this
 // file reads no SHACL property shape for them.
 
-import { ANY_RESOURCE, ClassDef, Classes, ConceptDef, NS, SchemeDef, localName, pluginFormShape, pluginParts } from '@catenary/model';
+import { ANY_RESOURCE, ClassDef, Classes, ConceptDef, NS, SchemeDef, localName, pickLabel, pluginFormShape, pluginParts } from '@catenary/model';
 import type { NamedNode, Quad, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset, Grapoi } from 'rdf-ext';
 import { OxigraphStore } from 'rdf-files';
@@ -152,20 +152,14 @@ export function formShapes(meta: Metamodel): Dataset {
 
 const SKOS = NS.skos;
 
-/** SKOS concept schemes and concepts in the shapes files. */
-export function buildVocabulary(dataset: Dataset): { schemes: SchemeDef[]; concepts: ConceptDef[] } {
+/** SKOS concept schemes and concepts in the shapes files. `language`: of the labels and texts (pickLabel). */
+export function buildVocabulary(dataset: Dataset, language?: string): { schemes: SchemeDef[]; concepts: ConceptDef[] } {
     const node = (t: Term) => rdf.grapoi({ dataset, term: t });
     const iris = (p: string, o?: string, side: 'subject' | 'object' = 'subject') =>
         [...dataset.match(null, n(p), o ? n(o) : null)].map(q => q[side]).filter(t => t.termType === 'NamedNode').map(t => t.value);
-    // A plain or English label first, then the others in term order.
-    const text = (iri: string, ...preds: string[]) => {
-        for (const p of preds) {
-            const terms = node(n(iri)).out(n(p)).terms.sort((a, b) => a.value.localeCompare(b.value));
-            const hit = terms.find(t => t.termType === 'Literal' && (!t.language || t.language.startsWith('en'))) ?? terms[0];
-            if (hit) return hit.value;
-        }
-        return undefined;
-    };
+    // The label rule (pickLabel) over the objects of `preds`, in that order.
+    const text = (iri: string, ...preds: string[]) => pickLabel(preds.map(p => node(n(iri)).out(n(p)).terms
+        .map(t => ({ value: t.value, language: t.termType === 'Literal' ? t.language : undefined }))), language);
 
     const schemeIris = new Set([
         ...iris(NS.rdf + 'type', SKOS + 'ConceptScheme'), ...iris(SKOS + 'hasTopConcept'),

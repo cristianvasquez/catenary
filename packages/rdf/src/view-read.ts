@@ -5,7 +5,7 @@
 // (`instanceRecords`, `projectView`), so the view diagram and the request-scoped read models (scoped-doc.ts) have one rule each.
 
 import type { NamedNode, Term } from '@rdfjs/types';
-import { Doc, NS, ShapesModel, emptyDoc } from '@catenary/model';
+import { Doc, NS, ShapesModel, emptyDoc, pickLabel } from '@catenary/model';
 import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, cmp, fileOfGraph } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Resource, Statements, cardIdsOf, first, instanceRecords, key, projectView, select } from './records';
@@ -14,7 +14,7 @@ import { instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { tracer } from './trace';
 import { isView } from './views';
-import { homeOf, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri } from './vocabulary';
+import { homeOf, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri, labelLiterals } from './vocabulary';
 
 export interface ViewReadContext {
     g: ModelGraph;
@@ -219,7 +219,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
             o: { termType: q.object.termType, value: q.object.value, term: q.object } as Plain }));
         if (rows.length) { subjects.push({ s: rows[0].s, rows }); files.set(iri, fileOfGraph(home.value)); }
     }
-    const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings);
+    const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings, g.language);
 
     if (elements) {
         for (const pls of placementsOf(placed).values()) pls.forEach(pl => placementIds.add(pl));
@@ -253,7 +253,8 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     if (!views.has(view.value)) return doc;
     const labelOf = (graph: string) => {
         const subject = [...views.get(graph)!.values()].sort((a, b) => cmp(a.v.value, b.v.value))[0];
-        return subject.labels.filter(o => o.termType === 'Literal').map(o => o.value).sort(cmp)[0] ?? labelFromIri(subject.v.value);
+        // The label rule (pickLabel): the query reads rdfs:label only, the label predicate of a view.
+        return pickLabel(labelLiterals(p => p === P.label.value ? subject.labels.map(o => o.term) : []), g.language) ?? labelFromIri(subject.v.value);
     };
     const viewIds = new Map([...views.keys()].map(graph => [graph, elementId(rdf.namedNode(graph))]));
 
@@ -304,17 +305,17 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
 /** Label of every view (view id → label): the first view:View subject of the graph; rdfs:label, else from the IRI. */
 export function viewLabels(g: ModelGraph): Record<string, string> {
     const excluded = [...g.dataGraphs(), ...g.shapesGraphs(), rdf.namedNode(REPORT_GRAPH)].map(t => `<${t.value}>`).join(', ');
-    const subjects = new Map<string, Map<string, { v: string; labels: string[] }>>();
+    const subjects = new Map<string, Map<string, { v: string; labels: Term[] }>>();
     for (const r of select(g, `${PREFIXES}
         SELECT ?g ?v ?l WHERE { GRAPH ?g { ?v a view:View OPTIONAL { ?v rdfs:label ?l FILTER (isLiteral(?l)) } } FILTER (isIRI(?g) && ?g NOT IN (${excluded})) }`)) {
         let e = subjects.get(r.g.value);
         if (!e) subjects.set(r.g.value, e = new Map());
         let v = e.get(key(r.v));
         if (!v) e.set(key(r.v), v = { v: r.v.value, labels: [] });
-        if (r.l) v.labels.push(r.l.value);
+        if (r.l) v.labels.push(r.l.term);
     }
     return Object.fromEntries([...subjects].sort((a, b) => cmp(a[0], b[0])).map(([graph, vs]) => {
         const subject = [...vs.values()].sort((a, b) => cmp(a.v, b.v))[0];
-        return [elementId(rdf.namedNode(graph)), subject.labels.sort(cmp)[0] ?? labelFromIri(subject.v)];
+        return [elementId(rdf.namedNode(graph)), pickLabel(labelLiterals(p => p === P.label.value ? subject.labels : []), g.language) ?? labelFromIri(subject.v)];
     }));
 }

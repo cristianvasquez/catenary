@@ -27,6 +27,8 @@ export const WS = {
     imported: rdf.namedNode(NS.ws + 'imported'),
     /** What SHACL validation checks: "off", "views" (the elements on the open views) or "all". Not written for "all". */
     validation: rdf.namedNode(NS.ws + 'validation'),
+    /** The language of the labels that Catenary shows (a language tag, such as "en"). Not written when not set. */
+    language: rdf.namedNode(NS.ws + 'language'),
     /** Legacy name of ws:imported (read, not written). */
     protect: rdf.namedNode(NS.ws + 'protect')
 };
@@ -80,6 +82,8 @@ export interface Manifest {
     prefixes?: Record<string, string>;
     /** What SHACL validation checks. Undefined: "all". */
     validation?: ValidationMode;
+    /** The language of the labels (ws:language). Undefined: not set. */
+    language?: string;
 }
 
 export { VIEW_EXT, isViewFile } from '@catenary/model';
@@ -157,13 +161,15 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         if (prefix !== undefined && ns) prefixes[prefix] = ns;
     }
     const validation = literals(WS.validation).find(v => (VALIDATION_MODES as readonly string[]).includes(v)) as ValidationMode | undefined;
+    const language = literals(WS.language).map(v => v.trim()).filter(Boolean).sort()[0];
     return {
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
         exclude: literals(WS.exclude).sort(),
         imported: [...new Set([...literals(WS.imported), ...literals(WS.protect)])].sort(),
         ...(Object.keys(prefixes).length ? { prefixes } : {}),
-        ...(validation && validation !== 'all' ? { validation } : {})
+        ...(validation && validation !== 'all' ? { validation } : {}),
+        ...(language ? { language } : {})
     };
 }
 
@@ -181,6 +187,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
         ...m.exclude.map(e => rdf.quad(g, WS.exclude, rdf.literal(e), g)),
         ...m.imported.map(e => rdf.quad(g, WS.imported, rdf.literal(e), g)),
         ...(m.validation && m.validation !== 'all' ? [rdf.quad(g, WS.validation, rdf.literal(m.validation), g)] : []),
+        ...(m.language ? [rdf.quad(g, WS.language, rdf.literal(m.language), g)] : []),
         ...Object.entries(m.prefixes ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([prefix, ns]) => {
             const d = rdf.namedNode(`${MANIFEST_GRAPH}-declare-${prefix}`);
             return [

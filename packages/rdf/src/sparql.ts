@@ -1,8 +1,8 @@
 // SPARQL fragments of the read rules, for queries that Oxigraph evaluates (one text for each rule). A fragment is pattern text; the
 // caller gives the variable names. `n` makes the helper variables of a fragment unique when a query uses it more than once.
 
-import { NS } from '@catenary/model';
-import type { NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
+import { LABEL_PREDICATES, LabelLiteral, NS, compareLabels, pickLabel } from '@catenary/model';
+import type { Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, cmp } from './graph';
 import { rdf } from './terms';
 import { labelFromIri } from './vocabulary';
@@ -99,34 +99,34 @@ export function thingTypes(g: ModelGraph): Quad[] {
 }
 
 /**
- * The display label of each IRI (one query; the one home of the label rule): rdfs:label, else skos:prefLabel, else sh:name (the first
- * in string order), else the name from the path IRI of a property shape, else the name from the IRI (labelFromIri, percent-decoded).
+ * The display label of each IRI (one query; the label rule is pickLabel, @catenary/model): the literals of rdfs:label, else
+ * skos:prefLabel, else sh:name, in the language of the graph (ModelGraph.language), else the name from the path IRI of a property
+ * shape, else the name from the IRI (labelFromIri, percent-decoded).
  */
 export function labels(g: ModelGraph, iris: string[]): Map<string, string> {
     const out = new Map<string, string>();
     if (!iris.length) return out;
-    const found = construct(g, `CONSTRUCT { ?s rdfs:label ?label . ?s sh:path ?path . } WHERE {
-        { SELECT ?s (MIN(?name) AS ?label) (MIN(?simplePath) AS ?path) WHERE {
-            VALUES ?s { ${[...new Set(iris)].map(iri).join(' ')} }
-            OPTIONAL { GRAPH ?g1 { ?s rdfs:label ?rl } FILTER (?g1 != ${NOT_REPORT}) }
-            OPTIONAL { GRAPH ?g2 { ?s skos:prefLabel ?pl } FILTER (?g2 != ${NOT_REPORT}) }
-            OPTIONAL { GRAPH ?g3 { ?s sh:name ?sn } FILTER (?g3 != ${NOT_REPORT}) }
-            OPTIONAL { GRAPH ?g4 { ?s sh:path ?simplePath } FILTER (?g4 != ${NOT_REPORT} && !STRSTARTS(STR(?simplePath), "urn:skolem:")) }
-            BIND (COALESCE(STR(?rl), STR(?pl), STR(?sn)) AS ?name)
-        } GROUP BY ?s }
+    const found = rows(g, `SELECT DISTINCT ?s ?p ?l WHERE {
+        VALUES ?s { ${[...new Set(iris)].map(iri).join(' ')} }
+        { GRAPH ?g1 { ?s ?p ?l } FILTER (?g1 != ${NOT_REPORT} && ?p IN (rdfs:label, skos:prefLabel, sh:name) && isLiteral(?l)) }
+        UNION { GRAPH ?g2 { ?s sh:path ?l } FILTER (?g2 != ${NOT_REPORT} && !STRSTARTS(STR(?l), "urn:skolem:")) BIND (sh:path AS ?p) }
     }`);
-    const path = new Map<string, string>();
-    for (const q of found) (q.predicate.value === NS.rdfs + 'label' ? out : path).set(q.subject.value, q.object.value);
-    for (const s of iris) if (!out.has(s)) out.set(s, labelFromIri(path.get(s) ?? s));
+    const literals = new Map<string, LabelLiteral[][]>(), path = new Map<string, string>();
+    for (const r of found) {
+        const s = r.s.value;
+        if (r.p.value === NS.sh + 'path') {
+            const was = path.get(s);
+            if (was === undefined || cmp(r.l.value, was) < 0) path.set(s, r.l.value);
+            continue;
+        }
+        const lists = literals.get(s) ?? literals.set(s, LABEL_PREDICATES.map(() => [])).get(s)!;
+        lists[LABEL_PREDICATES.indexOf(r.p.value as typeof LABEL_PREDICATES[number])].push({ value: r.l.value, language: (r.l as Literal).language });
+    }
+    for (const s of iris) out.set(s, pickLabel(literals.get(s) ?? [], g.language) ?? labelFromIri(path.get(s) ?? s));
     return out;
 }
 
-/** Case-insensitive label order, then lower case first. */
-export const compareLabels = (a: string, b: string) => {
-    const x = a.toLowerCase().replace(/[—→]/g, '\t'), y = b.toLowerCase().replace(/[—→]/g, '\t');
-    return x < y ? -1 : x > y ? 1 : a < b ? 1 : a > b ? -1 : 0;
-};
-
+export { compareLabels };
 
 /** The IRIs of `iris` with an rdf:type or an rdfs:label in the model graph (vocabulary.ts inModel), in one query. */
 export function inModelAmong(g: ModelGraph, iris: Iterable<string>): Set<string> {

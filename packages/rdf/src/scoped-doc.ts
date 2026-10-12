@@ -4,14 +4,14 @@ import { shapeTargetMatches } from './shacl-targets';
 // Every view has an entry: the views that the scope does not read have their label only (no boxes, edges or arrows).
 
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
-import { Doc, NS, ShapesModel, View, boxes, emptyDoc } from '@catenary/model';
+import { Doc, LABEL_PREDICATES, NS, ShapesModel, View, boxes, emptyDoc, pickLabel } from '@catenary/model';
 import { UNION_GRAPH, ModelGraph, REPORT_GRAPH, fileOfGraph, cmp } from './graph';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { Plain, Statements, instanceRecords, key, select } from './records';
 import { homesAmong, inModelAmong, instancesAmong } from './sparql';
 import { rdf } from './terms';
 import { ViewReadContext, readView, viewLabels } from './view-read';
-import { homeOf, vocabularySubjects, P, labelFromIri } from './vocabulary';
+import { P, homeOf, vocabularySubjects, labelFromIri, labelLiterals } from './vocabulary';
 import { isView, views as viewGraphs } from './views';
 
 export interface DocScope {
@@ -115,7 +115,7 @@ function records(g: ModelGraph, doc: Doc, iris: string[]): void {
         if (rows.length) subjects.push({ s: rows[0].s, rows });
     }
     const part = emptyDoc();
-    instanceRecords(part, subjects, files, []);
+    instanceRecords(part, subjects, files, [], g.language);
     Object.assign(doc.instances, part.instances);
     Object.assign(doc.relations, part.relations);
 }
@@ -148,25 +148,23 @@ export function instanceCount(g: ModelGraph): number {
     return Number(model?.n.value ?? 0) + vocabularySubjects(g).size;
 }
 
-/** The label of each instance (rdfs:label, else skos:prefLabel, else from the IRI; the first literal in order), as `instanceRecords` gives it. */
+/** The label of each instance (pickLabel in the language of the graph, else from the IRI), as `instanceRecords` gives it. */
 export function instanceLabels(g: ModelGraph): Map<string, string> {
-    const out = new Map<string, { label?: string; pref?: string }>();
+    const out = new Map<string, Term[][]>();
     for (const r of select(g, `${PREFIXES} SELECT ?s ?p ?l WHERE {
         { GRAPH ${iri(g.union.value)} { ?s rdf:type|rdfs:label ?any } FILTER (isIRI(?s) && ?s != ${iri(UNION_GRAPH)} && ?s != ${iri(g.union.value)}) }
-        OPTIONAL { GRAPH ${iri(g.union.value)} { ?s ?p ?l } FILTER (?p IN (rdfs:label, <${NS.skos}prefLabel>) && isLiteral(?l)) } }`)) {
-        const e = out.get(r.s.value) ?? out.set(r.s.value, {}).get(r.s.value)!;
-        if (!r.l) continue;
-        if (r.p.value === P.label.value) { if (e.label === undefined || cmp(r.l.value, e.label) < 0) e.label = r.l.value; }
-        else if (e.pref === undefined || cmp(r.l.value, e.pref) < 0) e.pref = r.l.value;
+        OPTIONAL { GRAPH ${iri(g.union.value)} { ?s ?p ?l } FILTER (?p IN (${LABEL_PREDICATES.map(iri).join(', ')}) && isLiteral(?l)) } }`)) {
+        const e = out.get(r.s.value) ?? out.set(r.s.value, LABEL_PREDICATES.map(() => [])).get(r.s.value)!;
+        if (r.l) e[LABEL_PREDICATES.indexOf(r.p.value as typeof LABEL_PREDICATES[number])].push(r.l.term);
     }
-    const labels = new Map([...out].map(([s, e]) => [s, e.label ?? e.pref ?? labelFromIri(s)]));
-    for (const [s, graph] of vocabularySubjects(g)) {
-        const t = rdf.namedNode(s);
-        const literals = (p: string) => g.match(t, rdf.namedNode(p), null, graph).filter(q => q.object.termType === 'Literal').map(q => q.object.value).sort(cmp);
-        labels.set(s, literals(P.label.value)[0] ?? literals(NS.skos + 'prefLabel')[0] ?? labelFromIri(s));
-    }
+    const labels = new Map<string, string>();
+    for (const [s, e] of out) labels.set(s, labelOf(g, s, p => e[LABEL_PREDICATES.indexOf(p as typeof LABEL_PREDICATES[number])]));
+    for (const [s, graph] of vocabularySubjects(g)) labels.set(s, labelOf(g, s, p => g.match(rdf.namedNode(s), rdf.namedNode(p), null, graph).map(q => q.object)));
     return labels;
 }
+
+/** The label of `s` from the objects of each label predicate: pickLabel in the language of the graph, else from the IRI. */
+const labelOf = (g: ModelGraph, s: string, objects: (p: string) => Term[]) => pickLabel(labelLiterals(objects), g.language) ?? labelFromIri(s);
 
 /** File references of all views: the view graph IRI and the stored path (view:file) of each. */
 export function fileReferences(g: ModelGraph): { view: string; file: string }[] {
@@ -182,18 +180,15 @@ function labelWarnings(g: ModelGraph, subjects?: readonly string[]): Map<string,
     const found = select(g, `${PREFIXES} SELECT ?s (COUNT(?l) AS ?n) WHERE { ${subjects ? `VALUES ?s { ${values(subjects)} }` : ''}
         GRAPH ${M} { ?s rdfs:label ?l } FILTER (isIRI(?s) && ?s != ${iri(UNION_GRAPH)}) } GROUP BY ?s HAVING (COUNT(?l) > 1)`).map(r => r.s.value);
     if (!found.length) return out;
-    // The label that the card shows (instanceLabels): the first literal rdfs:label in order (a subject of the model graph is no vocabulary subject).
-    const first = new Map<string, string>();
-    for (const r of select(g, `${PREFIXES} SELECT ?s ?l WHERE { VALUES ?s { ${values(found)} } GRAPH ${M} { ?s rdfs:label ?l } FILTER (isLiteral(?l)) }`)) {
-        const was = first.get(r.s.value);
-        if (was === undefined || cmp(r.l.value, was) < 0) first.set(r.s.value, r.l.value);
+    // The label that the card shows (instanceLabels): a subject of the model graph is no vocabulary subject.
+    const objects = new Map<string, Term[][]>();
+    for (const r of select(g, `${PREFIXES} SELECT ?s ?p ?l WHERE { VALUES ?s { ${values(found)} } GRAPH ${M} { ?s ?p ?l }
+        FILTER (?p IN (${LABEL_PREDICATES.map(iri).join(', ')}) && isLiteral(?l)) }`)) {
+        const e = objects.get(r.s.value) ?? objects.set(r.s.value, LABEL_PREDICATES.map(() => [])).get(r.s.value)!;
+        e[LABEL_PREDICATES.indexOf(r.p.value as typeof LABEL_PREDICATES[number])].push(r.l.term);
     }
-    const pref = new Map<string, string>();
-    for (const r of select(g, `${PREFIXES} SELECT ?s ?l WHERE { VALUES ?s { ${values(found.filter(x => !first.has(x)))} } GRAPH ${M} { ?s <${NS.skos}prefLabel> ?l } FILTER (isLiteral(?l)) }`)) {
-        const was = pref.get(r.s.value);
-        if (was === undefined || cmp(r.l.value, was) < 0) pref.set(r.s.value, r.l.value);
-    }
-    for (const x of found) out.set(x, `${x}: more than one rdfs:label, shows "${first.get(x) ?? pref.get(x) ?? labelFromIri(x)}"`);
+    const shown = (x: string) => labelOf(g, x, p => objects.get(x)?.[LABEL_PREDICATES.indexOf(p as typeof LABEL_PREDICATES[number])] ?? []);
+    for (const x of found) out.set(x, `${x}: more than one rdfs:label, shows "${shown(x)}"`);
     return out;
 }
 

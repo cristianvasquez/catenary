@@ -757,7 +757,7 @@ export class ModelStore {
         const vocabulary = vocabularyQuads(this.graph).map(q => rdf.quad(q.subject, q.predicate, q.object));
         const sources = this.settings?.shapeSources() ?? [];
         const dataset = rdf.dataset([...shapes, ...vocabulary]);
-        this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset)), source: sources.join(', ') || undefined, dataset };
+        this.metamodel = { ...authoringMetamodel(this.graph, buildVocabulary(dataset, this.graph.language)), source: sources.join(', ') || undefined, dataset };
     }
 
     /** Replace the prefix table. It goes to the manifest of the primary workspace file (saved with it). No undo step. */
@@ -780,11 +780,11 @@ export class ModelStore {
      * Change the settings of the manifest (ADR 0004): the default file and the file of each kind (a model file, or a new RDF file in
      * the workspace folder; a kind: also "near"), the exclude globs. Written at once. A new exclude glob reads the files again. No undo step.
      */
-    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): Promise<CommandResult> {
+    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }): Promise<CommandResult> {
         return this.serial(() => this.applySettings(settings));
     }
 
-    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode }): Promise<CommandResult> {
+    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }): Promise<CommandResult> {
         const ws = this.settings;
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.

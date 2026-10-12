@@ -50,6 +50,8 @@ export interface WorkspaceSettings {
     imported?: string[];
     /** What SHACL validation checks (ws:validation): nothing, the elements on the open views, or the model. */
     validation?: ValidationMode;
+    /** The language of the labels (ws:language): a language tag. Empty: clears the setting. */
+    language?: string;
 }
 
 /** What to export: files and folders (absolute paths), and documents to leave out (paths relative to the root). */

@@ -2,8 +2,8 @@
 // use. Functions of a ModelGraph. metamodelQuad is a graph rule: model-graph.ts passes it to ModelGraph. graph.ts does not import
 // this module.
 
-import { NS, RDFS_LABEL, RDF_TYPE, localName } from '@catenary/model';
-import type { NamedNode, Quad, Term } from '@rdfjs/types';
+import { LABEL_PREDICATES, LabelLiteral, NS, RDFS_LABEL, RDF_TYPE, localName, pickLabel } from '@catenary/model';
+import type { Literal, NamedNode, Quad, Term } from '@rdfjs/types';
 import { nameFromURI, nameToURI } from 'canonical-md';
 import { UNION_GRAPH, ModelGraph, cmp, sorted } from './graph';
 import { isSkolem } from 'rdf-core';
@@ -88,10 +88,17 @@ export function vocabularySubjects(g: ModelGraph): Map<string, NamedNode> {
     return result;
 }
 
-/** Label of an instance (graph: model) or a view (graph: the view). Several labels: the first in order. */
+/**
+ * The label literals of a subject for pickLabel (@catenary/model): one list per label predicate (LABEL_PREDICATES). `objects`: the
+ * objects of a predicate; terms that are not literals do not count.
+ */
+export function labelLiterals(objects: (predicate: string) => Term[]): LabelLiteral[][] {
+    return LABEL_PREDICATES.map(p => objects(p).filter((o): o is Literal => o.termType === 'Literal').map(o => ({ value: o.value, language: o.language })));
+}
+
+/** Label of an instance (graph: model) or a view (graph: the view): pickLabel in the language of the graph, else the name from the IRI. */
 export function label(g: ModelGraph, t: Term, graph: Term = g.union): string {
-    const labels = g.objects(t, P.label, graph).filter(o => o.termType === 'Literal').map(o => o.value).sort(cmp);
-    return labels[0] ?? labelFromIri(t.value);
+    return pickLabel(labelLiterals(p => g.objects(t, rdf.namedNode(p), graph)), g.language) ?? labelFromIri(t.value);
 }
 
 /**

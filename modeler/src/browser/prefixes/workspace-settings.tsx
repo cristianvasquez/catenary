@@ -14,7 +14,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { DEFAULT_PREFIXES, NEAR_KIND, ValidationMode, baseName, dirName, relativePath } from '@catenary/model';
 import { WorkspaceSettings } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
-import { Button, Section, Warning } from '../properties/controls';
+import { Button, Section, TextInput, Warning } from '../properties/controls';
 import { PLACE_ROWS, PlaceBox, PlaceKind } from './workspace-placement';
 
 export const WORKSPACE_SETTINGS_ID = 'catenary-workspace-settings';
@@ -115,6 +115,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.status()}
                 {this.placesSection()}
                 {this.validationSection()}
+                {this.languageSection()}
                 {this.prefixSection()}
                 {this.excludeSection()}
                 {this.importedSection()}
@@ -195,6 +196,16 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                     className={mode === r.mode ? 'on' : undefined} onClick={() => mode !== r.mode && this.setSettings('validation', { validation: r.mode })}>{r.label}</button>)}
             </div>
             {this.problems.validation ? <div className='catenary-problem'>{this.problems.validation}</div> : undefined}
+        </Section>;
+    }
+
+    /** The language of the labels (ws:language): one language tag, written at once. */
+    protected languageSection(): React.ReactNode {
+        const language = this.model.snapshot.files.language ?? '';
+        return <Section title='Label language'
+            help='Labels in this language show first (rdfs:label, skos:prefLabel, sh:name). Empty: a label without a language, else the first in order.'>
+            <TextInput value={language} placeholder='en' onCommit={v => this.setSettings('language', { language: v })} />
+            {this.problems.language ? <div className='catenary-problem'>{this.problems.language}</div> : undefined}
         </Section>;
     }
 

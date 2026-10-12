@@ -66,6 +66,9 @@ export class ModelGraph<P = unknown> {
     /** Shapes graph that gets new node shapes (the primary shapes file). Undefined: the first shapes graph. */
     primaryShapes?: NamedNode;
 
+    /** Preferred language tag of the labels that the reads give, set by the host. A plain preference: the host gives the rule. Undefined: none. */
+    language?: string;
+
     /** Records that the open transaction proposes. A transaction starts with none, and a rollback removes them. The caller reads them after the commit. */
     proposed: P[] = [];
 

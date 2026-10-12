@@ -5,16 +5,16 @@
 
 import {
     Box, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EdgeLayout, GROUP_SIZE, Instance, NS, SIDES, Side, View, ViewGroup,
-    ViewArrow, ViewCard, ViewCollection, ViewNote, ViewReference, localName, parseVertices, pills, termKey, termToJSON
+    ViewArrow, ViewCard, ViewCollection, ViewNote, ViewReference, localName, parseVertices, pickLabel, pills, termKey, termToJSON
 } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, cmp } from './graph';
 import { elementId, relationId } from './ids';
 import { rdf, termKey as rdfTermKey } from './terms';
-import { P, labelFromIri } from './vocabulary';
+import { P, labelFromIri, labelLiterals } from './vocabulary';
 
 
-const TYPE = P.type.value, LABEL = P.label.value, PREF_LABEL = NS.skos + 'prefLabel';
+const TYPE = P.type.value, LABEL = P.label.value;
 
 /** A term of a result row, read once. */
 export type Plain = { termType: Term['termType']; value: string; term: Term };
@@ -51,11 +51,11 @@ export type Resource = { s: Plain; values: Map<string, Plain[]> };
 export type Statements = { s: Plain; rows: Row[] };
 
 /**
- * Instances and relations of `doc` from the statements of the instance subjects: label (rdfs:label, else skos:prefLabel, else from the
- * IRI), types, fields; a statement whose object is one of the subjects is a relation. `files`: the file of a vocabulary subject.
+ * Instances and relations of `doc` from the statements of the instance subjects: label (pickLabel in `language`, else from the IRI),
+ * types, fields; a statement whose object is one of the subjects is a relation. `files`: the file of a vocabulary subject.
  * Returns the ids by IRI and by triple (`s p o`).
  */
-export function instanceRecords(doc: Doc, statements: Statements[], files: Map<string, string>, warnings: string[]): { instanceIds: Map<string, string>; relationIds: Map<string, string> } {
+export function instanceRecords(doc: Doc, statements: Statements[], files: Map<string, string>, warnings: string[], language?: string): { instanceIds: Map<string, string>; relationIds: Map<string, string> } {
     const subjects = [...statements].sort((a, b) => cmp(a.s.value, b.s.value));
     const instanceIds = new Map<string, string>();
     for (const e of subjects) instanceIds.set(e.s.value, elementId(rdf.namedNode(e.s.value)));
@@ -66,9 +66,8 @@ export function instanceRecords(doc: Doc, statements: Statements[], files: Map<s
         const labels = rows.filter(r => r.p.value === LABEL).map(r => r.o);
         const inst: Instance = {
             id: instanceIds.get(s.value)!,
-            // rdfs:label, else skos:prefLabel (a SKOS concept or scheme), else from the IRI.
-            label: labels.filter(o => o.termType === 'Literal').map(o => o.value).sort(cmp)[0]
-                ?? rows.filter(r => r.p.value === PREF_LABEL && r.o.termType === 'Literal').map(r => r.o.value).sort(cmp)[0] ?? labelFromIri(s.value),
+            // The label rule (pickLabel): rdfs:label, else skos:prefLabel (a SKOS concept or scheme), else sh:name; else from the IRI.
+            label: pickLabel(labelLiterals(p => rows.filter(r => r.p.value === p).map(r => r.o.term)), language) ?? labelFromIri(s.value),
             uri: s.value,
             types: rows.filter(r => r.p.value === TYPE).map(r => r.o.value).sort(cmp),
             fields: {},

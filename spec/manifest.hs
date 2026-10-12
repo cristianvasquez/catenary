@@ -24,7 +24,7 @@ module Catenary.Manifest where
 import Prelude hiding (Left, Right)   -- Side uses these names. The contract never matches on Either.
 import Control.Applicative ((<|>))
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, toLower)
-import Data.List (isPrefixOf, isSuffixOf, nub, sort, sortOn)
+import Data.List (find, isPrefixOf, isSuffixOf, nub, sort, sortBy, sortOn)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 
 -- | Design rules. Code comments cite them as "ADR <n>". Each line gives the rule, its reason, and where the contract states it.
@@ -194,6 +194,7 @@ data WorkspaceSettings = WorkspaceSettings
   , exclude :: [String]                          -- ws:exclude globs
   , imported :: [String]                         -- ws:imported globs (§2.6)
   , validation :: ValidationMode                 -- ws:validation (§9)
+  , language :: Maybe String                     -- ws:language: the language tag of the labels (§6.2 pickLabel); Nothing: not set
   }
 workspaceGraph, workspaceNamespace :: Iri
 workspaceGraph = "urn:name:workspace"
@@ -369,7 +370,8 @@ law_fileTransferOrigins source destination origins =
 -- | Prefixes: one table per backend, from the workspace file. Prefix declarations in model files do not fill it.
 -- No declarations: use defaults without a rewrite of the workspace file. Reject two prefixes for one namespace.
 -- Settings, prefixes and migration dismissal are not undo steps (law_settingsNoUndo, §5.2).
--- A change of exclusions reloads membership. Person preferences are not part of this contract.
+-- A change of exclusions reloads membership. A change of the label language reads the files again: every read model shows the
+-- labels of the new language. setSettings trims the language, and an empty language clears it. Person preferences are not part of this contract.
 validPrefixes :: [(String, Iri)] -> Bool
 validPrefixes = unique . map snd
 setSettings :: WorkspaceSettings -> IO CommandResult
@@ -967,6 +969,28 @@ unnamedLabel :: String -> [String] -> String
 unnamedLabel kind = firstFree (\i -> "unnamed " ++ lower kind ++ " " ++ show i)
 labelPredicates :: [Iri]
 labelPredicates = ["rdfs:label", "skos:prefLabel", "sh:name"]
+-- | The one label rule (packages/model/src/labels.ts pickLabel): of the literals of the first label predicate that has any (one list
+-- per predicate), a literal in the workspace language (equal tag or a subtag, case-insensitive), else one without a language, else
+-- the smallest (compareLabels); several in one step: the smallest. Reason: every read shows the same label, in the language of the workspace.
+pickLabel :: Maybe String -> [[(String, Maybe String)]] -> Maybe String   -- language, (value, language tag) per predicate
+pickLabel lang lists = case filter (not . null) lists of
+  [] -> Nothing
+  (ls : _) -> let sorted = sortBy (\a b -> compareLabels (fst a) (fst b)) ls
+              in fst <$> (find (inLanguage . snd) sorted <|> find (plain . snd) sorted <|> listToMaybe sorted)
+  where
+    want = lower . trimmed <$> lang
+    trimmed = reverse . dropWhile (== ' ') . reverse . dropWhile (== ' ')
+    plain t = null (fromMaybe "" t)
+    inLanguage t = case (want, lower <$> t) of
+      (Just w, Just tag) | not (null w) -> tag == w || (w ++ "-") `isPrefixOf` tag
+      _ -> False
+compareLabels :: String -> String -> Ordering    -- packages/model/src/labels.ts: case-insensitive, then lower case first
+-- | The label of an instance in a Doc (records.ts instanceRecords, scoped-doc.ts instanceLabels) and labels() of its IRI (sparql.ts)
+-- apply pickLabel to the same literals.
+docInstanceLabel :: Backend -> Iri -> Maybe String   -- the label of the instance with this IRI in a Doc; Nothing: not an instance
+iriLabel :: Backend -> Iri -> String                 -- sparql.ts labels()
+law_oneLabelRule :: Backend -> Iri -> Bool
+law_oneLabelRule b i = maybe True (== iriLabel b i) (docInstanceLabel b i)
 mintIri :: String -> [Iri] -> Iri                 -- canonical-md: a free IRI from a label, given the IRIs in use
 law_mintFree :: String -> [Iri] -> Bool
 law_mintFree l used = mintIri l used `notElem` used
@@ -1853,6 +1877,9 @@ storeCallsAfterTrap = manifestOnly
 clipboardHasNamedGraphs = manifestOnly
 copiedDomainRdf = manifestOnly
 isPlacementQuad = manifestOnly
+compareLabels = manifestOnly
+docInstanceLabel = manifestOnly
+iriLabel = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

@@ -8,7 +8,7 @@ import { materializedSubject, shapeQueryScope, shapeTargetMatches } from './shac
 
 import {
     AppearanceData, Classes, Doc, ElementKind, LinkElement, LinkRow, Links, NS, SelectionLinks, ViewLink, ViewProperties, elementLabel, elementOfId, formPredicates,
-    kindOf, pluginRanges, predicateName, primaryClass, shortIri
+    LABEL_PREDICATES, kindOf, pickLabel, pluginRanges, predicateName, primaryClass, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
 import { relatedSections } from './explorer';
@@ -20,7 +20,7 @@ import { compareLabels, construct, homesAmong, instancesAmong, iri as iriText, l
 import { rdf, termKey } from './terms';
 import { viewLabels } from './view-read';
 import { isView } from './views';
-import { vocabularySubjects, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri } from './vocabulary';
+import { vocabularySubjects, P, SKOS_MEMBERSHIP, SKOS_TYPES, labelFromIri, labelLiterals } from './vocabulary';
 
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}> PREFIX sh: <${NS.sh}>`;
 
@@ -135,6 +135,8 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElements
         const candidates = new Set<string>();
         for (const b of found) if (!b.v && b.o.termType === 'NamedNode') candidates.add(elementId(b.o as NamedNode));
         const elements = isElements([...candidates]);
+        // A target with a label literal: its label by the label rule (labels(), pickLabel), not the sample of the query.
+        const named = labels(g, [...new Set(found.filter(b => !b.v && b.label && b.o.termType === 'NamedNode').map(b => b.o.value))]);
         for (const b of found) {
             const element = b.eid.value;
             if (b.v) {
@@ -149,7 +151,7 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElements
                 ?? (o.termType === 'NamedNode' && elements.has(elementId(o as NamedNode)) ? elementId(o as NamedNode) : undefined);
             rows.push({
                 element, dir: b.dir.value as 'out' | 'in', predicate: b.p.value, id,
-                iri: o.termType === 'NamedNode' ? o.value : undefined, label: b.label?.value
+                iri: o.termType === 'NamedNode' ? o.value : undefined, label: b.label && (named.get(o.value) ?? b.label.value)
             });
         }
     }
@@ -287,16 +289,17 @@ export function hiddenRelations(g: ModelGraph, viewId: string, meta: Classes, in
     const placedRelations = new Set((g.select(`${PREFIXES} SELECT DISTINCT ?s ?p ?o WHERE {
         VALUES (?s ?p ?o) { ${[...new Set(rows.map(r => `(${tripleKey(r)})`))].join(' ')} } GRAPH ${iri(view)} { ?pl rdf:reifies <<( ?s ?p ?o )>> } }`) as Record<string, Term>[]).map(tripleKey));
     const hidden = rows.filter(r => !placedRelations.has(tripleKey(r)));
-    // The label literals of each end in its home graph: rdfs:label, else skos:prefLabel, the first in order, else from the IRI.
+    // The label literals of each end in its home graph; the label rule (pickLabel), else from the IRI.
     const ends = [...new Set(hidden.flatMap(r => [r.s.value, r.o.value]))];
-    const literals = new Map<string, { label: string[]; pref: string[] }>();
-    if (ends.length) for (const r of g.select(`${PREFIXES} SELECT ?s ?p ?l ?h WHERE { VALUES ?s { ${ends.map(iriText).join(' ')} } GRAPH ?h { ?s ?p ?l } FILTER (?p IN (rdfs:label, skos:prefLabel) && isLiteral(?l)) }`)) {
+    const literals = new Map<string, Term[][]>();
+    const at = (p: string) => LABEL_PREDICATES.indexOf(p as typeof LABEL_PREDICATES[number]);
+    if (ends.length) for (const r of g.select(`${PREFIXES} SELECT ?s ?p ?l ?h WHERE { VALUES ?s { ${ends.map(iriText).join(' ')} } GRAPH ?h { ?s ?p ?l } FILTER (?p IN (${LABEL_PREDICATES.map(iriText).join(', ')}) && isLiteral(?l)) }`)) {
         const home = homes.get(r.s.value);
         if (home === g.union.value ? !g.isDataGraph(r.h) : r.h.value !== home) continue;
-        const e = literals.get(r.s.value) ?? literals.set(r.s.value, { label: [], pref: [] }).get(r.s.value)!;
-        (r.p.value === NS.rdfs + 'label' ? e.label : e.pref).push(r.l.value);
+        const e = literals.get(r.s.value) ?? literals.set(r.s.value, LABEL_PREDICATES.map(() => [])).get(r.s.value)!;
+        e[at(r.p.value)].push(r.l);
     }
-    const label = (s: string) => { const e = literals.get(s); return e?.label.sort(cmp)[0] ?? e?.pref.sort(cmp)[0] ?? labelFromIri(s); };
+    const label = (s: string) => pickLabel(labelLiterals(p => literals.get(s)?.[at(p)] ?? []), g.language) ?? labelFromIri(s);
     return hidden.map(r => ({ id: relationId(r.s as NamedNode, r.p as NamedNode, r.o as NamedNode),
         label: `${label(r.s.value)} — ${predicateName(meta, r.p.value)} → ${label(r.o.value)}` }));
 }

@@ -90,6 +90,8 @@ export interface WorkspaceFiles {
     imported?: string[];
     /** What SHACL validation checks (manifest ws:validation). Undefined: no workspace. */
     validation?: ValidationMode;
+    /** The language of the labels (manifest ws:language). Undefined: not set. */
+    language?: string;
     files: ModelFileInfo[];
     views: ViewFileInfo[];
 }

@@ -63,7 +63,7 @@ export function project(g: ModelGraph): Projection {
         return { s: rows[0].s, rows };
     });
     const subjects = [...[...statements.values()].filter(e => e.s.termType === 'NamedNode' && e !== self && e.rows.some(r => r.p.value === TYPE || r.p.value === LABEL)), ...vocabulary];
-    const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings);
+    const { instanceIds, relationIds } = instanceRecords(doc, subjects, files, warnings, g.language);
     const isInstance = (t: Plain) => t.termType === 'NamedNode' && instanceIds.has(t.value);
 
     for (const { s, rows } of statements.values()) {
