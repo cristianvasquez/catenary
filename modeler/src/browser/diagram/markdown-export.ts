@@ -1,6 +1,6 @@
-// Markdown export (spec/ui-manifest.hs §9): the documents of a folder, with each view embed as an SVG file in _resources/. The backend
-// reads the folder, checks the view references and the destination, and writes (modeler/src/node/markdown-export.ts). This class asks
-// for the destination and renders each embedded view once with its view editor (GLSP SVG export: zoom 1, no selection), so the file
+// Markdown export (spec/ui-manifest.hs §9): the documents of a selection of files and folders, with each view embed as an SVG file in _resources/. The backend
+// reads the sources, checks the view references and the destination, and writes (modeler/src/node/markdown-export.ts). This class shows
+// the confirmation dialog (markdown-export-dialog.tsx) and renders each embedded view once with its view editor (GLSP SVG export: zoom 1, no selection), so the file
 // shows what the canvas shows. Views that are not open open for the export and close after it.
 
 import { RequestExportAction } from '@eclipse-glsp/client';
@@ -14,9 +14,10 @@ import type { FileStat } from '@theia/filesystem/lib/common/files';
 import type { ExportProblem, UnresolvedEmbed } from '@catenary/model';
 import { MarkdownExportCheck, MarkdownExportResult } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
+import { MarkdownExportDialog } from './markdown-export-dialog';
 import { ViewEditors } from './view-editors';
 
-/** Storage key of the last destination of each source folder (source path → destination path). */
+/** Storage key of the last destination of each source root (root path → destination path). */
 const DESTINATIONS_KEY = 'catenary.markdownExport.destinations';
 /** At most this number of items in a message; the rest is a count. */
 const LISTED = 5;
@@ -32,24 +33,38 @@ export class MarkdownExport {
     @inject(StorageService) protected readonly storage: StorageService;
 
     /**
-     * Export the Markdown documents of the folder `source` and its subfolders. Without `destination`: a folder dialog that starts at the
-     * last destination of this source. Unresolved view references stop the export before it writes. Returns the result, undefined when
-     * the dialog was canceled.
+     * Export the Markdown documents of the sources (files, and folders with their subfolders) under their common folder (the root).
+     * Without `destination`: the confirmation dialog (destination, documents with checkboxes); the export writes the checked documents.
+     * With `destination` (CLI): no dialog, all documents. Unresolved view references in the exported documents stop the export
+     * before it writes. A check without a root or without documents stops before the dialog. Returns the
+     * result, undefined when the dialog was canceled.
      */
-    async exportFolder(source: string, destination?: string): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
-        const dest = destination ?? await this.askDestination(source);
-        if (!dest) return undefined;
-        const check = await this.model.service.checkMarkdownExport(source, dest);
-        if (!check.ok) {
-            this.messages.error(checkMessage(check));
+    async exportSelection(sources: string[], destination?: string): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
+        // Unresolved embeds do not stop here: the dialog lists them, and the user can uncheck their documents. The final check decides.
+        const check = await this.model.service.checkMarkdownExport({ sources });
+        if (!check.root || !check.documents.length) {
+            this.messages.error(check.root && !check.error ? 'The selection has no Markdown documents.' : checkMessage(check));
             return check;
         }
-        await this.remember(source, dest);
-        const result = await this.model.service.exportMarkdown(source, dest, await this.render(check.views));
+        let dest = destination;
+        let exclude: string[] = [];
+        if (dest === undefined) {
+            const answer = await new MarkdownExportDialog(check, (await this.destinations())[check.root], current => this.askDestination(check.root, current)).open();
+            if (!answer) return undefined;
+            dest = answer.destination;
+            exclude = answer.exclude;
+        }
+        const final = await this.model.service.checkMarkdownExport({ sources, destination: dest, exclude });
+        if (!final.ok) {
+            this.messages.error(checkMessage(final));
+            return final;
+        }
+        await this.remember(final.root, dest);
+        const result = await this.model.service.exportMarkdown({ sources, destination: dest, exclude }, await this.render(final.views));
         if (!result.ok) this.messages.error(resultMessage(result));
         else {
             const changed = result.written.length + result.removed.length;
-            this.messages.info(`Exported ${check.documents} document(s) and ${check.views.length} view(s) to ${check.destination ?? dest}: `
+            this.messages.info(`Exported ${final.documents.length} document(s) and ${final.views.length} view(s) to ${final.destination ?? dest}: `
                 + (changed ? `${result.written.length} file(s) written, ${result.removed.length} removed.` : 'no file changed.'));
         }
         const notes = [...problemLines(result.problems), ...result.kept.map(k => `${k}: changed after the last export; kept.`)];
@@ -57,11 +72,12 @@ export class MarkdownExport {
         return result;
     }
 
-    protected async askDestination(source: string): Promise<string | undefined> {
-        const last = (await this.destinations())[source];
+    /** The folder dialog. It starts at `current`, else at the last destination of the root, else at the parent of the root. */
+    protected async askDestination(root: string, current?: string): Promise<string | undefined> {
+        const last = current ?? (await this.destinations())[root];
         const picked = await this.fileDialog.showOpenDialog({
-            title: 'Export Markdown to Folder', openLabel: 'Export', canSelectFiles: false, canSelectFolders: true, canSelectMany: false
-        }, await this.existing(last ? URI.fromFilePath(last) : URI.fromFilePath(source).parent));
+            title: 'Export Markdown to Folder', openLabel: 'Select', canSelectFiles: false, canSelectFolders: true, canSelectMany: false
+        }, await this.existing(last ? URI.fromFilePath(last) : URI.fromFilePath(root).parent));
         return picked?.path.fsPath();
     }
 
@@ -78,9 +94,9 @@ export class MarkdownExport {
         return this.storage.getData<Record<string, string>>(DESTINATIONS_KEY, {});
     }
 
-    protected async remember(source: string, destination: string): Promise<void> {
+    protected async remember(root: string, destination: string): Promise<void> {
         const all = await this.destinations();
-        if (all[source] !== destination) await this.storage.setData(DESTINATIONS_KEY, { ...all, [source]: destination });
+        if (all[root] !== destination) await this.storage.setData(DESTINATIONS_KEY, { ...all, [root]: destination });
     }
 
     /** The SVG of each view (view IRI → SVG). Opens missing view editors and closes them after. */

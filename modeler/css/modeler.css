@@ -544,6 +544,18 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 
 /* File of new subjects, one box per kind: Auto or File (PlaceBox, workspace-placement.tsx). Settings view and New Workspace dialog. */
 .catenary-new-workspace { max-width: 680px; }
+/* Confirmation dialog of the Markdown export (markdown-export-dialog.tsx): destination, document tree with checkboxes, counts. */
+.catenary-export-dialog { min-width: 420px; max-width: 680px; }
+.catenary-export-destination { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.catenary-export-heading { font-weight: 600; }
+.catenary-export-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catenary-export-path.none { color: var(--theia-descriptionForeground); font-style: italic; }
+.catenary-export-destination .theia-button { min-width: 0; margin: 0; padding: 2px 10px; }
+.catenary-export-tree { max-height: 320px; overflow: auto; margin: 8px 0; padding: 4px 0; border: 1px solid var(--catenary-border); border-radius: 4px; list-style: none; }
+.catenary-export-tree ul { margin: 0; padding-left: 18px; list-style: none; }
+.catenary-export-row { display: flex; align-items: center; gap: 6px; padding: 1px 8px; }
+.catenary-export-row input[type=checkbox] { margin: 0; }
+.catenary-export-notes { margin: 4px 0 0; padding: 0; list-style: none; color: var(--theia-editorWarning-foreground); }
 /* Segmented control: one of a few modes (Workspace settings → Validation). */
 .catenary-segmented { display: inline-flex; margin-top: 8px; border: 1px solid var(--catenary-border); border-radius: 4px; overflow: hidden; }
 .catenary-segmented button { padding: 3px 12px; border: 0; border-left: 1px solid var(--catenary-border); background: transparent; color: inherit; font: inherit; cursor: pointer; }

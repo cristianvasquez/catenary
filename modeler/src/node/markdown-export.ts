@@ -1,4 +1,4 @@
-// Markdown export, file side (spec/ui-manifest.hs §9): lists the documents of the source folder, decides what each local link names,
+// Markdown export, file side (spec/ui-manifest.hs §9): lists the documents of the sources under their common folder, decides what each local link names,
 // checks the destination folder and writes the output. The plan (what to write) comes from @catenary/model planMarkdownExport; the
 // SVG files come from the view editors of the frontend (modeler/src/browser/diagram/markdown-export.ts).
 //
@@ -13,7 +13,7 @@ import {
     EXPORT_RESOURCES, ExportView, LinkTarget, MarkdownDocument, MarkdownExportPlan, isMarkdownPath, localDestination, markdownRefs,
     planMarkdownExport
 } from '@catenary/model';
-import type { MarkdownExportCheck, MarkdownExportResult } from '../common/protocol';
+import type { MarkdownExportCheck, MarkdownExportRequest, MarkdownExportResult } from '../common/protocol';
 
 /** The record of the files that the exports to a destination wrote (path relative to the destination → SHA-256 of the content). */
 export const OWNERSHIP_FILE = `${EXPORT_RESOURCES}/.catenary-export.json`;
@@ -46,53 +46,81 @@ async function realPathOf(p: string): Promise<string> {
     }
 }
 
-/** The Markdown documents of a folder and its subfolders, with paths relative to it. No hidden folders (hidden files count), no linked folders. */
-async function listDocuments(root: string): Promise<string[]> {
+/** The Markdown documents of a folder and its subfolders, as absolute paths. No hidden folders (hidden files count), no linked folders. */
+async function listDocuments(folder: string): Promise<string[]> {
     const out: string[] = [];
     const walk = async (dir: string): Promise<void> => {
         const entries = (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         for (const e of entries) {
             const full = path.join(dir, e.name);
             if (e.isDirectory()) { if (!e.name.startsWith('.')) await walk(full); }
-            else if (isMarkdownPath(e.name) && (e.isFile() || (e.isSymbolicLink() && inside(root, await fs.realpath(full).catch(() => root)) !== undefined))) {
-                out.push(inside(root, full)!);
+            else if (isMarkdownPath(e.name) && (e.isFile() || (e.isSymbolicLink() && inside(folder, await fs.realpath(full).catch(() => folder)) !== undefined))) {
+                out.push(full);
             }
         }
     };
-    await walk(root);
+    await walk(folder);
     return out;
 }
 
-/** A source folder and a destination folder, checked; the plan of the export. */
+/** The deepest folder that contains each folder (absolute, real paths); undefined when there is none (two drives on Windows). */
+function commonFolder(folders: string[]): string | undefined {
+    let root = folders[0];
+    for (const f of folders.slice(1)) {
+        while (root !== f && inside(root, f) === undefined) {
+            if (path.dirname(root) === root) return undefined;
+            root = path.dirname(root);
+        }
+    }
+    return root;
+}
+
+/** The source root and the documents to export (relative to the root, with `/`), checked; the destination, when the request has one; the plan. */
 export interface PreparedExport {
     source: string;
-    destination: string;
+    destination?: string;
+    documents: string[];
     plan: MarkdownExportPlan;
 }
 
 /**
- * Read the documents of `source` and plan their export to `destination`. Fails when the source is not a folder, or the destination is
- * the source folder, is inside it, or is not a folder. Paths are absolute.
+ * Read the documents of the request and plan their export. The root is the common ancestor folder of the sources: a folder source
+ * counts as itself, a file source as its folder. Fails when a source does not exist, or the destination is the root, is inside it, or
+ * is not a folder. Without a destination, it does not check one. Paths are absolute.
  */
-export async function prepareMarkdownExport(source: string, destination: string, views: ReadonlyMap<string, ExportView>): Promise<PreparedExport | { error: string }> {
-    let root: string;
-    try {
-        root = await fs.realpath(source);
-        if (!(await fs.stat(root)).isDirectory()) return { error: `The source is not a folder: ${source}` };
-    } catch {
-        return { error: `The source folder does not exist: ${source}` };
+export async function prepareMarkdownExport(request: MarkdownExportRequest, views: ReadonlyMap<string, ExportView>): Promise<PreparedExport | { error: string }> {
+    if (!request.sources.length) return { error: 'The export has no source.' };
+    const sources: { real: string; folder: boolean }[] = [];
+    for (const source of request.sources) {
+        try {
+            const real = await fs.realpath(source);
+            sources.push({ real, folder: (await fs.stat(real)).isDirectory() });
+        } catch {
+            return { error: `The source does not exist: ${source}` };
+        }
     }
-    const dest = await realPathOf(destination);
-    if (dest === root || inside(root, dest) !== undefined) return { error: 'The destination folder is in the source folder. Choose a folder outside it.' };
-    const stat = await fs.stat(dest).catch(() => undefined);
-    if (stat && !stat.isDirectory()) return { error: `The destination is not a folder: ${destination}` };
+    const root = commonFolder(sources.map(s => (s.folder ? s.real : path.dirname(s.real))));
+    if (root === undefined) return { error: 'The sources have no common folder.' };
+    let dest: string | undefined;
+    if (request.destination !== undefined) {
+        dest = await realPathOf(request.destination);
+        if (dest === root || inside(root, dest) !== undefined) return { error: 'The destination folder is in the source folder. Choose a folder outside it.' };
+        const stat = await fs.stat(dest).catch(() => undefined);
+        if (stat && !stat.isDirectory()) return { error: `The destination is not a folder: ${request.destination}` };
+    }
 
-    const paths = await listDocuments(root);
+    const found = new Set<string>();
+    for (const s of sources) {
+        const files = s.folder ? await listDocuments(s.real) : isMarkdownPath(s.real) ? [s.real] : [];
+        for (const f of files) found.add(inside(root, f)!);
+    }
+    const exclude = new Set(request.exclude ?? []);
+    const paths = [...found].filter(p => !exclude.has(p)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     const listed = new Set(paths);
     const documents: MarkdownDocument[] = await Promise.all(paths.map(async p => ({ path: p, text: await fs.readFile(path.join(root, ...p.split('/')), 'utf8') })));
     // What each local destination names: read before the plan, which is synchronous.
     const targets = new Map<string, LinkTarget>();
-    const key = (doc: string, dest: string) => `${doc}\n${dest}`;
+    const key = (doc: string, target: string) => `${doc}\n${target}`;
     for (const doc of documents) {
         for (const ref of markdownRefs(doc.text)) {
             const local = localDestination(ref.destination);
@@ -100,8 +128,8 @@ export async function prepareMarkdownExport(source: string, destination: string,
             targets.set(key(doc.path, ref.destination), await linkTarget(root, path.join(root, ...doc.path.split('/').slice(0, -1), ...local.path.split('/')), listed));
         }
     }
-    const plan = planMarkdownExport(documents, views, (doc, dest) => targets.get(key(doc, dest)) ?? { kind: 'missing' });
-    return { source: root, destination: dest, plan };
+    const plan = planMarkdownExport(documents, views, (doc, target) => targets.get(key(doc, target)) ?? { kind: 'missing' });
+    return { source: root, ...(dest !== undefined ? { destination: dest } : {}), documents: paths, plan };
 }
 
 async function linkTarget(root: string, target: string, documents: ReadonlySet<string>): Promise<LinkTarget> {
@@ -118,18 +146,21 @@ async function linkTarget(root: string, target: string, documents: ReadonlySet<s
     const rel = inside(root, target) !== undefined && inside(root, real) !== undefined ? inside(root, target) : undefined;
     if (isMarkdownPath(real)) {
         if (rel !== undefined && documents.has(rel)) return { kind: 'document' };
-        return { kind: 'unsupported', reason: rel === undefined ? 'The document is outside the source folder.' : 'The document is in a hidden folder.' };
+        if (rel === undefined) return { kind: 'unsupported', reason: 'The document is outside the source folder.' };
+        const hidden = rel.split('/').slice(0, -1).some(name => name.startsWith('.'));
+        return { kind: 'unsupported', reason: hidden ? 'The document is in a hidden folder.' : 'The document is not in the export.' };
     }
     return rel === undefined ? { kind: 'file', from: real } : { kind: 'file', from: real, path: rel };
 }
 
 /** The result of a check, for the frontend: the views to render, the unresolved embeds, the reported links. */
 export function checkOf(prepared: PreparedExport | { error: string }): MarkdownExportCheck {
-    if ('error' in prepared) return { ok: false, error: prepared.error, documents: 0, views: [], unresolved: [], problems: [] };
+    if ('error' in prepared) return { ok: false, error: prepared.error, root: '', documents: [], views: [], unresolved: [], problems: [] };
     const { plan } = prepared;
     return {
-        ok: !plan.unresolved.length, ...(plan.unresolved.length ? { error: unresolvedMessage(plan) } : {}), destination: prepared.destination,
-        documents: plan.documents.length, views: plan.views.map(v => ({ iri: v.iri, id: v.id, label: v.label })), unresolved: plan.unresolved,
+        ok: !plan.unresolved.length, ...(plan.unresolved.length ? { error: unresolvedMessage(plan) } : {}),
+        ...(prepared.destination !== undefined ? { destination: prepared.destination } : {}), root: prepared.source, documents: prepared.documents,
+        views: plan.views.map(v => ({ iri: v.iri, id: v.id, label: v.label })), unresolved: plan.unresolved,
         problems: plan.problems
     };
 }
@@ -175,6 +206,7 @@ async function writeAtomic(file: string, data: Buffer): Promise<void> {
 export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record<string, string>): Promise<MarkdownExportResult> {
     const { plan, destination: dest } = prepared;
     const result: MarkdownExportResult = { ok: false, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: plan.problems };
+    if (dest === undefined) return { ...result, error: 'The export has no destination folder.' };
     if (plan.unresolved.length) return { ...result, error: unresolvedMessage(plan), unresolved: plan.unresolved };
 
     // All output in memory before the first write. Two outputs at one path (a source file at the path of an SVG): a conflict.

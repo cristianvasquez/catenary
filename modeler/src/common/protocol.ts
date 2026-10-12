@@ -52,14 +52,19 @@ export interface WorkspaceSettings {
     validation?: ValidationMode;
 }
 
+/** What to export: files and folders (absolute paths), and documents to leave out (paths relative to the root). */
+export interface MarkdownExportRequest { sources: string[]; destination?: string; exclude?: string[] }
+
 /** The check of a Markdown export (spec/ui-manifest.hs §9): the views to render, or why the export cannot run. */
 export interface MarkdownExportCheck {
     ok: boolean;
     error?: string;
     /** The real path of the destination folder. */
     destination?: string;
-    /** The number of documents in the source folder and its subfolders. */
-    documents: number;
+    /** The real path of the source root: the common ancestor folder of the sources. */
+    root: string;
+    /** The documents that the export writes, relative to the root, with `/`, sorted. */
+    documents: string[];
     /** Each embedded view once, in the order of its first embed. */
     views: { iri: string; id: string; label: string }[];
     /** Embeds that name no view, with the source file (relative to the source folder) and the line. */
@@ -112,12 +117,12 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     /** Replace the prefix table of the workspace (manifest of the primary workspace file; saved with it). No undo step. */
     setPrefixes(prefixes: Record<string, string>): Promise<CommandResult>;
     /**
-     * Check a Markdown export of the folder `source` (and its subfolders) to the folder `destination` (absolute paths): the views that it
-     * embeds, by IRI. Writes nothing.
+     * Check a Markdown export of the request: the root, the documents and the views that they embed, by IRI. Without a destination, it
+     * does not check one. Writes nothing.
      */
-    checkMarkdownExport(source: string, destination: string): Promise<MarkdownExportCheck>;
-    /** Export the Markdown documents of `source` to `destination` with the SVG of each embedded view (view IRI → SVG text). */
-    exportMarkdown(source: string, destination: string, svgs: Record<string, string>): Promise<MarkdownExportResult>;
+    checkMarkdownExport(request: MarkdownExportRequest): Promise<MarkdownExportCheck>;
+    /** Export the Markdown documents of the request to its destination with the SVG of each embedded view (view IRI → SVG text). */
+    exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>): Promise<MarkdownExportResult>;
     /** Remove an entry of the patch queue without applying it. */
     dismissMigration(id: string): Promise<void>;
     /** Write what is not written yet (after a failed write) and commit it. */

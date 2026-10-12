@@ -16,7 +16,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { FileContent, mixedFileProblem, previewInWorkspace } from '@catenary/model';
+import { FileContent, isMarkdownPath, mixedFileProblem, previewInWorkspace } from '@catenary/model';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -333,19 +333,27 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         registry.registerCommand(OpenModelCommands.NEW, { execute: () => a.newModel() });
         registry.registerCommand(OpenModelCommands.OPEN_RECENT, { execute: () => a.openRecent(this.recent.paths), isEnabled: () => this.recent.paths.length > 0 });
         registry.registerCommand(OpenModelCommands.SAVE, { execute: () => a.save(), isEnabled: open });
-        // The folder of the navigator selection. Arguments (CLI, scripts): source folder, destination folder (absolute paths).
-        const selectedFolder = () => {
-            const sel = this.selection.selection;
-            const node = Array.isArray(sel) ? sel.find(FileStatNode.is) : undefined;
-            return node?.fileStat.isDirectory ? node.uri.path.fsPath() : undefined;
+        // The sources: the argument (CLI, scripts: a path, a list of paths, a URI), else the folders and Markdown files of the navigator
+        // selection. Second argument: the destination folder. Absolute paths.
+        const sourcesArg = (arg?: unknown): string[] | undefined => {
+            let sources: string[];
+            if (typeof arg === 'string') sources = [arg];
+            else if (Array.isArray(arg) && arg.length && arg.every(a => typeof a === 'string')) sources = arg;
+            else if (arg instanceof URI) sources = [arg.path.fsPath()];
+            else {
+                const sel = this.selection.selection;
+                sources = (Array.isArray(sel) ? sel.filter(FileStatNode.is) : [])
+                    .filter(n => n.fileStat.isDirectory || isMarkdownPath(n.uri.path.base))
+                    .map(n => n.uri.path.fsPath());
+            }
+            return sources.length ? sources : undefined;
         };
-        const folderArg = (source?: unknown) => (typeof source === 'string' ? source : source instanceof URI ? source.path.fsPath() : selectedFolder());
         registry.registerCommand(OpenModelCommands.EXPORT_MARKDOWN, {
-            execute: (source?: unknown, destination?: unknown) => {
-                const folder = folderArg(source);
-                if (folder) return this.markdownExport.exportFolder(folder, typeof destination === 'string' ? destination : undefined);
+            execute: (arg?: unknown, destination?: unknown) => {
+                const sources = sourcesArg(arg);
+                if (sources) return this.markdownExport.exportSelection(sources, typeof destination === 'string' ? destination : undefined);
             },
-            isEnabled: (source?: unknown) => !!folderArg(source), isVisible: (source?: unknown) => !!folderArg(source)
+            isEnabled: (arg?: unknown) => !!sourcesArg(arg), isVisible: (arg?: unknown) => !!sourcesArg(arg)
         });
         // Argument (CLI, scripts): the IRI of the view. Without it: a view picker.
         registry.registerCommand(OpenModelCommands.INSERT_VIEW, {
@@ -503,7 +511,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         // After New File and New Folder (Theia: no order, sorted by label).
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, { commandId: c.NEW_VIEW_IN_FOLDER.id, label: 'New View', when: 'explorerResourceIsFolder', order: 'z' });
         addMenuItems(menus, NavigatorContextMenu.MODIFICATION, o.MARK_IMPORTED.id, o.MARK_OWN.id);
-        menus.registerMenuAction(NavigatorContextMenu.MODIFICATION, { commandId: o.EXPORT_MARKDOWN.id, when: 'explorerResourceIsFolder', order: 'c' });
+        menus.registerMenuAction(NavigatorContextMenu.MODIFICATION, { commandId: o.EXPORT_MARKDOWN.id, order: 'c' });
         menus.registerMenuAction(EditorContextMenu.MODIFICATION, { commandId: o.INSERT_VIEW.id, order: 'a' });
     }
 

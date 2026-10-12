@@ -201,21 +201,26 @@ To insert a view:
 
 ## Export
 
-Export Markdown… writes the documents of a folder and its subfolders to another folder. Each view embed becomes an image link to an SVG file in `_resources/`.
+Export Markdown… writes the selected Markdown files and folders to another folder. A selected folder includes its subfolders. Each view embed becomes an image link to an SVG file in `_resources/`.
 
-1. Right-click a folder in the file navigator.
-2. Select Export Markdown….
-3. Select the destination folder. The dialog starts at the last destination of this folder.
+1. Select the Markdown files and folders in the file navigator.
+2. Right-click the selection and select Export Markdown….
+3. In the Export Markdown dialog, select Choose… and select the destination folder. The dialog starts with the last destination of the same root.
+4. Clear the checkbox of each document that you do not want to export. A folder checkbox changes all documents of the folder.
+5. Select Export.
 
-The export keeps the folder structure and the text of each document. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection, handles or edit controls. Links to documents of the folder do not change. Catenary copies linked images and attachments: a file in the folder goes to the same path, and a file outside the folder goes to `_resources/`.
+The dialog shows the number of checked documents and of views, the unresolved embeds and the problems of the check. Export is not available without a destination or without a checked document. To export the other documents, clear the checkbox of each document with an unresolved embed.
+
+The root is the deepest folder that contains the selection. The export keeps the folder structure under the root and the text of each document. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection, handles or edit controls. Links to exported documents do not change. Catenary copies linked images and attachments: a file under the root goes to the same path, and a file outside the root goes to `_resources/`.
 
 The export stops and writes nothing in these cases:
 
-- An embed names a view that does not exist, for example after a change of the view IRI. The message gives the file, the line and the IRI.
-- The destination is the source folder or a folder in it.
+- An embed of a checked document names a view that does not exist, for example after a change of the view IRI. The message gives the file, the line and the IRI.
+- A selected file or folder does not exist.
+- The destination is the root or a folder in it.
 - The export would overwrite a file that an earlier export did not write, or a file that changed after that export.
 
-Catenary records the files that it writes in `_resources/.catenary-export.json`. A later export updates these files and removes the ones that it no longer writes. It does not change other files of the destination. A message reports links to missing files, folders and absolute paths. These links do not change.
+Catenary records the files that it writes in `_resources/.catenary-export.json`. A later export updates these files and removes the ones that it no longer writes. It does not change other files of the destination. A message reports links to missing files, folders, absolute paths and documents that are not in the export. These links do not change.
 
 ## History and Git
 
