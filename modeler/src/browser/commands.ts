@@ -181,12 +181,14 @@ export class CatenaryFileOpenHandler implements OpenHandler {
         const candidate = target instanceof Widget ? target : this.shell.currentWidget;
         const ref = candidate && this.shell.getAreaFor(candidate) === 'main' ? candidate : undefined;
         const uri = URI.fromFilePath(file), c = await this.content(uri);
-        if (!c || c.error || mixedFileProblem(c)) return this.openSource(uri);
-        const all: Presentation[] = ['Source', 'Model', ...(c.views.length ? ['Canvas' as const] : []), ...(c.workspace ? ['Settings' as const] : [])];
         // UI §3.2 openAsChoices: leave out the presentation of the pane; a file node (no pane) offers all.
         const current = typeof target === 'string' || target instanceof URI || this.fileOf(candidate) !== file ? undefined : this.presentationOf(candidate);
+        // A file that opens only as Source: its Source pane has no other presentation.
+        if ((!c || c.error || mixedFileProblem(c)) && (presentation || current !== 'Source')) return this.openSource(uri);
+        const all: Presentation[] = !c || c.error || mixedFileProblem(c) ? ['Source']
+            : ['Source', 'Model', ...(c.views.length ? ['Canvas' as const] : []), ...(c.workspace ? ['Settings' as const] : [])];
         const choices = presentation ? all : all.filter(p => p !== current);
-        if (!choices.length) {
+        if (!c || !choices.length) {
             this.messages.info('No other presentation of this file.');
             return undefined;
         }
