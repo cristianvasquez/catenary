@@ -5,7 +5,7 @@
 
 import {
     Box, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EdgeLayout, GROUP_SIZE, Instance, NS, SIDES, Side, View, ViewGroup,
-    ViewArrow, ViewCard, ViewCollection, ViewNote, ViewReference, localName, pills, termKey, termToJSON
+    ViewArrow, ViewCard, ViewCollection, ViewNote, ViewReference, localName, parseVertices, pills, termKey, termToJSON
 } from '@catenary/model';
 import type { NamedNode, Term } from '@rdfjs/types';
 import { ModelGraph, cmp } from './graph';
@@ -205,6 +205,8 @@ export function projectView(
         if (fromSide && SIDES.includes(fromSide as Side)) e.fromSide = fromSide as Side;
         if (toSide && SIDES.includes(toSide as Side)) e.toSide = toSide as Side;
         if (color) e.color = color;
+        const vertices = parseVertices(str(r, 'vertices'));
+        if (vertices) e.vertices = vertices;
         if (placed.has(relation)) continue;
         placed.add(relation);
         edges.push({ triple: { s: s!.value, p: p!.value, o: o!.value }, layout: e });

@@ -10,7 +10,7 @@ import { EDGE_STYLES, EdgeStyle } from './edge-route';
 import { ViewEditors } from './view-editors';
 
 export const EDGE_STYLE = 'catenary.edgeStyle';
-export const EDGE_STYLE_DEFAULT: EdgeStyle = 'direct';
+export const EDGE_STYLE_DEFAULT: EdgeStyle = 'curved';
 
 let current: EdgeStyle = EDGE_STYLE_DEFAULT;
 /** The edge style that the edge views draw with. */
@@ -22,8 +22,8 @@ export const edgePreferences: PreferenceContribution = {
         properties: {
             [EDGE_STYLE]: {
                 type: 'string', enum: [...EDGE_STYLES], default: EDGE_STYLE_DEFAULT,
-                description: 'Edges in view editors. orthogonal: around the cards, right angles. polyline: around the cards, straight segments. '
-                    + 'curved: around the cards, a smooth curve. direct: a curve from card to card, over other cards.'
+                description: 'Edges in view editors. curved: a smooth curve from card to card through the bends of the edge. direct: straight segments. '
+                    + 'Drag an edge to bend it; double-click a bend to remove it.'
             }
         }
     }

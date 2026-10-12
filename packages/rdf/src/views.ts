@@ -40,6 +40,8 @@ export const V = {
     display: rdf.namedNode(NS.view + 'display'),
     fromSide: rdf.namedNode(NS.view + 'fromSide'),
     toSide: rdf.namedNode(NS.view + 'toSide'),
+    /** On a connector placement: the bends of the edge, "x,y x,y …" (doc.ts parseVertices). */
+    vertices: rdf.namedNode(NS.view + 'vertices'),
     /** On a box placement (true): the box leaves with its last line (ADR 0014, a box that a line or hub brought). */
     keptByLines: rdf.namedNode(NS.view + 'keptByLines')
 };

@@ -171,6 +171,9 @@
 .catenary-resize-handle[data-kind="left"], .catenary-resize-handle[data-kind="right"] { cursor: ew-resize; }
 .catenary-edge > .edge-end { fill: var(--catenary-bg); stroke: var(--catenary-accent); cursor: grab; }
 .catenary-edge > .edge-end:hover { fill: var(--catenary-accent); }
+/* A bend of the route (UI §7.4): drag moves it, double-click removes it. */
+.catenary-edge > .edge-vertex { fill: var(--catenary-bg); stroke: var(--catenary-accent); cursor: move; }
+.catenary-edge > .edge-vertex:hover { fill: var(--catenary-accent); }
 
 body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; }
 

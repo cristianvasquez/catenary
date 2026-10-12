@@ -64,7 +64,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     const shapeCards = new Map<string, string>();
     const ids = new Set<string>();
     const latent: { p: PropertyShape; source: string; target: string }[] = [];
-    const pending: { p: PropertyShape; source: string; target: string; member: boolean }[] = [];
+    const pending: { p: PropertyShape; source: string; target: string; member: boolean; line: Figure }[] = [];
     const alternatives: { id: string; source: string; target: string }[] = [];
     const lists: ElementSchema[] = [];
 
@@ -103,7 +103,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
             }
         } else if (l.end) target = boxId(l.end);
         else continue;
-        pending.push({ p, source: placementId(l.start), target, member: Boolean(l.byHub) });
+        pending.push({ p, source: placementId(l.start), target, member: Boolean(l.byHub), line: l.figure });
     }
 
     for (const b of vf.join.boxes) {
@@ -181,10 +181,14 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
 
     // Property lines: one edge for each start card. A member of a shown hub is part of the hub unit.
     const lane = edgeLanes(pending.map(({ source, target }) => [source, target]));
-    for (const { p, source, target, member } of pending) edges.push({
-        type: TYPES.PROPERTY, id: p.id, sourceId: source, targetId: target, parts: pathParts(p.path), name: formatPath(p.path),
-        card: cardinalityText(p.minCount, p.maxCount), violations: problems.get(p.id) ?? 0, canPutBack: true, member, ...lane(source, target)
-    });
+    for (const { p, source, target, member, line } of pending) {
+        const pl = placement(line);
+        edges.push({
+            type: TYPES.PROPERTY, id: p.id, sourceId: source, targetId: target, parts: pathParts(p.path), name: formatPath(p.path),
+            card: cardinalityText(p.minCount, p.maxCount), violations: problems.get(p.id) ?? 0, canPutBack: true, member, ...lane(source, target),
+            fromSide: pl?.fromSide ?? '', toSide: pl?.toSide ?? '', vertices: pl?.vertices ?? []
+        });
+    }
     const latentLane = edgeLanes(latent.map(({ source, target }) => [source, target]));
     for (const { p, source, target } of latent) edges.push({
         type: TYPES.LATENT, id: p.id + LATENT_SUFFIX, sourceId: source, targetId: target, parts: pathParts(p.path), name: formatPath(p.path),

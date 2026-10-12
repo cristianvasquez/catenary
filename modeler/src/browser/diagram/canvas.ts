@@ -11,7 +11,7 @@
 // add row adds one (the `containers` table). Value sets: double click on a concept renames it. The logic handle of a selected edge drags a
 // logical constraint to another edge; a dragged edge end retargets the property.
 
-import { SelectAction } from '@eclipse-glsp/client';
+import { GEdge, SelectAction, SetViewportAction, isViewport } from '@eclipse-glsp/client';
 import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, MessageService, URI } from '@theia/core';
 import { ApplicationShell, ContextMenuRenderer, FrontendApplicationContribution, OpenerService, open } from '@theia/core/lib/browser';
@@ -27,6 +27,7 @@ import { SelectionModel } from '../selection-model';
 import { selectionInDiagram } from './diagram-ids';
 import { ViewEditors, viewIdOf } from './view-editors';
 import { nearestSide } from './edge-chrome';
+import { nearestSegment } from './edge-route';
 import { inlineInput } from './inline-input';
 import { editCanvasName } from './name-edit';
 import { PendingMemberAction } from './pending-members';
@@ -171,6 +172,13 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                 e.preventDefault();
                 e.stopPropagation();
                 this.haloAction(w, id, halo, e);
+            } else if (target.closest?.('.edge-vertex')) {
+                const relation = idOf(target, '.catenary-edge');
+                const index = Number(target.closest('.edge-vertex')!.getAttribute('data-vertex'));
+                if (!relation || !Number.isInteger(index) || e.detail > 1) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.bendDrag(w, relation, index, false, e);
             } else if (target.classList?.contains('edge-end')) {
                 const relation = idOf(target, '.catenary-edge');
                 if (!relation) return;
@@ -185,14 +193,14 @@ export class CanvasInteractions implements FrontendApplicationContribution {
                 e.stopPropagation();
                 this.toggle(w, idOf(target, TOGGLED)!);
             } else if ((target.classList?.contains('hit') || target.classList?.contains('line')) && target.parentElement?.classList.contains('catenary-edge')) {
-                // A click selects the edge; a drag moves its nearest end. GLSP does not get the press: it would pan the canvas.
+                // A click selects the edge; a drag adds a bend that follows the pointer (UI §7.4). GLSP does not get the press: it would pan the canvas.
                 const relation = idOf(target, '.catenary-edge');
-                const line = target.parentElement.querySelector<SVGPathElement>('.line');
-                if (!relation || !line) return;
+                if (!relation) return;
                 e.preventDefault();
                 e.stopPropagation();
-                // An arrow has no ends to drag: a press only selects it.
-                this.lineDrag(w, relation, line, e, !target.parentElement.classList.contains('arrow-edge'));
+                // An arrow, a bundle or an alternative has no bends: a press only selects it.
+                const bendable = !['arrow-edge', 'catenary-bundle', 'catenary-alternative', 'latent-edge', 'targeting-edge'].some(c => target.parentElement!.classList.contains(c));
+                this.lineDrag(w, relation, e, bendable);
             }
         }, true);
 
@@ -204,6 +212,16 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         host.addEventListener('dblclick', e => {
             const t = e.target as Element;
             if (t.closest?.('.catenary-name-input, .catenary-embedded-input')) return;
+            const vertex = t.closest?.('.edge-vertex');
+            if (vertex) {
+                const relation = idOf(t, '.catenary-edge'), index = Number(vertex.getAttribute('data-vertex'));
+                if (!relation || !Number.isInteger(index)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const vertices = this.vertices(w, relation).filter((_, i) => i !== index);
+                void this.model.execute({ kind: 'setEdgeLayout', view: viewIdOf(w), relation, patch: { vertices } });
+                return;
+            }
             const name = t.closest?.('.card-name, .shape-name, .vs-name, .group-label');
             const named = name ? idOf(t, '.catenary-card') ?? idOf(t, '.catenary-group') : undefined;
             if (named && editCanvasName(w, named, viewIdOf(w), this.editors, this.model)) {
@@ -454,21 +472,77 @@ export class CanvasInteractions implements FrontendApplicationContribution {
         });
     }
 
-    /** Mouse down on the edge line: after 6 px of movement, drag the end nearest to the press point (see endDrag); else select the edge. */
-    protected lineDrag(w: GLSPDiagramWidget, relation: string, line: SVGPathElement, start: MouseEvent, movable = true): void {
-        const m = line.getScreenCTM();
-        if (!m) return;
-        const screen = (t: number) => { const p = line.getPointAtLength(t); return { x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f }; };
-        const p1 = screen(0), p2 = screen(line.getTotalLength());
-        const d = (p: { x: number; y: number }) => Math.hypot(p.x - start.clientX, p.y - start.clientY);
-        const end = d(p1) <= d(p2) ? 'source' : 'target';
-        this.pressDrag(start, e => this.endDrag(w, relation, end, end === 'source' ? p2 : p1, e), e => {
+    /** Mouse down on the edge line: after 6 px of movement, a new bend at the press point follows the pointer (bendDrag); else select the edge. */
+    protected lineDrag(w: GLSPDiagramWidget, relation: string, start: MouseEvent, bendable = true): void {
+        this.pressDrag(start, e => {
+            const edge = this.edgeOf(w, relation);
+            if (!edge) return;
+            const source = edge.source as { bounds?: Rect } | undefined, target = edge.target as { bounds?: Rect } | undefined;
+            const at = this.editors.toModel(w, start.clientX, start.clientY);
+            // The new bend goes on the segment of the polyline (ports and bends) nearest to the press point.
+            const center = (b?: Rect) => b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : at;
+            const index = nearestSegment([center(source?.bounds), ...(edge.vertices ?? []), center(target?.bounds)], at);
+            this.bendDrag(w, relation, index, true, e, at);
+        }, e => {
             if (e.ctrlKey || e.metaKey || e.shiftKey) this.toggle(w, relation);
             else {
                 w.actionDispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [this.editors.placementOf(w, relation)], deselectedElementsIDs: true }));
                 focusCanvas(w);
             }
-        }, () => movable);
+        }, () => bendable);
+    }
+
+    /** The edge element of the client model of a relation or a property shape, with its bends. */
+    protected edgeOf(w: GLSPDiagramWidget, relation: string): (GEdge & { vertices?: Point[] }) | undefined {
+        let root;
+        try { root = w.editorContext.modelRoot; } catch { return undefined; }
+        const e = root.index.getById(this.editors.placementOf(w, relation));
+        return e instanceof GEdge ? e : undefined;
+    }
+
+    /** The bends of an edge, as the client model draws them. */
+    protected vertices(w: GLSPDiagramWidget, relation: string): Point[] {
+        return [...(this.edgeOf(w, relation)?.vertices ?? [])];
+    }
+
+    /**
+     * Drag of a bend of an edge (UI §7.4): the bend `index` follows the pointer; `insert`: a new bend at `index` (at `at`). The client
+     * model draws the move; the release sends one setEdgeLayout. A release at the press point with `insert` adds nothing.
+     */
+    protected bendDrag(w: GLSPDiagramWidget, relation: string, index: number, insert: boolean, start: MouseEvent, at?: Point): void {
+        const edge = this.edgeOf(w, relation);
+        if (!edge) return;
+        const before = [...(edge.vertices ?? [])];
+        const vertices = [...before];
+        if (insert) vertices.splice(index, 0, at ?? this.editors.toModel(w, start.clientX, start.clientY));
+        const origin = { x: start.clientX, y: start.clientY };
+        let frame = 0;
+        const draw = (v = vertices) => {
+            frame = 0;
+            edge.vertices = v;
+            let root;
+            try { root = w.editorContext.modelRoot; } catch { return; }
+            if (isViewport(root)) w.actionDispatcher.dispatch(SetViewportAction.create(root.id, { scroll: root.scroll, zoom: root.zoom }, { animate: false }));
+        };
+        const move = (e: MouseEvent) => {
+            vertices[index] = this.editors.toModel(w, e.clientX, e.clientY);
+            if (!frame) frame = requestAnimationFrame(() => draw());
+        };
+        const up = (e: MouseEvent) => {
+            window.removeEventListener('mousemove', move, true);
+            window.removeEventListener('mouseup', up, true);
+            document.body.classList.remove('catenary-grabbing');
+            if (frame) cancelAnimationFrame(frame);
+            const moved = Math.hypot(e.clientX - origin.x, e.clientY - origin.y) >= 2;
+            if (insert && !moved) { draw(before); return; }
+            vertices[index] = this.editors.toModel(w, e.clientX, e.clientY);
+            draw();
+            void this.model.execute({ kind: 'setEdgeLayout', view: viewIdOf(w), relation, patch: { vertices } });
+        };
+        document.body.classList.add('catenary-grabbing');
+        window.addEventListener('mousemove', move, true);
+        window.addEventListener('mouseup', up, true);
+        draw();
     }
 
     /** The part of the selection that this view editor shows. */

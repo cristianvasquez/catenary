@@ -267,7 +267,7 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
         case 'setLayout': {
             const r = ops.setBounds(g, c.view, boxBounds(g, c.bounds));
             if (!r.ok) return r;
-            for (const id of c.clearSides) if (ops.relationTerms(g, id)) ops.setEdgeLayout(g, c.view, id, { fromSide: undefined, toSide: undefined });
+            for (const id of c.clearSides) ops.setEdgeLayout(g, c.view, id, { fromSide: undefined, toSide: undefined, vertices: undefined });
             return done;
         }
         case 'setEdgeLayout':

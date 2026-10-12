@@ -111,7 +111,7 @@ graphOf (Quad _ _ _ g) = g
 -- | A read replaces each blank node by urn:skolem:<uuid> (skolem.ts). After the read every node is an IRI.
 -- Do not add code that keeps, handles or writes back blank nodes. Term has no blank-node constructor for this reason.
 -- A file with blank nodes gets the IRIs at its next write. A file that Catenary does not write stays as it is.
--- SHACL paths are decided by structure (path operators, lists), not by term type (patches/shacl-engine@1.1.2.patch).
+-- SHACL paths are decided by structure (path operators, lists), not by term type (patches/shacl-engine@1.1.3.patch).
 -- fresh: a new urn:skolem:<uuid> for each blank-node label of one read. One label gives one IRI in the whole read.
 data ParsedTerm = Ground Term | Blank String
 data ParsedQuad = ParsedQuad ParsedTerm Iri ParsedTerm Iri
@@ -612,7 +612,8 @@ law_viewDescriptionStorage v text = all (\q -> subjectOf q == NamedNode v && gra
 -- A Box placement has view:x, view:y, view:width, view:height and optional view:color and view:display "simple".
 -- view:keptByLines true: a line or hub brought the box (⇥); the box leaves with its last line. Absent: the user placed it.
 -- A datatype, node-kind or "any" pill has no placement: it is private to its line (ADR 0014).
--- A Line placement has no geometry: a read ignores it. view:fromSide and view:toSide are routing hints.
+-- A Line placement has no box geometry: a read ignores it. view:fromSide, view:toSide and view:vertices ("x,y x,y …", the bends of the
+-- edge from the source to the target, UI §7.4) are routing hints. A link placement (rdf:reifies) takes the same three.
 -- A Hub placement has an optional position. Without it, the layout computes one.
 cascadeOf :: Maybe [Iri] -> [Iri]                -- nt:notations of a view
 cascadeOf = fromMaybe ["nt:default"]
@@ -1019,7 +1020,8 @@ law_setUriFollowsReferences b old new =
 -- View edits change Project statements only: no statement outside view graphs changes (law_viewEditsKeepData).
 -- collect and addToCollection remove the own placement of each member and the placements of its relations.
 -- An arrow placement stays: it ends at the group. uncollect gives each released member a placement beside the group.
--- Moving a frame at the same size moves its contained boxes. setLayout clears requested edge sides.
+-- Moving a frame at the same size moves its contained boxes, and the bends of the edges whose both ends move by that delta.
+-- setLayout clears requested edge sides and bends. setEdgeLayout takes a relation or a property shape drawn as an edge.
 -- duplicateView makes new Project IRIs and rewrites internal references. Domain elements stay shared.
 -- A file reference stores its path relative to the view file. setViewElements ignores fields that the target kind lacks.
 -- A note edit carries expectedText. A stale edit is rejected.

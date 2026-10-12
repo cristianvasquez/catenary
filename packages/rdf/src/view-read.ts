@@ -25,7 +25,7 @@ export interface ViewReadContext {
 const PREFIXES = `PREFIX rdf: <${NS.rdf}> PREFIX rdfs: <${NS.rdfs}> PREFIX view: <${NS.view}> PREFIX skos: <${NS.skos}>`;
 const MARKS = [['Frame', 'groups', 'label'], ['Note', 'notes', 'text'], ['FileRef', 'fileReferences', 'file'], ['EntityGroup', 'collections', 'member']] as const;
 const MARK_TYPES = MARKS.map(([t]) => `view:${t}`).join(', ');
-const PLACEMENT_PROPS = ['element', 'x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'];
+const PLACEMENT_PROPS = ['element', 'x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide', 'vertices'];
 
 /**
  * A view shows shape elements when it places a subject of a shapes graph, or a concept scheme or collection of the data file

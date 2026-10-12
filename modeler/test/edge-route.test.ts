@@ -1,106 +1,97 @@
 import { expect, it } from 'vitest';
-import { MARGIN, Pt, Rect, routeEdges, routePath, segmentHits } from '../src/browser/diagram/edge-route';
-import { edgeGeometry } from '../src/browser/diagram/edge-chrome';
+import { FanEdge, Pt, Rect, along, cubicAt, curveAt, curvePath, curveSegments, facingPoint, fanOut, linePath, nearestSegment, port, routeSides } from '../src/browser/diagram/edge-route';
 
-const box = (x: number, y: number, width = 200, height = 100): Rect => ({ x, y, width, height });
-const onSide = (p: Pt, r: Rect) =>
-    ((p.x === r.x || p.x === r.x + r.width) && p.y >= r.y && p.y <= r.y + r.height) || ((p.y === r.y || p.y === r.y + r.height) && p.x >= r.x && p.x <= r.x + r.width);
-const segments = (points: Pt[]) => points.slice(1).map((b, k) => [points[k], b] as const);
+const box = { x: 0, y: 0, width: 200, height: 100 };
 
-// a and c on one row, b between them: the straight line from a to c goes through b.
-const row = new Map([['a', box(0, 0)], ['b', box(400, 0)], ['c', box(800, 0)]]);
-
-it('an orthogonal route goes around the box between the ends, from side to side, with right angles only', () => {
-    const route = routeEdges(row, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }]).get('e')!;
-    expect(route).toBeDefined();
-    expect(onSide(route.points[0], row.get('a')!)).toBe(true);
-    expect(onSide(route.points[route.points.length - 1], row.get('c')!)).toBe(true);
-    for (const [a, b] of segments(route.points)) {
-        expect(a.x === b.x || a.y === b.y, `${JSON.stringify(a)} ${JSON.stringify(b)}`).toBe(true);
-        for (const r of row.values()) expect(segmentHits(a, b, r)).toBe(false);
-    }
-    // It keeps MARGIN from b.
-    const b = row.get('b')!;
-    for (const p of route.points) expect(p.y <= b.y - MARGIN || p.y >= b.y + b.height + MARGIN || p.x <= b.x - MARGIN || p.x >= b.x + b.width + MARGIN).toBe(true);
+it('facingPoint: the side of the box that faces a point', () => {
+    expect(facingPoint(box, { x: 500, y: 50 })).toBe('right');
+    expect(facingPoint(box, { x: -500, y: 50 })).toBe('left');
+    expect(facingPoint(box, { x: 100, y: -300 })).toBe('top');
+    expect(facingPoint(box, { x: 100, y: 300 })).toBe('bottom');
 });
 
-it('keeps the sides that the view sets', () => {
-    const route = routeEdges(row, [{ id: 'e', source: 'a', target: 'c', fromSide: 'bottom', toSide: 'top', lane: 0, lanes: 1 }]).get('e')!;
-    expect(route).toMatchObject({ fromSide: 'bottom', toSide: 'top' });
-    expect(route.points[0]).toEqual({ x: 100, y: 100 });
-    expect(route.points[route.points.length - 1]).toEqual({ x: 900, y: 0 });
+it('port: on the side, offset from its middle, kept 16 units inside the corners', () => {
+    expect(port(box, 'right', 0)).toEqual({ x: 200, y: 50 });
+    expect(port(box, 'top', 30)).toEqual({ x: 130, y: 0 });
+    expect(port(box, 'top', 500)).toEqual({ x: 184, y: 0 });
+    expect(port(box, 'left', -500)).toEqual({ x: 0, y: 16 });
 });
 
-it('a box that contains an end (a group) is not an obstacle for that edge; other boxes are', () => {
-    const boxes = new Map([['group', box(-50, -50, 1000, 300)], ['a', box(0, 0)], ['b', box(400, 0)], ['c', box(1200, 0)]]);
-    const route = routeEdges(boxes, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }]).get('e')!;
-    expect(route).toBeDefined();
-    for (const [p, q] of segments(route.points)) expect(segmentHits(p, q, boxes.get('b')!)).toBe(false);
+it('nearestSegment: a new bend goes after the nearest segment of the polyline', () => {
+    const points: Pt[] = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }];
+    expect(nearestSegment(points, { x: 50, y: 5 })).toBe(0);
+    expect(nearestSegment(points, { x: 95, y: 50 })).toBe(1);
+    expect(nearestSegment(points, { x: 150, y: 110 })).toBe(2);
 });
 
-it('direct, a self edge and an unknown end get no route', () => {
-    expect(routeEdges(row, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }], 'direct').size).toBe(0);
-    expect(routeEdges(row, [{ id: 's', source: 'a', target: 'a', lane: 0, lanes: 1 }, { id: 'u', source: 'a', target: 'x', lane: 0, lanes: 1 }]).size).toBe(0);
+it('along: the point at a fraction of the polyline length', () => {
+    const points: Pt[] = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    expect(along(points, 0.5)).toEqual({ x: 100, y: 0 });
+    expect(along(points, 0.25)).toEqual({ x: 50, y: 0 });
+    expect(along(points, 1)).toEqual({ x: 100, y: 100 });
 });
 
-it('polyline removes corners only where the straight segment touches no box', () => {
-    const boxes = new Map([['a', box(0, 0)], ['b', box(400, 150)], ['c', box(800, 400)]]);
-    const ortho = routeEdges(boxes, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }]).get('e')!;
-    const poly = routeEdges(boxes, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }], 'polyline').get('e')!;
-    expect(poly.points.length).toBeLessThanOrEqual(ortho.points.length);
-    for (const [p, q] of segments(poly.points)) for (const r of boxes.values()) expect(segmentHits(p, q, r)).toBe(false);
+it('curveSegments: one cubic per segment, leaving along n1 and entering against n2, through each bend', () => {
+    const points: Pt[] = [{ x: 200, y: 50 }, { x: 400, y: 300 }, { x: 600, y: 50 }];
+    const segments = curveSegments(points, { x: 1, y: 0 }, { x: -1, y: 0 });
+    expect(segments).toHaveLength(2);
+    // The first control point is right of the source port (reach 0.4 of the segment, at least 40).
+    expect(segments[0].c1.y).toBe(50);
+    expect(segments[0].c1.x).toBeGreaterThan(200);
+    // The last control point is left of the target end.
+    expect(segments[1].c2.y).toBe(50);
+    expect(segments[1].c2.x).toBeLessThan(600);
+    expect(segments[0].b).toEqual(points[1]);
+    expect(segments[1].a).toEqual(points[1]);
+    // At the bend the tangent follows the chord of its neighbors: the two control points around it are on one line through it.
+    const u = { x: segments[0].c2.x - points[1].x, y: segments[0].c2.y - points[1].y }, v = { x: segments[1].c1.x - points[1].x, y: segments[1].c1.y - points[1].y };
+    expect(Math.abs(u.x * v.y - u.y * v.x)).toBeLessThan(1e-6);
+    expect(curveAt(segments, 0)).toEqual(points[0]);
+    expect(curveAt(segments, 0.5)).toEqual(points[1]);
+    expect(curveAt(segments, 1)).toEqual(points[2]);
+    expect(cubicAt(segments[0], 0.5).y).toBeGreaterThan(50);
 });
 
-it('parallel edges get separate ports (lanes)', () => {
-    const two = new Map([['a', box(0, 0)], ['c', box(800, 0)]]);
-    const routes = routeEdges(two, [0, 1].map(lane => ({ id: `e${lane}`, source: 'a', target: 'c', lane, lanes: 2 })));
-    expect(routes.get('e0')!.points[0]).not.toEqual(routes.get('e1')!.points[0]);
+it('a short segment keeps its control points at least 40 units out at the ends, at most 500', () => {
+    const [s] = curveSegments([{ x: 0, y: 0 }, { x: 20, y: 0 }], { x: 1, y: 0 }, { x: -1, y: 0 });
+    expect(s.c1.x).toBe(40);
+    const [t] = curveSegments([{ x: 0, y: 0 }, { x: 5000, y: 0 }], { x: 1, y: 0 }, { x: -1, y: 0 });
+    expect(t.c1.x).toBe(500);
 });
 
-it('routes 30 edges between 30 boxes in less than 100 ms', () => {
-    const boxes = new Map(Array.from({ length: 30 }, (_, i) => [`n${i}`, box((i % 6) * 460, Math.floor(i / 6) * 300, 300, 160)]));
-    const edges = Array.from({ length: 30 }, (_, i) => ({ id: `e${i}`, source: `n${i}`, target: `n${(i * 7 + 3) % 30}`, lane: 0, lanes: 1 }));
-    // The best of 3 runs: other test workers share the CPU and can delay one run.
-    let best = Infinity, routes = routeEdges(boxes, edges);
-    for (let i = 0; i < 3; i++) {
-        const start = performance.now();
-        routes = routeEdges(boxes, edges);
-        best = Math.min(best, performance.now() - start);
-    }
-    expect(best).toBeLessThan(100);
-    for (const e of edges) {
-        const route = routes.get(e.id);
-        if (e.source === e.target) continue;
-        expect(route, e.id).toBeDefined();
-        for (const [p, q] of segments(route!.points)) for (const [id, r] of boxes) if (id !== e.source && id !== e.target) expect(segmentHits(p, q, r), `${e.id} ${id}`).toBe(false);
-    }
+it('paths: direct is straight segments, curved is cubic segments', () => {
+    const points: Pt[] = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    expect(linePath(points)).toBe('M0,0 L100,0 L100,100');
+    expect(curvePath(curveSegments(points, { x: 1, y: 0 }, { x: 0, y: -1 }))).toMatch(/^M0,0 C[^C]+ C[^C]+100,100$/);
+    expect(linePath([])).toBe('');
+    expect(curvePath([])).toBe('');
 });
 
-it('the drawn path of a route: rounded corners, the line stops at the arrow base, the label is on the route', () => {
-    const route = routeEdges(row, [{ id: 'e', source: 'a', target: 'c', lane: 0, lanes: 1 }]).get('e')!;
-    expect(routePath(route.points, 'orthogonal')).toMatch(/Q/);
-    expect(routePath(route.points, 'polyline')).not.toMatch(/[QC]/);
-    expect(routePath(route.points, 'curved')).toMatch(/Q/);
-    const g = edgeGeometry({ source: row.get('a')!, target: row.get('c')!, fromSide: '', toSide: '', lane: 0, lanes: 1, zoom: 1, name: 'x', route, style: 'orthogonal' });
-    const end = route.points[route.points.length - 1];
-    expect(g.p2).toEqual(end);
-    expect(g.path.endsWith(`${end.x},${end.y}`)).toBe(false);
-    expect(segments(route.points).some(([p, q]) => Math.abs((q.x - p.x) * (g.mid.y - p.y) - (q.y - p.y) * (g.mid.x - p.x)) < 1e-6
-        && g.mid.x >= Math.min(p.x, q.x) && g.mid.x <= Math.max(p.x, q.x) && g.mid.y >= Math.min(p.y, q.y) && g.mid.y <= Math.max(p.y, q.y))).toBe(true);
+it('routeSides: the side the view sets, else the side that faces the first or last bend, else the other box', () => {
+    const a = { x: 0, y: 0, width: 200, height: 100 }, b = { x: 600, y: 0, width: 200, height: 100 };
+    expect(routeSides(a, b, '', '', [], false)).toEqual({ fromSide: 'right', toSide: 'left' });
+    expect(routeSides(a, b, '', '', [{ x: 100, y: 400 }, { x: 700, y: 400 }], false)).toEqual({ fromSide: 'bottom', toSide: 'bottom' });
+    expect(routeSides(a, b, 'top', '', [{ x: 700, y: 400 }], false)).toEqual({ fromSide: 'top', toSide: 'bottom' });
+    expect(routeSides(a, b, '', 'top', [{ x: 100, y: 400 }], false)).toEqual({ fromSide: 'bottom', toSide: 'top' });
+    expect(routeSides(a, a, '', '', [], true)).toEqual({ fromSide: 'top', toSide: 'top' });
 });
 
-it('segments of different routes do not overlap on the same line (nudge), except the first and last segments at the ports', () => {
-    const boxes = new Map(Array.from({ length: 12 }, (_, i) => [`n${i}`, box((i % 2) * 700, Math.floor(i / 2) * 250, 300, 150)]));
-    // Every left box to every right box further down: many routes share the corridor between the columns.
-    const edges = Array.from({ length: 6 }, (_, i) => ({ id: `e${i}`, source: `n${2 * i}`, target: `n${(2 * i + 5) % 12}`, lane: 0, lanes: 1 }));
-    const routes = routeEdges(boxes, edges);
-    type S = { id: string; a: Pt; b: Pt };
-    const middle: S[] = [...routes].flatMap(([id, r]) => segments(r.points).slice(1, -1).map(([a, b]) => ({ id, a, b })));
-    const overlap = (s: S, t: S) => s.a.y === s.b.y && t.a.y === t.b.y && s.a.y === t.a.y
-        ? Math.min(Math.max(s.a.x, s.b.x), Math.max(t.a.x, t.b.x)) > Math.max(Math.min(s.a.x, s.b.x), Math.min(t.a.x, t.b.x))
-        : s.a.x === s.b.x && t.a.x === t.b.x && s.a.x === t.a.x
-            && Math.min(Math.max(s.a.y, s.b.y), Math.max(t.a.y, t.b.y)) > Math.max(Math.min(s.a.y, s.b.y), Math.min(t.a.y, t.b.y));
-    const pairs = middle.flatMap((s, i) => middle.slice(i + 1).filter(t => t.id !== s.id && overlap(s, t)).map(t => `${s.id} ${t.id}`));
-    expect(routes.size).toBe(6);
-    expect(pairs).toEqual([]);
+it('fanOut: the edges of one side of a box take separate ports, in the order of where they go; the pitch stays readable on screen', () => {
+    const box = (x: number, y: number) => ({ x, y, width: 200, height: 100 });
+    const a = box(0, 0), up = box(600, -300), down = box(600, 300), left = box(-600, 0);
+    const edge = (id: string, target: string, targetBox: Rect): FanEdge => ({ id, source: 'a', target, sourceBox: a, targetBox, fromSide: '', toSide: '', vertices: [], name: id });
+    const offsets = fanOut([edge('e-down', 'down', down), edge('e-up', 'up', up), edge('e-left', 'left', left)], 1);
+    // Two edges leave the right side: the one to the upper box above the one to the lower box, 48 units apart.
+    expect(offsets.get('e-up')!.from).toBe(-24);
+    expect(offsets.get('e-down')!.from).toBe(24);
+    // The only edge of the left side, and the only edge into each target: in the middle.
+    expect(offsets.get('e-left')!.from).toBe(0);
+    expect(offsets.get('e-up')!.to).toBe(0);
+    // Zoomed out, the pitch grows so that it stays 48 px on screen.
+    expect(fanOut([edge('e-down', 'down', down), edge('e-up', 'up', up)], 0.5).get('e-down')!.from).toBe(48);
+    // A top side reserves the width of the longest label.
+    const top = fanOut([{ ...edge('x', 'up', box(0, -400)), name: 'a-long-property-name' }, edge('y', 'up2', box(100, -400))], 1);
+    expect(Math.abs(top.get('x')!.from - top.get('y')!.from)).toBeGreaterThan(48);
+    // A self edge without bends keeps its arch ports: it takes no port of the group.
+    expect(fanOut([{ ...edge('s', 'a', a) }], 1).size).toBe(0);
 });

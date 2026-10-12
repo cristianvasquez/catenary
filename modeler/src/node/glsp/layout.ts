@@ -3,7 +3,7 @@
 // copy). Each container (the view, or a group) is laid out on its own: a group is a fixed block for its container, and
 // an edge to a card inside a group counts as an edge to that block. The cards inside a group get the result only if
 // it fits in the group; else they keep their places. Layered (ELK) chooses the order with fewer edge crossings; Force (cola.js) is
-// force-directed. The content keeps its top-left corner. Edge sides are cleared:
+// force-directed. The content keeps its top-left corner. Edge sides and bends are cleared:
 // each end faces the other card.
 //
 // Sizes: the layout uses the drawn geometry (toSchema, the same function as the GLSP model), not the stored box. A drawn card can be taller

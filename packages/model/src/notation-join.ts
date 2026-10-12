@@ -3,12 +3,14 @@
 
 import { Connector, Derivation, Figure, Notations, deriveFigures, termLabel } from './notation';
 import { NTerm, RDF, TripleIndex, V, iri, nkey, triple } from './notation-graph';
+import { parseVertices } from './doc';
 import { localName } from './terms';
 
 /** A placement of a view: its IRI, its display and its geometry (absent on a line, optional on a hub). */
 export interface NotationPlacement {
     iri: string; simple: boolean; keptByLines: boolean;
     x?: number; y?: number; width?: number; height?: number; color?: string; fromSide?: string; toSide?: string;
+    vertices?: { x: number; y: number }[];
 }
 /** The placements of a view: placed term key → placement. */
 export type Placements = Map<string, NotationPlacement>;
@@ -23,7 +25,8 @@ export function placementsOf(D: TripleIndex, viewIri: string): Placements {
         const str = (l: string) => D.one(p, V(l))?.value;
         const geometry = Object.fromEntries((['x', 'y', 'width', 'height'] as const).map(k => [k, num(k)]).filter(([, v]) => v !== undefined));
         const style = Object.fromEntries((['color', 'fromSide', 'toSide'] as const).map(k => [k, str(k)]).filter(([, v]) => v !== undefined));
-        placed.set(nkey(e), { iri: p.value, simple: str('display') === 'simple', keptByLines: str('keptByLines') === 'true', ...geometry, ...style });
+        const vertices = parseVertices(str('vertices'));
+        placed.set(nkey(e), { iri: p.value, simple: str('display') === 'simple', keptByLines: str('keptByLines') === 'true', ...geometry, ...style, ...(vertices ? { vertices } : {}) });
     }
     return placed;
 }

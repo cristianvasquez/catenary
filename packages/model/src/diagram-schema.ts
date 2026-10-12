@@ -169,7 +169,7 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
             return {
                 type: TYPES.RELATION, id: layout?.id ?? r.id, element: r.id, sourceId: box(r.subject), targetId: box(r.object),
                 name: predicateName(meta, r.predicate),
-                fromSide: layout?.fromSide ?? '', toSide: layout?.toSide ?? '', color: layout?.color ?? '',
+                fromSide: layout?.fromSide ?? '', toSide: layout?.toSide ?? '', vertices: layout?.vertices ?? [], color: layout?.color ?? '',
                 hidden: layout?.hidden === true, ...lane(box(r.subject), box(r.object))
             };
         }),

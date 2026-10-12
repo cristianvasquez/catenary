@@ -10,7 +10,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { viewIdOfUri } from '../../common/protocol';
 import {
     ChangeReason, CommandResult, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, Doc, EditCommand, GROUP_SIZE, NS, SIDES, Side, TYPES, View,
-    ViewBox, edgeLanes, iriId, emptyDoc, hiddenShapeSources, placementOfId, toSchema
+    ViewBox, edgeLanes, iriId, emptyDoc, hiddenShapeSources, parseVertices, placementOfId, toSchema
 } from '@catenary/model';
 import { ChangeScope, ModelChange, ModelStore, refreshes, tierOf, tracer } from '@catenary/rdf';
 
@@ -95,6 +95,7 @@ export class ViewState {
             if (edge) {
                 if (prop === 'fromSide' || prop === 'toSide') { if (value && SIDES.includes(value as Side)) edge[prop] = value as Side; else delete edge[prop]; }
                 else if (prop === 'color') { if (value) edge.color = value; else delete edge.color; }
+                else if (prop === 'vertices') { const v = parseVertices(value); if (v) edge.vertices = v; else delete edge.vertices; }
                 continue;
             }
             const arrow = view.arrows.find(a => a.id === id);

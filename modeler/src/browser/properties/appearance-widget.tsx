@@ -42,10 +42,8 @@ const MIN_SIZE = 40;
 
 /** Route of each edge style, as an icon (16 px box), and what it does. */
 const EDGE_ICONS: Record<EdgeStyle, [string, string]> = {
-    orthogonal: ['M2 13H8V3h6', 'around the cards'],
-    polyline: ['M2 13l5-7 7-3', 'around the cards'],
-    curved: ['M2 13C8 13 8 3 14 3', 'around the cards'],
-    direct: ['M2 13L14 3', 'from card to card, across boxes']
+    curved: ['M2 13C8 13 8 3 14 3', 'a smooth curve through the bends'],
+    direct: ['M2 13L14 3', 'straight segments through the bends']
 };
 
 /** Scope tags of the section headings. */
@@ -332,6 +330,9 @@ export class AppearanceWidget extends ElementPanel {
                         <SidePicker label='From' value={layout.fromSide ?? ''} onChange={v => set({ fromSide: v as EdgeLayout['fromSide'] })} />
                         <SidePicker label='To' value={layout.toSide ?? ''} onChange={v => set({ toSide: v as EdgeLayout['toSide'] })} />
                     </div>
+                </Row>
+                <Row label='Route' inline help={layout.vertices?.length ? `${layout.vertices.length} bend${layout.vertices.length === 1 ? '' : 's'}. Drag the edge to add one, double-click a bend to remove it.` : 'No bends. Drag the edge to add one.'}>
+                    <Button label='Reset route' disabled={!layout.vertices?.length} title='Remove the bends of this edge in this view' onClick={() => set({ vertices: [] })} />
                 </Row>
                 <Row label='Visible' inline><div>
                     <label className='catenary-check' title='Del hides the selected edges in the view. Other views are not affected.'>

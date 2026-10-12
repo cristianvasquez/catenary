@@ -18,7 +18,7 @@ import Data.List (nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
-  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet )
+  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet, unique )
 
 --------------------------------------------------------------------------------
 -- Part I. The model as the user sees it
@@ -914,7 +914,8 @@ law_feedbackIsAcceptance g x = dimmed g x == not (accepts g (OnItem x))
 
 -- 5.6 Edges -------------------------------------------------------------------------
 
--- | Edges. Select an edge before dragging its end. Dropping on the same card changes the side. Another card reconnects.
+-- | Edges. Drag an end ring (shown on hover or selection) to move that end. Dropping on the same card changes the side. Another card
+-- reconnects. A drag of the line itself bends the edge (§7.4); a click selects it.
 -- A property target end changes its range. A source end cannot move a property to another owner.
 -- Note arrows: dashed, no label, no end handles, no side controls. Layout does not treat arrows as links.
 -- A note can connect to cards, frames, notes, references and entity groups.
@@ -1220,9 +1221,9 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 
 -- 7.2 Appearance panel --------------------------------------------------------------
 
--- | Appearance edits color, size, display and edge sides. Mixed values show empty. Each accepted change is one command.
+-- | Appearance edits color, size, display, edge sides and the route of an edge. Mixed values show empty. Each accepted change is one command.
 -- The panel has three sections. Each heading names its scope.
--- Style (saved in the view): color swatches and a custom color, display, size, edge sides, edge visibility.
+-- Style (saved in the view): color swatches and a custom color, display, size, edge sides, Reset route (the bends, §7.4), edge visibility.
 -- View (current view editor): Apply Layout with its algorithm and spacing, the hidden edges, Show Hidden Edges.
 -- Preferences (all views, not in the model): text sizes and edge style. The section is closed by default.
 -- Mixed values mark no option. A width or height below 40 shows a message and changes nothing.
@@ -1263,22 +1264,41 @@ cardTextSize = maybe 22 (clampSize 8 72)
 
 -- 7.4 Edge routing ------------------------------------------------------------------
 
--- | Edge styles: orthogonal, polyline, curved, direct (default).
--- Except direct, route around boxes and pills, not frames. Keep explicit sides. Put labels on the longest horizontal segment.
--- Route again after geometry changes. Self-links keep their loop.
--- Limit: dense routes and labels can overlap. Direct routes cross boxes.
-data EdgeStyle = Orthogonal | Polyline | Curved | Direct deriving (Eq, Enum, Bounded)
+-- | Edge styles: curved (default) and direct. Both go from a port of the source through the bends of the edge to a port of the target.
+-- Curved draws a smooth curve that leaves and enters along the side normals. Direct draws straight segments. Nothing routes around cards:
+-- the user bends an edge. The style is a person preference (§7.3), the bends are saved in the view (§4.1 of the data contract).
+-- Reason: a router that respects bends is the complex path, and two styles with bends cover the cases that four styles without them did.
+-- Limit: an edge without bends can cross cards and labels. Labels of dense edges can overlap.
+data EdgeStyle = Curved | Direct deriving (Eq, Enum, Bounded)
 defaultEdgeStyle :: EdgeStyle
-defaultEdgeStyle = Direct
-routesAroundBoxes :: EdgeStyle -> Bool
-routesAroundBoxes s = s /= Direct
-labelSegment :: [((Double, Double), (Double, Double))] -> Maybe ((Double, Double), (Double, Double))
-labelSegment segs = case sortOn (negate . len) [s | s@((_, y1), (_, y2)) <- segs, y1 == y2] of
-  s : _ -> Just s
-  [] -> Nothing
-  where len ((x1, _), (x2, _)) = abs (x2 - x1)
+defaultEdgeStyle = Curved
 
--- | Center each label on its chosen segment, or at the curve midpoint, to reduce overlap with target cards.
+-- | Bends. An edge of a relation or of a property shape (drawn as an edge) holds a list of points, from the source to the target.
+-- Drag the line: a new bend at the press point follows the pointer; a release without movement adds nothing. Drag a bend: it moves.
+-- Double-click a bend: it goes. Bend handles show on hover or selection. Each release is one setEdgeLayout. Apply Layout clears bends
+-- with the sides. Reset route in Appearance clears the bends of the edge. Copy and paste drops bends. A move of both end boxes by one delta
+-- (a frame, a selection) moves the bends with them; a move of one end keeps them.
+-- Without an explicit side, the end faces its nearest bend; without bends, it faces the other card.
+data BendGesture = DragLine | DragBend Int | DoubleClickBend Int
+insertAt :: Int -> Point -> [Point] -> [Point]            -- after point i
+nearestSegment :: [Point] -> Point -> Int                 -- the segment of the polyline (ports and bends) nearest to the point
+facing :: Point -> Side                                   -- the side of the box that faces the point
+shift :: (Double, Double) -> Point -> Point
+bendEdit :: [Point] -> BendGesture -> Point -> [Point]
+bendEdit ps (DragLine) p = insertAt (nearestSegment ps p) p ps
+bendEdit ps (DragBend i) p = take i ps ++ [p] ++ drop (i + 1) ps
+bendEdit ps (DoubleClickBend i) _ = take i ps ++ drop (i + 1) ps
+law_bendRemoval :: [Point] -> Int -> Point -> Bool
+law_bendRemoval ps i p = i < 0 || i >= length ps || length (bendEdit ps (DoubleClickBend i) p) == length ps - 1
+endSide :: Maybe Side -> Maybe Point -> Point -> Side
+endSide (Just s) _ _ = s
+endSide Nothing (Just bend) _ = facing bend
+endSide Nothing Nothing other = facing other
+movedBends :: (Double, Double) -> Maybe (Double, Double) -> [Point] -> [Point]
+movedBends d (Just d') ps | d == d' = map (shift d) ps
+movedBends _ _ ps = ps
+
+-- | The label is at the middle of the route length. The cardinality badge is 30 screen px before the arrow, not before the middle.
 edgeLabelFraction :: Double
 edgeLabelFraction = 0.5
 
@@ -1289,19 +1309,24 @@ edgeStrokeScreenWidth zoom width = zoom * width
 law_edgeStrokeScales :: Double -> Double -> Bool
 law_edgeStrokeScales zoom width = edgeStrokeScreenWidth zoom width == zoom * width
 
--- | Direct parallel edges reserve screen-space lanes so zoom does not collapse labels and badges.
--- Vertical lanes also reserve estimated label width. Clamp attachment points inside each card side.
+-- | The edges that leave or enter one side of a box fan out along that side, in the order of the point they go to (the first bend,
+-- else the other box), so that no two share a port (parallel edges included). The pitch is a screen-space lane, so zoom does not
+-- collapse labels and badges. A top or bottom side also reserves the estimated width of its longest label. Clamp ports inside each side.
+-- Reason: edges that share a port put their labels on each other's hit paths (HIT1).
 directLanePitch :: Double -> Double -> Double
 directLanePitch zoom font = max (48 / max 0.001 zoom) (2.5 * font)
+law_onePortPerEdge :: [(Id, Side, Double)] -> Bool          -- the ports of one box: edge, side, offset
+law_onePortPerEdge ports = unique [(s, o) | (_, s, o) <- ports]
 
--- | Self-links have a horizontal label run and separate loop heights so their labels remain readable.
+-- | A self edge without bends is an arch above the top side, with its label at the apex. Parallel self edges get higher arches.
+-- With bends it is an ordinary route.
 selfLoopClearance :: Double -> Double
 selfLoopClearance zoom = max 80 (64 / max 0.001 zoom)
 
 -- 7.5 Layout ------------------------------------------------------------------------
 
 -- | Paste packs only new placements near the pointer. Existing placements remain fixed obstacles.
--- Copied frames move with their contents. Dimensions, appearance and copied edge sides stay unchanged.
+-- Copied frames move with their contents. Dimensions and appearance stay unchanged. A copy has no edge sides and no bends.
 -- Packing uses drawn sizes at the current card text scale and reserves space for private pills.
 -- After paste, fit the new placements into the viewport, with padding 40 and zoom at most 1.
 pasteFitPadding, pasteMaxZoom :: Double
@@ -1313,7 +1338,7 @@ law_pasteKeepsOldPositions :: [(Id, (Double, Double))] -> [(Id, (Double, Double)
 law_pasteKeepsOldPositions old added = pastePositions old (old ++ added)
 
 -- | Apply Layout runs only on request. Layered uses ELK left-to-right. Force uses cola.js and overlap removal.
--- Both replace the arrangement. Routing stays a rendering task, not ELK output. Layout clears edge sides.
+-- Both replace the arrangement. Routing stays a rendering task, not ELK output. Layout clears edge sides and bends.
 -- After the new positions show, the view fits its content (padding 40, zoom at most 1). Zoom range: 0.001 to 20.
 -- Spacing: 20–400 px, default 120. Layered uses twice that between columns.
 -- Frames move as blocks and keep their size. A card goes inside its smallest containing frame.
@@ -1862,6 +1887,10 @@ rejectionPlace = BelowRow
 
 layer = manifestOnly
 refreshed = manifestOnly
+insertAt = manifestOnly
+nearestSegment = manifestOnly
+facing = manifestOnly
+shift = manifestOnly
 statementsOf = manifestOnly
 domainAfter = manifestOnly
 domainBefore = manifestOnly

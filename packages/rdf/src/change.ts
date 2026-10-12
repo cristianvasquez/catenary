@@ -11,7 +11,7 @@ import { REPORT_GRAPH } from './graph-names';
 /** The SHACL report of the last validation (rdf-core graph.ts). */
 export { REPORT_GRAPH };
 /** Placement geometry and style do not change figure derivation. */
-export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide'].map(p => NS.view + p));
+export const LAYOUT_PREDICATES = new Set(['x', 'y', 'width', 'height', 'color', 'display', 'fromSide', 'toSide', 'vertices'].map(p => NS.view + p));
 
 /** The roles of the graphs and the quads that change the metamodel (ModelGraph). */
 export interface GraphFacts {

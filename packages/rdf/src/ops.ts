@@ -5,7 +5,7 @@
 import {
     Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
-    pillSize, pills, rangeText
+    pillSize, pills, rangeText, formatVertices, parseVertices
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
@@ -442,22 +442,50 @@ function removeEdgeLayouts(g: ModelGraph, s: Term, p: Term, o: Term): void {
     }
 }
 
+/** The line placement of a property shape in a view (ADR 0014): the property drawn as an edge. */
+function lineOf(g: ModelGraph, view: NamedNode, propertyId: string): Quad_Subject | undefined {
+    const p = shapesIndex(g).model.properties[propertyId];
+    return p?.uri ? nodeOf(g, view, rdf.namedNode(p.uri)) : undefined;
+}
+
 /**
- * Sides or color of a relation in one view ('' / undefined remove the value). `hidden`: true removes the placement of the relation,
- * false places it (spec/ui-manifest.hs §2.8: no hidden state).
+ * Sides, vertices or color of an edge in one view ('' / undefined / [] remove the value): a relation, or a property shape drawn as an
+ * edge (its line placement must exist). `hidden`: true removes the placement of the relation, false places it (spec/ui-manifest.hs
+ * §2.8: no hidden state). A property shape takes no `hidden`.
  */
 export function setEdgeLayout(g: ModelGraph, viewId: string, relationId: string, patch: Partial<Omit<EdgeLayout, 'relation'>>): Result {
     const view = viewTerm(g, viewId), r = relationTerms(g, relationId);
     if (!view) return gone('view', viewId);
-    if (!r) return gone('relation', relationId);
-    if (patch.hidden) {
-        const e = edgeOf(g, view, r.s, r.p, r.o);
-        if (e) removeTree(g, e, view);
-        return ok(undefined);
+    let e: Quad_Subject;
+    if (r) {
+        if (patch.hidden) {
+            const placed = edgeOf(g, view, r.s, r.p, r.o);
+            if (placed) removeTree(g, placed, view);
+            return ok(undefined);
+        }
+        e = placeConnector(g, view, r.s, r.p, r.o);
+    } else {
+        const line = lineOf(g, view, relationId);
+        if (!line) return gone('relation', relationId);
+        if (patch.hidden) return fail('A property edge cannot be hidden. Show it as a row.');
+        e = line;
     }
-    const e = placeConnector(g, view, r.s, r.p, r.o);
     for (const k of ['fromSide', 'toSide', 'color'] as const) if (k in patch) writeString(g, view, e, V[k], patch[k]);
+    if ('vertices' in patch) writeString(g, view, e, V.vertices, formatVertices(patch.vertices));
     return ok(undefined);
+}
+
+/** The vertices of each connector placement of a view whose both ends are placements in `delta`, moved by that delta (both ends must move the same). */
+function moveVertices(g: ModelGraph, view: NamedNode, delta: Map<string, { dx: number; dy: number }>): void {
+    for (const e of g.subjects(P.type, V.Placement, view)) {
+        const t = connectorOf(g, e, view);
+        if (!t) continue;
+        const a = nodeOf(g, view, t.subject), b = nodeOf(g, view, t.object);
+        const da = a && delta.get(a.value), db = b && delta.get(b.value);
+        if (!da || !db || da.dx !== db.dx || da.dy !== db.dy || (!da.dx && !da.dy)) continue;
+        const points = parseVertices(g.objects(e, V.vertices, view)[0]?.value);
+        if (points) writeString(g, view, e, V.vertices, formatVertices(points.map(p => ({ x: p.x + da.dx, y: p.y + da.dy }))));
+    }
 }
 
 export function hideEdge(g: ModelGraph, viewId: string, relationId: string, hidden: boolean): Result {
@@ -852,6 +880,8 @@ export function setBounds(g: ModelGraph, viewId: string, bounds: ({ id: string }
         if (s) moved.add(s);
     }
     const members = g.subjects(P.type, V.Placement, view).filter(n => g.objects(n, V.element, view).length > 0);
+    // The move of each box placement: an edge whose two ends move the same keeps its bends with them (UI §7.4).
+    const delta = new Map<string, { dx: number; dy: number }>();
     for (const b of bounds) {
         const grp = viewElementTerm(g, view, b.id, [V.Frame]);
         if (!grp || b.x === undefined || b.y === undefined) continue;
@@ -864,18 +894,24 @@ export function setBounds(g: ModelGraph, viewId: string, bounds: ({ id: string }
             if (!inside(mb, box)) continue;
             writeBox(g, view, m, { x: mb.x + dx, y: mb.y + dy });
             moved.add(m);
+            delta.set(m.value, { dx, dy });
         }
     }
     for (const b of bounds) {
         const s = boxSubject(g, view, b.id);
         if (!s) continue;
         const isGroup = !!placementKind(g, view, s)?.equals(V.Frame);
+        if (b.x !== undefined && b.y !== undefined) {
+            const old = readBox(g, view, s, isGroup ? GROUP_SIZE : DEFAULT_SIZE);
+            delta.set(s.value, { dx: b.x - old.x, dy: b.y - old.y });
+        }
         writeBox(g, view, s, isGroup ? {
             ...b,
             width: b.width === undefined ? undefined : Math.max(MIN_GROUP.width, b.width),
             height: b.height === undefined ? undefined : Math.max(MIN_GROUP.height, b.height)
         } : b);
     }
+    moveVertices(g, view, delta);
     return ok(undefined);
 }
 

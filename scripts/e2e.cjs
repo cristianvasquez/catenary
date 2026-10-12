@@ -1526,3 +1526,43 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
   for (let i = 0; i < 30 && cli('rpc', 'search').result.some(h => h.id === one); i++) await page.waitForTimeout(100);
   assert.ok(!cli('rpc', 'search').result.some(h => h.id === one), 'Ctrl+Del deletes the element of the listing selection');
 }));
+
+test('browser: a drag of an edge line adds a bend, a double-click on the bend removes it (UI §7.4)', { timeout: 90000 }, t => withFixtureApp(t, 'bends', async ({ page, cli, workspace }) => {
+  cli('rpc', 'open', JSON.stringify(path.join(workspace, 'workspace.trig')));
+  const view = iriId('urn:name:Product%20context');
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+  const canvas = page.locator('svg.sprotty-graph:visible');
+  await canvas.waitFor();
+  const file = path.join(workspace, 'views', 'product-context.view.trig');
+  const vertices = () => (fs.readFileSync(file, 'utf8').match(/view:vertices "([^"]*)"/) ?? [])[1];
+  const until = async (ok, what) => { for (let i = 0; i < 50; i++) { if (ok()) return; await page.waitForTimeout(100); } assert.fail(what); };
+  assert.equal(vertices(), undefined);
+  // The whole view in the viewport, then the middle of the line of the first relation edge, on screen. A flat line has an empty
+  // bounding box: Playwright calls it hidden, so wait for it attached.
+  cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)}); await w.actionDispatcher.dispatch({ kind: 'fit', elementIds: [], padding: 40, maxZoom: 1, animate: false }); return true`);
+  await page.waitForTimeout(500);
+  const edge = canvas.locator('.catenary-edge:not(.property):not(.arrow-edge)').first();
+  const line = edge.locator('.line');
+  await line.waitFor({ state: 'attached' });
+  const middle = () => line.evaluate(el => {
+    const m = el.getScreenCTM(), p = el.getPointAtLength(el.getTotalLength() / 2);
+    return { x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f };
+  });
+  let at = await middle();
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 30, at.y + 90, { steps: 8 });
+  await page.mouse.up();
+  await until(() => vertices() !== undefined, 'the view file holds the bend');
+  assert.match(vertices(), /^-?\d+,-?\d+$/, 'one bend');
+  // A click on the line selects the edge: its bend handle shows (a selected edge is drawn last: find it by its class). A double-click on
+  // the handle removes the bend.
+  at = await middle();
+  await page.mouse.click(at.x, at.y);
+  const handle = canvas.locator('.catenary-edge.selected .edge-vertex');
+  await handle.waitFor();
+  assert.equal(await handle.count(), 1);
+  await handle.dblclick();
+  await until(() => vertices() === undefined, 'the bend is removed from the view file');
+  await handle.waitFor({ state: 'detached' });
+}));

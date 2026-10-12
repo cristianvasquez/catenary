@@ -14,8 +14,8 @@ import {
     BOX_HALO, COLLECTION_HALO, CollectionMember, MULTI_HALO, NOTE_HALO, ONE_OF_HALO, cardHalo, shapeHalo, colorVars, handlePoint, renderCard, renderCollection, renderHalo, renderPill,
     renderOneOf, renderShapeCard, renderShapeRow, renderValueSet, resizeHandle, s, vars
 } from './card-chrome';
-import { edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrome';
-import { Rect, Route, RouteRequest, routeEdges } from './edge-route';
+import { Pt, edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrome';
+import { FanEdge, fanOut } from './edge-route';
 import { edgeStyle } from './edge-preferences';
 
 export { COLOR_NAMES, COLOR_ORDER, PRESETS } from './card-chrome';
@@ -99,6 +99,8 @@ export class RelationEdge extends GEdge {
     name = '';
     fromSide: Side | '' = '';
     toSide: Side | '' = '';
+    /** Bends of the route (UI §7.4). */
+    vertices: Pt[] = [];
     color = '';
     hidden = false;
     lane = 0;
@@ -176,6 +178,9 @@ export class PropertyEdge extends GEdge {
     canPutBack = false;
     /** A member of a logical constraint: no logic handle. */
     member = false;
+    fromSide: Side | '' = '';
+    toSide: Side | '' = '';
+    vertices: Pt[] = [];
     lane = 0;
     lanes = 1;
 }
@@ -261,37 +266,38 @@ export class OneOfView extends ShapeView {
 }
 
 /**
- * Routes of all edges of the diagram (edge-route.ts), computed once for each state of the boxes and edges: the key has the style, the
- * bounds of the boxes and the ends of the edges, so a move or resize (bounds change in place, same root) routes again. Groups and logical
- * constraint circles are not obstacles. undefined: style "direct", or no route for this edge (the view draws the curve).
+ * Port offsets of all edges of the diagram (edge-route.ts fanOut), computed once for each state of the boxes and edges: the key has the
+ * zoom, the bounds of the boxes and the ends, sides and bends of the edges. The edges of one side of a box fan out along it (UI §7.4).
  */
-const routeCache = new WeakMap<object, { key: string; routes: Map<string, Route> }>();
-function routeOf(edge: Readonly<GEdge>): Route | undefined {
-    const style = edgeStyle();
-    if (style === 'direct') return undefined;
+const portCache = new WeakMap<object, { key: string; offsets: Map<string, { from: number; to: number }> }>();
+function offsetsOf(edge: Readonly<GEdge>): { from: number; to: number } | undefined {
     const root = edge.root;
-    const boxes = new Map<string, Rect>();
-    const edges: RouteRequest[] = [];
-    const parts: string[] = [style];
+    const boxes = new Map<string, { x: number; y: number; width: number; height: number }>();
+    const parts: string[] = [String(zoomOf(root))];
     for (const c of root.children) {
-        if (c instanceof GNode && !(c instanceof GroupNode) && !(c instanceof LogicNode)) {
+        if (c instanceof GNode && !(c instanceof LogicNode)) {
             const b = c.bounds;
             boxes.set(c.id, b);
             parts.push(`${c.id} ${b.x} ${b.y} ${b.width} ${b.height}`);
-        } else if (c instanceof GEdge && !(c instanceof LatentEdge)) {
-            const e = c as GEdge & { fromSide?: Side | ''; toSide?: Side | ''; lane?: number; lanes?: number };
-            const request = { id: e.id, source: e.sourceId, target: e.targetId, fromSide: e.fromSide ?? '', toSide: e.toSide ?? '', lane: e.lane ?? 0, lanes: e.lanes ?? 1 };
-            edges.push(request);
-            parts.push(`${request.id} ${request.source} ${request.target} ${request.fromSide} ${request.toSide} ${request.lane} ${request.lanes}`);
         }
     }
-    const key = parts.join('\n');
-    let cached = routeCache.get(root);
-    if (cached?.key !== key) {
-        cached = { key, routes: routeEdges(boxes, edges, style) };
-        routeCache.set(root, cached);
+    const edges: FanEdge[] = [];
+    for (const c of root.children) {
+        if (!(c instanceof GEdge) || c instanceof LatentEdge) continue;
+        const e = c as GEdge & { fromSide?: Side | ''; toSide?: Side | ''; vertices?: Pt[]; name?: string };
+        const sourceBox = boxes.get(e.sourceId), targetBox = boxes.get(e.targetId);
+        if (!sourceBox || !targetBox) continue;
+        const fan: FanEdge = { id: e.id, source: e.sourceId, target: e.targetId, sourceBox, targetBox, fromSide: e.fromSide ?? '', toSide: e.toSide ?? '', vertices: e.vertices ?? [], name: e.name ?? '' };
+        edges.push(fan);
+        parts.push(`${fan.id} ${fan.source} ${fan.target} ${fan.fromSide} ${fan.toSide} ${fan.vertices.map(v => `${v.x},${v.y}`).join(' ')} ${fan.name.length}`);
     }
-    return cached.routes.get(edge.id);
+    const key = parts.join('\n');
+    let cached = portCache.get(root);
+    if (cached?.key !== key) {
+        cached = { key, offsets: fanOut(edges, zoomOf(root)) };
+        portCache.set(root, cached);
+    }
+    return cached.offsets.get(edge.id);
 }
 
 @injectable()
@@ -301,15 +307,15 @@ export class PropertyEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         return renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, self: source === target, elbow: true,
-            route: routeOf(edge), style: edgeStyle(),
+            source: source.bounds, target: target.bounds, fromSide: edge.fromSide, toSide: edge.toSide, vertices: edge.vertices, lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), self: source === target,
+            style: edgeStyle(),
             zoom: zoomOf(edge), name: edge.name, parts: edge.parts, card: edge.card, invalid: edge.violations > 0, logicHandle: !edge.member, targetHandle: true, canPutBack: edge.canPutBack,
             color: '', selected: edge.selected, hover: edge.hoverFeedback, hidden: false
         });
     }
 }
 
-/** Drawn while its owner card or its target is selected (spec/ui-manifest.hs §6.1): a direct curve, not routed. */
+/** Drawn while its owner card or its target is selected (spec/ui-manifest.hs §6.1): the default curve, no bends. */
 @injectable()
 export class LatentEdgeView implements IView {
     render(edge: Readonly<LatentEdge>, _context: RenderingContext): VNode {
@@ -318,7 +324,7 @@ export class LatentEdgeView implements IView {
         const selected = (n: GNode) => 'selected' in n && !!n.selected;
         if (!source || !target || !(selected(source) || selected(target))) return svg('g', null);
         return renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, self: source === target, elbow: true,
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), self: source === target, style: edgeStyle(),
             zoom: zoomOf(edge), name: edge.name, parts: edge.parts, color: '', selected: false, hover: false, hidden: false, latent: true
         });
     }
@@ -332,8 +338,8 @@ export class TargetingEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         return renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, self: source === target, elbow: true,
-            route: routeOf(edge), style: edgeStyle(), zoom: zoomOf(edge), name: edge.name, details: edge.details, color: '', selected: false, hover: false, hidden: false, targeting: true
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), self: source === target,
+            style: edgeStyle(), zoom: zoomOf(edge), name: edge.name, details: edge.details, color: '', selected: false, hover: false, hidden: false, targeting: true
         });
     }
 }
@@ -354,8 +360,8 @@ function logicMids(node: Readonly<LogicNode>): { x: number; y: number }[] {
         const source = e.source as GNode | undefined, target = e.target as GNode | undefined;
         if (!source || !target) return [];
         return [edgeGeometry({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: e.lane, lanes: e.lanes, zoom: zoomOf(e), self: source === target, elbow: true,
-            name: e.name, route: routeOf(e), style: edgeStyle()
+            source: source.bounds, target: target.bounds, fromSide: e.fromSide, toSide: e.toSide, vertices: e.vertices, lane: e.lane, lanes: e.lanes, offsets: offsetsOf(e), zoom: zoomOf(e), self: source === target,
+            name: e.name, style: edgeStyle()
         }).label];
     });
 }
@@ -568,8 +574,7 @@ export class BundleEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         const vnode = renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, zoom: zoomOf(edge),
-            route: routeOf(edge), style: edgeStyle(),
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), zoom: zoomOf(edge), style: edgeStyle(),
             name: edge.count > 1 ? `${edge.name} ×${edge.count}` : edge.name, color: '', selected: false, hover: false, hidden: false
         });
         vnode.data!.class = { ...vnode.data!.class, 'catenary-bundle': true };
@@ -585,8 +590,8 @@ export class RelationEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         return renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: edge.fromSide, toSide: edge.toSide, lane: edge.lane, lanes: edge.lanes,
-            route: routeOf(edge), style: edgeStyle(),
+            source: source.bounds, target: target.bounds, fromSide: edge.fromSide, toSide: edge.toSide, vertices: edge.vertices, lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge),
+            self: source === target, style: edgeStyle(),
             zoom: zoomOf(edge), name: edge.name, color: edge.color, selected: edge.selected, hover: edge.hoverFeedback, hidden: edge.hidden
         });
     }
@@ -600,8 +605,7 @@ export class AlternativeEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         const vnode = renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, zoom: zoomOf(edge),
-            route: routeOf(edge), style: edgeStyle(),
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), zoom: zoomOf(edge), style: edgeStyle(),
             name: '', color: '', selected: false, hover: false, hidden: false
         });
         vnode.data!.class = { ...vnode.data!.class, 'catenary-alternative': true };
@@ -617,8 +621,7 @@ export class ArrowEdgeView implements IView {
         const target = edge.target as GNode | undefined;
         if (!source || !target) return svg('g', null);
         return renderEdge({
-            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, zoom: zoomOf(edge),
-            route: routeOf(edge), style: edgeStyle(),
+            source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), zoom: zoomOf(edge), style: edgeStyle(),
             name: '', color: edge.color, selected: edge.selected, hover: edge.hoverFeedback, hidden: false, arrow: true
         });
     }

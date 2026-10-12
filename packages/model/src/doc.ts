@@ -138,8 +138,25 @@ export interface EdgeLayout {
     relation: string;    // relation id
     fromSide?: Side;
     toSide?: Side;
+    /** Bends of the edge, in canvas coordinates, from the source to the target (UI §7.4). Absent: none. */
+    vertices?: { x: number; y: number }[];
     color?: string;
     hidden?: boolean;
+}
+
+/** The `view:vertices` literal of a placement: "x,y x,y …", integers. An unreadable pair ends the list. */
+export function parseVertices(text: string | undefined): { x: number; y: number }[] | undefined {
+    const out: { x: number; y: number }[] = [];
+    for (const pair of (text ?? '').trim().split(/\s+/).filter(Boolean)) {
+        const [x, y] = pair.split(',').map(Number);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) break;
+        out.push({ x, y });
+    }
+    return out.length ? out : undefined;
+}
+
+export function formatVertices(points: readonly { x: number; y: number }[] | undefined): string | undefined {
+    return points?.length ? points.map(p => `${Math.round(p.x)},${Math.round(p.y)}`).join(' ') : undefined;
 }
 
 export interface View {

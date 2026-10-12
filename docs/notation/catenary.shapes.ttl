@@ -36,6 +36,8 @@ tm:Placement a sh:NodeShape ;
         [ sh:path view:keptByLines ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ,
         [ sh:path view:fromSide ; sh:maxCount 1 ; sh:in ( "top" "right" "bottom" "left" ) ] ,
         [ sh:path view:toSide ;   sh:maxCount 1 ; sh:in ( "top" "right" "bottom" "left" ) ] ,
+        # A line: the bends of the edge from the source to the target, "x,y x,y …" in canvas units.
+        [ sh:path view:vertices ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^-?[0-9]+,-?[0-9]+( -?[0-9]+,-?[0-9]+)*$" ] ,
         # rdf:reifies holds a triple term: not an IRI, not a literal, not a blank node.
         [ sh:path rdf:reifies ; sh:not [ sh:nodeKind sh:IRI ] ; sh:not [ sh:nodeKind sh:Literal ] ; sh:not [ sh:nodeKind sh:BlankNode ] ] ;
     # One placement per element per view: not checked here (SHACL Core cannot group by two values).
