@@ -78,7 +78,7 @@ describe('placement ⇄ element from the diagram graph', () => {
         expect(toggleHighlight(['qa'], 'qa')).toEqual([]);
     });
 
-    it('law_highlightKeys and law_delNeedsPlacements: copy takes the highlight of a canvas; cut and Del need the origin', () => {
+    it('law_highlightKeys, law_delNeedsPlacements and law_duplicateNeedsPlacements: copy takes the highlight of a canvas; cut, Del and duplicate need the origin', () => {
         const d = doc();
         const graphs = Object.fromEntries(Object.keys(d.views).map(v => [v, graph(d, v)]));
         const other = (view: string, id: string) => graphs[view].elementOf(id);
@@ -87,8 +87,9 @@ describe('placement ⇄ element from the diagram graph', () => {
         expect(canvasKeyTargets(listing, 'copy')).toEqual(['qa', 'qb']);
         expect(canvasKeyTargets(listing, 'cut')).toEqual([]);
         expect(canvasKeyTargets(listing, 'del')).toEqual([]);
+        expect(canvasKeyTargets(listing, 'duplicate')).toEqual([]);
         // The origin: all keys act on its selection.
         const origin = canvasSelection(graphs.P, { view: 'P', ids: ['pa'] }, 'P', other);
-        for (const key of ['copy', 'cut', 'del'] as const) expect(canvasKeyTargets(origin, key)).toEqual(['pa']);
+        for (const key of ['copy', 'cut', 'del', 'duplicate'] as const) expect(canvasKeyTargets(origin, key)).toEqual(['pa']);
     });
 });

@@ -86,8 +86,9 @@ export function toggleHighlight(highlighted: readonly string[], id: string): str
 /**
  * The diagram ids that a canvas key acts on (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow, §4.4 keys). Copy: the GLSP
  * selection of the origin, else the highlight (the window selection as this canvas shows it). Cut and Del remove placements from
- * the view: they need the origin, so a highlight gives them nothing (law_delNeedsPlacements). Ctrl+Del uses the window selection.
+ * the view: they need the origin, so a highlight gives them nothing (law_delNeedsPlacements). Duplicate (Ctrl+D) places copies beside
+ * placements of the origin: the same rule as Cut (law_duplicateNeedsPlacements). Ctrl+Del uses the window selection.
  */
-export function canvasKeyTargets(c: CanvasSelection, key: 'copy' | 'cut' | 'del'): string[] {
+export function canvasKeyTargets(c: CanvasSelection, key: 'copy' | 'cut' | 'del' | 'duplicate'): string[] {
     return key === 'copy' && !c.selected.length ? c.highlighted : c.selected;
 }

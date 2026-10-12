@@ -611,10 +611,11 @@ law_controlIgnoresSelection c s1 s2 = isJust (controlCommand c s1) == isJust (co
 -- Ctrl+Z and Ctrl+Shift+Z undo and redo graph edits. A focused text input keeps its own text keys.
 -- F2 renames, or edits a note. Ctrl+T and F8 find an element (§8.6). F3 and Shift+F3 go to the next and previous occurrence.
 -- F12 is Open in….
-data Key = Del | CtrlDel | CtrlZ | CtrlShiftZ | F2 | CtrlT | F8 | F3 | ShiftF3 | F12 | CtrlC | CtrlX | CtrlV deriving Eq
+-- Ctrl+D duplicates the selected elements beside their sources (manifest §6.4 Duplicate).
+data Key = Del | CtrlDel | CtrlZ | CtrlShiftZ | F2 | CtrlT | F8 | F3 | ShiftF3 | F12 | CtrlC | CtrlX | CtrlV | CtrlD deriving Eq
 data KeyEffect
   = RemovePlacements | DeleteAfterConfirmation | UndoGraphEdit | RedoGraphEdit | RenameOrEditNote | FindElement
-  | NextOccurrence | PreviousOccurrence | OpenInPane | CopyClip | CutClip | PasteClip
+  | NextOccurrence | PreviousOccurrence | OpenInPane | CopyClip | CutClip | PasteClip | DuplicateSelection
   deriving Eq
 keyEffect :: Key -> KeyEffect
 keyEffect k = case k of
@@ -631,6 +632,7 @@ keyEffect k = case k of
   CtrlC -> CopyClip
   CtrlX -> CutClip
   CtrlV -> PasteClip
+  CtrlD -> DuplicateSelection
 isTextKey :: Key -> Bool                          -- a key that a text input uses for its own text
 keyGoesToWindow :: Bool -> Key -> Bool            -- a text input has the focus, the key
 keyGoesToWindow inputFocused k = not (inputFocused && isTextKey k)
@@ -643,6 +645,9 @@ law_delNeverDeletes xs = all (not . isDelete) (delCommands xs)
     isDelete _ = False
 law_delNeedsPlacements :: [Element] -> Bool
 law_delNeedsPlacements xs = not (any isPlacement xs) ==> null (delCommands xs)
+duplicateCommands :: [Element] -> [EditCommand]   -- Ctrl+D on the selected items
+law_duplicateNeedsPlacements :: [Element] -> Bool
+law_duplicateNeedsPlacements xs = not (any isPlacement xs) ==> null (duplicateCommands xs)
 
 -- 4.5 Text edits --------------------------------------------------------------------
 
@@ -1968,6 +1973,7 @@ statementsOf = manifestOnly
 domainAfter = manifestOnly
 domainBefore = manifestOnly
 isView = manifestOnly
+duplicateCommands = manifestOnly
 isPlacement = manifestOnly
 elementOf = manifestOnly
 viewOf = manifestOnly

@@ -16,7 +16,8 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { PropertyViewContribution } from '@theia/property-view/lib/browser/property-view-contribution';
-import { FileContent, isMarkdownPath, mixedFileProblem, previewInWorkspace } from '@catenary/model';
+import { FileContent, isMarkdownPath, mixedFileProblem, ownerOfLabel, previewInWorkspace } from '@catenary/model';
+import { canvasKeyTargets } from './diagram/diagram-ids';
 import { VIEW_SCHEME } from '../common/protocol';
 import { ModelActions } from './actions';
 import { ViewEditors, viewIdOf } from './diagram/view-editors';
@@ -74,6 +75,7 @@ export namespace ModelCommands {
     // View editor
     export const REMOVE_FROM_VIEW = cmd('catenary.removeFromView', 'Remove from View');
     export const COPY_AS_RDF = cmd('catenary.copyAsRdf', 'Copy as RDF');
+    export const DUPLICATE = cmd('catenary.duplicate', 'Duplicate');
     export const TOGGLE_HIDDEN = cmd('catenary.toggleHidden', 'Show Hidden Edges', 'codicon codicon-eye');
     export const NEW_GROUP = cmd('catenary.newGroup', 'New Group…', 'codicon codicon-symbol-namespace');
     export const COLLECT = cmd('catenary.collect', 'Collect into One Box', 'codicon codicon-group-by-ref-type');
@@ -481,6 +483,18 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             },
             isVisible: (w?: Widget) => onView(w) && (w instanceof GLSPDiagramWidget || nothingSelectedIn())
         });
+        // Duplicate: the GLSP selection of the origin canvas (canvasKeyTargets 'duplicate'); a highlight gives nothing.
+        const duplicateTargets = () => {
+            const w = inDiagram() ? this.shell.currentWidget as GLSPDiagramWidget : undefined;
+            if (!w) return undefined;
+            const selected = [...new Set(w.editorContext.selectedElements.map(e => ownerOfLabel(e.id)))];
+            return { view: viewIdOf(w), ids: canvasKeyTargets({ selected, highlighted: [] }, 'duplicate') };
+        };
+        registry.registerCommand(ModelCommands.DUPLICATE, {
+            execute: () => { const t = duplicateTargets(); if (t?.ids.length) void a.duplicate(t.view, t.ids); },
+            isEnabled: () => !!duplicateTargets()?.ids.length,
+            isVisible: onView
+        });
         // Around the selected cards, groups, notes and view references (edges have no box); else at the canvas center.
         registry.registerCommand(ModelCommands.NEW_GROUP, {
             execute: async () => {
@@ -502,7 +516,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         addMenuItems(menus, MODEL_MENU_CREATE, c.NEW_VIEW.id, c.NEW_INSTANCE.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, EXPLORER_SURFACE, c.DELETE_UNPLACED.id, c.PROPOSE_ALL_SHAPES.id);
         addMenuItems(menus, DIAGRAM_SURFACE, c.NEW_GROUP.id, c.NEW_INSTANCE_HERE.id, c.NEW_NODE_SHAPE_HERE.id, c.TOGGLE_HIDDEN.id, c.LAYOUT_VIEW.id);
-        addMenuItems(menus, [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_3_clipboard'], c.COPY_AS_RDF.id);
+        addMenuItems(menus, [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_3_clipboard'], c.COPY_AS_RDF.id, c.DUPLICATE.id);
         const o = OpenModelCommands;
         addMenuItems(menus, NavigatorContextMenu.NAVIGATION, o.OPEN_AS.id, o.OPEN_BESIDE.id);
         for (const path of [EditorContextMenu.NAVIGATION, [...EXPLORER_CONTEXT_MENU, '0_file'], [...TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_0_file']]) {
@@ -521,6 +535,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         keybindings.registerKeybinding({ command: OpenModelCommands.REDO.id, keybinding: 'ctrlcmd+y', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: ModelCommands.RENAME.id, keybinding: 'f2', context: ExplorerFocusContext.ID });
         keybindings.registerKeybinding({ command: ModelCommands.FIND_ELEMENT.id, keybinding: 'ctrlcmd+t' });
+        keybindings.registerKeybinding({ command: ModelCommands.DUPLICATE.id, keybinding: 'ctrlcmd+d', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.FIND_ELEMENT.id, keybinding: 'f8', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.BACK.id, keybinding: 'alt+left', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: ModelCommands.FORWARD.id, keybinding: 'alt+right', when: '!editorTextFocus' });
