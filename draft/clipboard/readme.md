@@ -11,7 +11,7 @@ Code: `modeler/src/browser/diagram/diagram-configuration.ts` (ViewCopyPasteHandl
 | Ctrl+C, Ctrl+V | New instances: new IRI, label with the next numeric suffix, fields, owned values, relations between the copied instances | New placements near the pointer | The clip holds IRIs only. The paste reads the source instances at paste time. A deleted source is skipped without a message. |
 | Ctrl+C, Ctrl+V of a node shape | Same shape, no copy | New placement | Opposite identity rule to an instance in the same gesture. |
 | Ctrl+X | None | Removes the source placements at once (one undo step) | Without a paste it is the same as Del. The clip is pastable only in this window. |
-| Ctrl+X, Ctrl+V | None | Adds the same elements to the target view (second undo step) | In the same canvas: every element is already placed, so the paste fails after the cut already removed them. |
+| Ctrl+X, Ctrl+V | None | Adds the same elements to the target view (second undo step) | In the same canvas: a removal, then a re-placement at the pointer, two undo steps. The paste fails only when the target already shows every element, for example a second paste of the same cut. |
 | Ctrl+V of RDF text | Adds missing statements, same IRIs | Figures that the notations derive | A third identity rule: same IRIs, no removal, additive data. |
 | Copy as RDF | None | None | Writes Turtle to the system clipboard. Ctrl+C writes a JSON token instead. |
 | Groups, notes | None (view data) | New boxes in both modes | Consistent. |
@@ -22,7 +22,7 @@ Code: `modeler/src/browser/diagram/diagram-configuration.ts` (ViewCopyPasteHandl
 
 1. One key pair, Ctrl+C then Ctrl+V, answers the question "same element or new element?" by a key that was pressed before, Ctrl+C or Ctrl+X. The answer is also different for instances and shapes.
 2. The model edit (new instances) happens at paste time, not at copy time. The result depends on edits between the two keys.
-3. Cut changes the source before the paste is known to succeed. A failed paste leaves the elements removed and needs an undo.
+3. Cut changes the source before the paste runs. A paste that fails (target shows every element), or that never comes, leaves the elements removed. A cut and its paste are two undo steps.
 4. Three identity rules exist for a paste: new IRIs (copy), same IRIs (cut), same IRIs plus additive statements (RDF text).
 5. No feedback states what happened: how many placed, how many skipped, how many copied.
 
@@ -46,7 +46,8 @@ Consequences:
 - Ctrl+C then Ctrl+V in the same canvas is a no-op with one message: "Already in this view. Duplicate (Ctrl+D) makes copies."
 - Cut and paste cannot leave the source half done. `law_cutWithoutPasteChangesNothing`.
 - The clip needs no snapshot: a reference is read at paste time by definition. A deleted element is skipped and counted.
-- Between canvases of one window: unchanged mechanism (clip ID in memory). Between windows and models: the clip holds IRIs, so a paste in another model places the IRIs that exist there. This stays as it is.
+- Transport. Ctrl+C and Ctrl+X write two entries to the system clipboard: the custom type `application/x-catenary-view-clip` with the clip ID, and `text/plain` with the Turtle of Copy as RDF. A paste in a canvas first looks for the custom type and resolves its ID in the window clipboard service. Found: reference paste (or move). Not found, or another window: the `text/plain` goes through Paste RDF, the explicit data command, with its rules (same IRIs, additive statements, named-graph consent). So a paste in another window never silently creates data: it is a Paste RDF, and the status line says so. A reference paste between windows stays unsupported (§5.8 `pastable`).
+- Another model in the same window (workspace switch): the clip holds IRIs, so a reference paste places the IRIs that exist there and counts the rest as missing. Unchanged.
 - Groups and notes are view data: a paste creates new boxes, a cut moves them. A frame moves with its contents.
 - Every paste ends with one status line: "Placed 3. Skipped 2 already in this view. 1 missing from this model."
 
