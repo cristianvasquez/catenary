@@ -4,10 +4,11 @@ import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-int
 import { Command, CommandContribution, CommandRegistry, MAIN_MENU_BAR, MenuContribution, MenuModelRegistry, MessageService, QuickInputService, SelectionService, URI } from '@theia/core';
 import {
     ApplicationShell, FrontendApplication, FrontendApplicationContribution, KeybindingContribution, KeybindingContext, KeybindingRegistry,
-    OpenHandler, WidgetOpenerOptions, StorageService, Widget, WidgetManager
+    ACTION_ITEM, OpenHandler, WidgetOpenerOptions, StorageService, Widget, WidgetManager
 } from '@theia/core/lib/browser';
 import { PERSPECTIVE_LAYOUTS_STORAGE_KEY } from '@theia/core/lib/browser/shell/shell-layout-restorer';
-import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
+import { TabBarToolbar, TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
+import * as React from '@theia/core/shared/react';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { EditorContextMenu, EditorManager, EditorWidget, EditorOpenerOptions, Range } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
@@ -173,7 +174,7 @@ export class CatenaryFileOpenHandler implements OpenHandler {
         return this.present(uri, c, c.workspace ? 'Settings' : c.views.length ? 'Canvas' : 'Model', options);
     }
 
-    /** Open as keeps the current pane; Open beside uses Theia's split placement for a new pane. */
+    /** Open as keeps the current pane; Open beside uses Theia's split placement for a new pane. An explicit presentation skips the choice. */
     async choose(target?: unknown, beside = false, presentation?: Presentation): Promise<Widget | undefined> {
         const file = this.fileOf(target);
         if (!file) return undefined;
@@ -181,10 +182,28 @@ export class CatenaryFileOpenHandler implements OpenHandler {
         const ref = candidate && this.shell.getAreaFor(candidate) === 'main' ? candidate : undefined;
         const uri = URI.fromFilePath(file), c = await this.content(uri);
         if (!c || c.error || mixedFileProblem(c)) return this.openSource(uri);
-        const choices: Presentation[] = ['Source', 'Model', ...(c.views.length ? ['Canvas' as const] : []), ...(c.workspace ? ['Settings' as const] : [])];
-        const pick = presentation ?? (await this.quick.showQuickPick(choices.map(label => ({ label })), { placeholder: `${uri.path.base}: ${beside ? 'Open beside' : 'Open as'}` }))?.label;
+        const all: Presentation[] = ['Source', 'Model', ...(c.views.length ? ['Canvas' as const] : []), ...(c.workspace ? ['Settings' as const] : [])];
+        // UI §3.2 openAsChoices: leave out the presentation of the pane; a file node (no pane) offers all.
+        const current = typeof target === 'string' || target instanceof URI || this.fileOf(candidate) !== file ? undefined : this.presentationOf(candidate);
+        const choices = presentation ? all : all.filter(p => p !== current);
+        if (!choices.length) {
+            this.messages.info('No other presentation of this file.');
+            return undefined;
+        }
+        // law_oneChoiceOpensAtOnce
+        const pick = presentation ?? (choices.length === 1 ? choices[0]
+            : (await this.quick.showQuickPick(choices.map(label => ({ label })), { placeholder: `${uri.path.base}: ${beside ? 'Open beside' : 'Open as'}` }))?.label);
         if (!pick || !choices.includes(pick as Presentation)) return undefined;
         return this.present(uri, c, pick as Presentation, { widgetOptions: { area: 'main', ref, ...(beside ? { mode: 'split-right' } : {}) } });
+    }
+
+    /** The presentation that a pane shows. A navigator or another widget shows none. */
+    protected presentationOf(w?: Widget): Presentation | undefined {
+        if (w instanceof EditorWidget) return 'Source';
+        if (w instanceof ModelExplorerWidget) return 'Model';
+        if (w instanceof GLSPDiagramWidget && w.uri.scheme === VIEW_SCHEME) return 'Canvas';
+        if (w instanceof WorkspaceSettingsWidget) return 'Settings';
+        return undefined;
     }
 
     async openModel(file: string): Promise<ModelExplorerWidget> {
@@ -553,9 +572,26 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             id: c.NEW_VIEW_IN_FOLDER.id, command: c.NEW_VIEW_IN_FOLDER.id, tooltip: 'New view in the selected folder', priority: 1,
             isVisible: (w?: Widget) => w instanceof FileNavigatorWidget && this.model.isOpen
         } as never);
-        for (const command of [o.OPEN_AS, o.OPEN_BESIDE]) {
-            toolbar.registerItem({ id: command.id, command: command.id, tooltip: command.label, priority: 10 });
-        }
+        // One button: a click opens as, Ctrl+click (Cmd on macOS) opens beside. A command item does not get the mouse event.
+        const tooltip = 'Open as… (Ctrl+click: open beside)';
+        toolbar.registerItem({
+            id: o.OPEN_AS.id, priority: 10,
+            isVisible: (w?: Widget) => this.files.hasPresentations(w),
+            render: (w?: Widget) => React.createElement('div', { key: o.OPEN_AS.id, className: `${TabBarToolbar.Styles.TAB_BAR_TOOLBAR_ITEM} enabled` },
+                React.createElement('div', {
+                    id: o.OPEN_AS.id, className: `${o.OPEN_AS.iconClass} ${ACTION_ITEM}`, title: tooltip, tabIndex: 0, role: 'button', 'aria-label': tooltip,
+                    onClick: (e: React.MouseEvent) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.files.choose(w, e.ctrlKey || e.metaKey);
+                    },
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        this.files.choose(w, e.ctrlKey || e.metaKey);
+                    }
+                }))
+        });
     }
 
 }

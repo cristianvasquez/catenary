@@ -62,7 +62,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - In the F8 picker, press Ctrl+Enter to add an element and keep the picker open. Press Alt+Enter to show the element instead of adding it. The row buttons are Show and Open in…. An element that the view shows already is selected, not added again.
 - You can also drag an element from the Model explorer or Links onto a canvas.
 - Open a file tree: open a model RDF file, or select **Open as… → Model** from another presentation.
-- Use **Open beside…** to open another presentation beside the current pane. Reopening a presentation focuses its existing pane.
+- To open another presentation beside the current pane, Ctrl+click **Open as…** (Cmd+click on macOS), or use **Open beside…** in a context menu. Reopening a presentation focuses its existing pane.
 - Move or split Model panes with the same tab controls as source editors and canvases.
 - Filter a tree: type while a row has focus, or use the fuzzy filter input. Matches can have gaps. The tree hides nonmatching branches and highlights matching characters. It keeps ancestors of matches visible. Press Escape in the input to clear the filter.
 - Drag a folder to place all its descendants, including elements hidden by the filter. A folder drag does not create instances.
@@ -83,7 +83,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - New statements use the configured file destinations. Named graphs require confirmation before paste discards their graph names.
 - Copy as RDF in Edit or the canvas context menu copies readable Turtle. It includes selected statements and owned values, without placement metadata.
 - Apply Layout: Layered (ELK) or Force (cola.js). The view then fits to its content.
-- Use **Open as…** or **Open beside…** in a pane toolbar or context menu.
+- Use **Open as…** in a pane toolbar, or **Open as…** or **Open beside…** in a context menu. The choice leaves out the presentation of the current pane. When one presentation remains, it opens at once.
 - Every model RDF file offers Source and Model. A view also offers Canvas. The workspace file also offers Settings.
 - A Model pane shows only the subjects that its file describes, so you can move each row to another file or place it on a canvas. A class that the file only uses as a type is a folder, not an element. The workspace file has no Model rows.
 - A Model pane has a section for each vocabulary: **Classes** (classes, subclasses and instances as written) and **Shapes** (node shapes and their property shapes). A folder shows 100 rows at a time: click **Show more** for the next rows.
@@ -163,7 +163,7 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **Validation**: select what SHACL validation checks after each change. Off shows no problems and no badges. Open views checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. All checks the whole model. The status bar shows the mode.
 - **Label language**: type a language tag, for example `en` or `sv`. Labels in this language show first (rdfs:label, skos:prefLabel, sh:name). `en` also takes `en-GB`. Empty: a label without a language, else the first in order. A change reads the files again. The Name and Description fields of a property shape, and the Description field of a node shape, edit the literal in that language and keep the literals in other languages.
 
-The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
+The document toolbar has Open as (Ctrl+click: open beside). Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 
 Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace. Edge styles: Curved (default) draws a smooth curve from card to card. Direct draws straight segments. Nothing routes around cards. To route an edge around a card, bend it: drag the line, and a bend follows the pointer. Drag a bend to move it. A click on a bend without a drag changes nothing. Double-click a bend to remove it. If the view file is locked and you cancel the Unlock dialog, the edge goes back to its saved route. Reset route in Appearance removes all bends of the edge. Bends are saved in the view. Apply Layout removes them. A move of both end cards together moves the bends with them. Parallel edges use separate lanes that retain spacing when you zoom out. A self edge without bends is an arch above the card. An edge without bends can cross other cards and labels.
 

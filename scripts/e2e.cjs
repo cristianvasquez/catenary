@@ -751,12 +751,20 @@ test('browser: file presentations use document panes, focus existing panes and r
   const count = widgets().length;
   assert.equal(open(data, 'Source', true), sourceId);
   assert.equal(widgets().length, count, 'reopening Source does not clone it');
-  // Source's toolbar resolves the same file and offers only its applicable presentations.
-  await page.locator(`[id=${JSON.stringify('catenary.openAs')}]`).filter({ visible: true }).last().click();
-  const choices = page.locator('.quick-input-list .monaco-list-row');
-  await choices.first().waitFor();
-  assert.deepEqual(await choices.allTextContents(), ['Source', 'Model']);
-  await page.keyboard.press('Escape');
+  // law_oneChoiceOpensAtOnce: Source's toolbar resolves the same file and leaves out Source. Model is the one choice: it opens with no pick.
+  const openAsButton = () => page.locator(`[id=${JSON.stringify('catenary.openAs')}]`).filter({ visible: true }).last();
+  await openAsButton().click();
+  for (let i = 0; i < 20 && current() !== modelId(data); i++) await page.waitForTimeout(100);
+  assert.equal(current(), modelId(data), 'Open as from Source opens Model at once');
+  assert.equal(await page.locator('.quick-input-widget').filter({ visible: true }).count(), 0, 'no quick pick');
+  // Ctrl+click opens beside: the Model pane opens in a new split next to Source.
+  cli('eval', `await ctx.shell.closeWidget(${JSON.stringify(modelId(data))}); await ctx.shell.activateWidget(${JSON.stringify(sourceId)}); return true`);
+  const tabBars = () => page.locator(main).locator('.lm-TabBar').count();
+  const barsBefore = await tabBars();
+  await openAsButton().click({ modifiers: ['ControlOrMeta'] });
+  await pane(modelId(data)).waitFor();
+  assert.equal(await tabBars(), barsBefore + 1, 'Ctrl+click opens Model in a split');
+  assert.equal(await page.locator('.quick-input-widget').filter({ visible: true }).count(), 0, 'no quick pick');
   // law_workspaceHasSourceAndModel: workspace defaults to Settings; Source and Model remain available without changing metadata storage.
   await navigator(page);
   await navNode(page, 'workspace.trig').first().dblclick();

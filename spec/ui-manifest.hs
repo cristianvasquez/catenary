@@ -370,7 +370,11 @@ law_activeIsOpen s = maybe True (`elem` documents s) (active s)
 -- Move the view into its own file." Reason: a save of one part must not change the other (open.md D7).
 -- Other model RDF files open as Model documents. Other files open as text. "Open With" opens any file as text.
 -- Source and Model are available for every model RDF file, including the workspace file.
--- Open as and Open beside offer applicable presentations of the same file.
+-- Open as and Open beside offer the other applicable presentations of the same file: not the presentation of the current pane.
+-- From a file node there is no current pane: all applicable presentations are offered. One choice opens at once, with no pick.
+-- No choice shows the message "No other presentation of this file." An explicit presentation (CLI) skips the choice.
+-- The pane toolbar has one button, Open as. Ctrl+click (Cmd on macOS) opens beside. Context menus keep Open beside.
+-- Reason: the pick lists only the presentations that change the screen.
 -- Open beside places a new presentation in a split. Reopening focuses the existing pane in its current position.
 -- Model documents use the same tab movement and split controls as Source and Canvas.
 -- Reason: one file opener handles all presentations.
@@ -404,6 +408,19 @@ presentationChoices p h
   | otherwise = [AsText p]
 law_workspaceHasSourceAndModel :: FilePath -> Bool
 law_workspaceHasSourceAndModel p = all (`elem` presentationChoices p (FileHolds True [] True)) [AsText p, AsModel p, OpenWorkspace]
+-- | Open as leaves out the presentation of the current pane. `Nothing`: a file node, no current pane.
+openAsChoices :: Maybe Document -> [Document] -> [Document]
+openAsChoices (Just current) = filter (/= current)
+openAsChoices Nothing = id
+law_openAsExcludesCurrent :: Document -> [Document] -> Bool
+law_openAsExcludesCurrent c ds = c `notElem` openAsChoices (Just c) ds
+data OpenAsStep = NoOtherPresentation | OpenAtOnce Document | PickPresentation [Document] deriving Eq
+openAsStep :: [Document] -> OpenAsStep
+openAsStep [] = NoOtherPresentation
+openAsStep [d] = OpenAtOnce d
+openAsStep ds = PickPresentation ds
+law_oneChoiceOpensAtOnce :: [Document] -> Bool
+law_oneChoiceOpensAtOnce ds = length ds == 1 ==> openAsStep ds == OpenAtOnce (head ds)
 -- | A preview keeps the documents that stay in the open workspace. `inOpen`: the document belongs to the open workspace.
 previewChoices :: (Document -> Bool) -> FilePath -> FileHolds -> [Document]
 previewChoices inOpen p h = case filter (\d -> d == AsText p || inOpen d) (openChoices p h) of
