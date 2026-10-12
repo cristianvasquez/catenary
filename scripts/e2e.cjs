@@ -208,9 +208,17 @@ test('browser: raw RDF paste, graph consent, Copy as RDF, reference paste, and c
     // A paste places the same elements (ui-manifest §5.8): Ctrl+C, Ctrl+V in the same canvas places nothing and says so.
     const notice = text => page.locator('.theia-notification-list-item', { hasText: text }).first().waitFor();
     const boxes = () => cli('rpc', 'view', JSON.stringify(view)).result.boxes;
+    // The system clipboard of a copy (§5.8 transport): the Turtle in text/plain, the clip token in the custom type.
+    const systemClip = () => page.evaluate(async () => {
+      const item = (await navigator.clipboard.read()).find(i => i.types.includes('web application/x-catenary-view-clip'));
+      return { text: await navigator.clipboard.readText(), token: item && await (await item.getType('web application/x-catenary-view-clip')).text() };
+    });
     await card('Alice').click();
     await page.keyboard.press('Control+C');
-    await page.waitForTimeout(200);
+    await page.waitForFunction(() => navigator.clipboard.read().then(items => items.some(i => i.types.includes('web application/x-catenary-view-clip'))));
+    const copied = await systemClip();
+    assert.ok(copied.text.includes('urn:clipboard:alice') && !copied.text.includes('clipboardId'), 'text/plain holds the Turtle of the copy');
+    assert.equal(typeof JSON.parse(copied.token).clipboardId, 'string', 'the custom type holds the clip token');
     await page.keyboard.press('Control+V');
     await notice('Placed 0. Skipped 1 already in this view.');
     assert.deepEqual(boxes(), [before], 'a copy and paste in the same view changes nothing');
@@ -232,7 +240,7 @@ test('browser: raw RDF paste, graph consent, Copy as RDF, reference paste, and c
     assert.equal(moved.length, 1, 'the move keeps one placement');
     assert.notDeepEqual([moved[0].x, moved[0].y], [before.x, before.y], 'the move places the card at the pointer');
     // A JSON-LD property can match the ID of the live internal clip and still be raw RDF.
-    const token = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+    const token = JSON.parse((await systemClip()).token);
     const jsonld = JSON.stringify({ '@context': { name: 'http://www.w3.org/2000/01/rdf-schema#label', clipboardId: 'urn:clipboard:identifier' },
       '@id': 'urn:clipboard:jsonld', '@type': 'urn:Person', name: 'JSON-LD', clipboardId: token.clipboardId });
     await paste(jsonld);

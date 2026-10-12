@@ -6,12 +6,12 @@ import {
     KeyboardToolPalette, generateUuid, gridModule, configureActionHandler, IActionHandler, ViewerOptions,
     Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
     helperLineModule, initializeDiagramContainer, accessibilityModule, toolPaletteModule, createIcon, FocusTrackerTool, PaletteItem,
-    ChangeBoundsOperation, CompoundOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction
+    ChangeBoundsOperation, CompoundOperation, PasteOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction
 } from '@eclipse-glsp/client';
 import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, CommandService, MessageService } from '@theia/core';
 import { Container, inject, injectable } from '@theia/core/shared/inversify';
-import { TYPES as CATENARY, boxOf, ownerOfLabel, selection } from '@catenary/model';
+import { TYPES as CATENARY, VIEW_CLIP_FORMAT, boxOf, ownerOfLabel, selection } from '@catenary/model';
 import { DIAGRAM_TYPE, PASTE_RESULT, viewIdOfUri } from '../../common/protocol';
 import { SelectionModel } from '../selection-model';
 import { ModelActions } from '../actions';
@@ -26,6 +26,7 @@ import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
 import { canvasKeyTargets } from './diagram-ids';
+import { VIEW_CLIP_WEB_TYPE, clipIdOf, clipIdOfToken, clipToken, rdfOf } from './clip-transport';
 import { CLIP_ID_KEY, CutMark, asCopyClip, cutMark, cutMessage } from './cut-mark';
 import { CutMarkPostprocessor, CutMarkRedrawCommand, CutMarkStartup, PasteResultHandler } from './cut-mark-canvas';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
@@ -164,26 +165,59 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(CanvasHighlight) protected readonly highlight: CanvasHighlight;
     @inject(CutMark) protected readonly mark: CutMark;
+    /** The clip of the last copy or cut: an older asynchronous clipboard write does not replace a newer clip. */
+    protected lastClipId?: string;
 
+    /**
+     * Paste order (law_pasteOrder): the custom type, then a text/plain token, then RDF. A paste event does not show the custom type of
+     * the asynchronous Clipboard API: when the event has no known clip, the paste reads the system clipboard before it pastes RDF.
+     */
     override handlePaste(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldPaste(event)) return;
-        const data = event.clipboardData;
-        try {
-            const token = JSON.parse(data.getData('text/plain'));
-            if (token && typeof token === 'object' && Object.keys(token).length === 1
-                && typeof token.clipboardId === 'string' && this.clipboardService.get(token.clipboardId)) {
-                super.handlePaste(event);
-                return;
-            }
-        } catch { /* Plain RDF is not a Catenary clip token. */ }
-        const mediaType = ['text/turtle', 'application/trig', 'application/n-triples', 'application/n-quads',
-            'application/ld+json', 'application/rdf+xml', 'text/n3'].find(type => data.types.includes(type));
-        const text = data.getData(mediaType ?? 'text/plain');
+        const data = event.clipboardData, types = [...data.types], get = (type: string) => data.getData(type);
+        event.preventDefault();
+        const id = clipIdOf(types, get);
+        if (id && this.pasteClip(id)) return;
         const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
         if (!view) return;
-        const at = this.editorContext.get().lastMousePosition;
-        event.preventDefault();
-        void this.pasteRdf(view, text, mediaType, at);
+        const { text, mediaType } = rdfOf(types, get), at = this.editorContext.get().lastMousePosition;
+        void this.systemClipId().then(id => {
+            if (!id || !this.pasteClip(id)) return this.pasteRdf(view, text, mediaType, at);
+        });
+    }
+
+    /** Reference paste of a clip of this window. False when the window does not hold the clip (§5.8 pastable). */
+    protected pasteClip(clipboardId: string): boolean {
+        const clipboardData = this.clipboardService.get(clipboardId);
+        if (clipboardData) this.actionDispatcher.dispatch(PasteOperation.create({ clipboardData, editorContext: this.editorContext.get() }));
+        return !!clipboardData;
+    }
+
+    /** The clip id in the custom type of the system clipboard. Without the Clipboard API or its permission: none. */
+    protected async systemClipId(): Promise<string | undefined> {
+        try {
+            for (const item of await navigator.clipboard.read()) {
+                if (item.types.includes(VIEW_CLIP_WEB_TYPE)) return clipIdOfToken(await (await item.getType(VIEW_CLIP_WEB_TYPE)).text());
+            }
+        } catch { /* No clipboard access: the paste reads the event data only. */ }
+        return undefined;
+    }
+
+    /**
+     * After the synchronous token write: the clip and the Turtle of Copy as RDF of the same ids replace the token in the system clipboard,
+     * the token in the custom type and the Turtle in text/plain. A newer copy or cut, a rejected write or no RDF keep the token.
+     */
+    protected writeSystemClipboard(clipboardId: string, clip: Promise<unknown>, ids: string[]): void {
+        const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
+        this.lastClipId = clipboardId;
+        if (!view || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return;
+        void Promise.all([clip, this.model.service.copyAsRdf(view, ids)]).then(([, rdf]) => {
+            if (!rdf.ok || this.lastClipId !== clipboardId) return;
+            return navigator.clipboard.write([new ClipboardItem({
+                'text/plain': new Blob([rdf.text], { type: 'text/plain' }),
+                [VIEW_CLIP_WEB_TYPE]: new Blob([clipToken(clipboardId)], { type: VIEW_CLIP_FORMAT })
+            })]);
+        }).catch(() => undefined);
     }
 
     protected async pasteRdf(view: string, text: string, mediaType?: string, at?: { x: number; y: number }): Promise<void> {
@@ -228,9 +262,11 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
             return;
         }
         const clipboardId = generateUuid();
-        event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
-        this.actionDispatcher.request(RequestClipboardDataAction.create({ ...this.editorContext.get(), selectedElementIds: ids }))
+        event.clipboardData.setData('text/plain', clipToken(clipboardId));
+        event.clipboardData.setData(VIEW_CLIP_FORMAT, clipToken(clipboardId));
+        const clip = this.actionDispatcher.request(RequestClipboardDataAction.create({ ...this.editorContext.get(), selectedElementIds: ids }))
             .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
+        this.writeSystemClipboard(clipboardId, clip, ids);
         event.preventDefault();
     }
 
@@ -239,12 +275,14 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
         if (!event.clipboardData || !view || !this.shouldCopy(event)) return;
         const clipboardId = generateUuid(), ids = this.keyTargets('cut');
-        event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
+        event.clipboardData.setData('text/plain', clipToken(clipboardId));
+        event.clipboardData.setData(VIEW_CLIP_FORMAT, clipToken(clipboardId));
         // The clip carries its id (the paste reply names it). A cut canceled before the clip arrives stores it as a copy.
-        this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' }))).then(action => {
+        const clip = this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' }))).then(action => {
             const data = { ...action.clipboardData, [CLIP_ID_KEY]: clipboardId };
             this.clipboardService.put(this.mark.clipboardId === clipboardId ? data : asCopyClip(data), clipboardId);
         });
+        this.writeSystemClipboard(clipboardId, clip, ids);
         this.mark.set(view, ids, clipboardId);
         this.messages.info(cutMessage(ids.length));
         // The clip includes the boxes inside a selected frame and the cards of an entity group: mark them too.

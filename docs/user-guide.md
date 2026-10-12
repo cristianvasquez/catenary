@@ -73,7 +73,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group. Its relations and arrows end at the group.
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
-- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste shows the same elements and never creates instances.
+- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste shows the same elements and never creates instances. Ctrl+C also puts the Turtle of the selection in the system clipboard.
 - Cut changes nothing: it marks the selection and dims it in its canvas. A paste of the cut moves the elements from the source view in one undo step. Escape on a canvas or a new copy cancels the mark.
 - Each paste reports its result in a message, for example "Placed 3. Skipped 2 already in this view. 1 missing from this model." A paste of a cut into a canvas that shows all of the elements reports "Already in this view." and cancels the mark.
 - Duplicate: Ctrl+D, Edit → Duplicate, or the canvas context menu. The copies appear beside the sources with a numbered label.

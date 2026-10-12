@@ -956,7 +956,11 @@ releaseAll v g = Uncollect v g Nothing
 -- 5.8 Clipboard ---------------------------------------------------------------------
 
 -- | Clipboard: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. Paste goes to the last pointer position.
--- The clip lives in window memory. The system clipboard holds its ID, not RDF. Another window or application cannot paste it.
+-- The clip lives in window memory. Ctrl+C and Ctrl+X write the clip ID in the custom type `web application/x-catenary-view-clip`
+-- (`application/x-catenary-view-clip` in a DataTransfer) and the Turtle of Copy as RDF as text/plain. A text editor pastes the Turtle.
+-- The clipboard event writes the ID as a text/plain token first. The asynchronous Clipboard API replaces it when the Turtle arrives.
+-- A rejected write keeps the token and reports nothing. A paste resolves the custom type, then a text/plain token, then RDF (law_pasteOrder).
+-- An ID that the window does not hold (another window) gives Paste RDF of the text/plain. A reference paste between windows stays unsupported.
 -- Browser context menus do not show clipboard commands. Copy and cut effects: spec/manifest.hs §6.4.
 -- A paste places the same elements (pasteIntoView). It never creates instances.
 -- A cut sends no command. It marks the clip, and the canvas of the source view dims the marked placements and their edges.
@@ -976,6 +980,11 @@ type ClipId = String
 data WindowId = WindowId String deriving Eq
 pastable :: WindowId -> WindowId -> ClipId -> [ClipId] -> Bool   -- window of the clip, pasting window, clip ID, clips in memory
 pastable from to c held = from == to && c `elem` held
+data ClipForm = CustomTypeForm | TokenForm | RdfForm | NoForm deriving (Eq, Ord)   -- in paste order
+pasteForm :: [ClipForm] -> ClipForm                   -- the forms in the clipboard, the form that the paste reads
+pasteForm present = head ([f | f <- [CustomTypeForm, TokenForm, RdfForm], f `elem` present] ++ [NoForm])
+law_pasteOrder :: [ClipForm] -> Bool
+law_pasteOrder present = pasteForm present == minimum (NoForm : present)
 rawRdfPaste :: Id -> String -> Bool -> Maybe Point -> EditCommand
 rawRdfPaste = PasteRdf
 flattenPasteAllowed :: Bool -> Bool -> Bool          -- has named graphs, consent
