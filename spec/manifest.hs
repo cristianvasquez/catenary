@@ -45,6 +45,9 @@ import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 -- ADR 0013  Client feedback until the server confirms (3 s moves, 5 s pending rows). A change refreshes only the canvases it
 --           touches, and no read on the backend thread blocks a change. SHACL runs in a worker. spec/ui-manifest.hs §3.2, §5.2, §6.6; §9 and §11.3 here.
 -- ADR 0014  Notations draw views: figures are derived, views store only placements. §4, §7, spec/ui-manifest.hs §2.
+-- ADR 0015  A warning icon or warning text marks a defect of the data only. A state that is normal (an inactive row, a term of a
+--           vocabulary, a hidden element) gets no warning. Reason: a warning on a normal state teaches the user to ignore warnings.
+--           spec/ui-manifest.hs §8.8.
 
 -- | Glossary. One name per concept for the store, the files and the change pipeline. Use these names in code comments and documents.
 -- Reason: the same concept had several names, and a planned library extraction needs one name each. Format: term, meaning, names it replaces.

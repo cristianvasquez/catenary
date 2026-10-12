@@ -351,6 +351,14 @@ export function linksFolders(n: { instances: number; typed: number; related?: re
     ];
 }
 
+/**
+ * The state of a statement row in the Links tab (UI §8.8 `law_warningOnlyWhenUndeclared`). A row without an element at the other
+ * end is muted (inactive). Only a statement that the shapes of the class do not declare carries a warning (ADR 0015).
+ */
+export function linkRowState(r: { undeclared: boolean; element: boolean }): { muted: boolean; warn: boolean } {
+    return { muted: r.undeclared || !r.element, warn: r.undeclared };
+}
+
 /** A view that shows a selected element: its card, the card of its node shape, a reference to it, or the element itself (view-owned). */
 export interface ViewLink {
     element: string;

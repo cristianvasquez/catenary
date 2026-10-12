@@ -1666,7 +1666,10 @@ showTarget _ vs = case sortOn fst vs of
 -- The Related folders (one for each section of a RelatedProvider, in plugin order) go between Instances (rdf:type) and Views.
 -- Reason: a plugin relation is less frequent than an instance and more specific than a view. A section without rows gives no folder.
 -- An RDF list is one predicate step. A self-link shows as outgoing only. Mixed selections show ownership counts.
--- A row without a navigable element is inactive. A statement-row action targets its relation, else the other end.
+-- A row without a navigable element is inactive.
+-- Only a statement that the shapes of the class do not declare carries a warning icon.
+-- Reason: a link to a vocabulary term (rdf:type sh:NodeShape) is normal, not a defect (ADR 0015).
+-- A statement-row action targets its relation, else the other end.
 -- A view row targets the matching placements. Limit: no arrows and no entity-group membership from view graphs (open.md G4).
 data LinkRow = OutgoingRow Statement | IncomingRow Statement deriving Eq
 linkRows :: Iri -> [Statement] -> [LinkRow]          -- element, statements of model and shapes with IRI objects
@@ -1678,6 +1681,11 @@ law_selfLinkOutgoingOnly e p = linkRows e [(Node e, p, Node e)] == [OutgoingRow 
 isTypedInstanceRow :: LinkRow -> Bool                -- an incoming rdf:type row: it goes in the "Instances (rdf:type)" folder
 isTypedInstanceRow (IncomingRow (_, p, _)) = p == "rdf:type"
 isTypedInstanceRow _ = False
+data LinkRowState = LinkRowState { rowMuted :: Bool, rowWarn :: Bool } deriving Eq
+linkRowState :: Bool -> Bool -> LinkRowState          -- undeclared, the other end is an element
+linkRowState undeclared element = LinkRowState (undeclared || not element) undeclared
+law_warningOnlyWhenUndeclared :: Bool -> Bool -> Bool
+law_warningOnlyWhenUndeclared u e = rowWarn (linkRowState u e) == u && (rowWarn (linkRowState u e) ==> rowMuted (linkRowState u e))
 data LinksFolder = InstancesFolder | TypedFolder | RelatedFolder String | ViewsFolder | OutgoingFolder | IncomingFolder | EndsFolder
   deriving (Eq, Show)
 linksFolderOrder :: Int -> Int -> [String] -> Bool -> [LinksFolder]   -- shape-target rows, incoming rdf:type rows, section keys, selected relations

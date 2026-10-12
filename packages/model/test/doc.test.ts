@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, NS, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, isTypedInstanceRow, kindName, linksFolders, kindOf, relationLabel, viewsShowing } from '../src';
+import { Doc, NS, View, boxShowing, elementLabel, emptyShapes, groupOf, hiddenNeighbors, isTypedInstanceRow, kindName, linkRowState, linksFolders, kindOf, relationLabel, viewsShowing } from '../src';
 import { unplacedInstances } from './doc-reference';
 
 const box = { x: 0, y: 0, width: 100, height: 50 };
@@ -93,6 +93,18 @@ describe('queries on the read model', () => {
 });
 
 describe('Links rows', () => {
+    it('law_warningOnlyWhenUndeclared: declared with an element is active without icon', () => {
+        expect(linkRowState({ undeclared: false, element: true })).toEqual({ muted: false, warn: false });
+    });
+
+    it('law_warningOnlyWhenUndeclared: declared with a vocabulary term (rdf:type sh:NodeShape) is muted without icon', () => {
+        expect(linkRowState({ undeclared: false, element: false })).toEqual({ muted: true, warn: false });
+    });
+
+    it('law_warningOnlyWhenUndeclared: undeclared is muted with icon', () => {
+        expect(linkRowState({ undeclared: true, element: true })).toEqual({ muted: true, warn: true });
+    });
+
     it('law_typeRowsShown: only an incoming rdf:type row goes in the "Instances (rdf:type)" folder', () => {
         expect(isTypedInstanceRow({ dir: 'in', predicate: NS.rdf + 'type' })).toBe(true);
         expect(isTypedInstanceRow({ dir: 'out', predicate: NS.rdf + 'type' })).toBe(false);

@@ -12,7 +12,7 @@ import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/li
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import React from '@theia/core/shared/react';
-import { ActionTarget, LinkElement, LinksFolder, SelectionLinks, isTypedInstanceRow, linksFolders, panelsUnchanged } from '@catenary/model';
+import { ActionTarget, LinkElement, LinksFolder, SelectionLinks, isTypedInstanceRow, linkRowState, linksFolders, panelsUnchanged } from '@catenary/model';
 import { ActionService, whenActionsKnown } from '../action-service';
 import { ModelActions } from '../actions';
 import { ViewEditors } from '../diagram/view-editors';
@@ -38,6 +38,8 @@ export interface LinkNode extends SelectableTreeNode {
     target?: string;
     description?: string;
     muted?: boolean;
+    /** A defect of the data: the row carries a warning icon (ADR 0015). */
+    warn?: boolean;
     tooltip?: string;
 }
 export namespace LinkNode {
@@ -168,7 +170,7 @@ export class LinksWidget extends TreeWidget {
                 const unknown = !!r.undeclared;
                 rows.set(key, {
                     id: `${dir}:${key}`, name: r.name, link: dir, elements: [r.element],
-                    relation: r.relation, target, predicate: r.predicate, predicateName: r.predicateName, muted: unknown || !target,
+                    relation: r.relation, target, predicate: r.predicate, predicateName: r.predicateName, ...linkRowState({ undeclared: unknown, element: !!target }),
                     tooltip: `${r.predicate}${r.iri ? `\n${r.iri}` : ''}${unknown ? '\nNot declared in the shapes of this class.' : ''}${target ? '' : '\nNot an element of the model.'}`
                 } as StatementNode);
             }
@@ -326,7 +328,8 @@ export class LinksWidget extends TreeWidget {
         return <span className={cls} title={node.tooltip}>
             {node.name}
             {node.description ? <span className={node.link === 'folder' ? 'catenary-tree-badge' : 'catenary-tree-description'}>{node.description}</span> : undefined}
-            {node.muted && node.link !== 'view' ? <span className='codicon codicon-warning catenary-tree-warning' /> : undefined}
+            {/* ADR 0015: the icon marks a defect of the data (an undeclared statement), not an inactive row. */}
+            {node.warn ? <span className='codicon codicon-warning catenary-tree-warning' /> : undefined}
         </span>;
     }
 
