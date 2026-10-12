@@ -35,6 +35,21 @@ export function layoutSpacing(value: unknown): number {
     return Number.isFinite(n) ? Math.min(LAYOUT_SPACING.max, Math.max(LAYOUT_SPACING.min, Math.round(n))) : LAYOUT_SPACING.default;
 }
 
+/**
+ * GLSP action from the server to the view editor: what a paste of a view clip did (spec/ui-manifest.hs §5.8). `placed`: new
+ * placements; `skipped`: elements that the view showed already; `missing`: clip elements that this model does not have.
+ * `alreadyInView`: the view showed all of them, and no command ran.
+ */
+export interface PasteResultAction {
+    kind: typeof PASTE_RESULT;
+    mode: 'copy' | 'cut';
+    placed: number;
+    skipped: number;
+    missing: number;
+    alreadyInView: boolean;
+}
+export const PASTE_RESULT = 'catenaryPasteResult';
+
 export function viewIdOfUri(uri: string): string | undefined {
     const m = /^catenary-view:\/+([^?#/]+)/.exec(uri) ?? /^\/+([^?#/]+)$/.exec(uri);
     return m?.[1];

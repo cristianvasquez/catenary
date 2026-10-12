@@ -1,7 +1,7 @@
 // Client DI container of a view editor.
 
 import {
-    ConsoleLogger, ContainerConfiguration, CutOperation, DefaultTypes, FeatureModule, GGraph, GLabel, GModelRoot, GResizeHandle,
+    ConsoleLogger, ContainerConfiguration, DefaultTypes, FeatureModule, GGraph, GLabel, GModelRoot, GResizeHandle,
     LocalClipboardService, LogLevel, RequestClipboardDataAction, ServerCopyPasteHandler, TYPES, bindOrRebind, configureModelElement, configureView,
     KeyboardToolPalette, generateUuid, gridModule, configureActionHandler, IActionHandler, ViewerOptions,
     Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
@@ -12,7 +12,7 @@ import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-
 import { CommandRegistry, CommandService, MessageService } from '@theia/core';
 import { Container, inject, injectable } from '@theia/core/shared/inversify';
 import { TYPES as CATENARY, boxOf, ownerOfLabel } from '@catenary/model';
-import { DIAGRAM_TYPE, viewIdOfUri } from '../../common/protocol';
+import { DIAGRAM_TYPE, PASTE_RESULT, viewIdOfUri } from '../../common/protocol';
 import { SelectionModel } from '../selection-model';
 import { ModelActions } from '../actions';
 import { ModelCommands } from '../commands';
@@ -26,6 +26,8 @@ import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
 import { canvasKeyTargets } from './diagram-ids';
+import { CutMark, cutMark, cutMessage } from './cut-mark';
+import { CutMarkPostprocessor, CutMarkRedrawCommand, CutMarkStartup, PasteResultHandler } from './cut-mark-canvas';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
 import {
     AlternativeEdge, AlternativeEdgeView, LatentEdge, LatentEdgeView, TargetingEdge, TargetingEdgeView, ArrowEdge, ArrowEdgeView, BundleEdge, BundleEdgeView, CardNode, CardView, CollectionNode, CollectionView, GroupNode, GroupView, LeafNode, LeafView, LogicNode, LogicView, NameLabelView, OneOfNode, OneOfView,
@@ -90,6 +92,14 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     bind(HighlightPostprocessor).toSelf().inSingletonScope();
     bind(TYPES.IVNodePostprocessor).toService(HighlightPostprocessor);
     configureCommand(context, HighlightCommand);
+    // The cut mark of the window: dimmed placements, Escape, the paste reply (cut-mark-canvas.ts).
+    bind(CutMark).toConstantValue(cutMark);
+    bind(CutMarkPostprocessor).toSelf().inSingletonScope();
+    bind(TYPES.IVNodePostprocessor).toService(CutMarkPostprocessor);
+    configureCommand(context, CutMarkRedrawCommand);
+    bind(CutMarkStartup).toSelf().inSingletonScope();
+    bind(TYPES.IDiagramStartup).toService(CutMarkStartup);
+    configureActionHandler(context, PASTE_RESULT, PasteResultHandler);
     // A server update sent before the server applied the last drop does not draw the box at its older place (pending-bounds.ts).
     bind(PendingBounds).toSelf().inSingletonScope();
     configureActionHandler(context, ChangeBoundsOperation.KIND, PendingBounds);
@@ -142,7 +152,8 @@ const selectionForwarderModule = new FeatureModule((_bind, _unbind, _isBound, re
 /**
  * Copy, cut and paste while any element of the view editor has the focus. GLSP accepts only an element
  * whose parent is the base div; a click on empty canvas focuses the svg one level deeper, and the paste was ignored.
- * A cut requests the clip with `args.mode = 'cut'`: its paste adds the same instances; the paste of a copy creates new ones.
+ * A paste places the same elements. A cut requests the clip with `args.mode = 'cut'` and only marks it (cut-mark.ts): the paste of
+ * that clip moves the elements (spec/ui-manifest.hs §5.8). The server replies to a paste with its counts (PasteResultHandler).
  */
 @injectable()
 export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
@@ -152,6 +163,7 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(CanvasHighlight) protected readonly highlight: CanvasHighlight;
+    @inject(CutMark) protected readonly mark: CutMark;
 
     override handlePaste(event: ClipboardEvent): void {
         if (!event.clipboardData || !this.shouldPaste(event)) return;
@@ -208,6 +220,7 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     }
 
     override handleCopy(event: ClipboardEvent): void {
+        this.mark.clear();
         const ids = this.keyTargets('copy');
         if (!event.clipboardData || !ids.length || !this.hasFocus()) {
             event.clipboardData?.clearData();
@@ -221,13 +234,16 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
         event.preventDefault();
     }
 
+    /** Cut marks the clip and dims its placements. It sends no edit: the paste moves the elements (law_cutWithoutPasteChangesNothing). */
     override handleCut(event: ClipboardEvent): void {
-        if (!event.clipboardData || !this.shouldCopy(event)) return;
-        const clipboardId = generateUuid();
+        const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
+        if (!event.clipboardData || !view || !this.shouldCopy(event)) return;
+        const clipboardId = generateUuid(), ids = this.keyTargets('cut');
         event.clipboardData.setData('text/plain', JSON.stringify({ clipboardId }));
         this.actionDispatcher.request(RequestClipboardDataAction.create(this.editorContext.get({ mode: 'cut' })))
             .then(action => this.clipboardService.put(action.clipboardData, clipboardId));
-        this.actionDispatcher.dispatch(CutOperation.create(this.editorContext.get()));
+        this.mark.set(view, ids, clipboardId);
+        this.messages.info(cutMessage(ids.length));
         event.preventDefault();
     }
 
@@ -245,11 +261,19 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     }
 }
 
+/** A clear of the clipboard (a copy with nothing to copy) also clears the cut mark. */
+class MarkedClipboardService extends LocalClipboardService {
+    override clear(): void {
+        super.clear();
+        cutMark.clear();
+    }
+}
+
 /**
  * One clipboard for all view editors of the window. GLSP binds one for each diagram container, so a clip
  * copied in one view editor was not found by a paste in another one.
  */
-const sharedClipboard = new LocalClipboardService();
+const sharedClipboard = new MarkedClipboardService();
 const copyPasteModule = new FeatureModule((bind, _unbind, isBound, rebind) => {
     bindOrRebind({ bind, isBound, rebind }, TYPES.IAsyncClipboardService).toConstantValue(sharedClipboard);
     bindOrRebind({ bind, isBound, rebind }, TYPES.ICopyPasteHandler).to(ViewCopyPasteHandler);

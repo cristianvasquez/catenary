@@ -156,7 +156,7 @@ async function stopBackend(proc) {
   }
 }
 
-test('browser: raw RDF paste, graph consent, Copy as RDF, and ordinary instance copy', { timeout: 60000 }, async t => {
+test('browser: raw RDF paste, graph consent, Copy as RDF, reference paste, and cut mark', { timeout: 60000 }, async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catenary-clipboard-'));
   const workspace = path.join(dir, 'workspace'), config = path.join(dir, 'config');
   fs.mkdirSync(workspace);
@@ -205,20 +205,39 @@ test('browser: raw RDF paste, graph consent, Copy as RDF, and ordinary instance 
     await paste(exported);
     await page.waitForTimeout(300);
     assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 1, 'raw RDF preserves resource identity');
+    // A paste places the same elements (ui-manifest §5.8): Ctrl+C, Ctrl+V in the same canvas places nothing and says so.
+    const notice = text => page.locator('.theia-notification-list-item', { hasText: text }).first().waitFor();
+    const boxes = () => cli('rpc', 'view', JSON.stringify(view)).result.boxes;
     await card('Alice').click();
     await page.keyboard.press('Control+C');
     await page.waitForTimeout(200);
     await page.keyboard.press('Control+V');
-    await card('Alice 2').waitFor();
-    const afterCopy = cli('rpc', 'view', JSON.stringify(view)).result;
-    assert.deepEqual(afterCopy.boxes.find(b => b.id === before.id), before, 'ordinary copy leaves the old placement fixed');
+    await notice('Placed 0. Skipped 1 already in this view.');
+    assert.deepEqual(boxes(), [before], 'a copy and paste in the same view changes nothing');
+    // Ctrl+X marks and dims the placement and changes nothing. Escape clears the mark.
+    await page.keyboard.press('Control+X');
+    await notice('1 element cut. Paste moves it. Escape cancels.');
+    await canvas.locator('.cut-marked').first().waitFor();
+    assert.deepEqual(boxes(), [before], 'a cut alone changes nothing');
+    await page.keyboard.press('Escape');
+    await canvas.locator('.cut-marked').first().waitFor({ state: 'detached' });
+    // A paste of the cut clip moves the element, here within the view to the pointer, and clears the mark.
+    await page.keyboard.press('Control+X');
+    await canvas.locator('.cut-marked').first().waitFor();
+    await canvas.click({ position: { x: 500, y: 400 } });
+    await page.keyboard.press('Control+V');
+    await notice('Placed 1.');
+    await canvas.locator('.cut-marked').first().waitFor({ state: 'detached' });
+    const moved = boxes();
+    assert.equal(moved.length, 1, 'the move keeps one placement');
+    assert.notDeepEqual([moved[0].x, moved[0].y], [before.x, before.y], 'the move places the card at the pointer');
     // A JSON-LD property can match the ID of the live internal clip and still be raw RDF.
     const token = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
     const jsonld = JSON.stringify({ '@context': { name: 'http://www.w3.org/2000/01/rdf-schema#label', clipboardId: 'urn:clipboard:identifier' },
       '@id': 'urn:clipboard:jsonld', '@type': 'urn:Person', name: 'JSON-LD', clipboardId: token.clipboardId });
     await paste(jsonld);
     await card('JSON-LD').waitFor();
-    assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 3, 'JSON-LD is parsed even with a live clipboardId property');
+    assert.equal(cli('rpc', 'view', JSON.stringify(view)).result.boxes.length, 2, 'JSON-LD is parsed even with a live clipboardId property');
     // External clipboard content must replace the internal canvas clip, including Paste from the Edit command.
     const bob = '<urn:clipboard:bob> a <urn:Person>; <http://www.w3.org/2000/01/rdf-schema#label> "Bob" .';
     await page.evaluate(text => navigator.clipboard.writeText(text), bob);
@@ -1500,7 +1519,7 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
   assert.deepEqual(elementsOf(now), [two]);
   assert.ok((await classes(right, two)).includes('selected'));
   // law_highlightKeys: a listing selection and keys in a focused canvas. Del removes nothing (no origin), Ctrl+C copies the
-  // highlight (the paste adds a card), Ctrl+Del deletes the element of the window selection.
+  // highlight (the paste finds it in the view: ui-manifest §5.8), Ctrl+Del deletes the element of the window selection.
   const cards = view => cli('rpc', 'view', JSON.stringify(view)).result.boxes.length;
   const focusRight = () => cli('eval', `const w = ctx.editors.find(${JSON.stringify(right)}); await ctx.shell.activateWidget(w.id); w.node.querySelector('svg.sprotty-graph').focus(); return true`);
   cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
@@ -1516,8 +1535,8 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
   await page.waitForTimeout(300);
   focusRight();
   await page.keyboard.press('Control+v');
-  for (let i = 0; i < 30 && cards(right) === before; i++) await page.waitForTimeout(100);
-  assert.equal(cards(right), before + 1, 'the paste of the copied highlight adds a card');
+  await page.locator('.theia-notification-list-item', { hasText: 'Placed 0. Skipped 1 already in this view.' }).first().waitFor();
+  assert.equal(cards(right), before, 'the paste of the copied highlight places the same element: the view shows it');
   cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(one)}] }); return true`);
   await page.waitForTimeout(300);
   focusRight();

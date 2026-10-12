@@ -253,6 +253,11 @@ export class ViewSession {
         await this.dispatcher.dispatchAll([...actions, ...(followUp?.(result) ?? [])]);
     }
 
+    /** Send an action to the client without an edit, for example the reply of a paste that has nothing to place. */
+    send(action: Action): Promise<void> {
+        return this.dispatcher.dispatch(action);
+    }
+
     message(text: string, severity: 'INFO' | 'WARNING' | 'ERROR' = 'WARNING'): Promise<void> {
         return this.dispatcher.dispatch(MessageAction.create(text, { severity }));
     }

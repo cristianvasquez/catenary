@@ -13,6 +13,7 @@ import {
     LEAF_SUFFIX, TYPES, VIEW_CLIP_FORMAT, copyFromView, isViewClip, ownerOfLabel, isTakenOut, propertyNodeId
 } from '@catenary/model';
 import * as model from '@catenary/model';
+import { PASTE_RESULT, PasteResultAction } from '../../common/protocol';
 import { ViewSession } from './view-session';
 
 /** Select the created element. It has a default name: rename it in place (F2) or in the properties. */
@@ -187,6 +188,15 @@ export class RequestClipboardDataHandler implements ActionHandler {
     }
 }
 
+/** The boxes of a clip that `view` shows already, as pasteIntoView counts them: a card of its element, a reference to its view. */
+function shownBoxes(view: model.View | undefined, clip: model.ViewClip): number {
+    const elements = new Set(model.boxes(view, 'card').map(c => c.element));
+    for (const c of model.boxes(view, 'collection')) for (const m of c.members) elements.add(m);
+    const views = new Set(model.boxes(view, 'reference').flatMap(r => r.target ? [r.target] : []));
+    return clip.boxes.filter(b => b.kind === 'card' ? elements.has(model.iriId(b.id))
+        : b.kind === 'reference' && !!b.target && views.has(model.iriId(b.target))).length;
+}
+
 @injectable()
 export class PasteHandler extends OperationHandler {
     @inject(ViewSession) protected readonly session: ViewSession;
@@ -205,15 +215,27 @@ export class PasteHandler extends OperationHandler {
         }
         const before = new Set([...this.session.store.viewFigures(this.session.viewId)!.placed.values()].map(p => model.iriId(p.iri)));
         // A move within this view re-places its cards (same placement ids): they arrive again.
-        if (clip.mode === 'cut' && model.iriId(clip.source) === this.session.viewId) for (const b of clip.boxes) if (b.kind === 'card') before.delete(model.placementOfId(this.session.view, model.iriId(b.id)));
+        const within = clip.mode === 'cut' && model.iriId(clip.source) === this.session.viewId;
+        if (within) for (const b of clip.boxes) if (b.kind === 'card') before.delete(model.placementOfId(this.session.view, model.iriId(b.id)));
+        const skipped = within ? 0 : shownBoxes(this.session.view, clip);
+        const result = (placed: number, missing: number): PasteResultAction =>
+            ({ kind: PASTE_RESULT, mode: clip.mode, placed, skipped, missing, alreadyInView: placed === 0 && missing === 0 });
+        // The view shows all of them: no command, the reply only (ui-manifest §5.8).
+        if (skipped > 0 && skipped === clip.boxes.length) {
+            await this.session.send(result(0, 0));
+            return undefined;
+        }
         const at = op.editorContext.lastMousePosition, cardScale = this.session.state.cardScale;
         const command: model.EditCommand = clip.mode === 'cut'
             ? { kind: 'moveBetweenViews', from: clip.source, to: this.session.viewId, clip, at, cardScale }
             : { kind: 'pasteIntoView', view: this.session.viewId, clip, at, cardScale };
         await this.session.edit(command, r => {
-            const added = (r.ids ?? []).filter(id => !before.has(id));
-            return [SelectAction.create({ selectedElementsIDs: r.ids ?? [], deselectedElementsIDs: true }),
-                ...(added.length ? [FitToScreenAction.create(added, { padding: 40, maxZoom: 1, animate: false })] : [])];
+            const ids = r.ids ?? [];
+            const added = ids.filter(id => !before.has(id));
+            // One id for each box of this model: the placed ones, then the shown ones. The other boxes are missing from this model.
+            return [SelectAction.create({ selectedElementsIDs: ids, deselectedElementsIDs: true }),
+                ...(added.length ? [FitToScreenAction.create(added, { padding: 40, maxZoom: 1, animate: false })] : []),
+                result(ids.length - skipped, clip.boxes.length - ids.length)];
         });
         return undefined;
     }

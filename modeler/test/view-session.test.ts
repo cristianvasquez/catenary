@@ -19,6 +19,7 @@ import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
 import { ChangeBoundsHandler, DeleteHandler, PasteHandler, SetVisibleAction, SetVisibleHandler, VisibleSetAction } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
+import { PASTE_RESULT } from '../src/common/protocol';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
 async function client(store: ModelStore, viewId: string) {
@@ -470,6 +471,28 @@ describe('model changes reaching view clients', () => {
         expect(c.sent.find(SelectAction.is)).toMatchObject({ selectedElementsIDs: expect.arrayContaining([existing.id, arriving.id]) });
         expect(c.sent.find(FitToScreenAction.is)).toMatchObject({ elementIds: [arriving.id] });
         expect(cardOf(docOf(store).views[second], instance)).toEqual(existing);
+    });
+
+    it('the paste reply carries the counts: placed, skipped (already in the view), missing from this model (UI §5.8)', async () => {
+        const other = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Other', view: first, at: { x: 700, y: 200 } });
+        const gone = edit({ kind: 'createInstance', classIri: 'urn:Class', label: 'Gone', view: first, at: { x: 900, y: 200 } });
+        const clip = copyFromView(docOf(store), first, [instance, other, gone], 'copy')!;
+        edit({ kind: 'delete', ids: [gone] });
+        const c = await client(store, second);
+        const handler = Object.assign(new PasteHandler(), { session: c.session });
+        const paste = (data: unknown) => handler.createCommand(PasteOperation.create({
+            clipboardData: { [VIEW_CLIP_FORMAT]: JSON.stringify(data) },
+            editorContext: { selectedElementIds: [], lastMousePosition: { x: 0, y: 0 } }
+        }));
+        await paste(clip);
+        expect(c.sent.filter(a => a.kind === PASTE_RESULT)).toEqual([{ kind: PASTE_RESULT, mode: 'copy', placed: 1, skipped: 1, missing: 1, alreadyInView: false }]);
+        // A cut clip that the view shows completely: no command, the reply only.
+        c.sent.length = 0;
+        const before = store.snapshot();
+        await paste(copyFromView(docOf(store), first, [instance, other], 'cut')!);
+        expect(c.sent).toEqual([{ kind: PASTE_RESULT, mode: 'cut', placed: 0, skipped: 2, missing: 0, alreadyInView: true }]);
+        expect(store.snapshot()).toEqual(before);
+        expect(cardOf(docOf(store).views[first], instance)).toBeDefined();
     });
 
     it('fits the cards that a cut and paste re-places within one view (UI §7.5)', async () => {

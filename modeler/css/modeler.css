@@ -535,6 +535,8 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-view-reference.broken .view-reference-body { color: var(--theia-descriptionForeground); }
 /* Connect gesture (canvas.ts dragLine, spec/ui-manifest.hs 0.4): the elements that are not targets are dimmed; the target under the pointer is highlighted. */
 .connect-dragging .connect-dimmed { opacity: 0.25; }
+/* Cut mark (cut-mark.ts, spec/ui-manifest.hs §5.8): the placements of a cut clip and their edges until the paste. */
+.cut-marked { opacity: 0.25; outline: 1px dashed var(--theia-focusBorder); }
 .connect-dragging :is(.catenary-card, .catenary-note, .catenary-group, .catenary-view-reference, .catenary-member-box, .catenary-leaf).drop-target > .body { stroke: var(--catenary-accent); stroke-width: 3.5; }
 .connect-dragging .member-row.drop-target { outline: 2px solid var(--catenary-accent); }
 .connect-dragging .catenary-edge.property.drop-target > .line { stroke: #8b7cf6; stroke-width: 3.5; }
