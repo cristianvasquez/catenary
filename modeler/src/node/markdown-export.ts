@@ -63,12 +63,16 @@ async function listDocuments(folder: string): Promise<string[]> {
     return out;
 }
 
-/** The deepest folder that contains each folder (absolute, real paths). */
-function commonFolder(folders: string[]): string {
-    return folders.reduce((root, f) => {
-        while (root !== f && inside(root, f) === undefined) root = path.dirname(root);
-        return root;
-    });
+/** The deepest folder that contains each folder (absolute, real paths); undefined when there is none (two drives on Windows). */
+function commonFolder(folders: string[]): string | undefined {
+    let root = folders[0];
+    for (const f of folders.slice(1)) {
+        while (root !== f && inside(root, f) === undefined) {
+            if (path.dirname(root) === root) return undefined;
+            root = path.dirname(root);
+        }
+    }
+    return root;
 }
 
 /** The source root and the documents to export (relative to the root, with `/`), checked; the destination, when the request has one; the plan. */
@@ -96,6 +100,7 @@ export async function prepareMarkdownExport(request: MarkdownExportRequest, view
         }
     }
     const root = commonFolder(sources.map(s => (s.folder ? s.real : path.dirname(s.real))));
+    if (root === undefined) return { error: 'The sources have no common folder.' };
     let dest: string | undefined;
     if (request.destination !== undefined) {
         dest = await realPathOf(request.destination);
