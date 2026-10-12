@@ -3,7 +3,7 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { CommandResult, EditCommand, ExportView, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote, TraceBatch, idIri } from '@catenary/model';
-import { MarkdownExportCheck, MarkdownExportResult, ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
+import { MarkdownExportCheck, MarkdownExportRequest, MarkdownExportResult, ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
 import { checkOf, prepareMarkdownExport, writeMarkdownExport } from './markdown-export';
 import { ModelStore, tracer } from '@catenary/rdf';
 
@@ -49,13 +49,15 @@ export class ModelServiceImpl implements ModelService, Disposable {
     setSettings(settings: WorkspaceSettings): Promise<CommandResult> { return tracer.span('rpc', 'setSettings', () => this.store.setSettings(settings)); }
     setImported(file: string, on: boolean): Promise<CommandResult> { return tracer.span('rpc', 'setImported', () => this.store.setImported(file, on)); }
     importFiles(sources: string[]): Promise<ImportResult> { return tracer.span('rpc', 'importFiles', () => this.store.importFiles(sources)); }
-    async checkMarkdownExport(source: string, destination: string): Promise<MarkdownExportCheck> {
-        return tracer.span('rpc', 'checkMarkdownExport', async () => checkOf(await prepareMarkdownExport(source, destination, this.views())));
+    async checkMarkdownExport(request: MarkdownExportRequest): Promise<MarkdownExportCheck> {
+        return tracer.span('rpc', 'checkMarkdownExport', async () => checkOf(await prepareMarkdownExport(request, this.views())));
     }
-    async exportMarkdown(source: string, destination: string, svgs: Record<string, string>): Promise<MarkdownExportResult> {
+    async exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>): Promise<MarkdownExportResult> {
         return tracer.span('rpc', 'exportMarkdown', async () => {
-            const prepared = await prepareMarkdownExport(source, destination, this.views());
-            if ('error' in prepared) return { ok: false, error: prepared.error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] };
+            const failed = (error: string): MarkdownExportResult => ({ ok: false, error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] });
+            if (typeof request?.destination !== 'string') return failed('The export has no destination folder.');
+            const prepared = await prepareMarkdownExport(request, this.views());
+            if ('error' in prepared) return failed(prepared.error);
             return writeMarkdownExport(prepared, svgs);
         });
     }

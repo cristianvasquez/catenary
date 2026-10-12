@@ -1182,7 +1182,7 @@ test('browser: Properties keeps its content during a model change; the SHACL for
   console.log(`properties: form replaced once, min form height ${Math.round(r.minForm)} of ${Math.round(before.form)} px, panel never shorter`);
 }));
 
-test('browser: Insert View writes the view IRI at the cursor; Export Markdown of a folder renders each view once as SVG', { timeout: 90000 }, t => withFixtureApp(t, 'markdown', async ({ page, cli, url, dir, workspace }) => {
+test('browser: Insert View writes the view IRI at the cursor; Export Markdown of a folder renders each view once as SVG; a selection of a file and a folder exports under their common folder', { timeout: 90000 }, t => withFixtureApp(t, 'markdown', async ({ page, cli, url, dir, workspace }) => {
   // The CLI exits with 3 while a prompt waits: read its output anyway.
   const cliRaw = (...args) => {
     const r = require('node:child_process').spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(url).port, ...args], { encoding: 'utf8', timeout: 60000 });
@@ -1220,12 +1220,16 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   for (let i = 0; i < 50 && fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8') !== text; i++) await page.waitForTimeout(100);
   assert.equal(fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8'), text);
 
-  // The folder menu of the navigator has Export Markdown; a file menu does not.
+  // The menu of a folder and of a Markdown file in the navigator has Export Markdown; the menu of another file does not.
   const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: new RegExp(`^${label}$`) });
   await navNode(page, 'docs').first().click({ button: 'right' });
   await menuItem('Export Markdown…').waitFor();
   await page.keyboard.press('Escape');
   await navNode(page, 'Architecture.md').first().click({ button: 'right' });
+  await menuItem('Open').first().waitFor();
+  assert.equal(await menuItem('Export Markdown…').count(), 1);
+  await page.keyboard.press('Escape');
+  await navNode(page, 'workspace.trig').first().click({ button: 'right' });
   await menuItem('Open').first().waitFor();
   assert.equal(await menuItem('Export Markdown…').count(), 0);
   await page.keyboard.press('Escape');
@@ -1265,6 +1269,18 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.deepEqual(run.result.unresolved, [{ file: 'Broken.md', line: 3, iri: 'urn:name:No%20such%20view' }]);
   assert.ok(run.messages.some(m => m.text?.includes('Broken.md:3: urn:name:No%20such%20view')), JSON.stringify(run.messages));
   assert.equal(fs.existsSync(path.join(out, 'Broken.md')), false);
+
+  // A selection of a file and a folder: the root is their common folder (the workspace folder); the paths keep the folder names.
+  const notes = path.join(workspace, 'notes');
+  fs.mkdirSync(notes);
+  fs.writeFileSync(path.join(notes, 'Meeting.md'), '# Meeting\n');
+  const out2 = path.join(dir, 'out2');
+  run = cliRaw('--timeout', '60000', 'run', 'catenary.exportMarkdown', JSON.stringify([path.join(docs, 'Architecture.md'), notes]), JSON.stringify(out2));
+  assert.equal(run.status, 'done', JSON.stringify(run));
+  assert.equal(run.result.ok, true, JSON.stringify(run.result));
+  assert.equal(fs.readFileSync(path.join(out2, 'notes', 'Meeting.md'), 'utf8'), '# Meeting\n');
+  assert.ok(fs.readFileSync(path.join(out2, 'docs', 'Architecture.md'), 'utf8').includes('](../_resources/'), 'the SVG links are relative to the root');
+  assert.equal(fs.existsSync(path.join(out2, 'docs', 'Data model.md')), false, 'a document outside the selection is not exported');
 }));
 
 test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvasRefreshesOnce: panels and canvases read on show, save keeps content', { timeout: 90000 }, t => withFixtureApp(t, 'panel-reads', async ({ page, cli, workspace, logs }) => {

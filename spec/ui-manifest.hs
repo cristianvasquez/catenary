@@ -1746,19 +1746,30 @@ resolveEmbed views iri = lookup iri views
 
 -- 9.2 Export ------------------------------------------------------------------
 
--- | Export Markdown… is in the context menu of a folder in the file navigator. The folder is the source.
--- Subfolders are included and keep their paths. Hidden folders (a name that starts with ".") and linked folders are not read.
--- Hidden files in other folders are documents.
--- A folder dialog asks for the destination. It starts at the last destination of the same source folder (window storage).
--- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. Without arguments it uses the navigator selection and asks.
+-- | Export Markdown… is in the context menu of a folder or a Markdown file in the file navigator. The selection is the source list:
+-- each selected folder and each selected Markdown file. Other selected files are not sources.
+-- The root is the common ancestor folder of the sources. A folder source counts as itself, a file source as its parent folder.
+-- A folder source includes its subfolders. Hidden folders (a name that starts with ".") and linked folders are not read.
+-- Hidden files in other folders are documents. A file source is a document when it has a Markdown name.
+-- A folder dialog asks for the destination. It starts at the last destination of the same root (window storage).
+-- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. The first argument is a JSON string or a list of
+-- strings, for example '["/abs/a.md","/abs/folder"]'. Without arguments it uses the navigator selection and asks.
 -- The export reads and checks everything, renders each embedded view once, and then writes. A check error writes nothing.
--- Check errors: an unresolved embed (with its file, line and IRI), a destination that is the source folder or is in it
--- (real paths, so a link does not hide it), a destination that is a file, and a conflict (§9.3).
--- Each document goes to its relative path. Each embed becomes a relative image link to _resources/<svgName>.
+-- Check errors: a source that does not exist, an unresolved embed (with its file, line and IRI), a destination that is the root
+-- or is in it (real paths, so a link does not hide it), a destination that is a file, and a conflict (§9.3).
+-- Each document goes to its path relative to the root. Each embed becomes a relative image link to _resources/<svgName>.
 -- The text outside embeds and changed links does not change. Image text: the embed text, else the view label.
 -- The SVG is the view editor export at exportZoom, without selection, halos, handles or edit controls. One SVG per view serves all embeds.
 -- The export changes no source document, model file or view.
 -- Not in this version: export sets or pages, Related sections, canvas references as navigation, embeds of other elements.
+exportRoot :: [FilePath] -> FilePath                -- the real paths of the sources (not empty)
+exportRoot = foldr1 commonFolder . map sourceFolder
+  where sourceFolder p = if isFolder p then p else parentFolder p
+isFolder :: FilePath -> Bool
+parentFolder :: FilePath -> FilePath
+commonFolder :: FilePath -> FilePath -> FilePath     -- the deepest folder that contains both folders
+law_oneFolderIsRoot :: FilePath -> Bool              -- one folder source: the export of that folder
+law_oneFolderIsRoot p = isFolder p ==> exportRoot [p] == p
 exportZoom :: Double
 exportZoom = 1
 svgName :: Iri -> FilePath                           -- the last name of the IRI and a hash of the whole IRI: a label does not change it
@@ -1769,9 +1780,10 @@ law_svgNamesDistinct a b = a /= b ==> svgName a /= svgName b
 renderedOnce :: [Iri] -> [Iri]                        -- the embeds of all documents, in order: the views to render
 renderedOnce = nub
 
--- | Local links. A Markdown document of the source folder: the link does not change. A file in the source folder: a copy at its path.
--- A file outside the source folder: a copy in _resources/ (its name and a hash of its path), and the link changes to the copy.
--- Reported, with the link unchanged: a missing target, a folder, an absolute path, a document outside the folder or in a hidden folder.
+-- | Local links. A document of the export: the link does not change. A file under the root: a copy at its path.
+-- A file outside the root: a copy in _resources/ (its name and a hash of its path), and the link changes to the copy.
+-- Reported, with the link unchanged: a missing target, a folder, an absolute path, a document outside the root or in a hidden folder,
+-- and another Markdown file under the root ("The document is not in the export.").
 data LinkTarget = DocumentIn | FileIn FilePath | FileOutside FilePath | Missing | Unsupported String
 linkChanges :: LinkTarget -> Bool
 linkChanges (FileOutside _) = True
@@ -1889,3 +1901,6 @@ embedDestination = manifestOnly
 slug = manifestOnly
 lastName = manifestOnly
 sha256Hex = manifestOnly
+isFolder = manifestOnly
+parentFolder = manifestOnly
+commonFolder = manifestOnly

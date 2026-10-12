@@ -176,7 +176,7 @@ Paths are relative to the directory in the first column.
 | | `notations.ts`, `../notations/*.ttl` | Built-in notations, the SHACL package asset and notation-engine input. `storeInput` reads the store on demand around one view, `keptStoreInput` keeps what it read and forgets the terms of each patch, and `viewFiguresOf` derives the figures of a view from its placed terms. The bundle copies all assets. |
 | `modeler/src/common` | `protocol.ts`, `cli-protocol.ts` | RPC (with the Markdown export) and CLI contracts |
 | `modeler/src/node` | `model-service.ts`, `cli-endpoint.ts`, `cli-token-validator.ts` | RPC service, CLI endpoint |
-| | `markdown-export.ts` | Markdown export files: documents of the source folder, link targets, destination checks, owned writes |
+| | `markdown-export.ts` | Markdown export files: the root of the sources and their documents, link targets, destination checks, owned writes |
 | | `glsp/` | GLSP server, one session per view (`view-session.ts`: the kept part of the view, layout patches and data patches in place by the tier of change.ts, hidden canvases; `ViewSession.edit`: the one edit path and its one warning, ui-manifest §4.9), operation handlers, layout |
 | `modeler/src/browser` | `actions.ts`, `action-service.ts`, `action-commands.ts`, `action-menus.ts`, `follow-up.ts` | Actions, prompts, creation follow-up |
 | | `selection-model.ts`, `model-client.ts`, `commands.ts` (workspace commands and file presentation opener), `menus.ts`, `outline.ts`, `problems.ts`, `side-panel-sizes.ts` | Window state and shell integration |

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -34,7 +34,7 @@ function listing(root: string, at = ''): string[] {
     }).sort();
 }
 async function prepared(source: string, dest: string, views = VIEWS): Promise<PreparedExport> {
-    const p = await prepareMarkdownExport(source, dest, views);
+    const p = await prepareMarkdownExport({ sources: [source], destination: dest }, views);
     if ('error' in p) throw new Error(p.error);
     return p;
 }
@@ -81,15 +81,15 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
     it('rejects a destination in the source folder, also through a link, and a destination that is a file', async () => {
         const src = tree({ 'a.md': 'x', 'f.txt': 'x' });
         for (const dest of [src, path.join(src, 'out'), path.join(src, 'x', 'y')]) {
-            expect(await prepareMarkdownExport(src, dest, VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
+            expect(await prepareMarkdownExport({ sources: [src], destination: dest }, VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
         }
         const elsewhere = tree({});
         symlinkSync(src, path.join(elsewhere, 'link'));
-        expect(await prepareMarkdownExport(src, path.join(elsewhere, 'link', 'out'), VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
-        expect(await prepareMarkdownExport(src, path.join(src, 'f.txt'), VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
-        expect(await prepareMarkdownExport(src, path.join(elsewhere, 'nope.txt'), VIEWS)).not.toHaveProperty('error');
+        expect(await prepareMarkdownExport({ sources: [src], destination: path.join(elsewhere, 'link', 'out') }, VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
+        expect(await prepareMarkdownExport({ sources: [src], destination: path.join(src, 'f.txt') }, VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
+        expect(await prepareMarkdownExport({ sources: [src], destination: path.join(elsewhere, 'nope.txt') }, VIEWS)).not.toHaveProperty('error');
         writeFileSync(path.join(elsewhere, 'file.txt'), 'x');
-        expect(await prepareMarkdownExport(src, path.join(elsewhere, 'file.txt'), VIEWS)).toEqual({ error: expect.stringMatching(/not a folder/) });
+        expect(await prepareMarkdownExport({ sources: [src], destination: path.join(elsewhere, 'file.txt') }, VIEWS)).toEqual({ error: expect.stringMatching(/not a folder/) });
     });
 
     it('copies local files: in the folder at their path, outside it to _resources; reports missing targets; links stay usable', async () => {
@@ -194,7 +194,7 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
 
     it('a destination folder in the source folder whose name starts with ".." is in the source folder', async () => {
         const src = tree({ 'a.md': 'x' });
-        expect(await prepareMarkdownExport(src, path.join(src, '..export'), VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
+        expect(await prepareMarkdownExport({ sources: [src], destination: path.join(src, '..export') }, VIEWS)).toEqual({ error: expect.stringMatching(/in the source folder/) });
     });
 
     it('exports hidden files; skips hidden folders', async () => {
@@ -229,5 +229,51 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         const before = listing(src).map(f => [f, read(src, f)]);
         expect((await writeMarkdownExport(await prepared(src, tree({})), svgs)).ok).toBe(true);
         expect(listing(src).map(f => [f, read(src, f)])).toEqual(before);
+    });
+});
+
+describe('Markdown export: a selection of files and folders (spec/ui-manifest.hs §9.2)', () => {
+    it('law_oneFolderIsRoot and two folders: the root is their common parent; paths keep the folder names', async () => {
+        const ws = tree({ 'docs/a.md': 'a', 'notes/b.md': 'b', 'other/c.md': 'c' });
+        const p = await prepareMarkdownExport({ sources: [path.join(ws, 'docs'), path.join(ws, 'notes')], destination: tree({}) }, VIEWS);
+        expect(p).toMatchObject({ source: realpathSync(ws), documents: ['docs/a.md', 'notes/b.md'] });
+        const one = await prepareMarkdownExport({ sources: [path.join(ws, 'docs')] }, VIEWS);
+        expect(one).toMatchObject({ source: realpathSync(path.join(ws, 'docs')), documents: ['a.md'] });
+    });
+
+    it('a file and a folder: the file is at its name under the root', async () => {
+        const ws = tree({ 'Architecture.md': 'x', 'notes/n.md': 'n', 'other.md': 'o' });
+        const out = tree({});
+        const p = await prepared(ws, out);
+        const sel = await prepareMarkdownExport({ sources: [path.join(ws, 'Architecture.md'), path.join(ws, 'notes')], destination: out }, VIEWS);
+        expect(sel).toMatchObject({ source: p.source, documents: ['Architecture.md', 'notes/n.md'] });
+        expect((await writeMarkdownExport(sel as PreparedExport, svgs)).ok).toBe(true);
+        expect(listing(out)).toEqual(['Architecture.md', OWNERSHIP_FILE, 'notes/n.md'].sort());
+    });
+
+    it('a file that is not Markdown is ignored', async () => {
+        const ws = tree({ 'a.md': 'a', 'model.ttl': '' });
+        const check = checkOf(await prepareMarkdownExport({ sources: [path.join(ws, 'a.md'), path.join(ws, 'model.ttl')] }, VIEWS));
+        expect(check).toMatchObject({ ok: true, documents: ['a.md'] });
+    });
+
+    it('exclude leaves a document out; a link to it is reported with "The document is not in the export."', async () => {
+        const ws = tree({ 'a.md': '[b](b.md)', 'b.md': 'b' });
+        const p = await prepareMarkdownExport({ sources: [ws], exclude: ['b.md'] }, VIEWS);
+        expect(p).toMatchObject({ documents: ['a.md'] });
+        expect((p as PreparedExport).plan.problems.map(x => [x.file, x.target, x.message])).toEqual([['a.md', 'b.md', expect.stringMatching(/^The document is not in the export\./)]]);
+    });
+
+    it('a source that does not exist is an error that names it', async () => {
+        const ws = tree({ 'a.md': 'a' });
+        const gone = path.join(ws, 'gone.md');
+        expect(await prepareMarkdownExport({ sources: [path.join(ws, 'a.md'), gone] }, VIEWS)).toEqual({ error: `The source does not exist: ${gone}` });
+    });
+
+    it('a check without a destination: no destination error, the documents listed', async () => {
+        const ws = tree({ 'b.md': 'b', 'a.md': 'a', 'sub/c.md': 'c' });
+        const check = checkOf(await prepareMarkdownExport({ sources: [ws] }, VIEWS));
+        expect(check).toEqual({ ok: true, root: realpathSync(ws), documents: ['a.md', 'b.md', 'sub/c.md'], views: [], unresolved: [], problems: [] });
+        expect(check).not.toHaveProperty('destination');
     });
 });
