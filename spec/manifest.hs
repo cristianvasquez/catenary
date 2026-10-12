@@ -970,7 +970,7 @@ unnamedLabel kind = firstFree (\i -> "unnamed " ++ lower kind ++ " " ++ show i)
 labelPredicates :: [Iri]
 labelPredicates = ["rdfs:label", "skos:prefLabel", "sh:name"]
 -- | The one label rule (packages/model/src/labels.ts pickLabel): of the literals of the first label predicate that has any (one list
--- per predicate), a literal in the workspace language (equal tag or a subtag, case-insensitive), else one without a language, else
+-- per predicate, labelPredicates order; a node shape and a value set put the predicate of their rename first), a literal in the workspace language (equal tag or a subtag, case-insensitive), else one without a language, else
 -- the smallest (compareLabels); several in one step: the smallest. Reason: every read shows the same label, in the language of the workspace.
 pickLabel :: Maybe String -> [[(String, Maybe String)]] -> Maybe String   -- language, (value, language tag) per predicate
 pickLabel lang lists = case filter (not . null) lists of

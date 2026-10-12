@@ -18,7 +18,7 @@ export const compareLabels = (a: string, b: string) => {
 };
 
 /**
- * The one label rule (spec/manifest.hs §6.2 pickLabel). `literals`: one list per label predicate, in the order of LABEL_PREDICATES; the candidates are the literals of the first list that has any. Of them: a literal in `language` (equal tag, or a subtag:
+ * The one label rule (spec/manifest.hs §6.2 pickLabel). `literals`: one list per label predicate, in the order of preference (LABEL_PREDICATES; a node shape and a value set put the predicate that their rename writes first); the candidates are the literals of the first list that has any. Of them: a literal in `language` (equal tag, or a subtag:
  * "en" takes "en-GB"; case-insensitive), else a literal without a language, else the smallest by compareLabels. Several in one step:
  * the smallest. Undefined: no literal (the caller uses the name from the IRI).
  */

@@ -12,7 +12,7 @@
 
 import {
     LogicalConstraint, LogicalOperator, NODE_KINDS, NS, NodeKind, NodeShape, PathJSON, PropertyShape, Range, ShapesModel, SimpleRange, TermJSON, compactIri,
-    LABEL_PREDICATES, emptyShapes, formatPath, isValueSetRange, pickLabel, termToJSON
+    emptyShapes, formatPath, isValueSetRange, pickLabel, termToJSON
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
@@ -278,6 +278,7 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
         const nodeTargets = objects(s, S.targetNode).map(termToJSON).filter((t): t is TermJSON => !!t);
         const shape: NodeShape = {
             id, uri: s.value,
+            // sh:name first: a rename of a node shape writes sh:name (elements.ts labelTarget).
             label: pick(s, [S.name.value, S.label.value]) ?? labelFromIri(s.value),
             nodes: objects(s, S.node).map(t => t.value),
             targetClass: targets[0]?.value,
@@ -345,7 +346,8 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
     }
 
     // Value sets: concept schemes and collections.
-    const labelOf = (t: Term) => pick(t, LABEL_PREDICATES) ?? labelFromIri(t.value);
+    // skos:prefLabel first: a rename of a value set writes skos:prefLabel (elements.ts labelTarget).
+    const labelOf = (t: Term) => pick(t, [S.prefLabel.value, S.label.value]) ?? labelFromIri(t.value);
     for (const [kind, type] of [['scheme', S.ConceptScheme], ['collection', S.Collection]] as const) {
         for (const q of ds.match(null, S.type, type)) {
             const t = q.subject;
