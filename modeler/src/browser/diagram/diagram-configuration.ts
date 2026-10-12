@@ -26,7 +26,7 @@ import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
 import { CanvasHighlight, HighlightCommand, HighlightPostprocessor } from './canvas-highlight';
 import { canvasKeyTargets } from './diagram-ids';
-import { VIEW_CLIP_WEB_TYPE, clipIdOf, clipIdOfToken, clipToken, rdfOf } from './clip-transport';
+import { VIEW_CLIP_WEB_TYPE, clipIdOf, clipIdOfToken, clipToken, rdfOf, systemClipWriter } from './clip-transport';
 import { CLIP_ID_KEY, CutMark, asCopyClip, cutMark, cutMessage } from './cut-mark';
 import { CutMarkPostprocessor, CutMarkRedrawCommand, CutMarkStartup, PasteResultHandler } from './cut-mark-canvas';
 import { ApplyPendingMembersCommand, PendingMemberAction, PendingMembers } from './pending-members';
@@ -165,8 +165,6 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(CanvasHighlight) protected readonly highlight: CanvasHighlight;
     @inject(CutMark) protected readonly mark: CutMark;
-    /** The clip of the last copy or cut: an older asynchronous clipboard write does not replace a newer clip. */
-    protected lastClipId?: string;
 
     /**
      * Paste order (law_pasteOrder): the custom type, then a text/plain token, then RDF. A paste event does not show the custom type of
@@ -205,19 +203,17 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
 
     /**
      * After the synchronous token write: the clip and the Turtle of Copy as RDF of the same ids replace the token in the system clipboard,
-     * the token in the custom type and the Turtle in text/plain. A newer copy or cut, a rejected write or no RDF keep the token.
+     * the token in the custom type and the Turtle in text/plain. A newer copy or cut in any canvas of the window, a rejected write
+     * or no RDF keep what the clipboard holds (SystemClipWriter).
      */
     protected writeSystemClipboard(clipboardId: string, clip: Promise<unknown>, ids: string[]): void {
         const view = viewIdOfUri(this.editorContext.sourceUri ?? '');
-        this.lastClipId = clipboardId;
         if (!view || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return;
-        void Promise.all([clip, this.model.service.copyAsRdf(view, ids)]).then(([, rdf]) => {
-            if (!rdf.ok || this.lastClipId !== clipboardId) return;
-            return navigator.clipboard.write([new ClipboardItem({
-                'text/plain': new Blob([rdf.text], { type: 'text/plain' }),
-                [VIEW_CLIP_WEB_TYPE]: new Blob([clipToken(clipboardId)], { type: VIEW_CLIP_FORMAT })
-            })]);
-        }).catch(() => undefined);
+        const turtle = Promise.all([clip, this.model.service.copyAsRdf(view, ids)]).then(([, rdf]) => rdf.ok ? rdf.text : undefined);
+        void systemClipWriter.write(clipboardId, turtle, (text, token) => navigator.clipboard.write([new ClipboardItem({
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+            [VIEW_CLIP_WEB_TYPE]: new Blob([token], { type: VIEW_CLIP_FORMAT })
+        })]));
     }
 
     protected async pasteRdf(view: string, text: string, mediaType?: string, at?: { x: number; y: number }): Promise<void> {

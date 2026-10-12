@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { VIEW_CLIP_FORMAT } from '@catenary/model';
-import { VIEW_CLIP_WEB_TYPE, clipFormOf, clipIdOf, clipToken, rdfOf } from '../src/browser/diagram/clip-transport';
+import { SystemClipWriter, VIEW_CLIP_WEB_TYPE, clipFormOf, clipIdOf, clipToken, rdfOf } from '../src/browser/diagram/clip-transport';
 
 // The clip forms of the system clipboard (spec/ui-manifest.hs §5.8, law_pasteOrder).
 
@@ -28,5 +28,25 @@ describe('clip transport', () => {
     it('RDF reads an RDF media type before text/plain', () => {
         expect(rdfOf(...clipboard({ 'application/trig': '<urn:g> {}', 'text/plain': ttl }))).toEqual({ text: '<urn:g> {}', mediaType: 'application/trig' });
         expect(rdfOf(...clipboard({ 'text/plain': ttl }))).toEqual({ text: ttl, mediaType: undefined });
+    });
+
+    it('a copy in another canvas whose export finishes first keeps the system clipboard: the older write does not run', async () => {
+        const writer = new SystemClipWriter(), write = vi.fn(async () => undefined);
+        let finishA!: (t: string) => void, finishB!: (t: string) => void;
+        const a = writer.write('a', new Promise(r => { finishA = r; }), write);
+        const b = writer.write('b', new Promise(r => { finishB = r; }), write);
+        finishB('ttl b');
+        await b;
+        finishA('ttl a');
+        await a;
+        expect(write.mock.calls).toEqual([['ttl b', clipToken('b')]]);
+    });
+
+    it('no Turtle or a rejected write writes nothing and reports nothing', async () => {
+        const writer = new SystemClipWriter(), write = vi.fn(async () => { throw new Error('denied'); });
+        await expect(writer.write('a', Promise.resolve(undefined), write)).resolves.toBeUndefined();
+        expect(write).not.toHaveBeenCalled();
+        await expect(writer.write('b', Promise.resolve('ttl'), write)).resolves.toBeUndefined();
+        expect(write).toHaveBeenCalledTimes(1);
     });
 });

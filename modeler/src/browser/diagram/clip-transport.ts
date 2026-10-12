@@ -46,3 +46,20 @@ export function clipFormOf(types: readonly string[], getData: (type: string) => 
     if (clipIdOf(types, getData)) return 'token';
     return rdfOf(types, getData).text.trim() ? 'rdf' : 'none';
 }
+
+/**
+ * The asynchronous system clipboard writes of the window. All canvases share one system clipboard: a write runs only when its clip
+ * is still the newest copy or cut of the window, so that an older export that finishes last does not replace a newer clip.
+ */
+export class SystemClipWriter {
+    protected latest?: string;
+
+    /** Write the Turtle and the token of a clip when the Turtle arrives. No Turtle, a newer clip or a rejected write: nothing. */
+    write(clipboardId: string, turtle: Promise<string | undefined>, write: (turtle: string, token: string) => Promise<void>): Promise<void> {
+        this.latest = clipboardId;
+        return turtle.then(text => text !== undefined && this.latest === clipboardId ? write(text, clipToken(clipboardId)) : undefined)
+            .catch(() => undefined);
+    }
+}
+
+export const systemClipWriter = new SystemClipWriter();
