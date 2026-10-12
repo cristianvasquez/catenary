@@ -219,16 +219,18 @@ it('openView: a view of the open workspace opens; else its workspace opens first
     expect(editors.open).toHaveBeenCalledTimes(3);
 });
 
-it('New View: the file dialog is the only dialog; the view opens as "unnamed view N" with no label follow-up', async () => {
+it.each([['views/road.trig'], ['views/road.view.trig']])('New View: the file dialog is the only dialog; the view %s opens labeled after its file base name (viewFileBase) with no label follow-up', async file => {
     const execute = vi.fn(async (_c: EditCommand): Promise<CommandResult> => ({ ok: true, id: 'v' }));
     const editors = { open: vi.fn(async () => ({})) };
     const follow = vi.fn();
+    const newLabel = vi.fn(async () => 'road');
     const actions = Object.assign(new ModelActions(), {
-        model: { execute, service: { newLabel: async () => 'unnamed view 1' } }, editors,
-        askViewFile: async () => 'views/road.trig', followUp: follow
+        model: { execute, service: { newLabel } }, editors,
+        askViewFile: async () => file, followUp: follow
     });
     await actions.newView();
-    expect(execute).toHaveBeenCalledWith({ kind: 'createView', label: 'unnamed view 1', file: 'views/road.trig' });
+    expect(newLabel).toHaveBeenCalledWith('view', { base: 'road' });
+    expect(execute).toHaveBeenCalledWith({ kind: 'createView', label: 'road', file });
     expect(editors.open).toHaveBeenCalledWith('v');
     expect(follow).not.toHaveBeenCalled();
 });
