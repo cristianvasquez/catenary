@@ -103,7 +103,7 @@ describe('imported files', () => {
         const store = await opened(f.ws);
         ok(await store.setSettings({ imported: ['*.ttl'] }));
         const r = await store.setImported('official.ttl', false);
-        expect(r).toEqual({ ok: false, error: 'official.ttl stays imported by the glob "*.ttl". Remove the glob in the Workspace settings.' });
+        expect(r).toEqual({ ok: false, error: 'official.ttl stays locked by the glob "*.ttl". Remove the glob in the Workspace settings.' });
         ok(await store.setSettings({ imported: ['official.ttl'] }));
         ok(await store.setImported(f.official, false));
         expect(store.files.imported).toEqual([]);

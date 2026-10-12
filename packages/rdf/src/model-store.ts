@@ -821,7 +821,7 @@ export class ModelStore {
             const r = await this.applySettings({ imported: globs.filter(g => g !== rel) });
             if (!r.ok) return r;
             const glob = ws.importedGlobs.find(g => ws.isImported(abs, [g]));
-            return glob ? { ok: false, error: `${rel} stays imported by the glob "${glob}". Remove the glob in the Workspace settings.` } : r;
+            return glob ? { ok: false, error: `${rel} stays locked by the glob "${glob}". Remove the glob in the Workspace settings.` } : r;
         });
     }
 

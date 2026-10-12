@@ -369,7 +369,7 @@ export class Settings {
         for (const f of [...this.modelFiles.values(), ...this.viewFiles.values()]) {
             if (!this.isImported(f.path, globs) || this.isImported(f.path)) continue;
             const name = portableRelative(this.folder, f.path);
-            if (dirty.has(f.path)) return `${name} has changes that are not written. Mark it as imported after the write.`;
+            if (dirty.has(f.path)) return `${name} has changes that are not written. Lock it after the write.`;
             if (f.blanks) return `${name} has blank nodes, and Catenary does not write this file, so they cannot get IRIs. Import the file from outside the workspace folder: the import writes a Turtle copy with IRIs.`;
         }
         return undefined;
