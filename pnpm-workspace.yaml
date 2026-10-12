@@ -52,7 +52,7 @@ overrides:
   '@rdfjs/serializer-turtle': 1.1.6
 
 patchedDependencies:
-  # Fix not released upstream: a complex SHACL path is decided by structure, not by term type, because Catenary skolemizes path nodes (AGENTS.md).
+  # Fixes not released upstream: a complex SHACL path is decided by structure, not by term type, because Catenary skolemizes path nodes (AGENTS.md; rdf-ext/shacl-engine#94). More than one value for sh:disjoint, sh:equals, sh:hasValue, sh:lessThan and sh:lessThanOrEquals (rdf-ext/shacl-engine#95).
   'shacl-engine@1.1.3': patches/shacl-engine@1.1.3.patch
 
 minimumReleaseAgeExclude:
