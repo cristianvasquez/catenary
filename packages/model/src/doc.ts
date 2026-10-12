@@ -330,6 +330,23 @@ export interface LinkRow {
 /** An incoming rdf:type row: the other end is an instance of the selected class. Links puts these rows in a closed folder (UI §8.8). */
 export const isTypedInstanceRow = (r: Pick<LinkRow, 'dir' | 'predicate'>) => r.dir === 'in' && r.predicate === RDF_TYPE;
 
+/** A top-level folder of the Links tab: 'typed' is "Instances (rdf:type)", 'instances' the targets of the selected node shapes. */
+export type LinksFolder = 'instances' | 'typed' | 'views' | 'out' | 'in' | 'ends';
+
+/**
+ * The top-level folders of the Links tab, in order (UI §8.8 `linksFolderOrder`). An instance folder shows only when it has rows.
+ * Ends shows only for selected relations.
+ */
+export function linksFolders(n: { instances: number; typed: number; ends: boolean }): LinksFolder[] {
+    return [
+        ...(n.instances ? ['instances' as const] : []),
+        ...(n.typed ? ['typed' as const] : []),
+        // Kata vxsq: the "Related" folders go here, between Instances (rdf:type) and Views.
+        'views', 'out', 'in',
+        ...(n.ends ? ['ends' as const] : [])
+    ];
+}
+
 /** A view that shows a selected element: its card, the card of its node shape, a reference to it, or the element itself (view-owned). */
 export interface ViewLink {
     element: string;

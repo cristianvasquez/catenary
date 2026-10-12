@@ -1655,8 +1655,10 @@ showTarget _ vs = case sortOn fst vs of
 
 -- | Links: views, and outgoing and incoming statements of model and shapes, rdf:type included. Omit literals.
 -- Reason: the data shows as written. An instance shows its class, and a class shows its instances.
--- Incoming rdf:type rows go in a closed "Instances (rdf:type)" folder under Incoming, with a count.
+-- Incoming rdf:type rows go in a closed top-level "Instances (rdf:type)" folder, with a count. Incoming excludes them.
 -- Reason: a class can have thousands of instances. The folder keeps its other links readable.
+-- The instance folders come first, each only when it has rows: Instances, Instances (rdf:type), Views, Outgoing, Incoming, Ends.
+-- Reason: the instances of a class or node shape are its most frequent link.
 -- An RDF list is one predicate step. A self-link shows as outgoing only. Mixed selections show ownership counts.
 -- A row without a navigable element is inactive. A statement-row action targets its relation, else the other end.
 -- A view row targets the matching placements. Limit: no arrows and no entity-group membership from view graphs (open.md G4).
@@ -1670,6 +1672,11 @@ law_selfLinkOutgoingOnly e p = linkRows e [(Node e, p, Node e)] == [OutgoingRow 
 isTypedInstanceRow :: LinkRow -> Bool                -- an incoming rdf:type row: it goes in the "Instances (rdf:type)" folder
 isTypedInstanceRow (IncomingRow (_, p, _)) = p == "rdf:type"
 isTypedInstanceRow _ = False
+data LinksFolder = InstancesFolder | TypedFolder | ViewsFolder | OutgoingFolder | IncomingFolder | EndsFolder deriving (Eq, Show)
+linksFolderOrder :: Int -> Int -> Bool -> [LinksFolder]   -- shape-target rows, incoming rdf:type rows, selected relations
+linksFolderOrder instances typed ends =
+  [InstancesFolder | instances > 0] ++ [TypedFolder | typed > 0]
+    ++ [ViewsFolder, OutgoingFolder, IncomingFolder] ++ [EndsFolder | ends]
 law_typeRowsShown :: Iri -> Iri -> Iri -> Bool
 law_typeRowsShown e c x = c /= e && x /= e ==>
   (linkRows e [(Node e, "rdf:type", Node c)] == [OutgoingRow (Node e, "rdf:type", Node c)]
