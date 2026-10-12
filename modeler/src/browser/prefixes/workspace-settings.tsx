@@ -257,8 +257,8 @@ export class WorkspaceSettingsWidget extends ReactWidget {
     protected importedSection(): React.ReactNode {
         const imported = this.model.snapshot.files.imported ?? [];
         const count = this.model.snapshot.files.files.filter(f => f.imported).length;
-        return <Section title={`Imported ${imported.length}`} scope={`${count} model ${count === 1 ? 'file' : 'files'}`}
-            help='Files that Catenary reads and does not change: an edit of their statements is refused. New statements about their subjects go to the file of Everything else. Globs relative to the workspace folder: *, **, ?'>
+        return <Section title={`Locked files ${imported.length}`} scope={`${count} model ${count === 1 ? 'file' : 'files'}`}
+            help='Locked files: Catenary reads them and does not change them. An edit of their statements is refused. New statements about their subjects go to the file of Everything else. Globs relative to the workspace folder: *, **, ?'>
             <div className='catenary-settings-list'>
                 {imported.map(g => <div key={g} className='catenary-settings-row glob'>
                     <code>{g}</code>

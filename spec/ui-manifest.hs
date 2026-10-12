@@ -1408,16 +1408,16 @@ moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" 
 cardinalityButtons :: [Cardinality]
 cardinalityButtons = [(Nothing, Just 1), (Just 1, Just 1), (Nothing, Nothing), (Just 1, Nothing)]
 
--- | An instance with statements in imported files (spec/manifest.hs §2.6) shows an Imported row with those files.
+-- | An instance with statements in imported files (spec/manifest.hs §2.6) shows a Locked row with those files.
 -- An imported label, IRI or value outside the SHACL form shows as text, without an edit or remove control.
--- The SHACL form edits all its values. A change of an imported value fails, and the window asks to mark the files as own.
+-- The SHACL form edits all its values. A change of an imported value fails, and the window asks to unlock the files.
 -- Edits, undo and redo ask in the same way (spec/manifest.hs §2.6). Cancel keeps the files imported, and the form shows the model.
 data ValueControl = EditControl | TextOnly deriving Eq
 valueControl :: Bool -> ValueControl                -- the value is in an imported file
 valueControl locked = if locked then TextOnly else EditControl
 data MarkOwnAnswer = MarkOwnAndRun | KeepImported deriving Eq
 afterRefusal :: MarkOwnAnswer -> [String]            -- what the window does after a change failed on imported files
-afterRefusal MarkOwnAndRun = ["mark the files as own", "run the change again"]
+afterRefusal MarkOwnAndRun = ["unlock the files", "run the change again"]
 afterRefusal KeepImported = []
 
 -- | A view exposes Markdown Notes in Properties. Its external-link icon moves editing into a native Theia Markdown editor beside the diagram.
@@ -1451,7 +1451,7 @@ law_notesReadScope descriptionCanChange readRequested = not descriptionCanChange
 -- Each file shows what its triples contain (views, shapes, instances). A view row opens its view.
 -- Opening a file selects its own editor when there is one, else source text.
 -- Each file tail shows one letter per kind: W workspace, V view, D default file, S shapes, C concepts, I instances,
--- ! not read. An imported (read-only) file shows a lock icon after the letters. The other kinds keep their letters. The context menu of a model file or view file has Mark as Imported, or Mark as Own
+-- ! not read. An imported (read-only) file shows a lock icon after the letters. The other kinds keep their letters. The context menu of a model file or view file has Lock, or Unlock
 -- when it is imported.
 data FileContent = HasViews | HasShapes | HasInstances deriving Eq
 data FileMark = MarkWorkspace | MarkView | MarkDefault | MarkShapes | MarkConcepts | MarkInstances | MarkImported | MarkNotRead
@@ -1464,7 +1464,7 @@ markTail m = Letter ("WVDSCI-!" !! fromEnum m)        -- '-' holds the MarkImpor
 law_importedIsLock :: FileMark -> Bool
 law_importedIsLock m = (markTail m == LockIcon) == (m == MarkImported)
 importMenuItem :: Bool -> String                   -- the file is imported
-importMenuItem imported = if imported then "Mark as Own" else "Mark as Imported"
+importMenuItem imported = if imported then "Unlock" else "Lock"
 editorFor :: FilePath -> Maybe Element -> Document   -- a file, its view
 editorFor _ (Just v) = OpenView v
 editorFor f Nothing = AsText f

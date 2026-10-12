@@ -69,7 +69,7 @@ export class ModelFrontend {
 
     /**
      * Run a command. Shows the error, if any, also an exception in the backend. A command that changes imported files asks to
-     * mark them as own; after Mark as Own it runs again.
+     * unlock them; after Unlock it runs again.
      */
     execute(command: EditCommand): Promise<CommandResult> {
         return this.withMarkOwn(command.kind, () => this.service.execute(command));
@@ -113,9 +113,9 @@ export class ModelFrontend {
         // Loaded here: the browser module needs a DOM, and the unit tests of this module run in Node.
         const { ConfirmDialog } = await import('@theia/core/lib/browser');
         return !!await new ConfirmDialog({
-            title: one ? 'Imported File' : 'Imported Files',
-            msg: `This change edits ${one ? 'the imported file' : 'the imported files'} ${names.join(', ')}. Mark ${one ? 'it' : 'them'} as own and make the change?`,
-            ok: 'Mark as Own', cancel: 'Cancel'
+            title: one ? 'Locked File' : 'Locked Files',
+            msg: `This change edits ${one ? 'the locked file' : 'the locked files'} ${names.join(', ')}. Unlock ${one ? 'it' : 'them'} and make the change?`,
+            ok: 'Unlock', cancel: 'Cancel'
         }).open();
     }
 

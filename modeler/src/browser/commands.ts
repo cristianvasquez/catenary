@@ -51,8 +51,8 @@ export namespace OpenModelCommands {
     /** RDF files from outside the workspace: read-only Turtle copies in imported/ (spec/manifest.hs §2.6). Arguments: the paths. */
     export const IMPORT_FILE = cmd('catenary.importFile', 'Import RDF Files…');
     /** File navigator: mark the selected model file or view file as imported (read only) or as own (manifest ws:imported). */
-    export const MARK_IMPORTED = cmd('catenary.markImported', 'Mark as Imported');
-    export const MARK_OWN = cmd('catenary.markOwn', 'Mark as Own');
+    export const MARK_IMPORTED = cmd('catenary.markImported', 'Lock');
+    export const MARK_OWN = cmd('catenary.markOwn', 'Unlock');
     export const UNDO = cmd('catenary.undo', 'Undo Model Change', 'codicon codicon-discard');
     export const REDO = cmd('catenary.redo', 'Redo Model Change', 'codicon codicon-redo');
 }

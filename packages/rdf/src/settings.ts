@@ -231,7 +231,7 @@ export class Settings {
     protected readonly readOnlyReasons: ReadonlyArray<(file: string) => string | undefined> = [
         file => writeProblem(file),
         file => this.readOnlyContentReason(file),
-        file => this.isImported(file) ? `${path.basename(file)} is an imported file.` : undefined
+        file => this.isImported(file) ? `${path.basename(file)} is a locked file.` : undefined
     ];
 
     /** Undefined, or why the file is read only: the first reason of `readOnlyReasons`. */

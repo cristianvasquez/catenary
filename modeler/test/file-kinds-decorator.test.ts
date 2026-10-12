@@ -28,7 +28,7 @@ function decorate() {
 // Theia renders tail decorations in reverse order, so the lock is first in the data and shows after the letters.
 it('an imported view file gets the letter V and a lock', () => {
     expect(decorate().get('v')!.tailDecorations).toEqual([
-        { icon: 'lock', tooltip: 'Catenary: imported (read-only)' },
+        { icon: 'lock', tooltip: 'Catenary: locked (read-only)' },
         expect.objectContaining({ data: 'V', tooltip: 'Catenary: view, imported' })
     ]);
 });
@@ -38,5 +38,5 @@ it('an own shapes file gets the letter S and no lock', () => {
 });
 
 it('a file that is only imported gets the lock and no letters', () => {
-    expect(decorate().get('l')!.tailDecorations).toEqual([{ icon: 'lock', tooltip: 'Catenary: imported (read-only)' }]);
+    expect(decorate().get('l')!.tailDecorations).toEqual([{ icon: 'lock', tooltip: 'Catenary: locked (read-only)' }]);
 });

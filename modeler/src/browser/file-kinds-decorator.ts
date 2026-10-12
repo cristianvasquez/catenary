@@ -63,7 +63,7 @@ export class FileKindsDecorator implements TreeDecorator {
             if (!k?.length) continue;
             // Theia renders tail decorations in reverse order: the lock goes first so that it shows after the letters.
             const tails: TreeDecoration.TailDecoration.AnyConcrete[] = [];
-            if (k.includes('imported')) tails.push({ icon: 'lock', tooltip: 'Catenary: imported (read-only)' });
+            if (k.includes('imported')) tails.push({ icon: 'lock', tooltip: 'Catenary: locked (read-only)' });
             const letters = k.filter(x => x !== 'imported').map(x => LETTERS[x] ?? x).join('');
             if (letters) tails.push({ data: letters, fontData: { color: 'var(--theia-descriptionForeground)' }, tooltip: `Catenary: ${k.join(', ')}` });
             result.set(node.id, { tailDecorations: tails });

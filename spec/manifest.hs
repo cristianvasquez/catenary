@@ -386,9 +386,9 @@ law_prefixesRejected b ps = failed (fst (step b (SetPrefixes ps))) == not (valid
 -- A new statement about an imported subject goes to the default file (§3.2: an imported file is a readOnly file).
 -- An imported file is not a file of new subjects. Marking such a file sets its kind to near and clears ws:defaultFile.
 -- Validation reads only the part of imported files that own statements need (§9).
--- Mark as Imported writes the pending changes first. It refuses a file that keeps blank nodes on disk: their IRIs change at each read.
--- Mark as Own removes the globs equal to the path. A file that another glob matches stays imported, and the error names the glob.
--- When a change fails on imported files, the window asks to mark them as own. After Mark as Own, it runs the change again.
+-- Lock (Mark as Imported in earlier versions) writes the pending changes first. It refuses a file that keeps blank nodes on disk: their IRIs change at each read.
+-- Unlock removes the globs equal to the path. A file that another glob matches stays imported, and the error names the glob.
+-- When a change fails on imported files, the window asks to unlock them. After Unlock, it runs the change again.
 isImported :: [String] -> FilePath -> Bool        -- ws:imported globs, a path relative to the workspace folder
 isImported globs p = any (`globMatches` p) globs
 -- | The legacy name ws:protect reads as ws:imported. Writers store ws:imported only.
@@ -405,7 +405,7 @@ law_importedUnchanged b op =
     changesStatements Undo = True
     changesStatements Redo = True
     changesStatements _ = False
-setImported :: FilePath -> Bool -> IO CommandResult   -- True: Mark as Imported; False: Mark as Own
+setImported :: FilePath -> Bool -> IO CommandResult   -- True: Lock; False: Unlock
 setImported p on = runOp (SetImported p on)
 
 -- | Import marks a model file or view file of the workspace as imported where it is (no copy): the intent is to import that file.

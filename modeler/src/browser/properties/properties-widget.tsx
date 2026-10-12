@@ -349,7 +349,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
                         : <span className='catenary-none'>none</span>}</div>
                 </Row>
                 {this.shapeRow(inst)}
-                {inst.importedFiles ? <Row label='Imported' inline tip={`Values from imported files are read only. New values go to ${this.model.snapshot.files.defaultFile
+                {inst.importedFiles ? <Row label='Locked' inline tip={`Values from locked files are read only. New values go to ${this.model.snapshot.files.defaultFile
                     ? baseName(this.model.snapshot.files.defaultFile.path) : 'the default file'} (Workspace settings, Everything else).`}>
                     <div className='catenary-pills'>{inst.importedFiles.map(f => <span key={f} className='catenary-pill' title={f}>
                         <span className='codicon codicon-lock' /> {baseName(f)}</span>)}</div>
@@ -365,7 +365,7 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
             {extra.length ? <Section title='Not in shapes' scope={`${extra.reduce((n, [, vs]) => n + vs.length, 0)} statements`} {...this.fold('extra')}>{extra.map(([p, vs]) =>
                 <Row key={p} label={predicateName(meta, p)} tip={p}>{vs.map((v, i) => <div key={i} className='catenary-value'>
                     <span>{v.value}</span>
-                    {locked.has(lockedKey(p, v)) ? <span className='codicon codicon-lock' title='From an imported file (read only)' />
+                    {locked.has(lockedKey(p, v)) ? <span className='codicon codicon-lock' title='From a locked file (read only)' />
                         : <IconButton icon='close' title='Remove the value' onClick={() => this.exec({ kind: 'setStatements', id: inst.id, values: { [p]: vs.filter((_, j) => j !== i) } })} />}
                 </div>)}</Row>)}</Section> : undefined}
             {cls?.unsupported.length ? <Section title='Not supported'>{cls.unsupported.map(u => <div key={u} className='catenary-help'>{u}</div>)}</Section> : undefined}

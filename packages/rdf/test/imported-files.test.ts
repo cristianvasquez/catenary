@@ -146,7 +146,7 @@ describe('imported files', () => {
         const f = workspace();
         const store = await opened(f.ws);
         ok(await store.setSettings({ imported: ['official.ttl'] }));
-        expect(await store.setSettings({ defaultFile: 'official.ttl' })).toEqual({ ok: false, error: 'official.ttl is an imported file.' });
+        expect(await store.setSettings({ defaultFile: 'official.ttl' })).toEqual({ ok: false, error: 'official.ttl is a locked file.' });
         expect((await store.setSettings({ placement: { instances: 'official.ttl' } })).ok).toBe(false);
         // A rejected setting in the same change keeps the old globs.
         expect((await store.setSettings({ imported: ['*.ttl'], placement: { shapes: '../outside.ttl' } })).ok).toBe(false);

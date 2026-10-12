@@ -23,7 +23,7 @@ All supported RDF files in the folder and its subfolders are part of the model: 
 
 | Area | Content |
 |---|---|
-| Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, and a lock marks an imported (read-only) file. Right-click a model file to mark it as imported or as own. |
+| Files (left, first tab) | The file navigator. Each file shows letters for what it contains: V views, S shapes, C concepts, I instances. D marks the default file, and a lock marks a locked (read-only) file. Right-click a model file to lock or unlock it. |
 | Main area | File presentations: Canvas, Source, Model explorer, Settings. Model folders load when you open them. |
 | Right area | Properties (fields from all applicable shapes and from the RDFS domain and range of the classes, violations, an action toolbar with a More actions menu), Appearance: Style of the selection (color, display, size, edge sides, visibility), View (Apply Layout, spacing, hidden edges), Preferences (text sizes, edge style), Links (incoming and outgoing statements with rdf:type, views, source files, and Instances for selected node shapes). Incoming rdf:type statements are in a closed "Instances (rdf:type)" folder under Incoming. |
 | Outline | Frames, cards and placed relations of the active view. |
@@ -156,29 +156,29 @@ Open `workspace.trig` to show Workspace settings. A change writes the workspace 
 - **New subjects**: for Shapes, SKOS / Collections and Everything else, select Auto or File. Auto puts a new subject near subjects of its kind: shapes in the file with most node shapes, a concept or collection in the file of its scheme or collection, another subject in the file with most subjects of its class. With File, type a path or click Browse… A path that does not exist becomes a new file at the first write. Everything else also takes a new subject that Auto cannot place, for example the first subject of a new class. With Auto, that is the first Turtle file with statements.
 - **Prefixes**: hover a row to edit or remove it. Add a prefix in the last row. Above 12 prefixes, a filter shows. A warning icon marks a namespace that does not end with `/` or `#`.
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
-- **Imported**: globs of imported (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
+- **Locked files**: globs of locked (read-only) files, relative to the workspace folder. Import Files… is in this section and in the File menu.
 - **Validation**: select what SHACL validation checks after each change. Off shows no problems and no badges. Open views checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. All checks the whole model. The status bar shows the mode.
 
 The document toolbar has Open as and Open beside. Settings controls have Select in Explorer and More actions (Reset Prefixes to Defaults).
 
 Person settings (theme, card, note and group text size, edge style, layout spacing) are Theia preferences. They are not in the workspace. The default edge style is Direct. Parallel direct edges use separate lanes that retain spacing when you zoom out. Vertical lanes reserve estimated label width. Self-links use wide loops with horizontal label runs and separate heights. These changes do not move cards. Direct edges can still cross other cards and unrelated labels.
 
-## Imported files
+## Locked files
 
-An imported file is an official file that Catenary must not change. It is read-only: Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
+A locked file is a file that Catenary must not change, for example an official file. It is read-only: Catenary reads it, but it refuses each change to its statements. You can add statements about its subjects. They go to the file of Everything else.
 
-- Right-click a file in the file navigator and select Mark as Imported or Mark as Own. The workspace file stores the path.
-- If a change edits an imported file, Catenary asks whether to mark it as own. Select Mark as Own to make the change, or Cancel to keep the file as it is.
-- Properties shows an Imported row with the imported files of an instance. Imported values outside the form show as plain text.
-- Mark as Imported writes pending changes first. A file with blank nodes in a format that Catenary does not write (N3, RDF/XML) cannot be marked. Import it instead.
-- Validation does not check imported files as a whole, so large files do not slow down each edit. It checks your own statements, all statements about their subjects, and the types of the resources that they refer to.
+- Right-click a file in the file navigator and select Lock or Unlock. The workspace file stores the path.
+- If a change edits a locked file, Catenary asks whether to unlock it. Select Unlock to make the change, or Cancel to keep the file as it is.
+- Properties shows a Locked row with the locked files of an instance. Locked values outside the form show as plain text.
+- Lock writes pending changes first. A file with blank nodes in a format that Catenary does not write (N3, RDF/XML) cannot be locked. Import it instead.
+- Validation does not check locked files as a whole, so large files do not slow down each edit. It checks your own statements, all statements about their subjects, and the types of the resources that they refer to.
 
 To import official files:
 
 1. Select File → Import RDF Files… or Import Files… in Workspace settings.
 2. Select one or more RDF files.
 
-A file that is already in the workspace is marked as imported where it is. For a file from outside the workspace, Catenary writes a Turtle copy to `imported/<name>.ttl` and marks the copy as imported. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
+A file that is already in the workspace is locked where it is. For a file from outside the workspace, Catenary writes a Turtle copy to `imported/<name>.ttl` and locks the copy. An imported copy is locked. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. A warning names the prefixes that it did not add. The import reads the workspace again. This clears the undo history.
 
 ## Documents with views
 
