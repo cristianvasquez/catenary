@@ -479,7 +479,8 @@ export function setEdgeLayout(g: ModelGraph, viewId: string, relationId: string,
 /**
  * The bends of each edge placement of a view whose both ends move by one delta, moved by that delta (UI §7.4, movedBends). A connector
  * (rdf:reifies): its ends are the placements of the statement ends. A property line (view:element): its ends are the placements of
- * its start and end figures (the join of the view). A line with a private end moves with its start alone.
+ * its start and end figures (the join of the view); a shared property shape has one line for each shown owner, and its one placement
+ * moves once, only when every start and the end move by one delta. A line with a private end moves with its start alone.
  */
 function moveVertices(g: ModelGraph, view: NamedNode, delta: Map<string, { dx: number; dy: number }>): void {
     if (![...delta.values()].some(d => d.dx || d.dy)) return;
@@ -498,11 +499,20 @@ function moveVertices(g: ModelGraph, view: NamedNode, delta: Map<string, { dx: n
     if (lines.length === 0) return;
     const vf = viewFiguresOf(g, view.value);
     const placementOf = (f: { placedAs: TermJSON } | undefined) => f && vf.placed.get(nkey(f.placedAs))?.iri;
+    // The deltas of the ends of each line placement: all must be equal for the bends to move.
+    const ends = new Map<string, ({ dx: number; dy: number } | undefined)[]>();
     for (const l of vf.join.lines) {
-        const own = placementOf(l.figure), e = own && lines.find(x => x.value === own);
-        if (!e) continue;
-        const da = delta.get(placementOf(l.start) ?? ''), end = placementOf(l.end);
-        move(e, da, l.end ? delta.get(end ?? '') : da);
+        const own = placementOf(l.figure);
+        if (!own || !lines.some(x => x.value === own)) continue;
+        const da = delta.get(placementOf(l.start) ?? '');
+        const list = ends.get(own) ?? ends.set(own, []).get(own)!;
+        list.push(da, l.end ? delta.get(placementOf(l.end) ?? '') : da);
+    }
+    for (const e of lines) {
+        const list = ends.get(e.value);
+        if (!list?.length) continue;
+        const same = (a: { dx: number; dy: number } | undefined, b: { dx: number; dy: number } | undefined) => !!a && !!b && a.dx === b.dx && a.dy === b.dy;
+        move(e, list[0], list.every(d => same(d, list[0])) ? list[0] : undefined);
     }
 }
 

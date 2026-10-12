@@ -13,6 +13,7 @@ import { canonical } from '../src/trig';
 import { rdf } from '../src/terms';
 import { emptyMetamodel, metamodelFromQuads, shapesTriples, vocabularyQuads } from '../src/shapes';
 import { S } from '../src/shapes-read';
+import { V } from '../src/views';
 import { elementId } from '../src/ids';
 const NS_SKOS = 'http://www.w3.org/2004/02/skos/core#';
 import { DCAT, DCT, parseQuads, run } from './helpers';
@@ -33,6 +34,8 @@ async function load(data = ''): Promise<ModelGraph> {
 }
 const shapesOf = (g: ModelGraph) => project(g).doc.shapes;
 const shapeId = (g: ModelGraph, iri: string) => Object.values(shapesOf(g).nodeShapes).find(s => s.uri === iri)!.id;
+/** The other id of a shared property shape. */
+const alias = (g: ModelGraph, p: { uri?: string; id: string }) => Object.values(shapesOf(g).properties).find(x => x.uri === p.uri && x.id !== p.id)!;
 const prop = (g: ModelGraph, owner: string, path: string) => Object.values(shapesOf(g).properties)
     .find(p => p.owner === shapeId(g, owner) && formatPath(p.path) === path)!;
 const exec = (g: ModelGraph, c: Parameters<typeof executeCommand>[2]) => run(g, emptyMetamodel(), c);
@@ -368,6 +371,28 @@ describe('shape edits', () => {
         expect(edges()).toEqual([dataset, agent].sort());
         exec(g, { kind: 'removeFromView', view, ids: [propertyNodeId(alias)] });
         expect(edges()).toEqual([]);
+    });
+
+    it('a shared property moves its bends once, only when both owners and the target move by one delta (roborev 88)', async () => {
+        const g = await load();
+        const dataset = shapeId(g, EX + 'Dataset'), agent = shapeId(g, EX + 'SoftwareAgent');
+        const title = prop(g, EX + 'Dataset', 'dct:language');
+        g.add(rdf.namedNode(EX + 'SoftwareAgent'), S.property, rdf.namedNode(title.uri!), GRAPH);
+        const view = exec(g, { kind: 'createView', label: 'V' }) as string;
+        exec(g, { kind: 'addToView', view, ids: [dataset, agent], at: { x: 0, y: 0 } });
+        exec(g, { kind: 'showAsEdge', view, id: title.id, at: { x: 700, y: 0 } });
+        exec(g, { kind: 'setEdgeLayout', view, relation: title.id, patch: { vertices: [{ x: 100, y: 200 }] } });
+        const vertices = () => g.match(null, V.vertices, null, rdf.namedNode(idIri(view)!)).map(q => q.object.value);
+        const card = (element: string) => boxes(project(g).doc.views[view], 'card').find(b => b.element === element)!;
+        // The range is a class that a shown node shape targets: that card is the target box.
+        const target = shapeId(g, EX + 'LinguisticSystem');
+        expect(schema(g, view).filter(c => c.type === 'edge:property' && (c.id === title.id || c.id === alias(g, title).id)).length).toBe(2);
+        expect(vertices()).toEqual(['100,200']);
+        const moved = (ids: string[], dx: number, dy: number) => exec(g, { kind: 'setBounds', view, bounds: ids.map(id => ({ id: card(id).id, x: card(id).x + dx, y: card(id).y + dy })) });
+        moved([dataset, agent, target], 10, 20);
+        expect(vertices()).toEqual(['110,220']);
+        moved([dataset, target], 5, 5);
+        expect(vertices()).toEqual(['110,220']);
     });
 
     it('returning a shared property restores all containing cards in this view only, with one undo patch and no shapes change', async () => {
