@@ -120,10 +120,9 @@ describe('view-owned elements', () => {
         expect(Object.keys(doc(g).views)).toHaveLength(3);
 
         const cut = copyFromView(doc(g), source, [note, reference], 'cut')!;
-        run(g, meta, { kind: 'cutFromView', view: source, ids: [note, reference] });
+        run(g, meta, { kind: 'moveBetweenViews', from: cut.source, to: destination, clip: cut, at: { x: 1500, y: 1500 } });
         expect(boxes(doc(g).views[source], 'note')).toEqual([]);
         expect(boxes(doc(g).views[source], 'reference')).toEqual([]);
-        run(g, meta, { kind: 'pasteIntoView', view: destination, clip: cut, at: { x: 1500, y: 1500 } });
         expect(boxes(doc(g).views[destination], 'note')).toHaveLength(2);
         // The destination refers to the target already: the reference of the cut is skipped (a view places another view once).
         expect(boxes(doc(g).views[destination], 'reference')).toHaveLength(1);
@@ -313,7 +312,7 @@ describe('card display', () => {
 
         expect(byLabel(doc(await load(await writeTrig(g.quads()))), 'Display')).toEqual({ A: 'simple', B: undefined });
         run(g, meta, { kind: 'pasteIntoView', view: target, clip: copyFromView(doc(g), view, [a, b])!, at: { x: 0, y: 0 } });
-        expect(byLabel(doc(g), 'Target')).toEqual({ 'A 2': 'simple', 'B 2': undefined });
+        expect(byLabel(doc(g), 'Target')).toEqual({ A: 'simple', B: undefined });
         run(g, meta, { kind: 'duplicateView', id: view });
         expect(Object.values(doc(g).views).map(v => boxes(v, 'card').filter(n => n.display === 'simple').length).sort()).toEqual([1, 1, 1]);
     });

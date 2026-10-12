@@ -79,14 +79,17 @@ describe('collections (view only)', () => {
         expect(Object.keys(doc(g).instances)).toHaveLength(2);
     });
 
-    it('copy takes the members as cards; cut removes the collection and its members', () => {
+    it('copy takes the members as cards; a move takes the members out of the view', () => {
         const { g, view, ids } = setup();
         const id = run(g, meta, { kind: 'collect', view, ids: ids.slice(0, 2) }) as string;
         expect(copyFromView(doc(g), view, [id])!.boxes.filter(b => b.kind === 'card')).toHaveLength(2);
-        run(g, meta, { kind: 'cutFromView', view, ids: [id] });
+        const target = run(g, meta, { kind: 'createView', label: 'Target' }) as string;
+        const clip = copyFromView(doc(g), view, [id], 'cut')!;
+        run(g, meta, { kind: 'moveBetweenViews', from: clip.source, to: target, clip });
         const v = doc(g).views[view];
         expect(boxes(v, 'collection')).toEqual([]);
         expect(boxes(v, 'card').map(n => n.element)).toEqual([ids[2]]);
+        expect(boxes(doc(g).views[target], 'card').map(n => n.element).sort()).toEqual(ids.slice(0, 2).sort());
     });
 
     it('adds an instance to a collection as one undo step; a member has no placement of its own', () => {

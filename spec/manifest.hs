@@ -877,7 +877,6 @@ data EditCommand
   | ShowRelations Id [Id] Point
   | ShowAsEdge Id Id Point
   | RemoveFromView Id [Id]
-  | CutFromView Id [Id]
   | SetBounds Id [(Id, Rect)]
   | SetLayout Id [(Id, Rect)] [Id]                           -- bounds, connectors whose sides it clears
   | SetEdgeLayout Id Id EdgeLayoutPatch
@@ -894,6 +893,8 @@ data EditCommand
   | AddToCollection Id Id [Id]
   | Uncollect Id Id (Maybe [Id])
   | PasteIntoView Id ViewClip (Maybe Point)
+  | MoveBetweenViews Id Id ViewClip (Maybe Point)          -- from, to: a paste of a cut
+  | Duplicate Id [Id]                                       -- view, instances
   | PasteRdf Id String Bool (Maybe Point)                   -- parsed N-Quads, flatten consent, paste position
   -- shapes and SKOS (§8)
   | CreateNodeShape String (Maybe Iri) (Maybe Id) (Maybe Point)
@@ -918,7 +919,6 @@ viewNamed c = case c of
   ShowRelations v _ _ -> Just v
   ShowAsEdge v _ _ -> Just v
   RemoveFromView v _ -> Just v
-  CutFromView v _ -> Just v
   SetBounds v _ -> Just v
   SetLayout v _ _ -> Just v
   SetEdgeLayout v _ _ -> Just v
@@ -934,6 +934,8 @@ viewNamed c = case c of
   AddToCollection v _ _ -> Just v
   Uncollect v _ _ -> Just v
   PasteIntoView v _ _ -> Just v
+  MoveBetweenViews _ v _ _ -> Just v
+  Duplicate v _ -> Just v
   PasteRdf v _ _ _ -> Just v
   _ -> Nothing
 viewExists :: Backend -> Id -> Bool
@@ -1041,10 +1043,10 @@ law_setUriFollowsReferences b old new =
 
 -- 6.3 View edits, marks and entity groups ----------------------------------------------
 
--- | View edits: createView, duplicateView, addToView, showRelations, showAsEdge, removeFromView, cutFromView.
+-- | View edits: createView, duplicateView, addToView, showRelations, showAsEdge, removeFromView.
 -- Geometry edits: setBounds, setLayout, setEdgeLayout, hideEdges, setViewElements.
 -- Mark edits: createGroup, createNote, addViewReference, addFileReference, createArrow.
--- Entity groups: collect, addToCollection, uncollect. Clipboard: pasteIntoView.
+-- Entity groups: collect, addToCollection, uncollect. Clipboard: pasteIntoView, moveBetweenViews. duplicate is a resource edit (§6.4).
 -- View edits change Project statements only: no statement outside view graphs changes (law_viewEditsKeepData).
 -- collect and addToCollection remove the own placement of each member and the placements of its relations.
 -- An arrow placement stays: it ends at the group. uncollect gives each released member a placement beside the group.
@@ -1056,10 +1058,11 @@ law_setUriFollowsReferences b old new =
 -- A note edit carries expectedText. A stale edit is rejected.
 -- addViewReference refuses a second reference to the same view. Paste skips it.
 isViewEdit :: EditCommand -> Bool
-isViewEdit c = isJust (viewNamed c) || case c of
+isViewEdit c = case c of
+  Duplicate _ _ -> False
   CreateView _ _ _ -> True
   DuplicateView _ _ -> True
-  _ -> False
+  _ -> isJust (viewNamed c)
 isViewGraph :: Backend -> Iri -> Bool
 law_viewEditsKeepData :: Backend -> EditCommand -> Bool
 law_viewEditsKeepData b c =
@@ -1095,24 +1098,38 @@ law_collectRemovesOwnPlacements b v ms =
 
 -- 6.4 Copy, cut and paste ---------------------------------------------------------------
 
--- | Copy makes new instances with their types, fields, owned values and the relations between copied instances.
--- It keeps box dimensions, color, display and copied relation layouts. Paste packs new placements near the requested point.
--- Cut removes the source placements at once. Paste after cut reuses the same IRIs and skips cards the target view has.
--- Copy reads source content at paste time. Deleted source instances do not return. A clip from another model matches same IRIs only.
--- Frames include their contained boxes. Entity groups copy as member cards. Groups and notes copy their content.
--- Limit: clips omit arrows and file references.
+-- | The clipboard carries references and never creates model data. A paste places the same elements: cards and view references that
+-- the target view shows already are skipped, and a paste fails when the target shows all of them. Groups and notes are view data:
+-- a paste creates new boxes, also for an empty group. A paste keeps box dimensions, color, display and the relation edge layouts of
+-- the clip, and packs new placements near the requested point. Cut only marks the clip. A paste of a cut is moveBetweenViews: the
+-- source placements leave the source view of the clip and the elements go to the target view, one command and one undo step. Within
+-- one view it re-places them. A clip reads the elements at paste time: deleted elements do not return. A clip from another model
+-- matches same IRIs only. Frames include their contained boxes. Entity groups copy as member cards. Limit: clips omit arrows and file
+-- references. duplicate is the only clipboard-related command that makes instances: copyInstance of each selected instance placed
+-- in the view, label with the next suffix, the same box offset by 40 px in x and y, the same color and display, and the relations
+-- between the copies with their edge layouts. It refuses a node shape ("A node shape cannot be duplicated yet.") and a selection
+-- without placed instances ("Nothing to duplicate."). Reason: one gesture gives one identity rule. Only explicit commands
+-- (duplicate, pasteRdf) make data.
 clipElements :: ViewClip -> [Iri]
-clipIsCut :: ViewClip -> Bool
 elementsOf :: Backend -> [Iri]                      -- subjects with statements outside view graphs
-law_pasteCopyMintsNew :: Backend -> Id -> ViewClip -> Bool
-law_pasteCopyMintsNew b v clip =
-  let (r, b') = step b (Execute (PasteIntoView v clip Nothing))
-      new = filter (`notElem` elementsOf b) (elementsOf b')
-  in (not (failed r) && not (clipIsCut clip)) ==> all (`notElem` clipElements clip) new
-law_pasteCutReusesIris :: Backend -> Id -> ViewClip -> Bool
-law_pasteCutReusesIris b v clip =
-  let b' = snd (step b (Execute (PasteIntoView v clip Nothing)))
-  in clipIsCut clip ==> all (`elem` elementsOf b) (elementsOf b')
+law_pasteNeverMintsIris :: Backend -> EditCommand -> Bool
+law_pasteNeverMintsIris b c =
+  let b' = snd (step b (Execute c))
+      pastes = case c of
+        PasteIntoView _ _ _ -> True
+        MoveBetweenViews _ _ _ _ -> True
+        _ -> False
+  in pastes ==> all (`elem` elementsOf b) (elementsOf b')
+law_moveIsOneUndoStep :: Backend -> Id -> Id -> ViewClip -> Maybe Point -> Bool
+law_moveIsOneUndoStep b from to clip at =
+  let (r, b') = step b (Execute (MoveBetweenViews from to clip at))
+  in not (failed r) ==>
+       (length (undoStack (historyOf b')) == min historyLimit (length (undoStack (historyOf b)) + 1)
+         && sameSet (storeQuads (snd (step b' Undo))) (storeQuads b))
+law_duplicateMintsNew :: Backend -> Id -> [Id] -> Bool
+law_duplicateMintsNew b v ids = case fst (step b (Execute (Duplicate v ids))) of
+  Success _ new -> all (`notElem` map elementId (elementsOf b)) new
+  Failure _ -> True
 
 -- | Raw RDF paste adds missing statements without replacing values or changing explicit resource IRIs.
 -- Existing statements keep their origins. New statements use the normal subject and file routing rules (§2.4).
@@ -1958,7 +1975,6 @@ noteText = manifestOnly
 viewReferences = manifestOnly
 ownPlacementIn = manifestOnly
 clipElements = manifestOnly
-clipIsCut = manifestOnly
 elementsOf = manifestOnly
 viewShows = manifestOnly
 placedIn = manifestOnly

@@ -55,7 +55,7 @@ isDiagramEdit c = case c of
   ShowRelations {} -> True
   ShowAsEdge {} -> True
   RemoveFromView {} -> True
-  CutFromView {} -> True
+  MoveBetweenViews {} -> True
   SetBounds {} -> True
   SetLayout {} -> True
   SetEdgeLayout {} -> True

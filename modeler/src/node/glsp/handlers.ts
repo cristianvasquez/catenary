@@ -4,7 +4,7 @@
 
 import {
     Action, ActionHandler, ChangeBoundsOperation, Command,
-    CreateNodeOperation, CreateNodeOperationHandler, CutOperation, DeleteElementOperation, OperationHandler,
+    CreateNodeOperation, CreateNodeOperationHandler, DeleteElementOperation, OperationHandler,
     PasteOperation, RedoAction, RequestClipboardDataAction, SelectAction, SetClipboardDataAction, FitToScreenAction,
     TriggerNodeCreationAction, UndoAction
 } from '@eclipse-glsp/server';
@@ -171,8 +171,8 @@ export class DeleteHandler extends OperationHandler {
 
 // Copy, cut and paste between views. The client keeps the clip (one clipboard for all view editors, see
 // diagram-configuration.ts) and sends it back with the paste. The client marks a cut with `args.mode = 'cut'`.
-// A paste of a copy creates new instances; a paste of a cut adds the same instances to the target view, and the
-// cut removes them from the source view. Cut and paste are two undo steps.
+// A paste places the same elements, never new ones. A paste of a cut moves them from the source view of the clip
+// (moveBetweenViews): one command, one undo step. A cut alone changes nothing.
 
 @injectable()
 export class RequestClipboardDataHandler implements ActionHandler {
@@ -184,17 +184,6 @@ export class RequestClipboardDataHandler implements ActionHandler {
         const mode = action.editorContext.args?.mode === 'cut' ? 'cut' : 'copy';
         const clip = copyFromView(this.session.part, this.session.viewId, ids, mode);
         return [SetClipboardDataAction.create(clip ? { format: VIEW_CLIP_FORMAT, [VIEW_CLIP_FORMAT]: JSON.stringify(clip) } : {})];
-    }
-}
-
-@injectable()
-export class CutHandler extends OperationHandler {
-    @inject(ViewSession) protected readonly session: ViewSession;
-    readonly operationType = CutOperation.KIND;
-
-    async createCommand(op: CutOperation): Promise<Command | undefined> {
-        await this.session.edit({ kind: 'cutFromView', view: this.session.viewId, ids: [...new Set(op.editorContext.selectedElementIds.map(ownerOfLabel))] });
-        return undefined;
     }
 }
 
@@ -215,7 +204,11 @@ export class PasteHandler extends OperationHandler {
             return undefined;
         }
         const before = new Set([...this.session.store.viewFigures(this.session.viewId)!.placed.values()].map(p => model.iriId(p.iri)));
-        await this.session.edit({ kind: 'pasteIntoView', view: this.session.viewId, clip, at: op.editorContext.lastMousePosition, cardScale: this.session.state.cardScale }, r => {
+        const at = op.editorContext.lastMousePosition, cardScale = this.session.state.cardScale;
+        const command: model.EditCommand = clip.mode === 'cut'
+            ? { kind: 'moveBetweenViews', from: clip.source, to: this.session.viewId, clip, at, cardScale }
+            : { kind: 'pasteIntoView', view: this.session.viewId, clip, at, cardScale };
+        await this.session.edit(command, r => {
             const added = (r.ids ?? []).filter(id => !before.has(id));
             return [SelectAction.create({ selectedElementsIDs: r.ids ?? [], deselectedElementsIDs: true }),
                 ...(added.length ? [FitToScreenAction.create(added, { padding: 40, maxZoom: 1, animate: false })] : [])];

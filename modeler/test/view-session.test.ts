@@ -460,7 +460,6 @@ describe('model changes reaching view clients', () => {
         edit({ kind: 'setBounds', view: second, bounds: [{ id: instance, x: 20000, y: 20000 }] });
         const existing = cardOf(docOf(store).views[second], instance)!;
         const clip = copyFromView(docOf(store), first, [instance, other], 'cut')!;
-        edit({ kind: 'cutFromView', view: first, ids: [instance, other] });
         const c = await client(store, second);
         const handler = Object.assign(new PasteHandler(), { session: c.session });
         await handler.createCommand(PasteOperation.create({

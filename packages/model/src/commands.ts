@@ -45,8 +45,6 @@ export type EditCommand =
      * box kept by lines whose last line left (ADR 0014, removal).
      */
     | { kind: 'removeFromView'; view: string; ids: string[] }
-    /** Cut: the selected view elements leave the view. */
-    | { kind: 'cutFromView'; view: string; ids: string[] }
     /** Move or resize cards and view-owned nodes. A moved group takes the elements inside it. */
     | { kind: 'setBounds'; view: string; bounds: ({ id: string } & Partial<Rect>)[] }
     /** Apply Layout: new boxes (as setBounds), then the sides and bends of every edge placement of the view are cleared. */
@@ -134,10 +132,20 @@ export type EditCommand =
     /** Take members (all without `ids`) out of a collection: their cards show again, next to it. An empty collection is deleted. */
     | { kind: 'uncollect'; view: string; id: string; ids?: string[] }
     /**
-     * Add the clip to a view. Pack new placements near `at`, else near the clip's top-left corner. Previous placements stay fixed.
-     * A copy clip creates new instances; a cut clip adds the same instances.
+     * Add the clip to a view: the same elements, never new ones. Pack new placements near `at`, else near the clip's top-left corner.
+     * Previous placements stay fixed. Groups and notes are new boxes.
      */
     | { kind: 'pasteIntoView'; view: string; clip: ViewClip; at?: Point; cardScale?: number }
+    /**
+     * Paste of a cut: the clip leaves view `from` and is pasted into view `to` (as pasteIntoView), one undo step. `from` and `to`:
+     * a view IRI or a view id. `from` equal to `to`: a re-placement.
+     */
+    | { kind: 'moveBetweenViews'; from: string; to: string; clip: ViewClip; at?: Point; cardScale?: number }
+    /**
+     * New instances from the instances `ids` placed in `view` (ops.copyInstance, label with the next suffix), each beside its source
+     * (offset 40 px) with the same appearance, and the relations between them. A node shape is refused.
+     */
+    | { kind: 'duplicate'; view: string; ids: string[] }
     /** Parsed clipboard RDF as N-Quads. Named graphs require explicit flattening consent. One additive edit and layout. */
     | { kind: 'pasteRdf'; view: string; rdf: string; flatten?: boolean; at?: Point; cardScale?: number };
 
@@ -183,12 +191,14 @@ export interface PropertyShapePatch {
 
 /**
  * Layout copied from a view (Ctrl+C / Ctrl+X). Instances are referred to by IRI, not by session id, so that a clip
- * from another model can only refer to the same resources. Mode 'cut': a paste adds the instances with these IRIs.
- * Mode 'copy': a paste creates new instances from the ones with these IRIs (types, field values, relations between them).
+ * from another model can only refer to the same resources. A paste places the elements with these IRIs; it never creates
+ * instances. Mode 'cut': the paste moves them from view `source` (moveBetweenViews).
  */
 export interface ViewClip {
     format: typeof VIEW_CLIP_FORMAT;
     mode: ClipMode;
+    /** IRI of the source view. */
+    source: string;
     /**
      * Cards, groups, notes and view references. `id` and `element` of a card: the IRI of its element; `target` of a view reference: the view IRI,
      * so a clip does not depend on session ids. Other boxes: the id in the source view (not used by a paste).
@@ -258,12 +268,12 @@ export function copyFromView(doc: Doc, viewId: string, ids: string[], mode: Clip
         const r = doc.relations[relation];
         return r && members.has(r.subject) && members.has(r.object) ? [{ subject: uri(r.subject), predicate: r.predicate, object: uri(r.object), ...layout }] : [];
     });
-    return { format: VIEW_CLIP_FORMAT, mode, boxes: clipped, edges };
+    return { format: VIEW_CLIP_FORMAT, mode, source: view.uri, boxes: clipped, edges };
 }
 
 export function isViewClip(x: unknown): x is ViewClip {
     const c = x as ViewClip;
-    return !!c && c.format === VIEW_CLIP_FORMAT && (c.mode === 'copy' || c.mode === 'cut') && Array.isArray(c.boxes) && Array.isArray(c.edges);
+    return !!c && c.format === VIEW_CLIP_FORMAT && (c.mode === 'copy' || c.mode === 'cut') && typeof c.source === 'string' && Array.isArray(c.boxes) && Array.isArray(c.edges);
 }
 
 /** Check a label for an instance or view. Labels are not identity: two elements can have the same label. */

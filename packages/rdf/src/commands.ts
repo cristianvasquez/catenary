@@ -1,7 +1,7 @@
 // EditCommand (@catenary/model) -> operations on the quads. No I/O, no undo (the store records the patch).
 // This is the only edit path.
 
-import { Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeSides, EditCommand, boxes, Point, ViewClip, centered, gridPositions, isViewClip, nextLabel, rangeOfShape, selection, valueSetOf } from '@catenary/model';
+import { Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeSides, EditCommand, boxes, Point, ViewClip, centered, gridPositions, isViewClip, nextLabel, rangeOfShape, valueSetOf } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm, relationId } from './ids';
@@ -47,9 +47,9 @@ function elementIds(g: ModelGraph, c: EditCommand): EditCommand {
 const triple = (e: ViewClip['edges'][number]) => rdf.quad(rdf.namedNode(e.subject), rdf.namedNode(e.predicate), rdf.namedNode(e.object));
 
 /**
- * Add a clip to a view. Instances not in this model are skipped. Cut clip: the same instances; instances already in the
- * view are skipped. Copy clip: new instances (see ops.copyInstance), with the relations between the copied instances.
- * Groups and notes are new. A view reference to a view that the view already refers to is skipped. Returns the ids of the pasted boxes (a cut: also of the cards already in the view).
+ * Add a clip to a view: the same elements, never new ones. Elements not in this model are skipped. Cards and view references
+ * already in the view are skipped. Groups and notes are new boxes. The edge layouts of the clip apply to the same relations.
+ * Returns the ids of the pasted boxes and of the cards already in the view.
  */
 function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point): ops.Result<string[]> {
     // Boxes of this model: a card of an element of this model, a reference to a view of this model. `id`: its element or target view.
@@ -62,30 +62,16 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
     const dx = at ? at.x - Math.min(...items.map(i => i.b.x)) : 0;
     const dy = at ? at.y - Math.min(...items.map(i => i.b.y)) : 0;
     const view = ops.viewTerm(g, viewId)!;
-    const copy = clip.mode === 'copy';
-    // A view places an element once: a card of a cut, and a reference (copy or cut), already in the view, are skipped.
-    const inView = items.filter(({ b }) => (b.kind === 'card' && !copy && !!nodeOf(g, view, rdf.namedNode(b.id))) || (b.kind === 'reference' && !!nodeOf(g, view, rdf.namedNode(b.target!))));
+    // A view places an element once: a card or a reference already in the view is skipped.
+    const inView = items.filter(({ b }) => (b.kind === 'card' && !!nodeOf(g, view, rdf.namedNode(b.id))) || (b.kind === 'reference' && !!nodeOf(g, view, rdf.namedNode(b.target!))));
     if (inView.length === items.length) return alreadyInView(items.length);
-    // Copy: IRI of the source instance -> its copy.
-    const copies = rdf.termMap<NamedNode, NamedNode>();
-    const used = new Set(g.match(null, P.label, null, g.union).map(q => q.object.value));
     const pasted: string[] = [];
     for (const { b, id } of items.filter(i => !inView.includes(i))) {
         const place = { x: b.x + dx, y: b.y + dy };
         let r: ops.Result<string | void>;
         let element = id;
-        if (b.kind === 'card') {
-            // A node shape is not copied: the paste shows the same shape.
-            if (copy && ops.instanceTerm(g, id)) {
-                const label = nextLabel(labelOf(g, rdf.namedNode(b.id)), used);
-                const c = ops.copyInstance(g, id, label);
-                if (!c.ok) return c;
-                used.add(label);
-                element = c.value;
-                copies.set(rdf.namedNode(b.id), ops.instanceTerm(g, element)!);
-            }
-            r = ops.addToView(g, viewId, element, place, { width: b.width, height: b.height });
-        } else if (b.kind === 'group') r = ops.createGroup(g, viewId, b.label, { ...place, width: b.width, height: b.height });
+        if (b.kind === 'card') r = ops.addToView(g, viewId, element, place, { width: b.width, height: b.height });
+        else if (b.kind === 'group') r = ops.createGroup(g, viewId, b.label, { ...place, width: b.width, height: b.height });
         else if (b.kind === 'note') r = ops.createNote(g, viewId, b.text, place);
         else r = ops.createViewReference(g, viewId, id, place);
         if (!r.ok) return r;
@@ -94,22 +80,79 @@ function pasteIntoView(g: ModelGraph, viewId: string, clip: ViewClip, at?: Point
         if (!s.ok) return s;
         pasted.push(element);
     }
+    for (const e of clip.edges) {
+        const t = triple(e);
+        if (!isInstance(g, t.subject) || !isInstance(g, t.object) || !g.has(rdf.quad(t.subject, t.predicate, t.object, homeOf(g, t.subject)))) continue;
+        if (edgeOf(g, view, t.subject, t.predicate, t.object)) continue;
+        const { subject: _s, predicate: _p, object: _o, ...layout } = e;
+        const r = ops.setEdgeLayout(g, viewId, relationId(t.subject as NamedNode, t.predicate as NamedNode, t.object as NamedNode), layout);
+        if (!r.ok) return r;
+    }
+    return ok([...pasted, ...inView.map(i => i.id)]);
+}
+
+/** Id of a view given by its id or its IRI; undefined if it is not a view of this model. */
+function viewIdOf(g: ModelGraph, view: string): string | undefined {
+    if (ops.viewTerm(g, view)) return view;
+    const t = rdf.namedNode(view);
+    return isView(g, t) ? elementId(t) : undefined;
+}
+
+/**
+ * Paste of a cut: the placements of the clip leave view `from` (cards by element, other boxes by id), then the clip is pasted into
+ * view `to`. `from` equal to `to`: a re-placement. A clip gives the members of an entity group as cards: a group that loses all
+ * its members leaves too (as uncollect).
+ */
+function moveBetweenViews(g: ModelGraph, from: string, to: string, clip: ViewClip, at?: Point): ops.Result<string[]> {
+    ops.removeViewElements(g, from, clip.boxes.flatMap(b => b.kind === 'card' ? (instanceId(g, b.id) ? [instanceId(g, b.id)!] : []) : [b.id]));
+    ops.removeViewElements(g, from, boxes(readView(g, from).views[from], 'collection').filter(c => c.members.length === 0).map(c => c.id));
+    return pasteIntoView(g, to, clip, at);
+}
+
+/** Offset of a duplicate from its source, in x and y. */
+const DUPLICATE_OFFSET = 40;
+
+/**
+ * New instances from the instances `ids` placed in the view (ops.copyInstance, label with the next suffix), each beside its source
+ * with the same box and appearance, and the relations between them with their edge layouts. Returns the ids of the copies.
+ */
+function duplicate(g: ModelGraph, viewId: string, ids: string[]): ops.Result<string[]> {
+    if (ids.some(id => shapes.nodeShapeTerm(g, id))) return fail('A node shape cannot be duplicated yet.');
+    const view = readView(g, viewId).views[viewId];
+    const sources = boxes(view, 'card').filter(b => ids.includes(b.element) && ops.instanceTerm(g, b.element));
+    if (sources.length === 0) return fail('Nothing to duplicate.');
+    // IRI of the source instance -> its copy.
+    const copies = rdf.termMap<NamedNode, NamedNode>();
+    const used = new Set(g.match(null, P.label, null, g.union).map(q => q.object.value));
+    const out: string[] = [];
+    for (const b of sources) {
+        const source = ops.instanceTerm(g, b.element)!;
+        const label = nextLabel(labelOf(g, source), used);
+        const c = ops.copyInstance(g, b.element, label);
+        if (!c.ok) return c;
+        used.add(label);
+        copies.set(source, ops.instanceTerm(g, c.value)!);
+        const r = ops.addToView(g, viewId, c.value, { x: b.x + DUPLICATE_OFFSET, y: b.y + DUPLICATE_OFFSET }, { width: b.width, height: b.height });
+        if (!r.ok) return r;
+        const s = ops.setViewElement(g, viewId, c.value, { color: b.color, display: b.display });
+        if (!s.ok) return s;
+        out.push(c.value);
+    }
     for (const [source, target] of copies) {
         for (const q of g.match(source, null, null, homeOf(g, source))) {
             const o = copies.get(q.object as NamedNode);
             if (o) g.add(target, q.predicate, o, homeOf(g, target));
         }
     }
-    for (const e of clip.edges) {
-        const t = triple(e);
-        if (!isInstance(g, t.subject) || !isInstance(g, t.object) || !g.has(rdf.quad(t.subject, t.predicate, t.object, homeOf(g, t.subject)))) continue;
-        const s = copy ? copies.get(t.subject) : t.subject, o = copy ? copies.get(t.object) : t.object;
-        if (!s || !o || edgeOf(g, view, s, t.predicate, o)) continue;
-        const { subject: _s, predicate: _p, object: _o, ...layout } = e;
-        const r = ops.setEdgeLayout(g, viewId, relationId(s, t.predicate as NamedNode, o), layout);
+    for (const { relation, id: _placement, ...layout } of view.edges) {
+        const t = ops.relationTerms(g, relation);
+        const s = t && copies.get(t.s), o = t && copies.get(t.o);
+        if (!t || !s || !o) continue;
+        const vertices = layout.vertices?.map(v => ({ x: v.x + DUPLICATE_OFFSET, y: v.y + DUPLICATE_OFFSET }));
+        const r = ops.setEdgeLayout(g, viewId, relationId(s, t.p, o), { ...layout, ...(vertices ? { vertices } : {}) });
         if (!r.ok) return r;
     }
-    return ok([...pasted, ...inView.map(i => i.id)]);
+    return ok(out);
 }
 
 /** The property shape `id` is a line in the view (ADR 0014: its placement, or its hub). */
@@ -142,8 +185,17 @@ const alreadyInView = (n: number) => fail(n === 1 ? 'The instance is already in 
 const FROM_A_PROPERTY = new Set<EditCommand['kind']>(['showAsEdge', 'createPropertyShape', 'setPropertyShape']);
 
 export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> {
-    const pasting = c.kind === 'pasteIntoView' || c.kind === 'pasteRdf';
-    const before = pasting ? new Set(g.subjects(V.view, ops.viewTerm(g, c.view), null).map(t => elementId(t as NamedNode))) : undefined;
+    // A paste or a move: the placements of the target view before the command. A move within one view re-places its cards: they
+    // count as new.
+    const target = c.kind === 'pasteIntoView' || c.kind === 'pasteRdf' ? c.view : c.kind === 'moveBetweenViews' ? viewIdOf(g, c.to) : undefined;
+    const targetView = target !== undefined ? ops.viewTerm(g, target) : undefined;
+    const before = targetView ? new Set(g.subjects(V.view, targetView, null).map(t => elementId(t as NamedNode))) : undefined;
+    if (before && c.kind === 'moveBetweenViews' && viewIdOf(g, c.from) === target) {
+        for (const b of c.clip.boxes) {
+            const node = b.kind === 'card' && instanceId(g, b.id) ? nodeOf(g, targetView!, rdf.namedNode(b.id)) : undefined;
+            if (node) before.delete(elementId(node as NamedNode));
+        }
+    }
     const r = run(g, meta, elementIds(g, c));
     // One rule for every removal path: an arrow goes with its end. One rule for every placement path: relations and property edges
     // follow their ends.
@@ -151,8 +203,8 @@ export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): op
         ops.placeConnectors(g);
         syncFigures(g, !FROM_A_PROPERTY.has(c.kind));
         ops.pruneArrows(g);
-        if (pasting) {
-            const added = layoutNewPlacements(g, meta, c.view, before!, c.at, c.cardScale);
+        if (before && (c.kind === 'pasteIntoView' || c.kind === 'pasteRdf' || c.kind === 'moveBetweenViews')) {
+            const added = layoutNewPlacements(g, meta, target!, before, c.at, c.cardScale);
             if (c.kind === 'pasteRdf') return ok(added);
         }
     }
@@ -256,10 +308,6 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
                 else if (!id.endsWith('_leaf') && !id.startsWith('c-')) rest.push(id);
             }
             ops.removeViewElements(g, c.view, rest);
-            return done;
-        }
-        case 'cutFromView': {
-            ops.removeViewElements(g, c.view, selection(readView(g, c.view).views[c.view], c.ids).map(b => b.kind === 'card' ? b.element : b.id));
             return done;
         }
         case 'setBounds':
@@ -409,6 +457,15 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
             if (!isViewClip(c.clip)) return fail('The clipboard does not hold view elements.');
             return pasteIntoView(g, c.view, c.clip, c.at);
         }
+        case 'moveBetweenViews': {
+            if (!isViewClip(c.clip)) return fail('The clipboard does not hold view elements.');
+            const from = viewIdOf(g, c.from), to = viewIdOf(g, c.to);
+            if (!from) return ops.gone('view', c.from);
+            if (!to) return ops.gone('view', c.to);
+            return moveBetweenViews(g, from, to, c.clip, c.at);
+        }
+        case 'duplicate':
+            return duplicate(g, c.view, c.ids);
         default:
             // A frontend newer than this backend: restart the backend.
             return fail(`Unknown command "${(c as { kind: string }).kind}". The backend is older than the frontend: restart it.`);

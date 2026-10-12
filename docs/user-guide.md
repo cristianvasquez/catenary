@@ -73,7 +73,7 @@ In the browser, append `?view=<view-id>` to the backend URL to open a specific v
 - Several selected cards: Collect combines them into one entity group with bundled edges. A member has no card of its own while it is in the group. Its relations and arrows end at the group.
 - An instance card shows the properties that have a value. A relation to an instance that the view does not show is a row of the card.
 - Notes: double-click or F2 opens a Markdown editor. Ctrl+Enter commits, Escape cancels.
-- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste creates new instances. Cut and paste moves the placements.
+- Copy, cut and paste: Ctrl+C, Ctrl+X, Ctrl+V on a canvas. The clip stays in the window. Paste shows the same elements and never creates instances. A paste of a cut moves the elements from the source view in one undo step.
 - Paste arranges new placements near the pointer. Existing placements stay fixed. Copied frames move with their contents.
 - The canvas fits the pasted placements so they remain visible.
 - Paste raw RDF to add missing statements and show figures from the canvas notations. Existing resource IRIs remain unchanged.

@@ -10,7 +10,7 @@ import { inject, injectable, interfaces } from '@theia/core/shared/inversify';
 import { TYPES } from '@catenary/model';
 import { DIAGRAM_TYPE } from '../../common/protocol';
 import {
-    ChangeBoundsHandler, CreateCardHandler, CreateGroupHandler, CreateNoteHandler, CreateShapeHandler, CreateValueSetHandler, CutHandler, DeleteHandler,
+    ChangeBoundsHandler, CreateCardHandler, CreateGroupHandler, CreateNoteHandler, CreateShapeHandler, CreateValueSetHandler, DeleteHandler,
     PasteHandler, RequestClipboardDataHandler, SetCardScaleHandler, SetShowHiddenHandler, SetVisibleHandler, StoreUndoRedoHandler
 } from './handlers';
 import { LayoutViewHandler } from './layout';
@@ -150,7 +150,6 @@ export class ViewDiagramModule extends DiagramModule {
         binding.add(CreateValueSetHandler);
         binding.add(ChangeBoundsHandler);
         binding.add(DeleteHandler);
-        binding.add(CutHandler);
         binding.add(PasteHandler);
     }
 }
