@@ -12,6 +12,9 @@ ex:S2 a sh:NodeShape ; sh:targetClass ex:A .
 ex:S3 a sh:NodeShape ; sh:targetClass ex:B .
 ex:A a rdfs:Class, sh:NodeShape .
 ex:Other ex:p ex:o .
+ex:T1 sh:targetClass ex:C .
+ex:T2 sh:targetClass ex:C .
+ex:P sh:path ex:q ; sh:targetClass ex:C .
 `;
 
 /** A port over one graph. The element id of an IRI is 'id:' + IRI. */
@@ -41,8 +44,13 @@ describe('Same target class (ui-manifest §8.8 law_sameTargetClass)', () => {
         expect(rows(['A'])).toEqual(['same-target-class S1 ex:A', 'same-target-class S2 ex:A']);
     });
 
+    it('a node shape with only sh:targetClass counts; a shape with sh:path does not', () => {
+        expect(rows(['T1'])).toEqual(['same-target-class T2 ex:C']);
+        expect(rows(['P'])).toEqual([]);
+    });
+
     it('law_sameTargetClass: a selected shape is never in its section, and the relation is symmetric', () => {
-        const all = ['S1', 'S2', 'S3', 'A'];
+        const all = ['S1', 'S2', 'S3', 'A', 'T1', 'T2', 'P'];
         const related = (s: string) => rows([s]).map(r => r.split(' ')[1]);
         for (const a of all) {
             expect(related(a)).not.toContain(a);

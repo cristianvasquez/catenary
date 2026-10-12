@@ -6,14 +6,19 @@ import { ExplorerPort, OWL, RDF, RDFS, RelatedProvider, RelatedRow, SH } from '@
 
 const PREFIXES = `PREFIX sh: <${SH}> PREFIX rdf: <${RDF}> PREFIX rdfs: <${RDFS}> PREFIX owl: <${OWL}>`;
 
-/** Node shape -> its target classes, by both target forms. One query for the request. */
+/**
+ * Node shape -> its target classes, by both target forms. One query for the request. A node shape as the host reads it
+ * (shapes-read.ts): rdf:type sh:NodeShape, a target, sh:property or a logical constraint, and no sh:path.
+ */
 function targetClasses(port: ExplorerPort): Map<string, Set<string>> {
     return port.memo('shacl-target-classes', () => {
         const classes = new Map<string, Set<string>>();
         for (const r of port.select(`${PREFIXES} SELECT DISTINCT ?s ?c WHERE {
-                { ${port.graph('?s rdf:type sh:NodeShape', '?g1')} } UNION { ${port.graph('?s sh:property ?p', '?g1')} }
+                { ${port.graph('?s rdf:type sh:NodeShape', '?g1')} }
+                UNION { ${port.graph('?s sh:targetClass|sh:targetSubjectsOf|sh:property|sh:or|sh:xone|sh:and|sh:not ?x', '?g1')} }
                 { ${port.graph('?s sh:targetClass ?c', '?g2')} }
                 UNION { ${port.graph('?s rdf:type ?k', '?g2')} VALUES ?k { rdfs:Class owl:Class } BIND (?s AS ?c) }
+                FILTER NOT EXISTS { ${port.graph('?s sh:path ?path', '?g3')} }
                 FILTER (isIRI(?s) && isIRI(?c)) }`)) {
             const set = classes.get(r.s.value) ?? classes.set(r.s.value, new Set()).get(r.s.value)!;
             set.add(r.c.value);
