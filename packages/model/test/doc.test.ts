@@ -109,4 +109,12 @@ describe('Links rows', () => {
         expect(linksFolders({ instances: 0, typed: 0, ends: false })).toEqual(['views', 'out', 'in']);
         expect(linksFolders({ instances: 0, typed: 0, ends: true })).toEqual(['views', 'out', 'in', 'ends']);
     });
+
+    it('linksFolderOrder: the Related folders come between Instances (rdf:type) and Views, in section order', () => {
+        expect(linksFolders({ instances: 2, typed: 3, related: ['shacl/same-target-class', 'x/y'], ends: true }))
+            .toEqual(['instances', 'typed', 'related:shacl/same-target-class', 'related:x/y', 'views', 'out', 'in', 'ends']);
+        expect(linksFolders({ instances: 0, typed: 0, related: ['shacl/same-target-class'], ends: false }))
+            .toEqual(['related:shacl/same-target-class', 'views', 'out', 'in']);
+        expect(linksFolders({ instances: 0, typed: 0, related: [], ends: false })).toEqual(['views', 'out', 'in']);
+    });
 });

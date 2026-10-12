@@ -1,3 +1,4 @@
+import type { ExplorerPort } from '@catenary/contracts';
 import { View, boxes } from '@catenary/model';
 import type { TargetMatch } from '@catenary/shacl/common';
 import { UNION_GRAPH } from './graph';
@@ -10,6 +11,7 @@ import {
     kindOf, pluginRanges, predicateName, primaryClass, shortIri
 } from '@catenary/model';
 import type { NamedNode, Quad, Term } from '@rdfjs/types';
+import { relatedSections } from './explorer';
 import { ModelGraph, cmp } from './graph';
 import { elementId, elementTerm, relationId, relationTriple } from './ids';
 import { cardIdsOf } from './records';
@@ -168,9 +170,10 @@ export function links(g: ModelGraph, idx: ShapesIndex, ids: string[], isElements
 /**
  * The Links panel data of a selection (ADR 0007): `ids` are the selected ids of `view` (a placement gives its element; groups, notes, …
  * are found in `view` only). The links query above, with the labels, kinds and relations of the read model of the backend.
+ * `port`: the plugin port of the Related sections (explorer.ts). None: no Related section.
  */
 export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: Classes, ids: string[], view?: string,
-    instances: (iris: Iterable<string>) => Set<string> = iris => instancesAmong(g, iris)): SelectionLinks {
+    instances: (iris: Iterable<string>) => Set<string> = iris => instancesAmong(g, iris), port?: ExplorerPort): SelectionLinks {
     const v = view ? doc.views[view] : undefined;
     const label = (id: string) => elementLabel(doc, meta, id, v) ?? id;
     const elements: LinkElement[] = [];
@@ -231,7 +234,13 @@ export function selectionLinks(g: ModelGraph, idx: ShapesIndex, doc: Doc, meta: 
             targeted.set(id, row);
         }
     }
-    return { elements, views, rows, instances: [...targeted.values()].sort((a, b) => compareLabels(a.label, b.label) || a.id.localeCompare(b.id)) };
+    // The Related sections: a row without a name has the label of its element, all labels in one request.
+    const sections = port && elements.length ? relatedSections(port, elements.map(e => e.id)) : [];
+    const unnamed = sections.flatMap(s => s.rows.flatMap(r => { const t = r.name === undefined ? elementTerm(r.element) : undefined; return t ? [t.value] : []; }));
+    const relatedNames = unnamed.length ? labels(g, unnamed) : new Map<string, string>();
+    const rowName = (element: string) => { const t = elementTerm(element); return t ? relatedNames.get(t.value) ?? shortIri(t.value) : element; };
+    const related = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, name: r.name ?? rowName(r.element) })) }));
+    return { elements, views, rows, instances: [...targeted.values()].sort((a, b) => compareLabels(a.label, b.label) || a.id.localeCompare(b.id)), related };
 }
 
 /** Kind names of the Links panel head (an instance: its class). */

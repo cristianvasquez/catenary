@@ -4,4 +4,5 @@ export { readNodeReferences, applicableMatches } from './node';
 export type { NodeReference } from './node';
 export { shapePredicates } from './form';
 export { shaclExplorer } from './explorer';
+export { shaclRelated } from './related';
 export { shaclFields, shaclLinks, shaclPalette } from './authoring';

@@ -157,7 +157,8 @@ export class PanelReads implements ModelQueries {
 
     links(ids: string[], view?: string): SelectionLinks {
         const idx = this.shapesIndex();
-        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view, iris => this.facts.instancesAmong(iris));
+        return selectionLinks(this.graph, idx, this.scoped({ elements: ids, selectionViews: [view] }), this.metamodel, ids, view, iris => this.facts.instancesAmong(iris),
+            explorerPort(this.explorerContext()));
     }
 
     shapesText(): string {

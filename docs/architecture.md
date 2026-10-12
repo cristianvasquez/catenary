@@ -57,8 +57,8 @@ Imports flow from `modeler` to `@catenary/rdf` and `@catenary/model`. `@catenary
 
 | Package | Responsibility | Allowed dependencies |
 |---|---|---|
-| `packages/contracts` (`@catenary/contracts`) | The contracts between the host and a vocabulary plugin, one module each. `query`: the query port (SPARQL SELECT, graph patterns, labels), the namespaces and the IRI escaper. `explorer`: the Model explorer (sections, rows, paths, the explorer port). `palette`: the palette and the class picker (classes, with name, description and order). `links`: the link picker and drawn and reconnected edges (class, predicate, target class, cardinality). `fields`: the Properties form and the card fields (class, predicate, datatype or values, cardinality). | None. |
-| `packages/shacl` (`@catenary/shacl`) | The SHACL plugin: the Shapes section of the Model explorer; the palette classes, links and fields of the shapes. Also SHACL target types, applicability queries, form predicates, connection rules and notation assets. | `@catenary/contracts`. Hosts supply query ports and graph identities. |
+| `packages/contracts` (`@catenary/contracts`) | The contracts between the host and a vocabulary plugin, one module each. `query`: the query port (SPARQL SELECT, graph patterns, labels), the namespaces and the IRI escaper. `explorer`: the Model explorer (sections, rows, paths, the explorer port). `palette`: the palette and the class picker (classes, with name, description and order). `links`: the link picker and drawn and reconnected edges (class, predicate, target class, cardinality). `fields`: the Properties form and the card fields (class, predicate, datatype or values, cardinality). `related`: the Related sections of the Links tab (sections of element rows, on the explorer port). | None. |
+| `packages/shacl` (`@catenary/shacl`) | The SHACL plugin: the Shapes section of the Model explorer; the "Same target class" section of the Links tab; the palette classes, links and fields of the shapes. Also SHACL target types, applicability queries, form predicates, connection rules and notation assets. | `@catenary/contracts`. Hosts supply query ports and graph identities. |
 | `packages/rdfs` (`@catenary/rdfs`) | The RDFS plugin: the Classes section of the Model explorer (classes, subclasses and instances as written); the palette classes, links and fields of `rdfs:domain` and `rdfs:range`. | `@catenary/contracts`. |
 | `packages/model` (`@catenary/model`) | JSON types, commands, query declarations, pure rules on read models, the merge of the plugins into the metamodel. Runs in Node and the browser. | `canonical-md`, `@catenary/contracts`, `@catenary/shacl/common`. No RDF library, UI framework or Node built-in. |
 | `packages/rdf-serialization` (`rdf-serialization`) | Vendored RDF canonicalization and Turtle/TriG serialization. Exports ESM and CommonJS. | RDF libraries, Node built-ins. No Catenary package. |
@@ -110,6 +110,8 @@ To add a plugin:
 1. Implement the contracts that the vocabulary can give in its package: `PaletteProvider`, `LinksProvider`, `FieldsProvider` and `ExplorerPlugin` (`packages/contracts/src`). Import them from `@catenary/contracts`. Query only through the port.
 2. Add it to `AUTHORING_PLUGINS` (`packages/rdf/src/authoring.ts`) with the graphs it reads, and its explorer plugin to `EXPLORER_PLUGINS` (`packages/rdf/src/explorer.ts`). The order of `AUTHORING_PLUGINS` is the precedence: for a class and a predicate, the first plugin that gives a link or a field wins.
 
+`RelatedProvider` (`packages/contracts/src/related.ts`) gives the Links tab extra top-level folders. The host runs `RELATED_PROVIDERS` (`packages/rdf/src/explorer.ts`) with an explorer port over the graphs of all model files.
+
 Validation never reads the plugins: it reads the shapes.
 
 ### Add a read query for the frontend
@@ -129,9 +131,11 @@ Paths are relative to the directory in the first column.
 | `packages/contracts/src` | `query.ts` | Query port, namespaces and the IRI escaper |
 | | `explorer.ts` | Model explorer contract |
 | | `palette.ts`, `links.ts`, `fields.ts` | Palette, links and fields contracts |
-| | `index.ts` | Re-exports the five modules |
+| | `related.ts` | Related sections of the Links tab contract |
+| | `index.ts` | Re-exports the six modules |
 | `packages/shacl/src` | `common/index.ts`, `backend/targets.ts`, `backend/node.ts`, `backend/form.ts` | Target declarations, query ports, direct targeting, node constraints, form predicates and connection rules |
 | | `backend/explorer.ts` | Shapes section of the Model explorer |
+| | `backend/related.ts` | "Same target class" section of the Links tab |
 | | `backend/authoring.ts` | Palette classes, links and fields of the shapes |
 | `packages/rdfs/src` | `explorer.ts` | Classes section of the Model explorer |
 | | `domain-range.ts` | Palette classes, links and fields of `rdfs:domain` and `rdfs:range` |
@@ -167,7 +171,7 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `ops.ts`, `elements.ts`, `shape-ops.ts`, `figure-edits.ts` | Command dispatch and edit effects; removal, arrival and data arrival of figures (ADR 0014) |
 | | `clipboard.ts` | RDF clipboard parsing, additive insertion, notation placement, paste layout and selected RDF export |
 | | `sparql.ts`, `queries.ts`, `records.ts`, `view-read.ts`, `scoped-doc.ts`, `selection.ts` | Shared SPARQL rules and scoped read models. Queries reads predicates, classes, view descriptions and applicability. Selection reads element statements, source files and text targets. |
-| | `explorer.ts` | Model explorer host: plugins, the query port over the graphs of one file, keys, pages, search and paths |
+| | `explorer.ts` | Model explorer host: plugins, the query port over the graphs of one file, keys, pages, search and paths. The Related providers of the Links tab |
 | | `outline.ts`, `properties.ts`, `search.ts`, `actions.ts`, `link-choices.ts` | Panel and action queries. Link-choices also reads shape target choices. `queries.ts` reads hidden-edge membership and labels without constructing cards. |
 | | `shapes.ts`, `shapes-read.ts`, `shape-proposal.ts`, `shacl-targets.ts` | Shapes dataset and SKOS vocabulary of the metamodel, the shapes quads of a ModelGraph (`shapesQuads`, `shapesTarget`, `vocabularyQuads`), form shapes, shapes index, shape proposal and the shared SHACL query adapter. The adapter keeps the target matches of each node and drops those that a data patch can change (manifest §11.3). |
 | | `authoring.ts` | The plugins of the palette, links and fields contracts on the store: ports and merge |

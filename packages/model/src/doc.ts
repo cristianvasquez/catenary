@@ -1,6 +1,7 @@
 // Read model of the document: instances, relations and views as plain JSON.
 // @catenary/rdf derives it from the quads; edits never change it (they are EditCommands).
 
+import type { RelatedSection } from '@catenary/contracts';
 import { ShapesModel, emptyShapes } from './shapes-doc';
 import { RDF_TYPE, TermJSON } from './terms';
 
@@ -330,18 +331,21 @@ export interface LinkRow {
 /** An incoming rdf:type row: the other end is an instance of the selected class. Links puts these rows in a closed folder (UI §8.8). */
 export const isTypedInstanceRow = (r: Pick<LinkRow, 'dir' | 'predicate'>) => r.dir === 'in' && r.predicate === RDF_TYPE;
 
-/** A top-level folder of the Links tab: 'typed' is "Instances (rdf:type)", 'instances' the targets of the selected node shapes. */
-export type LinksFolder = 'instances' | 'typed' | 'views' | 'out' | 'in' | 'ends';
+/**
+ * A top-level folder of the Links tab: 'typed' is "Instances (rdf:type)", 'instances' the targets of the selected node shapes,
+ * 'related:<key>' a Related section.
+ */
+export type LinksFolder = 'instances' | 'typed' | `related:${string}` | 'views' | 'out' | 'in' | 'ends';
 
 /**
  * The top-level folders of the Links tab, in order (UI §8.8 `linksFolderOrder`). An instance folder shows only when it has rows.
- * Ends shows only for selected relations.
+ * `related`: the keys of the Related sections, in order. Ends shows only for selected relations.
  */
-export function linksFolders(n: { instances: number; typed: number; ends: boolean }): LinksFolder[] {
+export function linksFolders(n: { instances: number; typed: number; related?: readonly string[]; ends: boolean }): LinksFolder[] {
     return [
         ...(n.instances ? ['instances' as const] : []),
         ...(n.typed ? ['typed' as const] : []),
-        // Kata vxsq: the "Related" folders go here, between Instances (rdf:type) and Views.
+        ...(n.related ?? []).map(k => `related:${k}` as const),
         'views', 'out', 'in',
         ...(n.ends ? ['ends' as const] : [])
     ];
@@ -377,6 +381,8 @@ export interface SelectionLinks {
     elements: LinkElement[];
     /** Known instances targeted by selected node shapes, independent of view placement. */
     instances: { id: string; label: string; shapes: string[] }[];
+    /** The Related sections of the plugins (RelatedProvider), each with rows. A row without a plugin name has the label of the element. */
+    related: (Omit<RelatedSection, 'rows'> & { rows: (RelatedSection['rows'][number] & { name: string })[] })[];
     /** Views of the read model only. */
     views: (ViewLink & { label: string })[];
     rows: (LinkRow & {

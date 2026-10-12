@@ -26,8 +26,8 @@ export const LINKS_CONTEXT_MENU: MenuPath = ['catenary-links-context'];
 
 /** Not a CatenaryNode (no `kind`/`key`): a selection in this tree does not change the selected element. */
 export interface LinkNode extends SelectableTreeNode {
-    /** 'head': first row, the class and the name of the element. */
-    link: 'head' | 'folder' | 'view' | 'out' | 'in' | 'end' | 'instance';
+    /** 'head': first row, the class and the name of the element. 'related': a row of a Related section (a plugin, UI §8.8). */
+    link: 'head' | 'folder' | 'view' | 'out' | 'in' | 'end' | 'instance' | 'related';
     /** Selected elements that the node is about. */
     elements: string[];
     /** View of a 'view' node. */
@@ -186,7 +186,15 @@ export class LinksWidget extends TreeWidget {
         const relations = elements.filter(e => e.ends);
 
         // Top-level folders in the order of UI §8.8 (`linksFolders`).
-        const render: Record<LinksFolder, () => void> = {
+        const related = new Map(this.links.related.map(s => [s.key, s]));
+        const renderRelated = (key: string) => {
+            const s = related.get(key)!;
+            const f = folder(`related:${key}`, s.title, ids, s.rows.length);
+            for (const row of s.rows) {
+                add(f, { id: `related:${key}:${row.element}`, name: row.name, link: 'related', elements: ids, target: row.element, description: row.description, tooltip: row.tooltip });
+            }
+        };
+        const render: Record<Exclude<LinksFolder, `related:${string}`>, () => void> = {
             instances: () => {
                 const f = folder('instances', 'Instances', shapes.map(e => e.id), instances.length);
                 for (const row of instances) {
@@ -226,7 +234,10 @@ export class LinksWidget extends TreeWidget {
                 }
             }
         };
-        for (const f of linksFolders({ instances: instances.length, typed: typed.length, ends: relations.length > 0 })) render[f]();
+        for (const f of linksFolders({ instances: instances.length, typed: typed.length, related: [...related.keys()], ends: relations.length > 0 })) {
+            if (f.startsWith('related:')) renderRelated(f.slice('related:'.length));
+            else render[f as Exclude<LinksFolder, `related:${string}`>]();
+        }
         this.model.root = root;
     }
 
@@ -271,7 +282,7 @@ export class LinksWidget extends TreeWidget {
         if (!LinkNode.is(n)) return undefined;
         if (n.link === 'view' && n.view) return { view: n.view, ids: n.elements };
         if (n.link === 'out' || n.link === 'in') return { ids: n.relation ? [n.relation] : n.target ? [n.target] : [] };
-        if (n.link === 'end' || n.link === 'instance') return { ids: n.target ? [n.target] : [] };
+        if (n.link === 'end' || n.link === 'instance' || n.link === 'related') return { ids: n.target ? [n.target] : [] };
         if (n.link === 'head') return { ids: n.elements };
         return { ids: [] };
     }
@@ -417,4 +428,4 @@ export class LinksContribution extends AbstractViewContribution<LinksWidget>
     }
 }
 
-const EMPTY: SelectionLinks = { elements: [], views: [], rows: [], instances: [] };
+const EMPTY: SelectionLinks = { elements: [], views: [], rows: [], instances: [], related: [] };

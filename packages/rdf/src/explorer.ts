@@ -1,10 +1,10 @@
 // The Model explorer (ADR 0006): the sections of the explorer plugins (@catenary/contracts) on this store. A plugin query runs only
 // when the frontend asks for the children of a key. Keys: '<plugin id>/<plugin key>'.
 
-import type { ExplorerPlugin, ExplorerPort } from '@catenary/contracts';
+import type { ExplorerPlugin, ExplorerPort, RelatedProvider, RelatedSection } from '@catenary/contracts';
 import { EXPLORER_PAGE, ExplorerPage, ExplorerPath, ExplorerRow, fuzzyMatch, iriId, shortIri } from '@catenary/model';
 import { rdfsExplorer } from '@catenary/rdfs';
-import { shaclExplorer } from '@catenary/shacl/backend';
+import { shaclExplorer, shaclRelated } from '@catenary/shacl/backend';
 import type { Term } from '@rdfjs/types';
 import * as path from 'path';
 import { ModelGraph } from './graph';
@@ -19,6 +19,9 @@ export interface ExplorerContext { g: ModelGraph; idx: ShapesIndex; settings?: S
 /** The sections of the Model explorer, in display order. */
 export const EXPLORER_PLUGINS: readonly ExplorerPlugin[] = [rdfsExplorer, shaclExplorer];
 
+/** The Related sections of the Links tab (ui-manifest §8.8), in display order. */
+export const RELATED_PROVIDERS: readonly RelatedProvider[] = [shaclRelated];
+
 const keyed = (plugin: ExplorerPlugin) => (row: ExplorerRow): ExplorerRow => ({ ...row, key: plugin.id + '/' + row.key });
 
 /** All rows of a key; no key: the sections. */
@@ -27,6 +30,11 @@ function rows(port: ExplorerPort, key?: string): ExplorerRow[] {
     const slash = key.indexOf('/');
     const plugin = EXPLORER_PLUGINS.find(p => p.id === key.slice(0, slash));
     return plugin ? plugin.children(port, key.slice(slash + 1)).map(keyed(plugin)) : [];
+}
+
+/** The Related sections of the selected element ids. Keys: '<provider id>/<section key>'. A section with no rows gives no section. */
+export function relatedSections(port: ExplorerPort, elements: string[]): RelatedSection[] {
+    return RELATED_PROVIDERS.flatMap(p => p.related(port, elements).filter(s => s.rows.length).map(s => ({ ...s, key: p.id + '/' + s.key })));
 }
 
 /** One page of the rows of a key. */
@@ -74,10 +82,14 @@ export function graphsOfFile(ctx: ExplorerContext, file: string): string[] {
     return [...ctx.g.graphsOfFile(known).map(g => g.value), ...views];
 }
 
-/** The plugin port of one request: the plugin queries read the graphs of the file only. The memo lives for the request. */
-export function explorerPort(ctx: ExplorerContext, file: string): ExplorerPort {
+/**
+ * The plugin port of one request: the plugin queries read the graphs of the file only. No file: the graphs of all model files (the
+ * Related sections of the Links tab). The memo lives for the request.
+ */
+export function explorerPort(ctx: ExplorerContext, file?: string): ExplorerPort {
     const memo = new Map<string, unknown>(), byTerm = ctx.idx.byTerm;
-    const graphs = graphsOfFile(ctx, file).map(g => `<${g}>`).join(' ');
+    const files = file === undefined ? [...ctx.settings?.modelFiles.keys() ?? []] : [file];
+    const graphs = [...new Set(files.flatMap(f => graphsOfFile(ctx, f)))].map(g => `<${g}>`).join(' ');
     return {
         select: query => ctx.g.select(query) as unknown as Record<string, Term>[],
         graph: (pattern, v = '?g') => `VALUES ${v} { ${graphs} } GRAPH ${v} { ${pattern} }`,

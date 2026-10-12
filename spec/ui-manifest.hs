@@ -1663,6 +1663,8 @@ showTarget _ vs = case sortOn fst vs of
 -- Reason: a class can have thousands of instances. The folder keeps its other links readable.
 -- The instance folders come first, each only when it has rows: Instances, Instances (rdf:type), Views, Outgoing, Incoming, Ends.
 -- Reason: the instances of a class or node shape are its most frequent link.
+-- The Related folders (one for each section of a RelatedProvider, in plugin order) go between Instances (rdf:type) and Views.
+-- Reason: a plugin relation is less frequent than an instance and more specific than a view. A section without rows gives no folder.
 -- An RDF list is one predicate step. A self-link shows as outgoing only. Mixed selections show ownership counts.
 -- A row without a navigable element is inactive. A statement-row action targets its relation, else the other end.
 -- A view row targets the matching placements. Limit: no arrows and no entity-group membership from view graphs (open.md G4).
@@ -1676,10 +1678,11 @@ law_selfLinkOutgoingOnly e p = linkRows e [(Node e, p, Node e)] == [OutgoingRow 
 isTypedInstanceRow :: LinkRow -> Bool                -- an incoming rdf:type row: it goes in the "Instances (rdf:type)" folder
 isTypedInstanceRow (IncomingRow (_, p, _)) = p == "rdf:type"
 isTypedInstanceRow _ = False
-data LinksFolder = InstancesFolder | TypedFolder | ViewsFolder | OutgoingFolder | IncomingFolder | EndsFolder deriving (Eq, Show)
-linksFolderOrder :: Int -> Int -> Bool -> [LinksFolder]   -- shape-target rows, incoming rdf:type rows, selected relations
-linksFolderOrder instances typed ends =
-  [InstancesFolder | instances > 0] ++ [TypedFolder | typed > 0]
+data LinksFolder = InstancesFolder | TypedFolder | RelatedFolder String | ViewsFolder | OutgoingFolder | IncomingFolder | EndsFolder
+  deriving (Eq, Show)
+linksFolderOrder :: Int -> Int -> [String] -> Bool -> [LinksFolder]   -- shape-target rows, incoming rdf:type rows, section keys, selected relations
+linksFolderOrder instances typed related ends =
+  [InstancesFolder | instances > 0] ++ [TypedFolder | typed > 0] ++ map RelatedFolder related
     ++ [ViewsFolder, OutgoingFolder, IncomingFolder] ++ [EndsFolder | ends]
 law_typeRowsShown :: Iri -> Iri -> Iri -> Bool
 law_typeRowsShown e c x = c /= e && x /= e ==>
@@ -1695,6 +1698,21 @@ shapeInstances :: Eq a => [[a]] -> [a]
 shapeInstances = nub . concat
 law_shapeInstances :: Eq a => [a] -> Bool
 law_shapeInstances xs = shapeInstances [xs, xs] == nub xs
+
+-- | "Same target class" (SHACL plugin): the other node shapes that target a class of the selected node shapes.
+-- Target forms: sh:targetClass, and the implicit class target (the node shape is also an rdfs:Class or owl:Class).
+-- Reason: two shapes of one class are candidates to merge.
+-- A row shows the shared class as a short IRI. A selection without a node shape gives no section.
+-- A selected shape is never a row of its own section. Reason: the section lists the other shapes.
+-- The relation is symmetric. Reason: a shared target class is shared from both sides.
+sameTargetClass :: [(Iri, [Iri])] -> [Iri] -> [Iri]   -- (node shape, its target classes), selected shapes
+sameTargetClass shapes selected =
+  nub [s | (s, cs) <- shapes, s `notElem` selected, any (`elem` wanted) cs]
+  where wanted = concat [cs | (s, cs) <- shapes, s `elem` selected]
+law_sameTargetClass :: [(Iri, [Iri])] -> Iri -> Iri -> Bool
+law_sameTargetClass shapes a b =
+  a `notElem` sameTargetClass shapes [a]
+    && (b `elem` sameTargetClass shapes [a]) == (a `elem` sameTargetClass shapes [b])
 
 -- 8.9 Outline -----------------------------------------------------------------------
 

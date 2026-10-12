@@ -123,3 +123,5 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 ## Optional work
 
 Hover popups and an MCP adapter remain ideas, not accepted requirements. UI library extraction requires D9. Do not add implementation plans for these features until the user selects one.
+
+- **Same target class (UI §8.8):** the Links section uses `sh:targetClass` and implicit class targets only. Subclass targets, `sh:targetNode` overlap and a merge action are not in it. The row description has no file: the explorer port gives no file of a graph.
