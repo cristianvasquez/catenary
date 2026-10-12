@@ -14,7 +14,7 @@
 module Catenary.UiManifest where
 
 import Control.Applicative ((<|>))
-import Data.List (nub, sortOn)
+import Data.List (isSuffixOf, nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
@@ -678,7 +678,8 @@ law_enterInNoteIsNewline = inputEnd NoteInput EnterKey == Nothing
 -- that name, else the name IRI. Reason: a shape usually targets the class of its name.
 -- Rename, placement and connection to existing elements start no follow-up.
 -- New View first asks for the name of the view file (DialogInput). It proposes a free views/unnamed-view.view.trig (or the selected
--- folder); a name without .trig gets it. Cancel creates nothing. The view gets the default label "unnamed view N" and opens. No
+-- folder); a name without .trig gets it. Cancel creates nothing. The view label is the base name of the file (without
+-- .view.trig or .trig, trimmed), with a suffix when taken, and the view opens. Reason: the file name is the name the user just typed. No
 -- follow-up starts: the file dialog is the only dialog. Reason: one question per gesture; the user renames the view later, or never.
 -- A later rename does not change the file name. Reason: the read finds a view by the content of its file, not by its name.
 -- Duplicate View asks the same way for the file of the copy, proposed next to the source file (<name>-copy). The copy opens as
@@ -687,6 +688,9 @@ newViewFileInput :: String -> FilePath
 newViewFileInput t = if isTrig t then t else t ++ ".trig"
 law_newViewFileIsTrig :: String -> Bool
 law_newViewFileIsTrig t = isTrig (newViewFileInput t)
+viewFileBase :: FilePath -> String               -- the last name without .view.trig or .trig, trimmed
+law_newViewLabelIsFileBase :: String -> Bool
+law_newViewLabelIsFileBase b = ('/' `notElem` b && not (".view" `isSuffixOf` b)) ==> all (\f -> viewFileBase ("views/" ++ b ++ f) == b) [".trig", ".view.trig"]
 data Field = LabelField | PathField | NoteTextField deriving Eq
 data FieldPlace = InlineField | ElementSectionField | LabelDialog deriving Eq
 followUp :: Element -> Field
@@ -1992,3 +1996,4 @@ sha256Hex = manifestOnly
 isFolder = manifestOnly
 parentFolder = manifestOnly
 commonFolder = manifestOnly
+viewFileBase = manifestOnly

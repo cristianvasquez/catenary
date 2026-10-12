@@ -54,7 +54,7 @@ Pause and hide retain the final backend measurements before stopping. Percentile
 
 In the browser, append `?view=<view-id>` to the backend URL to open a specific view. Use `pnpm -s catenary --port PORT model views --keys` to get view IDs. For example: `http://localhost:3931/?view=n-urn_3aname_3aPackage_2520provenance`. The link selects a view in the current workspace after startup, even when other tabs were restored. An unknown view shows an error and leaves normal startup behavior unchanged. The link does not select a workspace or start a backend.
 
-- Create a view: Model → New View, the `+` after the editor tabs, or New View on a folder of the navigator. Type the name of the view file. The view opens with the label "unnamed view N", and no other dialog appears. Rename it when you want (F2, or Properties): the file name stays.
+- Create a view: Model → New View, the `+` after the editor tabs, or New View on a folder of the navigator. Type the name of the view file. The view opens with the base name of the file as its label (`views/road.view.trig` gives "road"), and no other dialog appears. Rename it when you want (F2, or Properties): the file name stays.
 - Duplicate a view: Duplicate View in the view actions. Type the name of the file of the copy (proposed: `<name>-copy` next to the source). The copy opens as "<label> copy", with no other dialog.
 - Open a view: select its file in the navigator. A view file is a TriG file that declares a view. Its name does not matter. New views propose `*.view.trig`.
 - Create an element: use the palette above the canvas. From left to right: Shape (the large tile), Scheme and Collection, one tool per class with a target-class shape, and Group and Note for the view.

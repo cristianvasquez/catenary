@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, boxes, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, viewFileBase, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, boxes, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -453,14 +453,16 @@ export class ModelActions {
     // ------------------------------------------------------------ views
 
     /**
-     * New view "unnamed view N", opened. A dialog asks for the name of its view file, in `folder` (default: views/). The file dialog is
+     * New view labeled after the base name of its file (a suffix when the label is taken), opened. A dialog asks for the name of its view file, in `folder` (default: views/). The file dialog is
      * the only one: no label follow-up. Rename the view (F2) in the view editor or Properties when you want; the file name does not
      * change, the read finds the view by the content of the file.
      */
     async newView(folder?: string): Promise<void> {
         const file = await this.askViewFile(folder);
         if (file === undefined) return;
-        const r = await this.model.execute({ kind: 'createView', label: await this.service.newLabel('view'), file });
+        const base = viewFileBase(file);
+        const label = await (base ? this.service.newLabel('view', { base }) : this.service.newLabel('view'));
+        const r = await this.model.execute({ kind: 'createView', label, file });
         if (!r.ok) return;
         await this.editors.open(r.id!);
     }
