@@ -1451,13 +1451,18 @@ law_notesReadScope descriptionCanChange readRequested = not descriptionCanChange
 -- Each file shows what its triples contain (views, shapes, instances). A view row opens its view.
 -- Opening a file selects its own editor when there is one, else source text.
 -- Each file tail shows one letter per kind: W workspace, V view, D default file, S shapes, C concepts, I instances,
--- R imported (read-only), ! not read. The context menu of a model file or view file has Mark as Imported, or Mark as Own
+-- ! not read. An imported (read-only) file shows a lock icon after the letters. The other kinds keep their letters. The context menu of a model file or view file has Mark as Imported, or Mark as Own
 -- when it is imported.
 data FileContent = HasViews | HasShapes | HasInstances deriving Eq
 data FileMark = MarkWorkspace | MarkView | MarkDefault | MarkShapes | MarkConcepts | MarkInstances | MarkImported | MarkNotRead
   deriving (Eq, Enum, Bounded)
-markLetter :: FileMark -> Char
-markLetter m = "WVDSCIR!" !! fromEnum m
+data Tail = Letter Char | LockIcon deriving Eq
+markTail :: FileMark -> Tail
+markTail MarkImported = LockIcon
+markTail m = Letter ("WVDSCI-!" !! fromEnum m)        -- '-' holds the MarkImported slot
+-- | Only an imported file shows the lock icon.
+law_importedIsLock :: FileMark -> Bool
+law_importedIsLock m = (markTail m == LockIcon) == (m == MarkImported)
 importMenuItem :: Bool -> String                   -- the file is imported
 importMenuItem imported = if imported then "Mark as Own" else "Mark as Imported"
 editorFor :: FilePath -> Maybe Element -> Document   -- a file, its view

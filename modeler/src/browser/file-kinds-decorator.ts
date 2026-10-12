@@ -1,6 +1,6 @@
 // ADR 0004: the file navigator is the main view. Each file of the open workspace gets a tail text of what it is, from the triples
 // (snapshot.files): workspace (the manifest), view, default (the file for new subjects), shapes, concepts, instances, imported (read only).
-// The tail shows one letter per kind (LETTERS); the tooltip shows the words.
+// The tail shows one letter per kind (LETTERS), and a lock icon for an imported file; the tooltip shows the words.
 
 import { Emitter, Event } from '@theia/core';
 import { DepthFirstTreeIterator, Tree, TreeDecoration, TreeDecorator } from '@theia/core/lib/browser';
@@ -9,7 +9,7 @@ import { FileStatNode } from '@theia/filesystem/lib/browser';
 import { ModelFrontend } from './model-client';
 
 export const LETTERS: Record<string, string> = {
-    workspace: 'W', view: 'V', default: 'D', shapes: 'S', concepts: 'C', instances: 'I', imported: 'R', 'not read': '!'
+    workspace: 'W', view: 'V', default: 'D', shapes: 'S', concepts: 'C', instances: 'I', 'not read': '!'
 };
 
 @injectable()
@@ -61,9 +61,11 @@ export class FileKindsDecorator implements TreeDecorator {
             if (!FileStatNode.is(node)) continue;
             const k = kinds[node.fileStat.resource.path.fsPath()];
             if (!k?.length) continue;
-            result.set(node.id, {
-                tailDecorations: [{ data: k.map(x => LETTERS[x] ?? x).join(''), fontData: { color: 'var(--theia-descriptionForeground)' }, tooltip: `Catenary: ${k.join(', ')}` }]
-            });
+            const tails: TreeDecoration.TailDecoration.AnyConcrete[] = [];
+            const letters = k.filter(x => x !== 'imported').map(x => LETTERS[x] ?? x).join('');
+            if (letters) tails.push({ data: letters, fontData: { color: 'var(--theia-descriptionForeground)' }, tooltip: `Catenary: ${k.join(', ')}` });
+            if (k.includes('imported')) tails.push({ icon: 'lock', tooltip: 'Catenary: imported (read-only)' });
+            result.set(node.id, { tailDecorations: tails });
         }
         return result;
     }
