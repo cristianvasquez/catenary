@@ -130,6 +130,20 @@ describe('view diagram from SPARQL rows (ADR 0007 step 5)', () => {
         sameAsProjection();
     });
 
+    it('full read keeps rdf:type of a placed instance when its class has a label in the model graph', async () => {
+        dir = mkdtempSync(join(tmpdir(), 'catenary-view-read-'));
+        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
+        writeFileSync(join(dir, 'data.ttl'), DATA + '\n<http://www.w3.org/ns/prov#Agent> <http://www.w3.org/2000/01/rdf-schema#label> "Agent".\n');
+        store = new ModelStore();
+        store.watching = false;
+        expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+        const view = Object.values(docOf(store).views)[0];
+        const doc = store.viewDoc(view.id);
+        const instance = Object.values(doc.instances).find(i => i.uri === 'urn:name:Analysis%20%2F%20dashboards')!;
+        expect(instance).toBeDefined();
+        expect(instance.types).toEqual(['http://www.w3.org/ns/prov#Agent']);
+    });
+
     it('no view: an empty Doc', async () => {
         await openFixtures();
         expect(store.viewDoc('urn:x:no-view').views).toEqual({});

@@ -177,7 +177,7 @@ export function viewRead(ctx: ViewReadContext, view: NamedNode, warnings: string
     if (elements) requested.forEach(e => placed.add(e));
     const rows = select(g, `${PREFIXES} SELECT DISTINCT ?s ?p ?o WHERE {
         { VALUES ?s { ${values(placed)} } GRAPH ${M} { ?s ?p ?o }
-          ${elements ? '' : `FILTER (!isIRI(?o) || ?o IN (${list(placed) || '<urn:trellis:none>'}) || NOT EXISTS { GRAPH ${M} { ?o rdf:type|rdfs:label ?any } })`} }
+          ${elements ? '' : `FILTER (?p = rdf:type || !isIRI(?o) || ?o IN (${list(placed) || '<urn:trellis:none>'}) || NOT EXISTS { GRAPH ${M} { ?o rdf:type|rdfs:label ?any } })`} }
         ${shows ? `UNION { GRAPH ${M} { ?s a ?skos FILTER (?skos IN (skos:ConceptScheme, skos:Concept, skos:Collection)) ?s ?p ?o } }` : ''}
     }`);
     const statements = new Map<string, Statements>();
