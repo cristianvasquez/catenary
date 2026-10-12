@@ -93,8 +93,9 @@ function valueSetOf(dataset: Dataset, concepts: ConceptDef[], shape: Term): { ir
 
 /**
  * The shapes as the instance form reads them: a property with a value set helper (`sh:node`) gets `sh:in` of the allowed values
- * instead of `sh:node` and `sh:class`, so that the form offers the concepts. The fields and links of the other plugins get form node shapes. Validation uses
- * the shapes as they are.
+ * instead of `sh:node` and `sh:class`, so that the form offers the concepts. A value set without values keeps `sh:node`: an empty `sh:in`
+ * (`rdf:nil`) is not a list for the form, and it logs its list table for each such field. The fields and links of the other plugins get form
+ * node shapes. Validation uses the shapes as they are.
  */
 export function formShapes(meta: Metamodel): Dataset {
     const { dataset } = meta;
@@ -102,7 +103,7 @@ export function formShapes(meta: Metamodel): Dataset {
     const out = rdf.dataset([...dataset]);
     for (const q of [...dataset.match(null, n(SH + 'node'), null)]) {
         const values = valueSetOf(dataset, concepts, q.object)?.values;
-        if (!values) continue;
+        if (!values?.length) continue;
         for (const p of [SH + 'node', SH + 'class']) for (const r of [...out.match(q.subject, n(p), null)]) out.delete(r);
         let list: Term = n(NS.rdf + 'nil');
         values.slice().reverse().forEach((v, i) => {

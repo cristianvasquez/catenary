@@ -1265,7 +1265,8 @@ law_dismissOnlyQueue b i =
 
 -- | Metamodel: merged from the palette classes, links and fields of the vocabulary plugins (§8.5), with the SKOS vocabulary. Several node shapes can target one class.
 -- Class labels come from the class resource, not the node-shape name. Value-set relations accept permitted concepts only.
--- Forms use a temporary sh:in expansion of SKOS helper targets. Saved shapes and validation keep the original constraints.
+-- Forms use a temporary sh:in expansion of SKOS helper targets. A helper without concepts keeps sh:node: an empty sh:in is not a form list.
+-- Saved shapes and validation keep the original constraints.
 -- Limit: forms edit direct-path properties only. Inverse paths and undeclared predicates have no generic form editing.
 -- An external change or a rejected edit can rebuild the form and lose field focus.
 shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes that target it; zero, one or more

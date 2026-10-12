@@ -101,6 +101,11 @@ describe('properties with a concept scheme or collection as target', () => {
         ex:PersonShape sh:or (ex:PersonShape-mood ex:PersonShape-home) .
         ex:PersonShape-mood a sh:PropertyShape ; sh:path ex:mood ; sh:node ex:colorsConcept ; sh:minCount 1 .
         ex:PersonShape-home a sh:PropertyShape ; sh:path ex:home ; sh:class ex:Place ; sh:minCount 1 .
+        ex:ToolShape a sh:NodeShape ; sh:targetClass ex:Tool ; sh:property ex:ToolShape-brand .
+        ex:ToolShape-brand sh:path ex:brand ; sh:nodeKind sh:IRI ; sh:node ex:brandsConcept .
+        ex:brandsConcept a sh:NodeShape ; sh:property ex:brandsConcept-inScheme .
+        ex:brandsConcept-inScheme a sh:PropertyShape ; sh:path skos:inScheme ; sh:hasValue ex:brands .
+        ex:brands a skos:ConceptScheme ; skos:prefLabel "Brands" .
     `;
     const EX = 'http://ex/';
     const SKOS_CONCEPT = 'http://www.w3.org/2004/02/skos/core#Concept';
@@ -145,5 +150,12 @@ describe('properties with a concept scheme or collection as target', () => {
         expect(items).toEqual([EX + 'blue', EX + 'red']);
         // The shapes of the store keep sh:node.
         expect([...m.dataset.match(null, null, null)].filter(q => q.subject.value === EX + 'PersonShape-color' && q.predicate.value.endsWith('#node')).length).toBe(1);
+    });
+
+    it('keeps sh:node when the scheme has no concepts: no empty sh:in for the form', async () => {
+        const d = formShapes(await parseShapes(TTL));
+        const brand = [...d.match(null, null, null)].filter(q => q.subject.value === EX + 'ToolShape-brand');
+        expect(brand.map(q => q.predicate.value.replace(/.*#/, '')).sort()).toEqual(['node', 'nodeKind', 'path']);
+        expect([...d.match(null, null, null)].filter(q => q.predicate.value.endsWith('#in') && q.object.value.endsWith('#nil'))).toEqual([]);
     });
 });
