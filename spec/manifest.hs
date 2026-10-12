@@ -1271,6 +1271,16 @@ law_dismissOnlyQueue b i =
 -- Limit: forms edit direct-path properties only. Inverse paths and undeclared predicates have no generic form editing.
 -- An external change or a rejected edit can rebuild the form and lose field focus.
 shapesTargeting :: Backend -> Iri -> [Iri]           -- class: the node shapes that target it; zero, one or more
+-- The form saves no relative IRI and no blank node. Reason: shacl-form names the node of an empty sh:node field with a relative IRI.
+-- Term has no blank node, so a blank node cannot occur in the result. setStatements rejects a relative IRI with "<predicate>: '<term>' is not an absolute IRI".
+formSaves :: Iri -> [Iri] -> [Quad] -> [(Iri, [Term])]   -- subject, form predicates, form output: describeQuads (packages/model/src/form.ts)
+hasScheme :: Iri -> Bool
+hasScheme (c : cs) | isAsciiLower c || isAsciiUpper c = case break (== ':') cs of
+  (pre, _ : _) -> all (\x -> isAsciiLower x || isAsciiUpper x || isDigit x || x `elem` "+.-") pre
+  _ -> False
+hasScheme _ = False
+law_formSavesAbsoluteIrisOnly :: Iri -> [Iri] -> [Quad] -> Bool
+law_formSavesAbsoluteIrisOnly s ps qs = and [hasScheme i | (_, ts) <- formSaves s ps qs, NamedNode i <- ts]
 
 -- 8.5 Vocabulary plugins: palette, links, fields --------------------------------------------
 
@@ -1832,6 +1842,7 @@ manifestOnly :: a
 manifestOnly = error "signature-level manifest only"
 
 modelRdf = manifestOnly
+formSaves = manifestOnly
 storeHealth = manifestOnly
 trapCount = manifestOnly
 trapReads = manifestOnly
