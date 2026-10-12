@@ -1274,8 +1274,11 @@ defaultEdgeStyle :: EdgeStyle
 defaultEdgeStyle = Curved
 
 -- | Bends. An edge of a relation or of a property shape (drawn as an edge) holds a list of points, from the source to the target.
--- Drag the line: a new bend at the press point follows the pointer; a release without movement adds nothing. Drag a bend: it moves.
--- Double-click a bend: it goes. Bend handles show on hover or selection. Each release is one setEdgeLayout. Apply Layout clears bends
+-- Drag the line: a new bend at the press point follows the pointer. Drag a bend: it moves, and keeps its offset to the pointer.
+-- Double-click a bend: it goes. Bend handles show on hover or selection. A release after movement (bendMovePx) is one setEdgeLayout;
+-- a release without movement sends no command and keeps the drawn route (so a click on a handle changes nothing, and a double-click is
+-- one command: the removal). A refused setEdgeLayout (a locked view file, §4.9) restores the drawn route to the saved one, unless the
+-- model was replaced or a newer bend gesture started on the edge. Apply Layout clears bends
 -- with the sides. Reset route in Appearance clears the bends of the edge. Copy and paste drops bends. A move of both end boxes by one delta
 -- (a frame, a selection) moves the bends with them; a move of one end keeps them.
 -- Without an explicit side, the end faces its nearest bend; without bends, it faces the other card.
@@ -1290,6 +1293,17 @@ bendEdit ps (DragBend i) p = take i ps ++ [p] ++ drop (i + 1) ps
 bendEdit ps (DoubleClickBend i) _ = take i ps ++ drop (i + 1) ps
 law_bendRemoval :: [Point] -> Int -> Point -> Bool
 law_bendRemoval ps i p = i < 0 || i >= length ps || length (bendEdit ps (DoubleClickBend i) p) == length ps - 1
+bendMovePx :: Double
+bendMovePx = 2
+-- | The commands of a bend release: one after movement, none without. A refused command leaves the drawn route as saved.
+bendCommands :: Double -> Int
+bendCommands moved = if moved >= bendMovePx then 1 else 0
+law_bendClickSendsNothing :: Double -> Bool
+law_bendClickSendsNothing moved = moved >= bendMovePx || bendCommands moved == 0
+drawnAfter :: [Point] -> [Point] -> Bool -> [Point]                      -- saved, drawn, refused: the drawn route after the answer
+drawnAfter saved drawn refused = if refused then saved else drawn
+law_refusedBendKeepsSaved :: [Point] -> [Point] -> Bool -> Bool
+law_refusedBendKeepsSaved saved drawn refused = not refused || length (drawnAfter saved drawn refused) == length saved
 endSide :: Maybe Side -> Maybe Point -> Point -> Side
 endSide (Just s) _ _ = s
 endSide Nothing (Just bend) _ = facing bend

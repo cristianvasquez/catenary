@@ -1555,14 +1555,46 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   await page.mouse.up();
   await until(() => vertices() !== undefined, 'the view file holds the bend');
   assert.match(vertices(), /^-?\d+,-?\d+$/, 'one bend');
-  // A click on the line selects the edge: its bend handle shows (a selected edge is drawn last: find it by its class). A double-click on
-  // the handle removes the bend.
+  const saved = vertices();
+  // A click on the line selects the edge: its bend handle shows (a selected edge is drawn last: find it by its class).
   at = await middle();
   await page.mouse.click(at.x, at.y);
   const handle = canvas.locator('.catenary-edge.selected .edge-vertex');
   await handle.waitFor();
   assert.equal(await handle.count(), 1);
-  await handle.dblclick();
+  const handleCenter = async () => { const b = await handle.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  // The drawn route: the path of the line of the (selected, so last drawn) edge.
+  const drawn = () => canvas.locator('.catenary-edge.selected .line').getAttribute('d');
+  const drawnBefore = await drawn();
+  // A click on the handle without a drag, 3 px off its center, sends no command: the view file and the drawn route stay (UI §7.4
+  // law_bendClickSendsNothing).
+  let c = await handleCenter();
+  await page.mouse.click(c.x + 3, c.y + 3);
+  await page.waitForTimeout(500);
+  assert.equal(vertices(), saved, 'a click on a bend handle changes nothing in the view file');
+  assert.equal(await drawn(), drawnBefore, 'a click on a bend handle keeps the drawn route');
+  // The view file is locked: a drag of the handle asks to unlock it; Cancel refuses the edit, and the drawn route goes back to the
+  // saved one (law_refusedBendKeepsSaved).
+  assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'true').result.ok, true);
+  c = await handleCenter();
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 60, c.y + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(vertices(), saved, 'a refused bend edit leaves the view file');
+  // The dialog takes the selection with it: a click on the line selects the edge again.
+  at = await middle();
+  await page.mouse.click(at.x, at.y);
+  await handle.waitFor();
+  assert.equal(await drawn(), drawnBefore, 'a refused bend edit restores the drawn route');
+  assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'false').result.ok, true);
+  // A double-click on the handle, off its center, removes the bend with one command: one undo restores the saved route.
+  c = await handleCenter();
+  await page.mouse.dblclick(c.x + 3, c.y + 3);
   await until(() => vertices() === undefined, 'the bend is removed from the view file');
   await handle.waitFor({ state: 'detached' });
+  cli('run', 'catenary.undo');
+  await until(() => vertices() === saved, 'one undo restores the bend where it was');
 }));

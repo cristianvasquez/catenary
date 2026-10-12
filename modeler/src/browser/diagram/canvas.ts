@@ -44,6 +44,8 @@ const BOXES = '.catenary-card, .catenary-note, .catenary-group, .catenary-view-r
 const TOGGLED = '.catenary-card, .catenary-group, .catenary-member-box';
 /** Elements that a connect gesture dims when they are not its targets (spec/ui-manifest.hs §5.5 Connect drags). */
 const CONNECTABLE = `${BOXES}, .catenary-edge, .catenary-logic, .shape-row, .member-row`;
+/** Screen px of movement that make a bend gesture an edit (UI §7.4 bendMovePx); a release under it sends no command. */
+const BEND_MOVE_PX = 2;
 
 /**
  * A connect gesture (CanvasInteractions.connectDrag): its targets and what a release does. The data of the gesture comes from the
@@ -104,6 +106,8 @@ export class CanvasInteractions implements FrontendApplicationContribution {
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(ActionService) protected readonly actionService: ActionService;
     protected readonly installed = new WeakSet<GLSPDiagramWidget>();
+    /** The last bend gesture of each edge (by relation): a refusal restores the route only for the gesture that drew it. */
+    protected readonly bendGestures = new Map<string, number>();
 
     onStart(): void {
         this.shell.onDidAddWidget(w => {
@@ -507,14 +511,23 @@ export class CanvasInteractions implements FrontendApplicationContribution {
 
     /**
      * Drag of a bend of an edge (UI §7.4): the bend `index` follows the pointer; `insert`: a new bend at `index` (at `at`). The client
-     * model draws the move; the release sends one setEdgeLayout. A release at the press point with `insert` adds nothing.
+     * model draws the move; the release sends one setEdgeLayout. A release without movement (under 2 px) sends nothing and redraws the
+     * route as it was: a click on a handle keeps the saved route, and a double-click produces only the removal. An existing bend keeps its
+     * offset to the pointer. A refused command (a locked view file) restores the drawn route, unless the model root was replaced or a
+     * newer bend gesture started on the edge.
      */
     protected bendDrag(w: GLSPDiagramWidget, relation: string, index: number, insert: boolean, start: MouseEvent, at?: Point): void {
         const edge = this.edgeOf(w, relation);
         if (!edge) return;
+        const seq = (this.bendGestures.get(relation) ?? 0) + 1;
+        this.bendGestures.set(relation, seq);
         const before = [...(edge.vertices ?? [])];
         const vertices = [...before];
-        if (insert) vertices.splice(index, 0, at ?? this.editors.toModel(w, start.clientX, start.clientY));
+        const press = this.editors.toModel(w, start.clientX, start.clientY);
+        if (insert) vertices.splice(index, 0, at ?? press);
+        // An existing bend keeps its offset to the pointer at the press: it does not jump to the pointer on the first move. A new bend
+        // is at the press point and follows the pointer.
+        const offset = insert ? { x: 0, y: 0 } : { x: vertices[index].x - press.x, y: vertices[index].y - press.y };
         const origin = { x: start.clientX, y: start.clientY };
         let frame = 0;
         const draw = (v = vertices) => {
@@ -524,8 +537,12 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             try { root = w.editorContext.modelRoot; } catch { return; }
             if (isViewport(root)) w.actionDispatcher.dispatch(SetViewportAction.create(root.id, { scroll: root.scroll, zoom: root.zoom }, { animate: false }));
         };
+        const pointer = (e: MouseEvent) => {
+            const p = this.editors.toModel(w, e.clientX, e.clientY);
+            return { x: p.x + offset.x, y: p.y + offset.y };
+        };
         const move = (e: MouseEvent) => {
-            vertices[index] = this.editors.toModel(w, e.clientX, e.clientY);
+            vertices[index] = pointer(e);
             if (!frame) frame = requestAnimationFrame(() => draw());
         };
         const up = (e: MouseEvent) => {
@@ -533,11 +550,16 @@ export class CanvasInteractions implements FrontendApplicationContribution {
             window.removeEventListener('mouseup', up, true);
             document.body.classList.remove('catenary-grabbing');
             if (frame) cancelAnimationFrame(frame);
-            const moved = Math.hypot(e.clientX - origin.x, e.clientY - origin.y) >= 2;
-            if (insert && !moved) { draw(before); return; }
-            vertices[index] = this.editors.toModel(w, e.clientX, e.clientY);
+            const moved = Math.hypot(e.clientX - origin.x, e.clientY - origin.y) >= BEND_MOVE_PX;
+            if (!moved) { draw(before); return; }
+            vertices[index] = pointer(e);
             draw();
-            void this.model.execute({ kind: 'setEdgeLayout', view: viewIdOf(w), relation, patch: { vertices } });
+            void this.model.execute({ kind: 'setEdgeLayout', view: viewIdOf(w), relation, patch: { vertices } }).then(r => {
+                if (r.ok) return;
+                // The server kept the saved route: the client model goes back to it, if this gesture still owns the drawn edge.
+                if (this.bendGestures.get(relation) !== seq || this.edgeOf(w, relation) !== edge) return;
+                draw(before);
+            });
         };
         document.body.classList.add('catenary-grabbing');
         window.addEventListener('mousemove', move, true);
