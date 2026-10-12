@@ -68,7 +68,7 @@ describe('imported files', () => {
         for (const command of commands) {
             const r = store.execute(command);
             expect(r).toMatchObject({ ok: false, imported: [f.official] });
-            expect(r.ok ? '' : r.error).toBe('official.ttl is an imported file: the change is not made. To change it, mark it as own in the file navigator.');
+            expect(r.ok ? '' : r.error).toBe('official.ttl is a locked file: the change is not made. To change it, unlock it in the file navigator.');
         }
         expect(docOf(store).instances[sales].label).toBe('Sales');
         expect(store.canUndo).toBe(false);

@@ -92,7 +92,7 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     const one = names.length === 1;
     return {
         ok: false, imported: files,
-        error: `${names.join(', ')} ${one ? 'is an imported file' : 'are imported files'}: the change is not made. To change ${one ? 'it' : 'them'}, mark ${one ? 'it' : 'them'} as own in the file navigator.`
+        error: `${names.join(', ')} ${one ? 'is a locked file' : 'are locked files'}: the change is not made. To change ${one ? 'it' : 'them'}, unlock ${one ? 'it' : 'them'} in the file navigator.`
     };
 }
 
@@ -464,7 +464,7 @@ export class ModelStore {
         }
         if ((command.kind === 'createView' || command.kind === 'duplicateView') && command.file) {
             const file = path.resolve(this.folder, command.file);
-            const problem = ws.newViewFileProblem(file) ?? (ws.isImported(file) ? `${command.file} is an imported file.` : undefined);
+            const problem = ws.newViewFileProblem(file) ?? (ws.isImported(file) ? `${command.file} is a locked file.` : undefined);
             if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
             ws.newViewFile = file;
         }
