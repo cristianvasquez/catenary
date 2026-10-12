@@ -460,7 +460,9 @@ export class ModelActions {
     async newView(folder?: string): Promise<void> {
         const file = await this.askViewFile(folder);
         if (file === undefined) return;
-        const r = await this.model.execute({ kind: 'createView', label: await this.service.newLabel('view', { base: viewFileBase(file) }), file });
+        const base = viewFileBase(file);
+        const label = await (base ? this.service.newLabel('view', { base }) : this.service.newLabel('view'));
+        const r = await this.model.execute({ kind: 'createView', label, file });
         if (!r.ok) return;
         await this.editors.open(r.id!);
     }

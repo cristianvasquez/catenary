@@ -219,7 +219,7 @@ it('openView: a view of the open workspace opens; else its workspace opens first
     expect(editors.open).toHaveBeenCalledTimes(3);
 });
 
-it.each([['views/road.trig'], ['views/road.view.trig']])('New View: the file dialog is the only dialog; the view %s opens labeled after its file base name (viewFileBase) with no label follow-up', async file => {
+it.each([['views/road.trig'], ['views/road.view.trig'], ['views/ road .trig']])('New View: the file dialog is the only dialog; the view %s opens labeled after its file base name (viewFileBase) with no label follow-up', async file => {
     const execute = vi.fn(async (_c: EditCommand): Promise<CommandResult> => ({ ok: true, id: 'v' }));
     const editors = { open: vi.fn(async () => ({})) };
     const follow = vi.fn();

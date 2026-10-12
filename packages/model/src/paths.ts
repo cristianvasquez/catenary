@@ -27,8 +27,8 @@ export const viewFileInput = (text: string): string => {
     return /\.trig$/i.test(t) ? t : `${t}.trig`;
 };
 
-/** The label base of a new view in `file`: its last name without `.view.trig` or `.trig` (any case). `views/road.view.trig` → `road`. */
-export const viewFileBase = (file: string): string => baseName(file).replace(/(\.view)?\.trig$/i, '');
+/** The label base of a new view in `file`: its last name without `.view.trig` or `.trig` (any case), trimmed. `views/road.view.trig` → `road`. */
+export const viewFileBase = (file: string): string => baseName(file).replace(/(\.view)?\.trig$/i, '').trim();
 
 /**
  * A proposed file for a new view in `dir` (relative, '' for the workspace folder) that is not `taken`: `<base><ext>`, then
