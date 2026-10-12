@@ -1021,7 +1021,8 @@ law_setUriFollowsReferences b old new =
 -- collect and addToCollection remove the own placement of each member and the placements of its relations.
 -- An arrow placement stays: it ends at the group. uncollect gives each released member a placement beside the group.
 -- Moving a frame at the same size moves its contained boxes, and the bends of the edges whose both ends move by that delta.
--- setLayout clears requested edge sides and bends. setEdgeLayout takes a relation or a property shape drawn as an edge.
+-- Both ends of a property edge are the placements of its start and end figures. A private end moves with the start.
+-- setLayout clears the sides and bends of every edge placement of the view. setEdgeLayout takes a relation or a property shape drawn as an edge.
 -- duplicateView makes new Project IRIs and rewrites internal references. Domain elements stay shared.
 -- A file reference stores its path relative to the view file. setViewElements ignores fields that the target kind lacks.
 -- A note edit carries expectedText. A stale edit is rejected.

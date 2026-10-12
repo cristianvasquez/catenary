@@ -49,8 +49,8 @@ export type EditCommand =
     | { kind: 'cutFromView'; view: string; ids: string[] }
     /** Move or resize cards and view-owned nodes. A moved group takes the elements inside it. */
     | { kind: 'setBounds'; view: string; bounds: ({ id: string } & Partial<Rect>)[] }
-    /** Apply Layout: new boxes (as setBounds), then the sides of these edges are cleared (each end faces the other card). */
-    | { kind: 'setLayout'; view: string; bounds: ({ id: string } & Partial<Rect>)[]; clearSides: string[] }
+    /** Apply Layout: new boxes (as setBounds), then the sides and bends of every edge placement of the view are cleared. */
+    | { kind: 'setLayout'; view: string; bounds: ({ id: string } & Partial<Rect>)[] }
     | { kind: 'setEdgeLayout'; view: string; relation: string; patch: Partial<Omit<EdgeLayout, 'relation'>> }
     | { kind: 'hideEdges'; view: string; ids: string[]; hidden: boolean }
     /**

@@ -1275,9 +1275,10 @@ defaultEdgeStyle = Curved
 
 -- | Bends. An edge of a relation or of a property shape (drawn as an edge) holds a list of points, from the source to the target.
 -- Drag the line: a new bend at the press point follows the pointer; a release without movement adds nothing. Drag a bend: it moves.
--- Double-click a bend: it goes. Bend handles show on hover or selection. Each release is one setEdgeLayout. Apply Layout clears bends
--- with the sides. Reset route in Appearance clears the bends of the edge. Copy and paste drops bends. A move of both end boxes by one delta
--- (a frame, a selection) moves the bends with them; a move of one end keeps them.
+-- Double-click a bend: it goes. Bend handles show on hover or selection. Each release is one setEdgeLayout. Apply Layout clears the bends
+-- and the sides of every edge of the view, a self edge and a property edge included. Reset route in Appearance clears the bends of
+-- the edge. Copy and paste drops bends. A move of both end boxes by one delta (a frame, a selection) moves the bends with them; a move
+-- of one end keeps them. The ends of a property edge are its owner card and its target box; a private pill end moves with the owner.
 -- Without an explicit side, the end faces its nearest bend; without bends, it faces the other card.
 data BendGesture = DragLine | DragBend Int | DoubleClickBend Int
 insertAt :: Int -> Point -> [Point] -> [Point]            -- after point i

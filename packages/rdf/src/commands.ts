@@ -39,7 +39,7 @@ function elementIds(g: ModelGraph, c: EditCommand): EditCommand {
     const id = (x: unknown) => typeof x === 'string' ? ops.elementIdOf(g, x) : x;
     const out: Record<string, unknown> = { ...c };
     for (const k of ['id', 'relation', 'subject', 'object', 'from', 'to']) if (k in out) out[k] = id(out[k]);
-    for (const k of ['ids', 'clearSides']) if (Array.isArray(out[k])) out[k] = (out[k] as unknown[]).map(id);
+    if (Array.isArray(out.ids)) out.ids = (out.ids as unknown[]).map(id);
     if (Array.isArray(out.bounds)) out.bounds = (out.bounds as { id: string }[]).map(b => ({ ...b, id: id(b.id) as string }));
     return out as EditCommand;
 }
@@ -265,10 +265,10 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
         case 'setBounds':
             return ops.setBounds(g, c.view, boxBounds(g, c.bounds));
         case 'setLayout': {
+            // Every edge placement of the view, not only the edges the layout algorithm linked: a self edge and a line to an end that
+            // is no layout box keep no stale bends (UI §7.5).
             const r = ops.setBounds(g, c.view, boxBounds(g, c.bounds));
-            if (!r.ok) return r;
-            for (const id of c.clearSides) ops.setEdgeLayout(g, c.view, id, { fromSide: undefined, toSide: undefined, vertices: undefined });
-            return done;
+            return r.ok ? ops.clearEdgeLayouts(g, c.view) : r;
         }
         case 'setEdgeLayout':
             return ops.setEdgeLayout(g, c.view, c.relation, c.patch);
