@@ -24,7 +24,7 @@ function workspace(): { dir: string; a: string; b: string } {
     writeFileSync(join(dir, 'data.ttl'), DATA);
     // Another workspace: its own folder (a nested workspace is not part of a).
     mkdirSync(join(dir, 'b'));
-    writeFileSync(join(dir, 'b', 'b.trig'), '<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> . }\n');
+    writeFileSync(join(dir, 'b', 'b.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
     writeFileSync(join(dir, 'b', 'b.ttl'), '<urn:b> a <http://ex.org/B> ; <http://www.w3.org/2000/01/rdf-schema#label> "Only in B" .\n');
     return { dir, a: join(dir, 'a.trig'), b: join(dir, 'b', 'b.trig') };
 }

@@ -30,7 +30,7 @@ async function workspace(watching = false) {
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
 const labels = (store: ModelStore) => Object.values(docOf(store).instances).map(i => i.label);
 const views = (store: ModelStore) => Object.values(docOf(store).views).map(v => v.label).sort();
-const VIEW = (iri: string, label: string) => `<${iri}> { <${iri}> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
+const VIEW = (iri: string, label: string) => `<${iri}> { <${iri}> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
 
 describe('changes on disk', () => {
     it('an edit of the data file by another program is read into the data graph; undo is cleared', async () => {

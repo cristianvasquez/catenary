@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 const VIEW = 'urn:ex:view';
-const VALIDATION = 'osg://vocab/workspace#validation';
+const VALIDATION = 'https://cristianvasquez.github.io/catenary/vocab/workspace#validation';
 
 /** Two things without a name (both violate), one of them on the view; `mode`: the manifest value, if any. */
 function workspace(mode?: string) {
@@ -31,11 +31,11 @@ function workspace(mode?: string) {
 ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-name .
 ex:ThingShape-name sh:path ex:name ; sh:minCount 1 .\n`);
     f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing .\nex:hidden a ex:Thing .\n`);
-    f('main.view.trig', `@prefix view: <osg://vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    f('main.view.trig', `@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 <${VIEW}> { <${VIEW}> a view:View ; rdfs:label "Main" .
   <${VIEW}/p/1> a view:Placement ; view:element <urn:ex:shown> ; view:view <${VIEW}> ; view:x 0 ; view:y 0 . }\n`);
-    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-        <osg://vocab/workspace#defaultFile> "data.ttl" ; <osg://vocab/workspace#placeShapes> "shapes.ttl"${mode ? ` ; <${VALIDATION}> "${mode}"` : ''} . }\n`);
+    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+        <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeShapes> "shapes.ttl"${mode ? ` ; <${VALIDATION}> "${mode}"` : ''} . }\n`);
     return { dir, path: join(dir, 'workspace.trig'), read: () => readFileSync(join(dir, 'workspace.trig'), 'utf8') };
 }
 

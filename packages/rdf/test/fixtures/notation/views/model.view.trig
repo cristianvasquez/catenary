@@ -10,13 +10,13 @@
 #   not shown    sh:xone, sh:in, sh:or and the helper shape ex:InCountries: this notation has no figure for them.
 
 @prefix ex:   <https://example.org/draft/> .
-@prefix nt:   <osg://vocab/notation#> .
-@prefix view: <osg://vocab/view#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix mkn:  <osg://vocab/notation/marks#> .
-@prefix cln:  <osg://vocab/notation/classes#> .
+@prefix mkn:  <https://cristianvasquez.github.io/catenary/vocab/notation/marks#> .
+@prefix cln:  <https://cristianvasquez.github.io/catenary/vocab/notation/classes#> .
 
 <urn:view:model> {
 

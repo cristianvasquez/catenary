@@ -30,8 +30,8 @@ function workspace() {
         official: f('official.ttl', `@prefix dcat: <http://www.w3.org/ns/dcat#> . @prefix rdfs: <${NS.rdfs}> .
 <urn:x:sales> a dcat:Dataset ; rdfs:label "Sales" ; <${DESCRIPTION}> "Official text." .\n`),
         own: f('own.ttl', `@prefix rdfs: <${NS.rdfs}> .\n<urn:x:note> a <urn:x:Note> ; rdfs:label "Note" .\n`),
-        ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-            <osg://vocab/workspace#defaultFile> "own.ttl" . }\n`),
+        ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" . }\n`),
         read: (name: string) => readFileSync(join(dir, name), 'utf8')
     };
 }
@@ -46,7 +46,7 @@ async function opened(path: string): Promise<ModelStore> {
 
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
 const instanceId = (store: ModelStore, label: string) => Object.values(docOf(store).instances).find(i => i.label === label)!.id;
-const manifestValues = async (text: string, local: string) => (await parseTrig(text)).quads.filter(q => q.predicate.value === `osg://vocab/workspace#${local}`).map(q => q.object.value);
+const manifestValues = async (text: string, local: string) => (await parseTrig(text)).quads.filter(q => q.predicate.value === `https://cristianvasquez.github.io/catenary/vocab/workspace#${local}`).map(q => q.object.value);
 
 describe('imported files', () => {
     it('marking as imported stores the path in the manifest; a change of an imported statement is refused as a whole and names the file', async () => {
@@ -114,8 +114,8 @@ describe('imported files', () => {
 
     it('a workspace file with the legacy ws:protect reads it as ws:imported; a write stores ws:imported', async () => {
         const f = workspace();
-        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-            <osg://vocab/workspace#defaultFile> "own.ttl" ; <osg://vocab/workspace#protect> "official.ttl" . }\n`);
+        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#protect> "official.ttl" . }\n`);
         const store = await opened(f.ws);
         expect(store.files.imported).toEqual(['official.ttl']);
         ok(await store.setImported('own.ttl', true));
@@ -251,8 +251,8 @@ ex:org1 a ex:Org .\n`);
         f('own.ttl', `@prefix ex: <urn:ex:> .
 ex:mine a ex:Thing ; ex:name "Mine" ; ex:owner ex:org1 .
 ex:i3 ex:note "ours" .\n`);
-        f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-            <osg://vocab/workspace#defaultFile> "own.ttl" ; <osg://vocab/workspace#placeShapes> "shapes.ttl" . }\n`);
+        f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeShapes> "shapes.ttl" . }\n`);
         const store = await opened(join(dir, 'workspace.trig'));
         const validation = (store as unknown as { validation: { now(): Promise<void>; violations: { focus: string }[] } }).validation;
         await validation.now();

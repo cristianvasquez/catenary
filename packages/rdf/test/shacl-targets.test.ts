@@ -168,12 +168,12 @@ describe('query cost of node constraints', () => {
         const selection = { nodes: [node('urn:child')] };
         tracer.setClient(true);
         try {
-            g.add(rdf.namedNode('urn:view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('osg://vocab/view#View'), rdf.namedNode('urn:view'));
+            g.add(rdf.namedNode('urn:view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#View'), rdf.namedNode('urn:view'));
             const before = shapeTargetMatches(g, selection);
             expect(before.map(m => m.shape)).toEqual(['urn:T']);
             tracer.clear();
-            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('osg://vocab/view#element'), rdf.namedNode('urn:child'), rdf.namedNode('urn:view'));
-            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('osg://vocab/view#width'), rdf.literal('300'), rdf.namedNode('urn:view'));
+            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#element'), rdf.namedNode('urn:child'), rdf.namedNode('urn:view'));
+            g.add(rdf.namedNode('urn:placement'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#width'), rdf.literal('300'), rdf.namedNode('urn:view'));
             expect(shapeTargetMatches(g, selection)).toEqual(before);
             const unchanged = tracer.take().spans;
             expect(unchanged.filter(s => s.kind === 'sparql' && (s.name.startsWith('construct:') || s.name.includes('SELECT DISTINCT ?g') || s.name.includes('SELECT ?node ?value')))).toHaveLength(0);

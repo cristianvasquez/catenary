@@ -20,9 +20,9 @@ import { nkey } from './notation-graph';
 import { ViewFigures, partIsRow } from './notation-join';
 import { ONE_OF_WIDTH, SHAPE_CARD, ShapeRow, alternativeRows, leafStyle, pillSize, shapeCardHeight } from './shapes-schema';
 import { PropertyShape, alternativesOf, cardinalityText, formatPath, pathParts, rangeText, shortIri } from './shapes-doc';
-import { NS, localName } from './terms';
+import { CATENARY_VOCAB, NS, localName } from './terms';
 
-const SHN = 'osg://vocab/notation/shapes#', VSN = 'osg://vocab/notation/skos#';
+const SHN = CATENARY_VOCAB + 'notation/shapes#', VSN = CATENARY_VOCAB + 'notation/skos#';
 const shapeOf = (f: Figure) => f.fs.node.value;
 const isShapes = (f: Figure) => shapeOf(f).startsWith(SHN);
 const isValueSets = (f: Figure) => shapeOf(f) === VSN + 'Scheme' || shapeOf(f) === VSN + 'Collection';

@@ -180,7 +180,7 @@ law_idAlphabet i = all (\c -> isAsciiLower c || isAsciiUpper c || isDigit c || c
 -- | Code (packages/rdf/src): settings.ts holds the manifest, file membership and the imported globs; loader.ts reads files into
 -- their graphs; placement.ts gives new statements their file. None imports another; ModelStore creates the store and wires them.
 -- | A workspace is a folder of RDF files. The files are the source of truth (ADR 0003). Files have no roles (ADR 0004).
--- The optional TriG workspace file holds one graph, urn:name:workspace, in namespace osg://vocab/workspace#.
+-- The optional TriG workspace file holds one graph, urn:name:workspace, in namespace workspaceNamespace (§3.1 legacyNamespaces).
 -- A workspace file with other graphs does not open.
 -- Relative paths resolve against the folder of the workspace file. Writers use / separators on all platforms.
 data WorkspaceFile = WorkspaceFile
@@ -198,7 +198,7 @@ data WorkspaceSettings = WorkspaceSettings
   }
 workspaceGraph, workspaceNamespace :: Iri
 workspaceGraph = "urn:name:workspace"
-workspaceNamespace = "osg://vocab/workspace#"
+workspaceNamespace = catenaryVocab ++ "workspace#"
 workspaceFileOpens :: [Iri] -> Bool             -- the graph names of the workspace file
 workspaceFileOpens graphs = all (== workspaceGraph) graphs
 law_writerSeparators :: FilePath -> Bool        -- a path that a writer stores
@@ -448,6 +448,30 @@ importFiles ps = runOp (ImportFiles ps)
 -- The store is local and synchronous: an edit reads its own writes before its transaction ends.
 -- Graphs, from Loader.mount (loader.ts). The workspace file stays in workspace metadata, outside the read models.
 -- Preserve legacy Trellis IRIs because saved view placements use urn:trellis:list:*, and existing files use osg://vocab/trellis-* terms.
+-- Read a term in an old Catenary namespace as the term in the published namespace, because files of earlier versions use osg://vocab/*.
+-- The alias applies to model files, view files and the workspace file (with its prefix table and its discovery, §2.2). A write uses the published namespace
+-- only. A file that Catenary writes is changed until its next write. A view keeps its graph IRI. TypeScript: LEGACY_NAMESPACES, terms.ts.
+catenaryVocab :: Iri
+catenaryVocab = "https://cristianvasquez.github.io/catenary/vocab/"
+legacyNamespaces :: [(Iri, Iri)]
+legacyNamespaces = [("osg://vocab/" ++ p, catenaryVocab ++ p) | p <- ["view#", "workspace#", "notation#", "notation/shapes#",
+  "notation/skos#", "notation/classes#", "notation/instances#", "notation/marks#"]]
+publishedIri :: Iri -> Iri
+publishedIri i = fromMaybe i (listToMaybe [new ++ drop (length old) i | (old, new) <- legacyNamespaces, old `isPrefixOf` i])
+readLegacy :: Quad -> Quad
+readLegacy (Quad s p o g) = Quad (term s) (publishedIri p) (term o) g
+  where
+    term (NamedNode i) = NamedNode (publishedIri i)
+    term (TripleTerm ts tp to) = TripleTerm (term ts) (publishedIri tp) (term to)
+    term t = t
+law_legacyNamespaceRead :: Quad -> Bool          -- a read yields no term in an old namespace; the graph name stays
+law_legacyNamespaceRead q = not (any (\(old, _) -> any (old `isPrefixOf`) (iris r)) legacyNamespaces) && graphOf r == graphOf q
+  where
+    r = readLegacy q
+    iris (Quad s p o _) = p : termIris s ++ termIris o
+    termIris (NamedNode i) = [i]
+    termIris (TripleTerm ts tp to) = tp : termIris ts ++ termIris to
+    termIris _ = []
 -- Model-file reads preserve SPO statements and source-file provenance, not source graph names (SPOG).
 -- Source graphs merge because Catenary assigns graphs by file and statement kind. View files retain their required view graph IRI.
 -- A write need not restore source graph names. Do not claim graph-preserving TriG or N-Quads round trips.

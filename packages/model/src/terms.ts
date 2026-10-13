@@ -8,9 +8,27 @@ export const NS = {
     sh: 'http://www.w3.org/ns/shacl#',
     skos: 'http://www.w3.org/2004/02/skos/core#',
     dct: 'http://purl.org/dc/terms/',
-    view: 'osg://vocab/view#',
-    ws: 'osg://vocab/workspace#'
+    view: 'https://cristianvasquez.github.io/catenary/vocab/view#',
+    ws: 'https://cristianvasquez.github.io/catenary/vocab/workspace#'
 };
+
+/** The published base of the Catenary vocabularies (view, workspace, notation). */
+export const CATENARY_VOCAB = 'https://cristianvasquez.github.io/catenary/vocab/';
+
+/**
+ * The namespaces of earlier Catenary files and their published names (spec/manifest.hs §3.1 legacyNamespaces). A read gives the new IRI for a
+ * term in an old namespace; a write uses the new namespace only.
+ */
+export const LEGACY_NAMESPACES: Readonly<Record<string, string>> = Object.fromEntries(
+    ['view#', 'workspace#', 'notation#', 'notation/shapes#', 'notation/skos#', 'notation/classes#', 'notation/instances#', 'notation/marks#']
+        .map(path => ['osg://vocab/' + path, CATENARY_VOCAB + path]));
+
+/** The IRI with its legacy namespace replaced by the published one (LEGACY_NAMESPACES); another IRI unchanged. */
+export function publishedIri(iri: string): string {
+    if (!iri.startsWith('osg://vocab/')) return iri;
+    for (const [old, now] of Object.entries(LEGACY_NAMESPACES)) if (iri.startsWith(old)) return now + iri.slice(old.length);
+    return iri;
+}
 
 export const XSD_STRING = NS.xsd + 'string';
 export const RDF_TYPE = NS.rdf + 'type';

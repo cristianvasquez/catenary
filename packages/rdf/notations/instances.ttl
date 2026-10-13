@@ -1,12 +1,12 @@
 # Instance notation: how data is drawn. The workspace SHACL model gives the content of the card.
 # The notation does not repeat the model. It only says: gather with the model shapes that target the focus.
 
-@prefix nt:   <osg://vocab/notation#> .
-@prefix inn:  <osg://vocab/notation/instances#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix inn:  <https://cristianvasquez.github.io/catenary/vocab/notation/instances#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix view: <osg://vocab/view#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 
 inn:notation a nt:Notation ;
     rdfs:label "Instances" ;

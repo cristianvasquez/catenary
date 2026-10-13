@@ -69,7 +69,7 @@ describe('workspace files', () => {
         mkdirSync(join(f.dir, '.hidden'));
         writeFileSync(join(f.dir, '.hidden', 'h.ttl'), '<urn:x:h> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Hidden" .\n');
         mkdirSync(join(f.dir, 'nested'));
-        writeFileSync(join(f.dir, 'nested', 'w.trig'), '<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> . }\n');
+        writeFileSync(join(f.dir, 'nested', 'w.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
         writeFileSync(join(f.dir, 'nested', 'n.ttl'), '<urn:x:n> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Nested" .\n');
         const store = await opened(f.ws);
         const graphs = () => new Set((store as unknown as { graph: ModelGraph }).graph.quads().map(q => q.graph.value));
@@ -158,7 +158,7 @@ describe('workspace files', () => {
         await store.idle();
         const ref = () => docOf(store).views[view.id].boxes.find(b => b.kind === 'reference' && b.file)!;
         expect(ref()).toMatchObject({ file: '../notes.md', path: join(f.dir, 'notes.md'), broken: false });
-        const rows = (await parseTrig(f.read('views/product-context.view.trig'))).quads.filter(q => q.predicate.value === 'osg://vocab/view#file').map(q => q.object.value);
+        const rows = (await parseTrig(f.read('views/product-context.view.trig'))).quads.filter(q => q.predicate.value === 'https://cristianvasquez.github.io/catenary/vocab/view#file').map(q => q.object.value);
         expect(rows).toEqual(['../notes.md']);
         rmSync(join(f.dir, 'notes.md'));
         await store.syncFromDisk();
@@ -169,7 +169,7 @@ describe('workspace files', () => {
 
     it('no default file in the manifest: the first model file by path', async () => {
         const f = files();
-        writeFileSync(f.ws, '<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> . }\n');
+        writeFileSync(f.ws, '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
         writeFileSync(join(f.dir, 'agents.ttl'), '<urn:x:a1> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "A1" .\n');
         const store = await opened(f.ws);
         expect(store.files.defaultFile).toEqual({ path: join(f.dir, 'agents.ttl'), set: false });
@@ -179,8 +179,8 @@ describe('workspace files', () => {
         const f = files();
         writeFileSync(join(f.dir, 'agents.ttl'), '<urn:x:a1> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "A1" .\n');
         writeFileSync(join(f.dir, 'skip.ttl'), '<urn:x:s> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Skipped" .\n');
-        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ; <osg://vocab/workspace#defaultFile> "data.ttl" ;
-            <osg://vocab/workspace#placeInstances> "default" ; <osg://vocab/workspace#exclude> "skip*.ttl" . }\n`);
+        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ; <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl" ;
+            <https://cristianvasquez.github.io/catenary/vocab/workspace#placeInstances> "default" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#exclude> "skip*.ttl" . }\n`);
         const store = await opened(f.ws);
         expect(store.files).toMatchObject({ defaultFile: { path: f.data, set: true }, placement: { shapes: f.data, concepts: 'near', instances: f.data }, exclude: ['skip*.ttl'] });
         expect(Object.values(docOf(store).instances).map(i => i.label)).not.toContain('Skipped');
@@ -358,7 +358,7 @@ describe('workspace files', () => {
 
     it('a view file is a TriG file (any name, any folder) that declares a view, or a *.view.trig file: one graph, named by its view:View; other files with a view: not read, with a warning', async () => {
         const f = files();
-        const body = (iri: string, label: string) => `<${iri}> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" .`;
+        const body = (iri: string, label: string) => `<${iri}> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" .`;
         const view = (iri: string, label: string, graph = iri) => `<${graph}> { ${body(iri, label)} }\n`;
         mkdirSync(join(f.dir, 'views', 'drafts'));
         writeFileSync(join(f.dir, 'views', 'drafts', 'idea.view.trig'), view('urn:name:Idea', 'Idea'));
@@ -390,7 +390,7 @@ describe('workspace files', () => {
     it('fileContent: a file holds a workspace, views, both or none, by its content; a view gets the workspace that reads it', async () => {
         const f = files();
         const store = await opened(f.ws);
-        const view = (iri: string, label: string) => `<${iri}> { <${iri}> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
+        const view = (iri: string, label: string) => `<${iri}> { <${iri}> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
         writeFileSync(join(f.dir, 'plan.trig'), view('urn:name:Plan', 'Plan'));
         mkdirSync(join(f.dir, 'other', 'deep'), { recursive: true });
         writeFileSync(join(f.dir, 'other', 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://w3id.org/catenary/workspace#Workspace> . }\n');
@@ -415,7 +415,7 @@ describe('workspace files', () => {
         const f = files();
         mkdirSync(join(f.dir, 'views'), { recursive: true });
         const file = join(f.dir, 'views', 'Flow.view.trig');
-        writeFileSync(file, '<urn:name:Flow> { <urn:name:Flow> a <osg://vocab/view#View> . }\n');
+        writeFileSync(file, '<urn:name:Flow> { <urn:name:Flow> a <https://cristianvasquez.github.io/catenary/vocab/view#View> . }\n');
         const r = await new ModelStore().open(file);
         expect(r).toEqual({ ok: false, error: 'Flow.view.trig is a view file. Open its workspace, then open the view.' });
     });
@@ -633,7 +633,7 @@ describe('shapes files in the store', () => {
 });
 
 describe('open a folder', () => {
-    const manifestText = '<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> . }\n';
+    const manifestText = '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n';
 
     it('a folder with workspace.trig opens it', async () => {
         const f = files();
@@ -685,7 +685,7 @@ describe('open a folder', () => {
     it('a workspace file that another program writes later is read', async () => {
         const f = files({ workspace: false });
         const store = await opened(f.dir);
-        writeFileSync(join(f.dir, 'workspace.trig'), manifestText.replace(' . }', ' ; <osg://vocab/workspace#placeInstances> "data.ttl" . }'));
+        writeFileSync(join(f.dir, 'workspace.trig'), manifestText.replace(' . }', ' ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeInstances> "data.ttl" . }'));
         expect(await store.syncFromDisk()).toEqual(['workspace.trig']);
         expect(store.files.placement?.instances).toBe(join(f.dir, 'data.ttl'));
         expect(store.files.workspace).toMatchObject({ onDisk: true });

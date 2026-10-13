@@ -1,0 +1,13 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix view: <osg://vocab/view#>.
+
+<urn:name:Legacy> {
+  <urn:name:Legacy> a view:View;
+    rdfs:label "Legacy".
+
+  <urn:name:Legacy/p/1> a view:Placement;
+    view:element <urn:x:a>;
+    view:view <urn:name:Legacy>;
+    view:x 10;
+    view:y 20.
+}

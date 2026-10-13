@@ -47,12 +47,12 @@ describe('the figures do not read the geometry of placements', () => {
 
     it('a layout change keeps the figure input; another change does not', () => {
         const g = newModelGraph(new OxigraphStore());
-        g.add(n('view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('osg://vocab/view#View'), n('view'));
+        g.add(n('view'), rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#View'), n('view'));
         const before = g.keys.data;
-        g.add(n('p1'), rdf.namedNode('osg://vocab/view#x'), rdf.literal('10'), n('view'));
+        g.add(n('p1'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#x'), rdf.literal('10'), n('view'));
         g.add(n('e'), n('p'), rdf.literal('1'), rdf.namedNode(REPORT_GRAPH));
         expect(g.keys.data).toBe(before);
-        g.add(n('p1'), rdf.namedNode('osg://vocab/view#element'), n('a'), n('view'));
+        g.add(n('p1'), rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#element'), n('a'), n('view'));
         expect(g.keys.data).not.toBe(before);
     });
 });

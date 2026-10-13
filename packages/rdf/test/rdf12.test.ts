@@ -72,7 +72,7 @@ afterEach(async () => {
 async function workspace(files: Record<string, string>) {
     const dir = mkdtempSync(join(tmpdir(), 'catenary-rdf12-'));
     dirs.push(dir);
-    writeFileSync(join(dir, 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> . }\n');
+    writeFileSync(join(dir, 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
     for (const [file, text] of Object.entries(files)) writeFileSync(join(dir, file), text);
     const store = new ModelStore();
     store.watching = false;

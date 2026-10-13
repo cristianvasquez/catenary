@@ -1,9 +1,9 @@
 # Marks notation (built in): notes, frames, view references. An arrow is a link: the statement
 # <note> view:arrow <element> is a connector, as ex:m1 ex:husband ex:john is in the instance notation.
 
-@prefix nt:   <osg://vocab/notation#> .
-@prefix mkn:  <osg://vocab/notation/marks#> .
-@prefix view: <osg://vocab/view#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix mkn:  <https://cristianvasquez.github.io/catenary/vocab/notation/marks#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .

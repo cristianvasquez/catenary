@@ -161,7 +161,7 @@ test('browser: raw RDF paste, graph consent, Copy as RDF, reference paste, and c
   const workspace = path.join(dir, 'workspace'), config = path.join(dir, 'config');
   fs.mkdirSync(workspace);
   fs.mkdirSync(config);
-  fs.writeFileSync(path.join(workspace, 'workspace.trig'), `@prefix ws: <osg://vocab/workspace#> .
+  fs.writeFileSync(path.join(workspace, 'workspace.trig'), `@prefix ws: <https://cristianvasquez.github.io/catenary/vocab/workspace#> .
     <urn:name:workspace> { <urn:name:workspace> a ws:Workspace; ws:placeInstances "data.ttl" . }`);
   let backend, browser, page, passed = false;
   const logs = [];

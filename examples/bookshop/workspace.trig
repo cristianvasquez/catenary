@@ -18,8 +18,8 @@
 @prefix time: <http://www.w3.org/2006/time#>.
 @prefix vann: <http://purl.org/vocab/vann/>.
 @prefix vcard: <http://www.w3.org/2006/vcard/ns#>.
-@prefix view: <osg://vocab/view#>.
-@prefix ws: <osg://vocab/workspace#>.
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.
+@prefix ws: <https://cristianvasquez.github.io/catenary/vocab/workspace#>.
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
 
 <urn:name:workspace> {
@@ -134,11 +134,11 @@
     sh:prefix "vcard".
 
   <urn:name:workspace-declare-view> a sh:PrefixDeclaration;
-    sh:namespace "osg://vocab/view#"^^xsd:anyURI;
+    sh:namespace "https://cristianvasquez.github.io/catenary/vocab/view#"^^xsd:anyURI;
     sh:prefix "view".
 
   <urn:name:workspace-declare-ws> a sh:PrefixDeclaration;
-    sh:namespace "osg://vocab/workspace#"^^xsd:anyURI;
+    sh:namespace "https://cristianvasquez.github.io/catenary/vocab/workspace#"^^xsd:anyURI;
     sh:prefix "ws".
 
   <urn:name:workspace-declare-xsd> a sh:PrefixDeclaration;

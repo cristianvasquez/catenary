@@ -29,8 +29,8 @@ function workspace() {
 <urn:x:a> a <${DATASET}> ; rdfs:label "A" ; <${DESCRIPTION}> "Kept." .
 <urn:x:b> a <${DATASET}>, <${NOTE}> ; rdfs:label "B" .
 <urn:x:c> a <${NS.skos}Concept>, <${NOTE}> ; rdfs:label "C" .\n`),
-        ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-            <osg://vocab/workspace#defaultFile> "own.ttl" . }\n`),
+        ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" . }\n`),
         other: join(dir, 'other.ttl'),
         read: (name: string) => readFileSync(join(dir, name), 'utf8')
     };

@@ -98,7 +98,7 @@ describe('paste (law_pasteNeverMintsIris)', () => {
         const other = await load(`<urn:name:model> {
             <urn:name:Query%20service> a <http://www.w3.org/ns/dcat#DataService> ; <http://www.w3.org/2000/01/rdf-schema#label> "Query service" .
             <urn:x:1> a <http://ex.org/C> ; <http://www.w3.org/2000/01/rdf-schema#label> "Unrelated" . }
-            <urn:v> { <urn:v> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "V" . }`);
+            <urn:v> { <urn:v> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "V" . }`);
         const instances = Object.keys(doc(other).instances).length;
         run(other, await meta(), { kind: 'pasteIntoView', view: byLabel(other, 'V'), clip: copyFromView(doc(g), ctx, all)! });
         expect(boxes(doc(other).views[byLabel(other, 'V')], 'card').map(n => doc(other).instances[n.element].label)).toEqual(['Query service']);
@@ -184,7 +184,7 @@ describe('duplicate (law_duplicateMintsNew)', () => {
     it('refuses a node shape and an empty selection, and changes nothing', async () => {
         const g = await load(`<urn:name:model> { <urn:a> a <http://ex.org/C> ; <http://www.w3.org/2000/01/rdf-schema#label> "A" . }
             <urn:shapes:s> { <urn:S> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <http://ex.org/C> . }
-            <urn:v> { <urn:v> a <osg://vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "V" . }`);
+            <urn:v> { <urn:v> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "V" . }`);
         const m = await meta();
         const ctx = byLabel(g, 'V');
         const api = byLabel(g, 'A'), shape = iriId('urn:S');
