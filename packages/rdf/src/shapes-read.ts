@@ -355,7 +355,7 @@ export function readShapes(quads: Iterable<Quad>, language?: string): ShapesInde
 
     // Value sets: concept schemes and collections.
     // skos:prefLabel first: a rename of a value set writes skos:prefLabel (elements.ts labelTarget).
-    const labelOf = (t: Term) => pick(t, [S.prefLabel.value, S.label.value]) ?? labelFromIri(t.value);
+    const labelOf = (t: Term) => pick(t, [S.prefLabel.value, S.label.value, S.name.value]) ?? labelFromIri(t.value);
     for (const [kind, type] of [['scheme', S.ConceptScheme], ['collection', S.Collection]] as const) {
         for (const q of ds.match(null, S.type, type)) {
             const t = q.subject;

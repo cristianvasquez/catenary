@@ -97,6 +97,25 @@ describe('shapes graphs to the shapes read model', () => {
         expect(Object.values(s.valueSets).map(v => [v.kind, v.label, v.members.map(m => m.label)])).toEqual([['scheme', 'Product domain', ['Product analytics']]]);
     });
 
+    describe('value set labels: skos:prefLabel, then rdfs:label, then sh:name (LABEL1)', () => {
+        const ttl = (body: string) => `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix skos: <${NS_SKOS}> .
+<${EX}vs> a skos:ConceptScheme ${body} .
+<${EX}m> a skos:Concept ; skos:inScheme <${EX}vs> ; sh:name "Member name" .`;
+        const vs = (g: ModelGraph) => Object.values(shapesOf(g).valueSets).find(v => v.uri === EX + 'vs')!;
+        it('a scheme with only sh:name shows it', async () => {
+            expect(vs(await load(ttl('; sh:name "Scheme name"'))).label).toBe('Scheme name');
+        });
+        it('a member with only sh:name shows it', async () => {
+            expect(vs(await load(ttl(''))).members.map(m => m.label)).toEqual(['Member name']);
+        });
+        it('skos:prefLabel comes before rdfs:label and sh:name', async () => {
+            expect(vs(await load(ttl('; skos:prefLabel "Pref" ; rdfs:label "Label" ; sh:name "Name"'))).label).toBe('Pref');
+        });
+        it('rdfs:label comes before sh:name', async () => {
+            expect(vs(await load(ttl('; rdfs:label "Label" ; sh:name "Name"'))).label).toBe('Label');
+        });
+    });
+
     it('maps sh:targetSubjectsOf without treating its predicate as a class', async () => {
         const g = await load(`<${EX}subject> <${EX}status> "active" .`);
         const shape = rdf.namedNode(EX + 'StatusSubject');
