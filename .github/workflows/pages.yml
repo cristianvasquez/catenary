@@ -1,12 +1,13 @@
 name: Pages
 
 # Builds the site in www/ with VitePress and publishes it to GitHub Pages on each push to main that touches www/.
+# The vocabulary pages www/vocab/*.md come from www/public/vocab/*.ttl (`pnpm www:vocab`, before the build).
 # The pictures in www/public/images are committed: `pnpm www:screenshots` regenerates them (it needs the built app and Chromium).
 
 on:
   push:
     branches: [main]
-    paths: ['www/**', '.github/workflows/pages.yml']
+    paths: ['www/**', 'scripts/www-vocab.mjs', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,7 +29,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm -C www install --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts --filter catenary --filter catenary-www --filter "rdf-files..."
+      - run: pnpm -C packages/rdf-serialization build && pnpm -C packages/rdf-files build
+      - run: pnpm www:vocab
       - run: pnpm -C www build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

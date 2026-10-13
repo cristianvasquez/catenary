@@ -15,6 +15,16 @@
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+
+<https://cristianvasquez.github.io/catenary/vocab/notation> a owl:Ontology ;
+    dct:title "Catenary notation vocabulary" ;
+    dct:description "The terms of notations (figure shapes and their roles) and of the figures that Catenary derives in memory. SHACL of views, placements and notations: docs/notation/catenary.shapes.ttl in the repository." ;
+    dct:license <https://spdx.org/licenses/AGPL-3.0-or-later.html> ;
+    vann:preferredNamespacePrefix "nt" ;
+    vann:preferredNamespaceUri "https://cristianvasquez.github.io/catenary/vocab/notation#" .
 
 # === Stored: notations ==========================================================
 
