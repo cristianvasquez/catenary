@@ -120,4 +120,4 @@ One worktree per kata under the scratch folder, branch `kata/<id>-<slug>`, `pnpm
 
 ## Status
 
-Decisions settled. Katas created; see the kata ledger for their state.
+All three katas closed and merged into main on 2026-10-13: nh68 `3b69791`, kebm `d977aa7`, q429 `47d2809`. The read-time alias of the old namespaces stays for one release (decision 6). The user's own workspaces are migrated with `pnpm migrate-vocab`; the example workspace copy under `~/.local/share/catenary/workspaces/example` opens through the alias until it is saved or migrated.
