@@ -11,15 +11,24 @@ export const LEGACY_NAMESPACES = Object.fromEntries(
     ['view#', 'workspace#', 'notation#', 'notation/shapes#', 'notation/skos#', 'notation/classes#', 'notation/instances#', 'notation/marks#']
         .map(path => ['osg://vocab/' + path, CATENARY_VOCAB + path]));
 
-// Same file set as listRdfFiles (packages/rdf-files/src/listing.ts): RDF extensions without .xml; no hidden names, node_modules or *.bak.
+// Same file set as listRdfFiles (packages/rdf-files/src/listing.ts): RDF extensions without .xml; no hidden names, node_modules or *.bak;
+// a .json file only with @context (JSON-LD).
 const EXTENSIONS = ['.ttl', '.turtle', '.trig', '.nt', '.nq', '.jsonld', '.json', '.n3', '.rdf', '.owl'];
+
+function hasContext(file) {
+    try {
+        const has = v => Array.isArray(v) ? v.some(has) : v !== null && typeof v === 'object' && Object.hasOwn(v, '@context');
+        return has(JSON.parse(readFileSync(file, 'utf8')));
+    } catch { return false; }
+}
 
 function* rdfFiles(folder) {
     for (const entry of readdirSync(folder, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
         if (entry.name.startsWith('.')) continue;
         const file = join(folder, entry.name);
         if (entry.isDirectory()) { if (entry.name !== 'node_modules') yield* rdfFiles(file); }
-        else if (entry.isFile() && !entry.name.endsWith('.bak') && EXTENSIONS.includes(extname(entry.name).toLowerCase())) yield file;
+        else if (entry.isFile() && !entry.name.endsWith('.bak') && EXTENSIONS.includes(extname(entry.name).toLowerCase())
+            && (extname(entry.name).toLowerCase() !== '.json' || hasContext(file))) yield file;
     }
 }
 

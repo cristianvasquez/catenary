@@ -17,7 +17,7 @@ it('the script uses the same namespace map as the model', async () => {
     expect(script.LEGACY_NAMESPACES).toEqual(LEGACY_NAMESPACES);
 });
 
-it('rewrites old namespaces in prefixes and full IRIs, keeps other files byte-identical, and a second run changes nothing', () => {
+it('rewrites old namespaces in prefixes and full IRIs (also JSON-LD .json), keeps other files and plain .json byte-identical, and a second run changes nothing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catenary-migrate-'));
     dirs.push(dir);
     const a = '# a comment\n@prefix view: <osg://vocab/view#> .\n@prefix ex: <http://example.org/> .\n\nex:v a view:View ;   view:shows ex:x .\n';
@@ -26,17 +26,21 @@ it('rewrites old namespaces in prefixes and full IRIs, keeps other files byte-id
     writeFileSync(join(dir, 'a.ttl'), a);
     writeFileSync(join(dir, 'b.trig'), b);
     writeFileSync(join(dir, 'c.ttl'), c);
+    const plain = '{"example": "osg://vocab/view#View"}\n';
+    writeFileSync(join(dir, 'plain.json'), plain);
+    writeFileSync(join(dir, 'e.json'), '{"@context": {"view": "osg://vocab/view#"}, "@id": "http://example.org/v", "@type": "view:View"}\n');
 
-    expect(run(dir, '--dry-run')).toBe('would change a.ttl (1 replacements)\nwould change b.trig (4 replacements)\n2 file(s) to change\n');
+    expect(run(dir, '--dry-run')).toBe('would change a.ttl (1 replacements)\nwould change b.trig (4 replacements)\nwould change e.json (1 replacements)\n3 file(s) to change\n');
     expect(readFileSync(join(dir, 'a.ttl'), 'utf8')).toBe(a);
 
-    expect(run(dir)).toBe('changed a.ttl (1 replacements)\nchanged b.trig (4 replacements)\n2 file(s) changed\n');
+    expect(run(dir)).toBe('changed a.ttl (1 replacements)\nchanged b.trig (4 replacements)\nchanged e.json (1 replacements)\n3 file(s) changed\n');
     const V = 'https://cristianvasquez.github.io/catenary/vocab/';
     expect(readFileSync(join(dir, 'a.ttl'), 'utf8')).toBe(a.replace('osg://vocab/view#', V + 'view#'));
     const newB = readFileSync(join(dir, 'b.trig'), 'utf8');
     expect(newB).toBe(`<${V}workspace#ws> {\n  <${V}workspace#ws> <${V}notation/shapes#mode> <${V}notation#Default> .\n}\n`);
     for (const old of Object.keys(LEGACY_NAMESPACES)) expect(newB).not.toContain(old);
     expect(readFileSync(join(dir, 'c.ttl'))).toEqual(Buffer.from(c));
+    expect(readFileSync(join(dir, 'plain.json'))).toEqual(Buffer.from(plain));
 
     expect(run(dir)).toBe('0 file(s) changed\n');
 });
