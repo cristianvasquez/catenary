@@ -467,6 +467,10 @@ law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
 revealWaitsFor :: Int -> Int                       -- changes while hidden -> updates that the reveal waits for
 law_revealAfterShowUpdate :: Int -> Bool
 law_revealAfterShowUpdate changes = revealWaitsFor changes == updatesAtShow changes
+-- | The selection after an edit (expand, add, uncollect, create) waits on the placements of the selected elements in the canvas, not on their ids (at most 2 s).
+-- Reason: the canvas index holds placement ids, so a wait on element ids always ended at its timeout (actions.ts executeAndSelect, view-editors.ts whenPlaced).
+selectionWaitsFor :: Element -> Element -> [Element]   -- a selected element, the view: the canvas items that the selection waits for
+selectionWaitsFor e v = [p | p <- placements e, viewOf p == v]
 
 -- 3.3 Selection and highlights ------------------------------------------------------
 

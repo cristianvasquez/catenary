@@ -498,7 +498,7 @@ export class ModelActions {
     async duplicate(view: string, ids: string[]): Promise<CommandResult> {
         const w = await this.viewEditor(view);
         const r = await this.model.execute({ kind: 'duplicate', view, ids });
-        // The copies are instance ids; their cards have placement ids (whenPlaced, not whenShown).
+        // The copies are instance ids; their cards have placement ids (whenPlaced).
         if (r.ok && r.ids?.length) {
             await this.editors.whenPlaced(w, r.ids);
             this.selection.set({ view, ids: r.ids });
@@ -512,7 +512,7 @@ export class ModelActions {
         const r = await this.model.execute(command);
         const select = ids ?? (r.ok && r.id ? [r.id] : []);
         if (r.ok && select.length) {
-            await this.editors.whenShown(w, select);
+            await this.editors.whenPlaced(w, select);
             this.selection.set({ view, ids: select });
         }
         return r;
@@ -648,7 +648,7 @@ export class ModelActions {
             if (r.ok) ids.push(...(r.ids ?? []));
         }
         if (!ids.length) return;
-        await this.editors.whenShown(await this.viewEditor(view), ids);
+        await this.editors.whenPlaced(await this.viewEditor(view), ids);
         this.selection.set({ view, ids });
     }
 
