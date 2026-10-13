@@ -693,6 +693,8 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.equal(run.status, 'waiting');
   assert.deepEqual(run.prompt.items.map(i => i.label).sort(), ['Product context', 'Second view']);
   assert.equal(cliRaw('answer', '--pick', 'Product context').status, 'done');
+  // A suggestion widget takes an Enter key as its accept key (CI run 38486141375 lost one newline): no suggestions in this editor.
+  cli('eval', 'ctx.shell.currentWidget.editor.getControl().updateOptions({ quickSuggestions: false, suggestOnTriggerCharacters: false, wordBasedSuggestions: "off" }); return true');
   await page.keyboard.type('\n\n## Components\n\n');
   // Typing is asynchronous: insert only after the last key is in the document.
   await waitUntil('the document has the typed heading', () => cli('eval', 'ctx.shell.currentWidget.editor.document.getText()'), t => t.endsWith('## Components\n\n'));
