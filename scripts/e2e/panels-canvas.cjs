@@ -1,7 +1,7 @@
 // Browser scenarios of the panels and canvases: hidden panel reads, Trace metrics, two-canvas selection and bends.
 // No fixed sleep establishes completion. A check waits for an observed state (app.waitUntil, a locator), or for these completion
 // points: the window has processed a revision (its snapshot and the backend answer of its selection), a frame flush of the window,
-// a later RPC on the same frontend connection, and an answered GLSP request on the same canvas session.
+// a later RPC on the same frontend connection, and an answered read-only GLSP request on the same canvas session.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -32,12 +32,12 @@ function seams({ page, cli, waitUntil }) {
     cli('eval', 'await ctx.model.service.getSnapshot(); return true');
   };
   /**
-   * An answered SetVisibleAction on the canvas of `view`. The GLSP server handles the actions of a session in order: the answer
-   * comes after the actions that the canvas sent before it. `visible` repeats the current state of the canvas, so it changes nothing.
+   * An answered RequestTypeHintsAction on the canvas of `view`: a read that changes no session state. The GLSP server handles the
+   * actions of a session in order: the answer comes after the actions that the canvas sent before it.
    */
-  const glspAck = (view, visible) => cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)});
-    const r = await w.actionDispatcher.request({ kind: 'catenarySetVisible', visible: ${visible}, requestId: 'e2e-ack-' + Math.random().toString(36).slice(2) });
-    return r.revision`);
+  const glspAck = view => cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)});
+    const r = await w.actionDispatcher.request({ kind: 'requestTypeHints', requestId: 'e2e-ack-' + Math.random().toString(36).slice(2) });
+    return r.kind`);
   const revision = () => cli('model', 'revision');
   return { windowState, processed, drain, glspAck, revision };
 }
@@ -97,20 +97,20 @@ test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvas
   const canvasId = cli('eval', 'ctx.shell.currentWidget.id');
   assert.equal(cli('run', 'catenary.openAs', JSON.stringify(path.join(workspace, 'data.ttl')), '"Source"').status, 'done');
   await page.locator('svg.sprotty-graph:visible').waitFor({ state: 'hidden' });
-  // The hide of the canvas is a notification without an answer. An answered hide after it: the server has the canvas hidden.
-  glspAck(view, false);
+  // The hide of the canvas is a notification without an answer. An answered request after it: the server has handled the hide.
+  glspAck(view);
   cli('rpc', 'clearTrace');
   cli('exec', JSON.stringify({ kind: 'rename', id: created.id, label: 'Panel hidden' }));
   await processed(revision(), 'rename while the canvas is hidden');
   await drain();
-  glspAck(view, false);
+  glspAck(view);
   const refreshes = () => cli('rpc', 'trace', '0').result.spans.filter(s => s.kind === 'refresh' && s.name.startsWith('view ')).map(s => s.name);
   assert.deepEqual(refreshes(), [], 'a hidden canvas gets no refresh');
   // The show is a request: its answer comes after the refresh of the show (whenShowUpdated).
   cli('eval', `await ctx.shell.activateWidget(${JSON.stringify(canvasId)}); await ctx.editors.find(${JSON.stringify(view)}).whenShowUpdated(); return true`);
   await card().filter({ hasText: 'Panel hidden' }).waitFor();
   await drain();
-  glspAck(view, true);
+  glspAck(view);
   assert.equal(refreshes().length, 1, 'one refresh when the canvas shows again');
   assert.ok(!logs.some(l => l.includes('Missing handler for action')), logs.filter(l => l.includes('Missing handler')).join('\n'));
   cli('rpc', 'setTracing', 'false');
@@ -222,7 +222,7 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
   await node(right, one).filter({ hasText: 'Shared one renamed' }).waitFor();
   await processed(revision(), 'rename of one');
   await drain();
-  for (const v of [left, right]) glspAck(v, true);
+  for (const v of [left, right]) glspAck(v);
   assert.deepEqual(counts().selects, { [left]: 1 });
   // Ctrl+click in the highlighting canvas adds: that canvas becomes the origin, and the first canvas highlights both.
   await node(right, two).locator('.card-name').first().click({ modifiers: ['Control'] });
@@ -272,7 +272,7 @@ test('browser: law_oneSelectionPerWindow: a click selects in its canvas only, th
   await page.keyboard.press('Delete');
   // Del sends nothing: flush the window, the frontend connection and the session of the canvas, then compare.
   await drain();
-  glspAck(right, true);
+  glspAck(right);
   assert.equal(before, 2);
   assert.equal(revision(), revisionBefore, 'Del without an origin runs no command');
   assert.equal(cards(right), before, 'Del without an origin removes nothing');
@@ -347,7 +347,7 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   let c = await handleCenter();
   await page.mouse.click(c.x + 3, c.y + 3);
   await drain();
-  glspAck(view, true);
+  glspAck(view);
   assert.equal(revision(), revisionBefore, 'a click on a bend handle runs no command');
   assert.equal(vertices(), saved, 'a click on a bend handle changes nothing in the view file');
   assert.equal(await drawn(), drawnBefore, 'a click on a bend handle keeps the drawn route');
@@ -364,7 +364,7 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   await cancel.click();
   await cancel.waitFor({ state: 'detached' });
   await drain();
-  glspAck(view, true);
+  glspAck(view);
   assert.equal(revision(), revisionBefore, 'a refused bend edit runs no command');
   assert.equal(vertices(), saved, 'a refused bend edit leaves the view file');
   // The dialog can take the selection with it (open.md BEND3): a click on the line selects the edge again.
