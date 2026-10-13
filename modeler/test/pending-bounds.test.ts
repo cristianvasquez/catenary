@@ -54,6 +54,8 @@ describe('pending bounds', () => {
         expect(s.sent.has('gone')).toBe(false);
     });
     // Current behavior (MOVE1, spec/open.md): after the confirmation the entry is gone, so a later server model with the old bounds is drawn as it is.
+    // The backend no longer sends a queued refresh model older than the confirmation (ui-manifest §3.2 law_clientGetsNoOlderModel). A later
+    // model with the old bounds can still come from another change, for example an undo.
     it('confirm, then stale model: the stale model draws the old bounds', () => {
         const s = new PendingBoundsState();
         s.revision = 1;

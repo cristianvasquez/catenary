@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Action, ChangeBoundsOperation, DefaultGModelSerializer, DefaultModelState, DeleteElementOperation, GModelIndex, MessageAction, ModelSubmissionHandler, UpdateModelAction,
-    PasteOperation, FitToScreenAction, SelectAction
+    Action, ActionMessage, ChangeBoundsOperation, DefaultActionDispatcher, DefaultGModelSerializer, DefaultModelState, DeleteElementOperation, GModelIndex, MessageAction,
+    ModelSubmissionHandler, NullLogger, RequestModelAction, SetDirtyStateAction, SetModelAction, UpdateModelAction, PasteOperation, FitToScreenAction, SelectAction
 } from '@eclipse-glsp/server';
+import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
 import { GNodeSchema } from '@eclipse-glsp/protocol';
 import { Doc, EditCommand, NS, boxes, cardOf, copyFromView, VIEW_CLIP_FORMAT } from '@catenary/model';
 
@@ -16,7 +17,7 @@ import { ModelGraph } from '../../packages/rdf/src/graph';
 import { elementId } from '../../packages/rdf/src/ids';
 import { rdf } from '../../packages/rdf/src/terms';
 import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
-import { StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
+import { RevisionGuardForwarder, StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
 import { ChangeBoundsHandler, DeleteHandler, PasteHandler, SetVisibleAction, SetVisibleHandler, VisibleSetAction } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
 import { PASTE_RESULT } from '../src/common/protocol';
@@ -51,6 +52,53 @@ async function client(store: ModelStore, viewId: string) {
         commandStack
     };
 }
+
+/**
+ * The session with the GLSP action queue: a real DefaultActionDispatcher (queue and dispatch scope of the node backend) and the
+ * forwarder of the diagram module. `received`: the actions that reach the client transport. `wait(kind)`: a client action whose
+ * handler waits until `release` (as `catenarySetVisible` or `catenaryLayoutView`). `move(kind, command)`: a client action whose handler
+ * runs a canvas edit (as ChangeBoundsHandler).
+ */
+async function queuedClient(store: ModelStore, viewId: string) {
+    const state = Object.assign(new ViewState(), { store });
+    const diagramConfiguration = new ViewDiagramConfiguration();
+    const serializer = Object.assign(new DefaultGModelSerializer(), { diagramConfiguration });
+    const modelState = Object.assign(new DefaultModelState(), { index: new GModelIndex(), serializer });
+    const commandStack = Object.assign(new StoreCommandStack(), { store });
+    const modelFactory = Object.assign(new ViewGModelFactory(), { session: state, modelState, serializer });
+    const received: Action[] = [];
+    const forwarder = Object.assign(new RevisionGuardForwarder(new Set([SetModelAction.KIND, UpdateModelAction.KIND, SetDirtyStateAction.KIND, MessageAction.KIND])), {
+        clientId: viewId, glspClient: { process: (m: ActionMessage) => { received.push(m.action); } }
+    });
+    const handlers = new Map<string, { actionKinds: string[]; execute: (a: Action) => Promise<Action[]> }>();
+    const dispatcher = Object.assign(new DefaultActionDispatcher(), {
+        actionHandlerRegistry: { get: (kind: string) => handlers.has(kind) ? [handlers.get(kind)!] : [] },
+        clientActionForwarder: forwarder, logger: new NullLogger(), clientId: viewId, dispatchScope: new NodeActionDispatchScope()
+    });
+    (dispatcher as unknown as { initialize(): void }).initialize();
+    const submission = Object.assign(new ModelSubmissionHandler(), { diagramConfiguration, serializer, modelState, modelFactory, commandStack, actionDispatcher: dispatcher });
+    const sessions = { addListener: vi.fn(), removeListener: vi.fn() };
+    const session = Object.assign(new ViewSession(), { state, submission, dispatcher, sessions, clientId: viewId, modelState });
+    const refresh = vi.spyOn(session, 'refresh');
+    session.start(viewId);
+    // The initial model, as RequestModelActionHandler sends it: a SetModelAction with revision 0.
+    await dispatcher.dispatchAll(await submission.submitInitialModel(RequestModelAction.create({ options: { uri: viewId } })));
+    let release = () => {};
+    handlers.set('testWait', { actionKinds: ['testWait'], execute: () => new Promise<Action[]>(resolve => { release = () => resolve([]); }) });
+    return {
+        session, dispatcher, received, refresh, modelState,
+        updates: () => received.filter(UpdateModelAction.is),
+        flushed: () => Promise.all(refresh.mock.results.map(r => r.value)),
+        wait: () => dispatcher.dispatch({ kind: 'testWait' }),
+        release: () => release(),
+        move: (command: EditCommand) => {
+            handlers.set('testMove', { actionKinds: ['testMove'], execute: async () => { await session.edit(command); return []; } });
+            return dispatcher.dispatch({ kind: 'testMove' });
+        },
+        dispose: () => { dispatcher.dispose(); sessions.addListener.mock.calls[0][0].sessionDisposed(); }
+    };
+}
+const macrotask = () => new Promise<void>(resolve => setImmediate(resolve));
 
 let dir: string;
 let store: ModelStore;
@@ -545,5 +593,44 @@ describe('model changes reaching view clients', () => {
         await b.flushed();
         expect(a.sent).toEqual([]);
         expect(b.elements().find(e => key(e) === instance)).toMatchObject({ name: 'Still connected' });
+    });
+});
+
+describe('law_clientGetsNoOlderModel: the backend sends no model older than one it sent (ui-manifest §3.2, open.md MOVE1)', () => {
+    it('drops a refresh model that leaves the queue after the newer model of an edit; the next refresh is sent', async () => {
+        const c = await queuedClient(store, first);
+        const card = cardOf(docOf(store).views[first], instance)!;
+        expect(c.received.filter(SetModelAction.is).map(a => a.newRoot.revision)).toEqual([0]);
+        // A handler waits (the queue is busy across a macrotask). A store change builds a refresh model behind a queued move.
+        const waiting = c.wait();
+        await macrotask();
+        edit({ kind: 'rename', id: instance, label: 'Renamed' });
+        const moved = c.move({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 1234, y: 567 }] });
+        await macrotask();
+        await macrotask();
+        expect(c.refresh).toHaveBeenCalledTimes(1);
+        expect(c.modelState.root.revision).toBe(1);   // the refresh model is built (revision 1) and waits in the queue
+        expect(c.updates()).toEqual([]);
+        c.release();
+        await Promise.all([waiting, moved, c.flushed()]);
+        // The edit sent revision 2 with the new bounds. The refresh model (revision 1, old bounds) is dropped.
+        expect(c.updates().map(u => u.newRoot.revision)).toEqual([2]);
+        const shown = c.updates()[0].newRoot.children!.find(e => key(e) === instance) as GNodeSchema;
+        expect(shown).toMatchObject({ name: 'Renamed', position: { x: 1234, y: 567 } });
+        edit({ kind: 'rename', id: instance, label: 'Again' });
+        await c.flushed();
+        expect(c.updates().map(u => u.newRoot.revision)).toEqual([2, 3]);
+        expect(c.updates()[1].newRoot.children!.find(e => key(e) === instance)).toMatchObject({ name: 'Again' });
+        c.dispose();
+    });
+
+    it('sends a refresh when no newer model was sent', async () => {
+        const c = await queuedClient(store, first);
+        edit({ kind: 'rename', id: instance, label: 'Renamed' });
+        await c.flushed();
+        expect(c.updates().map(u => u.newRoot.revision)).toEqual([1]);
+        expect(c.updates()[0].newRoot.children!.find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
+        expect(c.received.filter(SetDirtyStateAction.is)).toHaveLength(2);   // the initial model and the refresh
+        c.dispose();
     });
 });

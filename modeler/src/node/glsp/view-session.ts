@@ -2,8 +2,8 @@
 // (ModelStore.viewDoc: SPARQL rows of the view graph and the model, view-read.ts) and re-sends its graph when a change touches that part.
 
 import {
-    Action, ActionDispatcher, ClientId, ClientSessionManager, CommandStack, GModelFactory, GEdge, GModelRoot, GModelSerializer, MessageAction, ModelState,
-    ModelSubmissionHandler, RequestModelAction, SaveModelAction, SetDirtyStateAction, SourceModelStorage
+    Action, ActionDispatcher, ClientActionForwarder, ClientActionKinds, ClientId, ClientSessionManager, CommandStack, GModelFactory, GEdge, GModelRoot, GModelSerializer,
+    MessageAction, ModelState, ModelSubmissionHandler, RequestModelAction, SaveModelAction, SetDirtyStateAction, SetModelAction, SourceModelStorage, UpdateModelAction
 } from '@eclipse-glsp/server';
 import { Command } from '@eclipse-glsp/server';
 import { inject, injectable } from '@theia/core/shared/inversify';
@@ -260,6 +260,32 @@ export class ViewSession {
 
     message(text: string, severity: 'INFO' | 'WARNING' | 'ERROR' = 'WARNING'): Promise<void> {
         return this.dispatcher.dispatch(MessageAction.create(text, { severity }));
+    }
+}
+
+/**
+ * Forwards the actions of one session to its client. It drops an update whose revision is lower than or equal to the highest revision
+ * sent: a refresh model that leaves the action queue after the newer model of an edit (ui-manifest §3.2 law_clientGetsNoOlderModel).
+ * GLSP sets the revision when it builds the model (ModelSubmissionHandler.submitModel), and every dispatch, queued or inline, passes
+ * here when it is sent (DefaultActionDispatcher.doDispatch). An initial model (SetModelAction, a reload) starts the count again.
+ */
+@injectable()
+export class RevisionGuardForwarder extends ClientActionForwarder {
+    /** The highest model revision sent to the client. */
+    protected sentRevision?: number;
+
+    constructor(@inject(ClientActionKinds) actionKinds: Set<string>) {
+        super(actionKinds);
+    }
+
+    override handle(action: Action): boolean {
+        if (SetModelAction.is(action)) this.sentRevision = action.newRoot.revision;
+        else if (UpdateModelAction.is(action) && action.newRoot.revision !== undefined) {
+            // Dropped: report it as handled on the client, so the dispatcher does not look for a server handler.
+            if (this.sentRevision !== undefined && action.newRoot.revision <= this.sentRevision) return true;
+            this.sentRevision = action.newRoot.revision;
+        }
+        return super.handle(action);
     }
 }
 

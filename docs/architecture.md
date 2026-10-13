@@ -232,7 +232,7 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 
 | Test | Laws |
 |---|---|
-| `packages/rdf/test/change.test.ts`, `modeler/test/view-session.test.ts` | `law_keptDocEqualsRead`, `law_canvasEditErrorsOnce`, `law_revealAfterShowUpdate` |
+| `packages/rdf/test/change.test.ts`, `modeler/test/view-session.test.ts` | `law_keptDocEqualsRead`, `law_canvasEditErrorsOnce`, `law_revealAfterShowUpdate`, `law_clientGetsNoOlderModel` |
 | `packages/rdf/test/read-budget.test.ts`, `packages/rdf/test/shacl-targets.test.ts` | `law_keptReadsEqualRead`, `readBudgetMs` |
 | `packages/rdf/test/selection-scale.test.ts` | `readBudgetMs`: the store reads of a panel read of a few hundred placements stay bounded |
 | `packages/rdf/test/store.test.ts`, `packages/rdf-files/test/trap.test.ts` | `law_trapReadsFilesOnce`, `law_trapStopsStoreCalls` |
