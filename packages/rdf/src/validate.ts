@@ -67,12 +67,13 @@ export function violationsOf(results: ShaclResult[], meta: Classes, instanceId: 
 /** The message of a result without sh:resultMessage. */
 export function defaultMessage(component: string, pathName?: string, value?: string): string {
     const on = pathName ? ` "${pathName}"` : '';
+    const subject = pathName ? `Value of${on}` : 'Value';
     switch (component) {
         case 'MinCount': return `Required${on} is missing.`;
         case 'MaxCount': return `Too many values for${on}.`;
-        case 'Class': return `Value of${on} has the wrong class${value ? `: ${value}` : ''}.`;
-        case 'Datatype': return `Value of${on} has the wrong datatype.`;
-        case 'In': return `Value of${on} is not in the permitted list.`;
+        case 'Class': return `${subject} has the wrong class${value ? `: ${value}` : ''}.`;
+        case 'Datatype': return `${subject} has the wrong datatype.`;
+        case 'In': return `${subject} is not in the permitted list.`;
         default: return `${component} constraint failed${on}.`;
     }
 }
