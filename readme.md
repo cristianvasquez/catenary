@@ -56,6 +56,7 @@ pnpm package linux-x64 --appimage  # also dist/Catenary-linux-x64.AppImage
 node scripts/check-windows-package.mjs   # layout and binaries of the Windows package (pnpm package:win first)
 xvfb-run -a node scripts/smoke-desktop.mjs   # start the desktop app and check paths, writes, Git, watcher
 pnpm test             # source-based tests
+pnpm test:perf        # elapsed-time budgets (manifest §11.3); not in pnpm verify; diagnostic unless CATENARY_PERF_ENV names a controlled environment
 pnpm check            # package boundaries, Markdown links, CSS and TypeScript
 pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is absent
 pnpm build:browser    # the build without the Electron app
