@@ -127,8 +127,13 @@ skolemize fresh = map quad
     term (Ground t) = t
     term (Blank label) = NamedNode (fresh label)
 
--- | Owned nested resource: a skolem IRI, or a shape part <owner>-…, with no other referrer. It joins copy and deletion of
--- its owner. Three rules disagree in the code (open.md OWN1), so this stays a primitive.
+-- | The parts of an element: what its card shows, and the nodes that store it. A delete, a Duplicate and the Turtle text of a
+-- copy act on the element with its parts. Parts of a node shape: its property shapes (sh:property) and their logical
+-- constraints. Parts of an instance: its values that were blank nodes in their file (skolem IRIs). Parts of a part: its
+-- list cells (rdf:first, rdf:rest) and path expressions. The object of sh:class or sh:node (the target of an arrow) is
+-- never a part. The rule reads the data, not the notation: a view that draws a property as an edge does not change it.
+-- A part that another element also uses is shared: a delete names it and asks first (spec/ui-manifest.hs §4.8).
+-- Decided 2026-10-13 (open.md OWN1); the code still has older rules.
 ownedBy :: Iri -> Tx [Iri]
 
 -- 1.3 Element IDs ---------------------------------------------------------------

@@ -796,6 +796,8 @@ law_openInSkipsCurrent f ts = case openIn (HereModel f) ts of
 -- Offer Cancel and "Delete view and references". With no incoming references, omit that warning and list, but still confirm.
 -- Delete the view and its incoming references in one command. Undo restores both and the view content.
 -- Removing one view reference does not change its target or other references. Removing a frame keeps its content.
+-- An element goes with its parts (manifest §1.2 ownedBy). A part that another element also uses is named with that element,
+-- and the delete waits for confirmation.
 -- A failed deletion leaves the store unchanged. Save and reload keep a successful deletion.
 referenceCounts :: [Element] -> [(Element, Int)]   -- the containing view of each incoming reference
 referenceCounts vs = [(v, length (filter (== v) vs)) | v <- nub vs]
