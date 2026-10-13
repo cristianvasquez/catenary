@@ -53,4 +53,33 @@ describe('pending bounds', () => {
         s.apply(root(3, at(0, 0)), 1);
         expect(s.sent.has('gone')).toBe(false);
     });
+    // Current behavior (MOVE1, spec/open.md): after the confirmation the entry is gone, so a later server model with the old bounds is drawn as it is.
+    it('confirm, then stale model: the stale model draws the old bounds', () => {
+        const s = new PendingBoundsState();
+        s.revision = 1;
+        s.sent.set('card', { bounds: [at(20, 0)], at: 0 });
+        const confirm = root(2, at(20, 0));
+        s.apply(confirm, 10);
+        expect(confirm.card.bounds).toEqual(at(20, 0));
+        expect(s.sent.has('card')).toBe(false);
+        const stale = root(3, at(0, 0));
+        s.apply(stale, 20);
+        expect(stale.card.bounds).toEqual(at(0, 0));
+        expect(s.sent.has('card')).toBe(false);
+        expect(s.revision).toBe(3);
+    });
+
+    // Current behavior: the same revision again is not a server model and changes no state. The entry is already gone, so `apply`
+    // does not put B1 back: the root is drawn with the bounds it holds.
+    it('confirm, then a model at the same revision: not a server model, the state stays as after the confirmation', () => {
+        const s = new PendingBoundsState();
+        s.revision = 1;
+        s.sent.set('card', { bounds: [at(20, 0)], at: 0 });
+        s.apply(root(2, at(20, 0)), 10);
+        const same = root(2, at(0, 0));
+        s.apply(same, 20);
+        expect(s.revision).toBe(2);
+        expect(s.sent.has('card')).toBe(false);
+        expect(same.card.bounds).toEqual(at(0, 0));
+    });
 });

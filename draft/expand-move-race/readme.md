@@ -38,6 +38,21 @@ Kata ayb7, worktree build of 803fe81 (after rkyk), headless Chromium, copies of 
 
 Result: negative, 8 runs. The jump back is not reproduced with a git repository, with auto-commit, or with a validation refresh before or after the drop.
 
+### Send paths of `view-session.ts` (kata ch8b)
+
+The question for each path: can it send a model built from the store before a `setBounds` edit, after the update of that edit? Facts from GLSP 2.8: `submitModel` builds and serializes the model at once (no client layout, no server layout, `diagram-module.ts:80`). `dispatch` outside a handler goes into the FIFO action queue of the session. `dispatch` inside a handler is sent at once (`AsyncLocalStorage` scope). The ChangeBoundsOperation of the client also goes through that queue.
+
+- `edit`, success, `view-session.ts:248` build, `:253` send: no. It builds after `store.execute` and sends inline in the ChangeBounds handler.
+- `edit`, refused, `view-session.ts:245`: no. It builds after `store.execute` and sends inline.
+- `edit`, thrown, `view-session.ts:239`: no. It sends only a warning, no model.
+- `refresh` from the store listener, `view-session.ts:187` → `:218` build, `:219` send: yes, with a busy queue. The listener runs outside a handler, so the send goes into the queue. If a ChangeBoundsOperation is in the queue before the build, the edit sends rev n+1 with the new bounds inline, and then the queue sends the stale rev n. A queue is busy across a macrotask only while a handler waits: `catenarySetVisible`, `catenarySetCardScale`, `catenarySetShowHidden` (each waits for `setImmediate` in `refresh`), `catenaryLayoutView` (ELK). Not reproduced.
+- `setVisible` → `refresh`, `view-session.ts:207`: no. It runs inside the `catenarySetVisible` handler, so it sends inline. A ChangeBoundsOperation that arrives during its `setImmediate` waits in the queue and runs after this send.
+- `refresh` from `catenarySetCardScale` and `catenarySetShowHidden`, `handlers.ts:277`, `handlers.ts:298`: no, same reason as `setVisible`.
+- Read from disk: it reaches the session as a store change, thus the listener path above. Whether a read from disk can put older bounds back into the store is not traced here.
+- Initial model (`RequestModelAction`, GLSP `submitInitialModel`, not in `view-session.ts`): no. It runs inside its handler and sends inline.
+
+Client side: `PendingBoundsState.apply` deletes the entry on the confirmation (rev n+1). The stale rev n differs from n+1, so it counts as a server model and is drawn as it is (test "confirm, then stale model", `modeler/test/pending-bounds.test.ts`).
+
 ## Next things to try
 
 1. The Electron app, with the user's settings: `ws:autoCommit`, the validation mode and the size of the model. Ask the user for these values; do not open the user's folders.
