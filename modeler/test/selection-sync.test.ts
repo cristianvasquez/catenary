@@ -55,7 +55,7 @@ function canvas(view: string, cards: Record<string, string>) {
                     }
                     if (a.kind === HighlightAction.KIND) highlight.ids = new Set(a.ids);
                 };
-                if (w.async) w.queued.push(new Promise<void>(done => queueMicrotask(() => { apply(); done(); })));
+                if (w.async) w.queued.push(new Promise<void>((done, fail) => queueMicrotask(() => { try { apply(); done(); } catch (e) { fail(e); } })));
                 else apply();
             }
         },
