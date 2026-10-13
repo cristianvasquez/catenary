@@ -338,8 +338,15 @@ export function setTypes(g: ModelGraph, ids: string[], add: string[], remove: st
         if (!s) return gone('instance', id);
         const home = homeOf(g, s);
         if (!home.equals(g.union)) return fail(`${label(g, s)} is a SKOS subject of a shapes file: its types do not change.`);
-        for (const t of remove) g.remove(rdf.quad(s, P.type, rdf.namedNode(t), home));
-        for (const t of add) g.add(s, P.type, rdf.namedNode(t), home);
+        const removed = g.match(s, P.type, null, home).filter(q => remove.includes(q.object.value));
+        const kept = g.match(s, P.type, null, home).filter(q => !remove.includes(q.object.value));
+        // An instance is an IRI with an rdf:type or an rdfs:label (vocabulary.ts inModel): without both, it is no longer read.
+        if (!kept.length && !add.length && !g.match(s, P.label, null, home).length) {
+            return fail(`${label(g, s)} has no rdfs:label: it keeps at least one class. Add a class or a label first.`);
+        }
+        for (const q of removed) g.remove(q);
+        // A new class takes the file of a class that it replaces (placement.ts placeChanges, `was`).
+        add.forEach((t, i) => g.add(s, P.type, rdf.namedNode(t), home, removed[Math.min(i, removed.length - 1)]));
     }
     return ok(undefined);
 }

@@ -31,6 +31,7 @@ function workspace() {
 <urn:x:c> a <${NS.skos}Concept>, <${NOTE}> ; rdfs:label "C" .\n`),
         ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
             <osg://vocab/workspace#defaultFile> "own.ttl" . }\n`),
+        other: join(dir, 'other.ttl'),
         read: (name: string) => readFileSync(join(dir, name), 'utf8')
     };
 }
@@ -79,6 +80,31 @@ describe('setTypes', () => {
         const store = await opened(workspace().ws);
         ok(store.execute({ kind: 'setTypes', ids: [byLabel(store, 'C').id], add: [SERVICE], remove: [NOTE] }));
         expect(types(store, 'C')).toEqual([NS.skos + 'Concept', SERVICE].sort());
+    });
+
+    it('an instance without rdfs:label keeps its last class: a removal that leaves neither is refused', async () => {
+        const f = workspace();
+        writeFileSync(f.other, `<urn:x:d> a <${NOTE}> ; <${DESCRIPTION}> "Only a description." .\n`);
+        const store = await opened(f.ws);
+        const d = Object.values(docOf(store).instances).find(i => i.uri === 'urn:x:d')!;
+        expect(store.execute({ kind: 'setTypes', ids: [d.id], add: [], remove: [NOTE] }))
+            .toMatchObject({ ok: false, error: expect.stringContaining('has no rdfs:label: it keeps at least one class') });
+        expect(docOf(store).instances[d.id].types).toEqual([NOTE]);
+        ok(store.execute({ kind: 'setTypes', ids: [d.id], add: [SERVICE], remove: [NOTE] }));
+        expect(docOf(store).instances[d.id].types).toEqual([SERVICE]);
+    });
+
+    it('a replacing class goes to the file of the class it replaces, also for a subject with only type statements', async () => {
+        const f = workspace();
+        writeFileSync(f.other, `<urn:x:t> a <${NOTE}> .\n`);
+        const store = await opened(f.ws);
+        const t = Object.values(docOf(store).instances).find(i => i.uri === 'urn:x:t')!;
+        ok(store.execute({ kind: 'setTypes', ids: [t.id], add: [SERVICE], remove: [NOTE] }));
+        await store.idle();
+        const typesIn = async (name: string) => (await parseTrig(f.read(name))).quads
+            .filter(q => q.subject.value === 'urn:x:t' && q.predicate.value === RDF_TYPE).map(q => q.object.value);
+        expect(await typesIn('other.ttl')).toEqual([SERVICE]);
+        expect(await typesIn('own.ttl')).toEqual([]);
     });
 
     it('refuses a vocabulary type, an IRI without a scheme and an unknown id; the model does not change', async () => {

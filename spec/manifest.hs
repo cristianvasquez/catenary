@@ -1018,6 +1018,8 @@ law_setStatementsScope b i vs p =
 -- It changes no other statement. Reason: Catenary is a drafting environment; a value that the new class does not describe shows
 -- in "Not in shapes" and in validation, so the user decides. A class of a vocabulary (rdf, rdfs, owl, sh, skos, view, ws) is
 -- refused: it gives an element its kind. A SKOS subject of a shapes file keeps its types.
+-- An instance without rdfs:label keeps at least one class. Reason: an IRI with neither is not an instance (vocabulary.ts inModel).
+-- A new class goes to the file of a class that it replaces. Reason: a subject with only type statements has no other file to follow.
 isVocabularyType :: Iri -> Bool
 law_setTypesScope :: Backend -> [Id] -> [Iri] -> [Iri] -> Iri -> Iri -> Bool
 law_setTypesScope b is add rm s p =
