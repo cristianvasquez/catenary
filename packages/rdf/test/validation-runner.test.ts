@@ -181,9 +181,15 @@ describe('ValidationRunner disposal (spec/manifest.hs §3.5)', () => {
         void shutdown.then(() => { done = true; });
         await Promise.resolve();
         expect(done).toBe(false);
+        // A second call while the thread stops waits too.
+        let again = false;
+        void worker.shutdown().then(() => { again = true; });
+        await Promise.resolve();
+        expect(again).toBe(false);
         w.exit(0);
         await shutdown;
         expect(done).toBe(true);
+        await vi.waitFor(() => expect(again).toBe(true));
         await worker.shutdown();
     });
 

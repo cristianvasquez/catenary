@@ -150,6 +150,8 @@ export class ModelStore {
     protected readonly fileQueue = new FileQueue();
     /** Set by `dispose` (§3.5). */
     protected disposal?: Promise<void>;
+    /** The calls of `syncFromDisk` that have not ended (outside the file queue): `dispose` waits for them. */
+    protected readonly diskReads = new Set<Promise<unknown>>();
 
     protected readonly writer = (() => {
         const store = this;
@@ -643,7 +645,7 @@ export class ModelStore {
 
     /**
      * Stop the store (§3.5 law_disposedStoreSilent): stop the watcher and the validation, wait for the file operations that are queued
-     * (also the writes that they queue), and remove the listeners. No change event and no report after the promise resolves. A later
+     * and the running `syncFromDisk` calls (also the writes that they queue), and remove the listeners. No change event and no report after the promise resolves. A later
      * call that changes the store throws DISPOSED_MESSAGE. The shared validation worker stays: other stores can use it
      * (stopValidationWorker). Each call gives the same promise.
      */
@@ -651,8 +653,9 @@ export class ModelStore {
         return this.disposal ??= (async () => {
             this.close();
             await this.validation.dispose();
-            for (let queued = -1; queued !== this.fileQueue.queued;) {
+            for (let queued = -1; queued !== this.fileQueue.queued || this.diskReads.size;) {
                 queued = this.fileQueue.queued;
+                await Promise.allSettled([...this.diskReads]);
                 await this.fileQueue.idle();
             }
             this.listeners.clear();
@@ -677,7 +680,11 @@ export class ModelStore {
      */
     syncFromDisk(): Promise<string[]> {
         if (this.disposal) return Promise.reject(new Error(DISPOSED_MESSAGE));
-        return this.reconciler.syncFromDisk();
+        const read = this.reconciler.syncFromDisk();
+        const ended = () => { this.diskReads.delete(read); };
+        this.diskReads.add(read);
+        read.then(ended, ended);
+        return read;
     }
 
     protected workspaceGone(ws: Settings): void {

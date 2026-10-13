@@ -40,6 +40,8 @@ export class ShaclWorker {
     protected worker?: WorkerLike;
     protected next = 0;
     protected readonly waiting = new Map<number, { worker: WorkerLike; done: (a: Answer) => void }>();
+    /** The shutdown that waits for a thread to stop. */
+    protected stopping?: Promise<void>;
 
     constructor(protected readonly spawn: (file: string) => WorkerLike = file => new Worker(file)) {}
 
@@ -59,14 +61,17 @@ export class ShaclWorker {
 
     /**
      * Stop the worker thread (the owner of the worker, at its end): its waiting requests fail at once, and the promise resolves when the
-     * thread has stopped. A later run starts a new worker. A ModelStore does not call it: other stores can use the worker.
+     * thread has stopped. A call during that wait gives a promise that also waits. A later run starts a new worker. A ModelStore does not call it: other stores can use the worker.
      */
-    async shutdown(): Promise<void> {
+    shutdown(): Promise<void> {
         const w = this.worker;
-        if (!w) return;
+        if (!w) return this.stopping ?? Promise.resolve();
         this.worker = undefined;
         this.fail(w, 'the validation worker was stopped');
-        await w.terminate();
+        const stopping = this.stopping = Promise.all([this.stopping, w.terminate()]).then(() => undefined).finally(() => {
+            if (this.stopping === stopping) this.stopping = undefined;
+        });
+        return stopping;
     }
 
     protected start(file: string): WorkerLike {

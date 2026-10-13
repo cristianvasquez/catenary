@@ -297,6 +297,34 @@ describe('store disposal (§3.5)', () => {
         expect(reasons).not.toContain('validation');
     });
 
+    it('law_disposalAwaitsRuns: dispose waits for a running syncFromDisk and the write that it queues', async () => {
+        const { a } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        await store.open(a);
+        await settled();
+        const port = store as unknown as { reconciler: { syncFromDisk(): Promise<string[]> }; changed(reason: string): void };
+        let release!: () => void;
+        const held = new Promise<void>(resolve => { release = resolve; });
+        const write = vi.fn();
+        vi.spyOn(port.reconciler, 'syncFromDisk').mockImplementationOnce(async () => {
+            await held;
+            port.changed('files');
+            (store as unknown as { fileQueue: { run(fn: () => Promise<void>): Promise<void> } }).fileQueue.run(async () => write());
+            return ['data.ttl'];
+        });
+        const read = store.syncFromDisk();
+        const disposal = store.dispose();
+        let done = false;
+        void disposal.then(() => { done = true; });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(done).toBe(false);
+        release();
+        expect(await read).toEqual(['data.ttl']);
+        await disposal;
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
     it('disposing one store leaves another store usable', async () => {
         const first = workspace(), second = workspace();
         const one = new ModelStore(), two = new ModelStore();
