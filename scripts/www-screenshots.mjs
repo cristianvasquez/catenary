@@ -240,13 +240,13 @@ async function showcase(dir) {
       await openView(view);
       const setUp = page.locator('.dialogBlock', { hasText: 'Set Up Workspace' });
       if (await setUp.isVisible()) { await setUp.getByRole('button', { name: 'Cancel' }).click(); await settle(); }
-      // Shapes: a Work has a title and at least one creator; each creator is a Person or an Organization (sh:or on the value).
+      // Shapes: a Work has a title and at least one creator; each creator is a Person or an Organization (sh:or of sh:class on the value; sh:node to a shape without constraints accepts any value).
       const work = exec({ kind: 'createNodeShape', label: 'Work', targetClass: 'urn:name:Work', view, at: { x: 40, y: 200 } }).id;
       exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:title' }, range: { kind: 'datatype', datatype: xsd('string') }, minCount: 1, maxCount: 1, view });
       const org = exec({ kind: 'createNodeShape', label: 'Organization', targetClass: 'urn:name:Organization', view, at: { x: 560, y: 120 } }).id;
       const person = exec({ kind: 'createNodeShape', label: 'Person', targetClass: 'urn:name:Person', view, at: { x: 560, y: 380 } }).id;
       exec({ kind: 'createPropertyShape', shape: person, path: { kind: 'iri', iri: 'urn:name:born' }, range: { kind: 'datatype', datatype: xsd('date') }, maxCount: 1, view });
-      exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:creator' }, range: { kind: 'or', alternatives: [{ kind: 'node', shape: person }, { kind: 'node', shape: org }] }, minCount: 1, view, out: true, at: { x: 680, y: 480 } });
+      exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:creator' }, range: { kind: 'or', alternatives: [{ kind: 'class', class: 'urn:name:Person' }, { kind: 'class', class: 'urn:name:Organization' }] }, minCount: 1, view, out: true, at: { x: 680, y: 480 } });
       // A SKOS scheme of cities, the range of Person.city, and one concept placed on its own.
       const cities = exec({ kind: 'createValueSet', valueSet: 'scheme', label: 'Cities', view, at: { x: 1080, y: 120 } }).id;
       exec({ kind: 'addConcept', set: cities, label: 'Comala' });
