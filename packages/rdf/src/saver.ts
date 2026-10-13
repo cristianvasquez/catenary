@@ -265,7 +265,9 @@ export class Saver {
         }
         // Keys: git gives `C:/…` on Windows, and the case of a folder name can differ from the case in Catenary.
         const written = new Set(this.written.map(f => pathKey(f))), read = new Set(reloaded.map(f => pathKey(f)));
-        this.uncommitted = new Set(changes.files.map(f => pathKey(f)).filter(k => !written.has(k) || read.has(k)));
+        const changed = changes.files.map(f => pathKey(f));
+        // A mark stays while git shows the file as changed: a later read of another file does not remove it.
+        this.uncommitted = new Set(changed.filter(k => this.uncommitted.has(k) || !written.has(k) || read.has(k)));
     }
 
     /**

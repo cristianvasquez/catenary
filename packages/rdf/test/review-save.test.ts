@@ -163,6 +163,22 @@ it('auto-commit off: a read from disk of another file keeps the writes of Catena
     expect(store.warnings.filter(w => w.includes('data.ttl has changes that are not committed'))).toEqual([]);
 });
 
+it('a file changed outside Catenary stays out of commits after a later read of another file', async () => {
+    const f = fixture({ 'data.ttl': data, 'other.ttl': '<urn:o> a <urn:Class> .\n' }, '', false);
+    f.init();
+    const store = await f.open();
+    await rename(store);
+    f.put('data.ttl', '# hand edit\n' + f.read('data.ttl'));
+    expect(await store.syncFromDisk()).toEqual(['data.ttl']);
+    f.put('other.ttl', '<urn:o> a <urn:Class> ; <http://www.w3.org/2000/01/rdf-schema#label> "Outside" .\n');
+    expect(await store.syncFromDisk()).toEqual(['other.ttl']);
+    expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
+    await rename(store, 'Again');
+    expect(f.git('show', '--name-only', '--format=', 'HEAD').split('\n')).not.toContain('data.ttl');
+    expect(f.git('diff', '--name-only').split('\n')).toContain('data.ttl');
+    expect(store.warnings.filter(w => w.includes('data.ttl has changes that are not committed'))).toHaveLength(1);
+});
+
 it('the manifest stores ws:autoCommit true only; false is the default', async () => {
     const f = fixture(undefined, '', false);
     const store = await f.open();
