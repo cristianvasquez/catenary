@@ -30,7 +30,7 @@ function fixture(result: CommandResult = { ok: true, id: 'changed' }) {
         return result;
     });
     const widget = {};
-    const editors = { find: vi.fn(() => widget), whenShown: vi.fn(async () => {}) };
+    const editors = { find: vi.fn(() => widget), whenPlaced: vi.fn(async () => {}) };
     const selection = selectionModel();
     const messages = { info: vi.fn(async (): Promise<string | undefined> => 'Later') };
     const actions = Object.assign(new ModelActions(), { model: { snapshot, execute }, editors, selection, messages });
@@ -45,7 +45,7 @@ it.each(['instance', 'view'] as const)('law_findRefusalReportedOnce: one refused
     const execute = vi.fn(async (): Promise<CommandResult> => ({ ok: false, error }));
     const messages = { warn: vi.fn() };
     const model = Object.assign(new ModelFrontend(), { service: { execute }, messages });
-    const editors = { find: vi.fn(() => ({})), dropPoint: () => ({ x: 0, y: 0 }), whenShown: vi.fn() };
+    const editors = { find: vi.fn(() => ({})), dropPoint: () => ({ x: 0, y: 0 }), whenPlaced: vi.fn() };
     const selection = selectionModel();
     const actions = Object.assign(new FindActions(), { model, editors, selection, messages });
     const hit: SearchHit = { id: 'unsupported', kind, label: 'Additional Information', iri: 'urn:unsupported', types: [], views: [] };
@@ -55,7 +55,7 @@ it.each(['instance', 'view'] as const)('law_findRefusalReportedOnce: one refused
         ? { kind: 'addToView', view: 'view', ids: ['unsupported'], at: { x: 0, y: 0 } }
         : { kind: 'addViewReference', view: 'view', target: 'unsupported', at: { x: 0, y: 0 } });
     expect(messages.warn.mock.calls).toEqual([[error]]);
-    expect(editors.whenShown).not.toHaveBeenCalled();
+    expect(editors.whenPlaced).not.toHaveBeenCalled();
     expect(selection.selection.ids).toEqual([]);
 });
 
@@ -82,11 +82,11 @@ it.each<[ActionKind, string | undefined]>([
     expect(result).toBe(kind === 'property' ? 'changed' : undefined);
     if (view) {
         expect(editors.find).toHaveBeenCalledWith(view);
-        expect(editors.whenShown).toHaveBeenCalledWith(widget, ['changed']);
+        expect(editors.whenPlaced).toHaveBeenCalledWith(widget, ['changed']);
         expect(selection.selection).toEqual({ view, ids: ['changed'] });
     } else {
         expect(editors.find).not.toHaveBeenCalled();
-        expect(editors.whenShown).not.toHaveBeenCalled();
+        expect(editors.whenPlaced).not.toHaveBeenCalled();
         expect(selection.selection.ids).toEqual([]);
     }
     expect(messages.info.mock.calls).toEqual([['new. 2 data statement(s) use the old term.', 'Apply to data', 'Later']]);
@@ -96,7 +96,7 @@ it.each<ActionKind>(['property', 'range', 'node'])('failed %s edit does not sele
     const { actions, execute, editors, selection, messages } = fixture({ ok: false, error: 'Rejected' });
     expect(await edit(actions, kind, 'view')).toBeUndefined();
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(editors.whenShown).not.toHaveBeenCalled();
+    expect(editors.whenPlaced).not.toHaveBeenCalled();
     expect(selection.selection.ids).toEqual([]);
     expect(messages.info).not.toHaveBeenCalled();
 });
@@ -114,7 +114,7 @@ it('waits for the edited element to render before selecting it or offering migra
     const rendering = new Promise<void>(resolve => { shown = resolve; });
     let waiting!: () => void;
     const started = new Promise<void>(resolve => { waiting = resolve; });
-    editors.whenShown.mockImplementation(() => { waiting(); return rendering; });
+    editors.whenPlaced.mockImplementation(() => { waiting(); return rendering; });
     const pending = actions.setProperty('p', patch, 'view');
     await started;
     expect(selection.selection.ids).toEqual([]);
@@ -165,7 +165,7 @@ it('Propose Missing Shapes shows the new shapes in a new view: free label, cards
     const calls: string[] = [];
     const editors = {
         open: vi.fn(async () => widget), find: vi.fn(() => widget), center: vi.fn(() => at),
-        whenShown: vi.fn(async () => {}), whenChanged: vi.fn(async () => { calls.push('changed'); }), fit: vi.fn(async () => { calls.push('fit'); })
+        whenPlaced: vi.fn(async () => {}), whenChanged: vi.fn(async () => { calls.push('changed'); }), fit: vi.fn(async () => { calls.push('fit'); })
     };
     const execute = vi.fn(async (c: EditCommand): Promise<CommandResult> =>
         c.kind === 'proposeShapes' ? { ok: true, ids: ['s1', 's2'] } : c.kind === 'createView' ? { ok: true, id: 'v' } : { ok: true });

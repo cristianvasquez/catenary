@@ -338,12 +338,7 @@ export class ViewEditors implements FrontendApplicationContribution {
         return (w ? this.diagram(w) : this.diagrams.get(viewId)?.ids)?.elementOf(id) ?? id;
     }
 
-    /** Resolves when the diagram of a view editor has all `ids` (the update of an edit comes after its result), or after `timeout` ms. */
-    whenShown(widget: GLSPDiagramWidget, ids: string[], timeout = 2000): Promise<void> {
-        return this.whenDiagram(widget, index => ids.every(id => index.getById(id)), timeout);
-    }
-
-    /** Resolves when the diagram of a view editor places all `elements` (a card or an edge of each), or after `timeout` ms. */
+    /** Resolves when the diagram of a view editor places all `elements` (a card or an edge of each; the update of an edit comes after its result), or after `timeout` ms. */
     whenPlaced(widget: GLSPDiagramWidget, elements: string[], timeout = 2000): Promise<void> {
         return this.whenDiagram(widget, index => elements.every(id => index.getById(this.placementOf(widget, id))), timeout);
     }
