@@ -18,6 +18,7 @@
     "e2e": "node scripts/e2e.cjs",
     "postinstall": "bash scripts/build-drivelist.sh && bash scripts/install-electron.sh && pnpm -C app -s download:plugins",
     "catenary": "node scripts/catenary.mjs",
+    "migrate-vocab": "node scripts/migrate-vocab.mjs",
     "verify": "node scripts/verify.mjs",
     "package": "bash scripts/package.sh",
     "package:win": "bash scripts/package.sh win32-x64",
