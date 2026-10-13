@@ -1,7 +1,7 @@
 @prefix ex: <http://www.example.org/>.
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix view: <osg://vocab/view#>.
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.
 
 <urn:name:Bookshop> {
   <urn:name:Bookshop> a view:View;

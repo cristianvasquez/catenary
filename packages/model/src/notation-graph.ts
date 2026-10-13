@@ -3,7 +3,7 @@
 // There are no blank nodes: the store skolemizes them at read (AGENTS.md), and so does the notation loader.
 
 import { PathJSON } from './shapes-doc';
-import { NS, TermJSON } from './terms';
+import { CATENARY_VOCAB, NS, TermJSON } from './terms';
 
 /** An RDF 1.2 triple term: the statement that a placement names with rdf:reifies. `value` is empty, as for an RDF/JS quad. */
 export interface TripleTerm { termType: 'Triple'; value: ''; subject: NTerm; predicate: TermJSON; object: NTerm }
@@ -11,7 +11,7 @@ export type NTerm = TermJSON | TripleTerm;
 /** A triple of the union of all graphs. */
 export interface NQuad { subject: TermJSON; predicate: string; object: NTerm }
 
-export const NT = (l: string) => 'osg://vocab/notation#' + l;
+export const NT = (l: string) => CATENARY_VOCAB + 'notation#' + l;
 export const SH = (l: string) => NS.sh + l;
 export const RDF = (l: string) => NS.rdf + l;
 export const V = (l: string) => NS.view + l;

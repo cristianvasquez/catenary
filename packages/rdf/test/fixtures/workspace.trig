@@ -1,5 +1,5 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
-@prefix ws: <osg://vocab/workspace#>.
+@prefix ws: <https://cristianvasquez.github.io/catenary/vocab/workspace#>.
 
 <urn:name:workspace> {
   <urn:name:workspace> a ws:Workspace;

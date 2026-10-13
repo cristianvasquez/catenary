@@ -31,11 +31,11 @@ function workspace(language?: string) {
     const f = (name: string, text: string) => writeFileSync(join(dir, name), text);
     f('data.ttl', `@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 <${CONCEPT}> a skos:Concept ; skos:prefLabel "arkaluonteinen"@fi, "känslig"@sv, "občutljiv"@sl .\n`);
-    f('main.view.trig', `@prefix view: <osg://vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    f('main.view.trig', `@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 <${VIEW}> { <${VIEW}> a view:View ; rdfs:label "Main" .
   <${VIEW}/p/1> a view:Placement ; view:element <${CONCEPT}> ; view:view <${VIEW}> ; view:x 0 ; view:y 0 . }\n`);
-    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-        <osg://vocab/workspace#defaultFile> "data.ttl"${language ? ` ; <osg://vocab/workspace#language> "${language}"` : ''} . }\n`);
+    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+        <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl"${language ? ` ; <https://cristianvasquez.github.io/catenary/vocab/workspace#language> "${language}"` : ''} . }\n`);
     return { path: join(dir, 'workspace.trig'), read: () => readFileSync(join(dir, 'workspace.trig'), 'utf8') };
 }
 

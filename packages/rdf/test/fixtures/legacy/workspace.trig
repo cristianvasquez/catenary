@@ -1,0 +1,15 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix sh: <http://www.w3.org/ns/shacl#>.
+@prefix ws: <osg://vocab/workspace#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+<urn:name:workspace> {
+  <urn:name:workspace> a ws:Workspace;
+    ws:defaultFile "data.ttl";
+    ws:language "en";
+    sh:declare <urn:name:workspace/prefix/view>.
+
+  <urn:name:workspace/prefix/view> a sh:PrefixDeclaration;
+    sh:prefix "view";
+    sh:namespace "osg://vocab/view#"^^xsd:anyURI.
+}

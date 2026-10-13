@@ -29,7 +29,7 @@ const plus = (...qs: Quad[]) => (quads: Quad[]) => [...quads, ...qs];
 const g = (s: string, p: string, o: string | Quad['object']) => rdf.quad(n(s), n(p), typeof o === 'string' ? n(o) : o, GRAPH);
 
 const VIEW = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix view: <osg://vocab/view#>.
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.
 # a view, written by hand
 
 <urn:name:view> {
@@ -49,7 +49,7 @@ const VIEW = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 
 }
 `;
-const V = 'osg://vocab/view#';
+const V = 'https://cristianvasquez.github.io/catenary/vocab/view#';
 
 describe('text patch of a TriG graph block', () => {
     it('law_graphPatchKeepsText: a move changes the two numbers of one block; the other text stays byte for byte', async () => {
@@ -80,7 +80,7 @@ describe('text patch of a TriG graph block', () => {
         const r = await patchTurtle(VIEW, FILE, before, [...before, t('urn:name:view/p/1', V + 'element', 'c')], { ex: EX }, GRAPH);
         expect(r).toMatchObject({ ok: true });
         if (!r.ok) return;
-        expect(r.text).toBe(VIEW.replace("@prefix view: <osg://vocab/view#>.", "@prefix view: <osg://vocab/view#>.\n@prefix ex: <http://example.org/>.")
+        expect(r.text).toBe(VIEW.replace("@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.", "@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.\n@prefix ex: <http://example.org/>.")
             .replace('view:element <http://example.org/a>;', 'view:element <http://example.org/a>, ex:c;'));
     });
 
@@ -94,7 +94,7 @@ describe('text patch of a TriG graph block', () => {
         expect(await refused(VIEW + '<urn:x> <urn:p> 1 .\n')).toMatch(/outside the graph/);
         expect(await refused('<urn:x> <urn:p> 1 .\n' + VIEW)).toMatch(/outside the graph/);
         expect(await refused(VIEW, n('urn:name:other'))).toMatch(/not the graph <urn:name:other>/);
-        expect(await refused('<urn:name:view> {\n  <urn:name:view/p/1> <osg://vocab/view#x> 0\n}\n')).toMatch(/final "\."/);
+        expect(await refused('<urn:name:view> {\n  <urn:name:view/p/1> <https://cristianvasquez.github.io/catenary/vocab/view#x> 0\n}\n')).toMatch(/final "\."/);
         expect(await refused('')).toMatch(/no graph block/);
         // Without a graph: a TriG text is refused as today, and quads in a graph are refused.
         const r = await patchTurtle(VIEW, FILE, before, after);

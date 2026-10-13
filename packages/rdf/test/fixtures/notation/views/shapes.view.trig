@@ -6,13 +6,13 @@
 #   sh:in                          kind → an "in" box with the rows Civil and Religious
 
 @prefix ex:   <https://example.org/draft/> .
-@prefix nt:   <osg://vocab/notation#> .
-@prefix view: <osg://vocab/view#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix mkn:  <osg://vocab/notation/marks#> .
-@prefix shn:  <osg://vocab/notation/shapes#> .
-@prefix vsn:  <osg://vocab/notation/skos#> .
+@prefix mkn:  <https://cristianvasquez.github.io/catenary/vocab/notation/marks#> .
+@prefix shn:  <https://cristianvasquez.github.io/catenary/vocab/notation/shapes#> .
+@prefix vsn:  <https://cristianvasquez.github.io/catenary/vocab/notation/skos#> .
 
 <urn:view:shapes> {
 

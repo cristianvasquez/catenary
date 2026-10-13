@@ -3,8 +3,8 @@
 # Derived, in memory only: figures and rows (last section).
 
 @prefix tm:   <osg://vocab/trellis-model#> .
-@prefix nt:   <osg://vocab/notation#> .
-@prefix view: <osg://vocab/view#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .

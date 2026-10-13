@@ -2,8 +2,8 @@
 // the patch path of ModelGraph. A view file: its view graph. Another file: its shapes (shapePart) to the shapes graph of the file, the
 // other statements to its data graph. Blank nodes get IRIs (skolem.ts); a save writes the IRIs.
 
-import { DEFAULT_PREFIXES, NS, pickLabel, setPrefixes } from '@catenary/model';
-import type { Quad } from '@rdfjs/types';
+import { DEFAULT_PREFIXES, NS, pickLabel, publishedIri, setPrefixes } from '@catenary/model';
+import type { Quad, Term } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { OxigraphStore, absolutePath, hasAnnotation, knownPath, portableRelative } from 'rdf-files';
@@ -11,7 +11,7 @@ import { MANIFEST_GRAPH, NEAR, WORKSPACE_FILE, isViewFile, listModelFiles, parse
 import { ModelGraph, cmp, dataGraphIri, shapesGraphIri } from './graph';
 import { FileRead, PLACE_KINDS, Settings } from './settings';
 import { isSkolem, skolemize } from 'rdf-core';
-import { rdf, termKey } from './terms';
+import { mapTerm, rdf, termKey } from './terms';
 import { canonical, parseTrig } from './trig';
 import { isView, V } from './views';
 import { P, labelLiterals } from './vocabulary';
@@ -22,7 +22,7 @@ import { P, labelLiterals } from './vocabulary';
  * it).
  */
 export async function openWorkspace(graph: ModelGraph, primaryPath: string, ofFolder: boolean): Promise<{ error: string } | { settings: Settings; loader: Loader; warnings: string[] }> {
-    let primary: { manifest: Quad[]; warnings: string[]; text?: string };
+    let primary: { manifest: Quad[]; warnings: string[]; text?: string; legacy?: Quad[] };
     try {
         primary = ofFolder && !existsSync(primaryPath) ? { manifest: [], warnings: [] } : await readWorkspace(primaryPath);
     } catch (e) {
@@ -38,6 +38,8 @@ export async function openWorkspace(graph: ModelGraph, primaryPath: string, ofFo
     for (const k of PLACE_KINDS) if (manifest.placement[k] !== NEAR) manifest.placement[k] = knownPath(reads.map(r => r.path), manifest.placement[k]);
 
     const settings = new Settings(graph, primaryPath, manifest, primary.text);
+    // Old namespaces (spec/manifest.hs §3.1 legacyNamespaces): the workspace file differs from its saved form until the next save.
+    if (primary.legacy) settings.workspace.saved = canonical(primary.legacy);
     const loader = new Loader(graph, settings);
     graph.update(() => {
         for (const r of reads) {
@@ -113,24 +115,29 @@ export class Loader {
             if (isView(this.graph, rdf.namedNode(r.view))) { notes.push(`${name}: not read: the view ${r.view} is in another file too.`); return false; }
             const read = r.triples.map(q => rdf.quad(q.subject, q.predicate, q.object, rdf.namedNode(r.view)));
             const { quads, count } = skolemize(read);
-            // A file with blank nodes differs from its saved form: the next save writes the IRIs (not a file that Catenary does not write).
+            // A file with blank nodes or old namespaces differs from its saved form: the next save writes the IRIs (not a file that
+            // Catenary does not write).
             const keep = !this.settings.readOnlyReason(r.path);
             if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
+            if (r.legacy && keep) notes.push(legacyNote(r.path));
             for (const q of quads) this.graph.add(q.subject, q.predicate, q.object, q.graph);
-            this.settings.viewFiles.set(r.view, { path: r.path, saved: canonical((count && keep ? read : quads).map(toTriple)), text: r.text, triples: quads.map(toTriple), blanks: count });
+            const saved = r.legacy && keep ? r.legacy : count && keep ? read : quads;
+            this.settings.viewFiles.set(r.view, { path: r.path, saved: canonical(saved.map(toTriple)), text: r.text, triples: quads.map(toTriple), blanks: count });
             return true;
         }
         const { quads, count } = skolemize(r.triples);
         // A file that Catenary does not write keeps its blank nodes on disk: its saved form is the read with IRIs.
         const keep = !this.settings.readOnlyReason(r.path);
         if (count) notes.push(keep ? skolemNote(r.path, count) : unwrittenBlankNote(r.path));
+        if (r.legacy && keep) notes.push(legacyNote(r.path));
         const shapes = shapePart(quads), graph = rdf.namedNode(shapesGraphIri(r.path)), data = rdf.namedNode(dataGraphIri(r.path));
         this.graph.addDataGraph(data);
         for (const q of quads) {
             if (shapes.has(termKey(q.subject))) { this.graph.add(q.subject, q.predicate, q.object, graph); continue; }
             this.graph.add(q.subject, q.predicate, q.object, data);
         }
-        this.settings.modelFiles.set(r.path, { path: r.path, saved: canonical(count && keep ? r.triples : quads), text: r.text, triples: quads, blanks: count });
+        const saved = r.legacy && keep ? r.legacy : count && keep ? r.triples : quads;
+        this.settings.modelFiles.set(r.path, { path: r.path, saved: canonical(saved), text: r.text, triples: quads, blanks: count });
         return true;
     }
 
@@ -159,7 +166,27 @@ const unwrittenBlankNote = (file: string) =>
 const skolemNote = (file: string, count: number) =>
     `${path.basename(file)}: ${count} blank node${count === 1 ? '' : 's'} replaced by IRIs (Catenary has no blank nodes); the file is changed until the next save writes them`;
 
+const legacyNote = (file: string) =>
+    `${path.basename(file)}: terms in old Catenary namespaces (osg://vocab/) read in the published namespace; the file is changed until the next save writes them`;
+
 const toTriple = (q: Quad) => rdf.quad(q.subject, q.predicate, q.object);
+
+/**
+ * The quads with each term in an old Catenary namespace replaced by its published term (spec/manifest.hs §3.1 legacyNamespaces,
+ * LEGACY_NAMESPACES). The graph names stay. `changed`: a quad had such a term.
+ */
+export function readLegacy(quads: Quad[]): { quads: Quad[]; changed: boolean } {
+    let changed = false;
+    const map = <T extends Term>(t: T): T => mapTerm(t, y => {
+        if (y.termType !== 'NamedNode') return y;
+        const iri = publishedIri(y.value);
+        if (iri === y.value) return y;
+        changed = true;
+        return rdf.namedNode(iri);
+    });
+    const out = quads.map(q => rdf.quad(map(q.subject), map(q.predicate), map(q.object), q.graph));
+    return { quads: changed ? out : quads, changed };
+}
 
 async function readText(file: string): Promise<string> {
     try {
@@ -169,8 +196,19 @@ async function readText(file: string): Promise<string> {
     }
 }
 
+/** The prefix table of a manifest (sh:namespace) with the published namespace for an old one (spec/manifest.hs §3.1 legacyNamespaces). */
+function legacyPrefixes(quads: Quad[]): { quads: Quad[]; changed: boolean } {
+    let changed = false;
+    const out = quads.map(q => {
+        if (q.predicate.value !== NS.sh + 'namespace' || q.object.termType !== 'Literal' || publishedIri(q.object.value) === q.object.value) return q;
+        changed = true;
+        return rdf.quad(q.subject, q.predicate, rdf.literal(publishedIri(q.object.value), q.object.datatype), q.graph);
+    });
+    return { quads: out, changed };
+}
+
 /** A workspace file (TriG): the manifest graph only. Other graphs (views of the old format) are refused. */
-async function readWorkspace(file: string): Promise<{ manifest: Quad[]; warnings: string[]; text: string }> {
+async function readWorkspace(file: string): Promise<{ manifest: Quad[]; warnings: string[]; text: string; legacy?: Quad[] }> {
     const text = await readText(file);
     let parsed;
     try {
@@ -181,7 +219,9 @@ async function readWorkspace(file: string): Promise<{ manifest: Quad[]; warnings
     const other = new Set(parsed.quads.filter(q => q.graph.value !== MANIFEST_GRAPH).map(q => q.graph.value));
     if (other.size) throw new Error(`${path.basename(file)} has graphs other than the manifest (${[...other].slice(0, 3).join(', ')}${other.size > 3 ? ', …' : ''}). Views are view files now (*.view.trig).`);
     const { quads, count } = skolemize(parsed.quads);
-    return { manifest: quads, warnings: count ? [skolemNote(file, count)] : [], text };
+    const read = readLegacy(quads), prefixes = legacyPrefixes(read.quads);
+    if (!read.changed && !prefixes.changed) return { manifest: quads, warnings: count ? [skolemNote(file, count)] : [], text };
+    return { manifest: prefixes.quads, warnings: [...count ? [skolemNote(file, count)] : [], legacyNote(file)], text, legacy: quads };
 }
 
 /** Until n3 reads annotations correctly: a file with the annotation syntax is read only (a write could remove statements that the read lost). */
@@ -205,7 +245,7 @@ export function declaredViews(quads: Quad[]): string[] {
 export async function fileContent(file: string): Promise<{ workspace: boolean; views: { iri: string; label: string }[]; viewFile: boolean; error?: string }> {
     let quads: Quad[];
     try {
-        quads = await parseRdf(await readText(file), file);
+        quads = readLegacy(await parseRdf(await readText(file), file)).quads;
     } catch (e) {
         return { workspace: false, views: [], viewFile: false, error: (e as Error).message };
     }
@@ -224,18 +264,19 @@ async function readModelFile(file: string): Promise<FileRead> {
     let triples: Quad[], text: string;
     try {
         text = await readText(file);
-        const quads = await parseRdf(text, file);
+        const parsed = await parseRdf(text, file), { quads, changed } = readLegacy(parsed);
         triples = quads.map(toTriple);
+        const legacy = changed ? parsed.map(toTriple) : undefined;
         const readOnlyContent = /\.(ttl|trig)$/i.test(file) && await hasAnnotation(text) ? READ_ONLY_ANNOTATION : undefined;
         if (isViewFile(file) || declaredViews(quads).length) {
             if (!/\.trig$/i.test(file)) return { kind: 'error', path: file, error: 'a view must be in a TriG file, in a graph named by the view IRI.' };
             const problem = viewProblem(quads);
             if (problem) return { kind: 'error', path: file, error: problem };
-            return { kind: 'view', path: file, view: quads[0].graph.value, triples, text, warnings: [], readOnlyContent };
+            return { kind: 'view', path: file, view: quads[0].graph.value, triples, text, warnings: [], readOnlyContent, legacy };
         }
         const named = quads.filter(q => q.graph.termType !== 'DefaultGraph').length;
         const warnings = named ? [`${path.basename(file)}: ${named} statements in named graphs are read without the graph names; a write writes them so.`] : [];
-        return { kind: 'model', path: file, triples, text, warnings, readOnlyContent };
+        return { kind: 'model', path: file, triples, text, warnings, readOnlyContent, legacy };
     } catch (e) {
         return { kind: 'error', path: file, error: (e as Error).message };
     }

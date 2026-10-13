@@ -8,7 +8,7 @@
 # ex:email and ex:phone return to Person as the row group "xone" (removal of urn:trellis:list:8c7eb551ddb4, notation-engine.test.ts).
 # ⇥ on the row group places the hub again. Undo adds the same statements back.
 
-@prefix view: <osg://vocab/view#> .
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
 
 <urn:patch:remove-hub-member:removed> {
     <urn:view:shapes/p/Person-contact> a view:Placement ; view:view <urn:view:shapes> ; view:element <urn:trellis:list:8c7eb551ddb4> ;   # the sh:xone list of ex:Person

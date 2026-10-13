@@ -31,8 +31,8 @@ function workspace(shape: string, property: string, language?: string) {
 ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:name "Thing" ; sh:property ex:size ${shape} .
 ex:size a sh:PropertyShape ; sh:path ex:size ${property} .\n`);
     f('data.ttl', `<${EX}t1> a <${EX}Thing> .\n`);
-    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ;
-        <osg://vocab/workspace#defaultFile> "data.ttl"${language ? ` ; <osg://vocab/workspace#language> "${language}"` : ''} . }\n`);
+    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
+        <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl"${language ? ` ; <https://cristianvasquez.github.io/catenary/vocab/workspace#language> "${language}"` : ''} . }\n`);
     return { path: join(dir, 'workspace.trig'), shapes: join(dir, 'shapes.ttl') };
 }
 

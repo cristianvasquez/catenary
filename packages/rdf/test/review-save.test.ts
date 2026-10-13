@@ -16,7 +16,7 @@ function fixture(files: Record<string, string> = { 'data.ttl': data }, setting =
     const dir = mkdtempSync(join(tmpdir(), 'catenary-review-'));
     dirs.push(dir);
     const put = (file: string, text: string) => writeFileSync(join(dir, file), text);
-    put('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <osg://vocab/workspace#Workspace> ${setting} . }\n`);
+    put('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ${setting} . }\n`);
     for (const [file, text] of Object.entries(files)) put(file, text);
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     return { dir, put, git, read: (file: string) => readFileSync(join(dir, file), 'utf8'), async open() {
@@ -92,7 +92,7 @@ it('triplify fallback warns the user', async () => {
     expect(store.warnings.some(w => w.includes('written by triplify'))).toBe(true);
 });
 
-it.each(['', '; <osg://vocab/workspace#defaultFile> "profile.n3"'])('read-only defaults and near placement use a writable file (%s)', async setting => {
+it.each(['', '; <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "profile.n3"'])('read-only defaults and near placement use a writable file (%s)', async setting => {
     const f = fixture({ 'profile.n3': '<urn:a> a <urn:Class> .\n' }, setting);
     const store = await f.open();
     expect(store.defaultFile).toBe(join(f.dir, 'workspace.ttl'));
@@ -188,12 +188,12 @@ it('law_graphPatchKeepsText: a setBounds on a view file writes a text patch of t
     expect(after).not.toBe(written);
     const quads = await parseRdf(after, join(f.dir, file));
     expect(quads.every(q => q.graph.value === view.uri)).toBe(true);
-    expect(quads.filter(q => q.predicate.value === 'osg://vocab/view#x').map(q => q.object.value)).toEqual([String(card.x + 50)]);
+    expect(quads.filter(q => q.predicate.value === 'https://cristianvasquez.github.io/catenary/vocab/view#x').map(q => q.object.value)).toEqual([String(card.x + 50)]);
 });
 
 it('law_graphPatchKeepsText: an edit during the disk read of a save does not break the next text patch', async () => {
     const VIEW = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix view: <osg://vocab/view#>.
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.
 # keep this comment
 
 <urn:name:Cards> {
@@ -238,13 +238,13 @@ it('law_graphPatchKeepsText: an edit during the disk read of a save does not bre
     const text = f.read('cards.view.trig');
     expect(text.startsWith(written.slice(0, written.indexOf('\n}')))).toBe(true);
     const quads = await parseRdf(text, join(f.dir, 'cards.view.trig'));
-    const placement = quads.find(q => q.predicate.value === 'osg://vocab/view#element' && q.object.value === 'urn:b')!.subject;
-    const of = (p: string) => quads.filter(q => q.subject.equals(placement) && q.predicate.value === 'osg://vocab/view#' + p).map(q => q.object.value);
+    const placement = quads.find(q => q.predicate.value === 'https://cristianvasquez.github.io/catenary/vocab/view#element' && q.object.value === 'urn:b')!.subject;
+    const of = (p: string) => quads.filter(q => q.subject.equals(placement) && q.predicate.value === 'https://cristianvasquez.github.io/catenary/vocab/view#' + p).map(q => q.object.value);
     expect([of('x'), of('y')]).toEqual([['300'], ['300']]);
 });
 
 it('near placement of new shapes skips read-only profiles', async () => {
-    const f = fixture({ 'profile.n3': '<urn:Shape> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <urn:Class> .\n' }, '; <osg://vocab/workspace#placeShapes> "near"');
+    const f = fixture({ 'profile.n3': '<urn:Shape> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <urn:Class> .\n' }, '; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeShapes> "near"');
     const store = await f.open();
     expect(store.execute({ kind: 'createNodeShape', label: 'New shape' }).ok).toBe(true);
     await store.idle();

@@ -3,6 +3,7 @@
 // the nodes that it can change, and only those are walked again. A shapes change, a new graph or a patch without quads drops all.
 import { applicableMatches, focus, readNodeReferences, NodeReference, TargetScope, TargetSelection, iri, term } from '@catenary/shacl/backend';
 import type { FocusNode, TargetMatch } from '@catenary/shacl/common';
+import { NS } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import type { Dataset } from 'rdf-ext';
 import { GraphChange, ModelGraph, REPORT_GRAPH } from './graph';
@@ -122,11 +123,11 @@ function materialize(g: ModelGraph, scope: TargetScope, nodes: readonly FocusNod
 function readScope(g: ModelGraph): TargetScope {
     const data = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
-        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
+        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <${NS.view}View> } })
     }`).map(r => r.g.value);
     const shapes = g.select(`SELECT DISTINCT ?g WHERE {
         GRAPH ?g { ?s ?p ?o }
-        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <osg://vocab/view#View> } })
+        FILTER (?g != <${REPORT_GRAPH}> && NOT EXISTS { GRAPH ?g { ?view a <${NS.view}View> } })
         FILTER (STRSTARTS(STR(?p), "http://www.w3.org/ns/shacl#") || ?o IN (<http://www.w3.org/ns/shacl#NodeShape>, <http://www.w3.org/ns/shacl#PropertyShape>))
     }`).map(r => r.g.value);
     return { shapes: [...new Set([...g.shapesGraphs().map(t => t.value), ...shapes])], data };

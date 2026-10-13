@@ -456,7 +456,11 @@ export interface ModelFile extends OnDisk {
     blanks?: number;
 }
 
-/** A model file read: a view (one view:View IRI), another file, or an error. `readOnlyContent`: why Catenary reads the file but does not write it (its content). */
-export type FileRead = { kind: 'view'; path: string; view: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string }
-    | { kind: 'model'; path: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string }
+/**
+ * A model file read: a view (one view:View IRI), another file, or an error. `readOnlyContent`: why Catenary reads the file but does not
+ * write it (its content). `legacy`: the triples as on disk, when the file has terms in an old Catenary namespace (`triples` has the
+ * published terms, spec/manifest.hs §3.1 legacyNamespaces).
+ */
+export type FileRead = { kind: 'view'; path: string; view: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string; legacy?: Quad[] }
+    | { kind: 'model'; path: string; triples: Quad[]; text: string; warnings: string[]; readOnlyContent?: string; legacy?: Quad[] }
     | { kind: 'error'; path: string; error: string };

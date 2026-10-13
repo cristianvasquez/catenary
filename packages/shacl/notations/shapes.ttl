@@ -1,8 +1,8 @@
 # SHACL notation: how the shapes themselves are drawn, also the hard cases.
 # It reads the same model.shapes.ttl as the class notation. Only the figures differ.
 
-@prefix nt:   <osg://vocab/notation#> .
-@prefix shn:  <osg://vocab/notation/shapes#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix shn:  <https://cristianvasquez.github.io/catenary/vocab/notation/shapes#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .

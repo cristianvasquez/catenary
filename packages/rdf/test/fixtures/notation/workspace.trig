@@ -1,6 +1,6 @@
 # The workspace file of the draft: the prefixes that the text rule uses (prefix:local).
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
-@prefix ws:  <osg://vocab/workspace#> .
+@prefix ws:  <https://cristianvasquez.github.io/catenary/vocab/workspace#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 <urn:name:workspace> {

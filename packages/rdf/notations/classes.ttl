@@ -1,9 +1,9 @@
 # Class-diagram notation: how the model in model.shapes.ttl is drawn (OntoUML style).
 # Three figure shapes: a class box, an association line, a generalization-set hub.
 
-@prefix nt:   <osg://vocab/notation#> .
-@prefix cln:  <osg://vocab/notation/classes#> .
-@prefix shn:  <osg://vocab/notation/shapes#> .
+@prefix nt:   <https://cristianvasquez.github.io/catenary/vocab/notation#> .
+@prefix cln:  <https://cristianvasquez.github.io/catenary/vocab/notation/classes#> .
+@prefix shn:  <https://cristianvasquez.github.io/catenary/vocab/notation/shapes#> .
 @prefix gufo: <http://purl.org/nemo/gufo#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .

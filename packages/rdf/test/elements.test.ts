@@ -14,7 +14,7 @@ const TEXT = `
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix sh: <http://www.w3.org/ns/shacl#>.
 @prefix skos: <http://www.w3.org/2004/02/skos/core#>.
-@prefix view: <osg://vocab/view#>.
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#>.
 @prefix ex: <${EX}>.
 <urn:name:model> {
     ex:a a ex:C; rdfs:label "A".

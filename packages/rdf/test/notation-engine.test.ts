@@ -20,9 +20,9 @@ const EX = 'https://example.org/draft/';
 const ex = (l: string) => iri(EX + l);
 const RDFS_SUB = 'http://www.w3.org/2000/01/rdf-schema#subClassOf';
 const PREFIXES = `@prefix ex: <${EX}> . @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> . @prefix view: <osg://vocab/view#> .
-@prefix dct: <http://purl.org/dc/terms/> . @prefix nt: <osg://vocab/notation#> . @prefix shn: <osg://vocab/notation/shapes#> .
-@prefix vsn: <osg://vocab/notation/skos#> . @prefix mkn: <osg://vocab/notation/marks#> .\n`;
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> . @prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
+@prefix dct: <http://purl.org/dc/terms/> . @prefix nt: <https://cristianvasquez.github.io/catenary/vocab/notation#> . @prefix shn: <https://cristianvasquez.github.io/catenary/vocab/notation/shapes#> .
+@prefix vsn: <https://cristianvasquez.github.io/catenary/vocab/notation/skos#> . @prefix mkn: <https://cristianvasquez.github.io/catenary/vocab/notation/marks#> .\n`;
 
 let dir: string, store: ModelStore, data: TripleIndex, base: NQuad[], notes: Notations;
 beforeAll(async () => {
@@ -146,7 +146,7 @@ describe('scoped placement synchronization', () => {
     it('a placement of a statement with a literal has no figure and breaks nothing', async () => {
         const g = graph(), view = rdf.namedNode('urn:view:shapes'), p = rdf.namedNode('urn:placement:odd');
         const odd = rdf.quad(rdf.namedNode('urn:x:a'), rdf.namedNode('urn:x:p'), rdf.literal('hi'));
-        const quads = [rdf.quad(p, rdf.namedNode('osg://vocab/view#view'), view, view), rdf.quad(p, rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies'), odd as never, view)];
+        const quads = [rdf.quad(p, rdf.namedNode('https://cristianvasquez.github.io/catenary/vocab/view#view'), view, view), rdf.quad(p, rdf.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies'), odd as never, view)];
         g.update(() => quads.forEach(q => g.add(q.subject, q.predicate, q.object, q.graph)));
         try {
             const vf = viewFiguresOf(g, 'urn:view:shapes');
@@ -273,14 +273,14 @@ describe('helper shapes (G-C)', () => {
         const r = await withTurtle(`ex:Marriage sh:property ex:Marriage-place . ex:Marriage-place sh:path ex:place ; sh:node ex:InPlaces .
             ex:InPlaces a sh:NodeShape ; rdfs:label "in places" ; sh:property [ sh:path skos:inScheme ; sh:minCount 1 ; sh:in ( ex:Countries ex:MarriageKinds ) ] .
             <urn:view:shapes/p/Marriage-place> a view:Placement ; view:view <urn:view:shapes> ; view:element ex:Marriage-place .`);
-        expect(r.derivation.figures.find(f => f.focus.value === EX + 'InPlaces')?.fs.node.value).not.toBe('osg://vocab/notation/shapes#Card');
+        expect(r.derivation.figures.find(f => f.focus.value === EX + 'InPlaces')?.fs.node.value).not.toBe('https://cristianvasquez.github.io/catenary/vocab/notation/shapes#Card');
         expect(r.join.lines.map(l => `${l.start.title} → ${l.end?.title}`)).toContain('Marriage → Countries');
     });
     it('a collection helper (dct:source, sh:in) has no card; the line ends at the collection', async () => {
         const r = await withTurtle(`ex:Lowlands a skos:Collection ; skos:prefLabel "Lowlands" ; skos:member ex:nl , ex:be .
             ex:Person sh:property ex:Person-home . ex:Person-home sh:path ex:home ; sh:node ex:InLowlands .
             ex:InLowlands a sh:NodeShape ; dct:source ex:Lowlands ; sh:in ( ex:nl ex:be ) .`);
-        expect(r.derivation.figures.find(f => f.focus.value === EX + 'InLowlands')?.fs.node.value).not.toBe('osg://vocab/notation/shapes#Card');
+        expect(r.derivation.figures.find(f => f.focus.value === EX + 'InLowlands')?.fs.node.value).not.toBe('https://cristianvasquez.github.io/catenary/vocab/notation/shapes#Card');
         expect(rowsOf(r.join, 'Person')).toContain('ex:home: Lowlands [0..*]');
     });
 });
