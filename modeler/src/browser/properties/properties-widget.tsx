@@ -32,9 +32,11 @@ import { ShaclFormHost } from './shacl-form-host';
 import type { ModelActions } from '../actions';
 
 /** Help text of the view panel, shown on hover of the "?" icon. */
-const VIEW_HELP = 'A view shows all relations between its elements. Del hides an edge in this view; restore it in the Appearance panel or with "Show hidden edges".\n\n'
-    + 'Palette: select Instances or Shapes. Drag a node shape from the Model explorer (under its class) to show its card. On a shape card, → draws a property: to another card, or to empty canvas for a datatype, value set or scheme. '
-    + 'Select a property edge and drag its violet handle to another edge: logical constraint. Click a cardinality to change it. Double-click a path to edit it. Ctrl+Del deletes from the shapes.';
+const VIEW_HELP = 'A view shows all relations between its elements. Del hides a relation edge in this view. Restore it in the Appearance panel or with "Show Hidden Edges". '
+    + 'Del on a property edge shows the property as a row of its card again.\n\n'
+    + 'Palette: Shapes (node shape), SKOS (scheme, collection), New instance of a class, and View marks (group, note). Back and Forward are on the left. '
+    + 'Drag a node shape from the Shapes section of the Model explorer to show its card. On a shape card, drag + to draw a property: to another card, or to empty canvas for a datatype, value set or scheme. '
+    + 'Select a property edge and drag its violet handle to another edge: logical constraint. Click a cardinality to change it. Double-click a path to edit it. Ctrl+Del deletes the selected elements from the model, after a confirmation.';
 
 /** Actions with an icon in the toolbar under the head, in two groups: navigation, then name. The menu has all actions. */
 const TOOLBAR: [string, string][][] = [
