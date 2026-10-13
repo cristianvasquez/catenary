@@ -60,6 +60,11 @@ export class SystemClipWriter {
         return turtle.then(text => text !== undefined && this.latest === clipboardId ? write(text, clipToken(clipboardId)) : undefined)
             .catch(() => undefined);
     }
+
+    /** A clear of the clip (a copy with nothing to copy): a write still running writes nothing. */
+    cancel(): void {
+        this.latest = undefined;
+    }
 }
 
 export const systemClipWriter = new SystemClipWriter();

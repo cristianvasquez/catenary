@@ -831,6 +831,7 @@ law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b o
 -- | The history model (packages/rdf-core/src/history.ts). The head of a stack is its top.
 -- A command records its patch, the entry of the migration queue that it applied and the entries that it proposed.
 -- A command without a quad patch changes nothing. Undo and redo restore its file graphs and migration queue.
+-- A proposed entry that reverses a queued entry (a target class or path changed back) removes that entry and is not queued.
 -- A read from disk (open, reload, a watcher change) clears the history (§10.4).
 data Migration = Migration { migrationId :: Id, migrationReason :: String } deriving Eq
 data Step = Step { stepPatch :: Patch, transferFiles :: [FilePath], queueBefore, queueAfter :: [Migration] } deriving Eq
@@ -1664,6 +1665,7 @@ mayOverwrite disk known = disk == known
 -- Files with outside uncommitted changes, found at open or reload, are not committed automatically. Ignored files stay out.
 -- No repository: write files, run no git command and give no warning. A failed commit path is retried at a later write.
 -- ws:autoCommit true: commit each write batch. False is the default, and writers do not store it. False: write files, no git command.
+-- Turning ws:autoCommit on checks again for a repository (a git init after the open).
 -- Reason: a commit changes the history of the user; the author turns it on. A folder without a repository has nothing to commit to.
 -- A batch can hold several command kinds. There is no promise of one commit per EditCommand.
 data FileState = FileState { written :: Bool, outsideChanges :: Bool, gitIgnored :: Bool }

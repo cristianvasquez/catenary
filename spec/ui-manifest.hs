@@ -790,7 +790,8 @@ law_openInSkipsCurrent f ts = case openIn (HereModel f) ts of
 
 -- 4.8 Delete confirmation -----------------------------------------------------------
 
--- | Delete confirmation names the affected elements and views, and the effects in Domain, Shapes and Project.
+-- | A Cancel of any dialog changes nothing: the canvas selection stays.
+-- Delete confirmation names the affected elements and views, and the effects in Domain, Shapes and Project.
 -- View deletion also names the target view and counts incoming references, grouped by containing view.
 -- Two references from one view count twice. State that Domain data stays unchanged.
 -- Offer Cancel and "Delete view and references". With no incoming references, omit that warning and list, but still confirm.

@@ -42,6 +42,16 @@ describe('clip transport', () => {
         expect(write.mock.calls).toEqual([['ttl b', clipToken('b')]]);
     });
 
+    it('a clear (a copy with nothing to copy) cancels a write still running', async () => {
+        const writer = new SystemClipWriter(), write = vi.fn(async () => undefined);
+        let finish!: (t: string) => void;
+        const a = writer.write('a', new Promise(r => { finish = r; }), write);
+        writer.cancel();
+        finish('ttl a');
+        await a;
+        expect(write).not.toHaveBeenCalled();
+    });
+
     it('no Turtle or a rejected write writes nothing and reports nothing', async () => {
         const writer = new SystemClipWriter(), write = vi.fn(async () => { throw new Error('denied'); });
         await expect(writer.write('a', Promise.resolve(undefined), write)).resolves.toBeUndefined();

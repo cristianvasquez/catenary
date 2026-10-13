@@ -302,11 +302,12 @@ export class ViewCopyPasteHandler extends ServerCopyPasteHandler {
     }
 }
 
-/** A clear of the clipboard (a copy with nothing to copy) also clears the cut mark. */
+/** A clear of the clipboard (a copy with nothing to copy) also clears the cut mark and cancels a system clipboard write still running. */
 class MarkedClipboardService extends LocalClipboardService {
     override clear(): void {
         super.clear();
         cutMark.clear();
+        systemClipWriter.cancel();
     }
 }
 
