@@ -5,6 +5,7 @@ import { OxigraphStore } from 'rdf-files';
 import { UNION_GRAPH, REPORT_GRAPH, cmp } from '../src/graph';
 import { elementId } from '../src/ids';
 import { readResults, reportProblems } from '../src/report-read';
+import { defaultMessage } from '../src/validate';
 import { TracedStore, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
 import { newModelGraph } from '../src/model-graph';
@@ -63,7 +64,7 @@ describe('report read', () => {
         const one = elementId(n('urn:x:i0001'));
         expect(problems.filter(p => p.focus === 'urn:x:i0001')).toEqual([
             { instance: one, focus: 'urn:x:i0001', path: undefined, shape: 'shape-id', pathName: undefined, severity: 'Violation',
-                component: 'Class', message: 'Value of has the wrong class: urn:x:other.', label: 'Thing 1', className: 'Thing' },
+                component: 'Class', message: 'Value has the wrong class: urn:x:other.', label: 'Thing 1', className: 'Thing' },
             { instance: one, focus: 'urn:x:i0001', path: PATH, shape: 'shape-id', pathName: 'name', severity: 'Violation',
                 component: 'MinCount', message: 'First Second', label: 'Thing 1', className: 'Thing' },
             { instance: one, focus: 'urn:x:i0001', path: PATH, shape: 'shape-id', pathName: 'name', severity: 'Warning',
@@ -79,5 +80,25 @@ describe('report read', () => {
         tracer.setClient(true);
         expect(reportProblems(g, meta, () => undefined)).toEqual([]);
         expect(tracer.take().spans.filter(s => s.kind === 'sparql')).toHaveLength(1);
+    });
+});
+
+describe('defaultMessage', () => {
+    it.each([
+        ['MinCount', undefined, undefined, 'Required is missing.'],
+        ['MinCount', 'name', undefined, 'Required "name" is missing.'],
+        ['MaxCount', undefined, undefined, 'Too many values for.'],
+        ['MaxCount', 'name', undefined, 'Too many values for "name".'],
+        ['Class', undefined, undefined, 'Value has the wrong class.'],
+        ['Class', undefined, 'urn:x:v', 'Value has the wrong class: urn:x:v.'],
+        ['Class', 'author', 'urn:x:v', 'Value of "author" has the wrong class: urn:x:v.'],
+        ['Datatype', undefined, undefined, 'Value has the wrong datatype.'],
+        ['Datatype', 'age', undefined, 'Value of "age" has the wrong datatype.'],
+        ['In', undefined, undefined, 'Value is not in the permitted list.'],
+        ['In', 'status', undefined, 'Value of "status" is not in the permitted list.'],
+        ['Pattern', undefined, undefined, 'Pattern constraint failed.'],
+        ['Pattern', 'code', undefined, 'Pattern constraint failed "code".'],
+    ])('%s with path %s and value %s', (component, pathName, value, expected) => {
+        expect(defaultMessage(component, pathName, value)).toBe(expected);
     });
 });
