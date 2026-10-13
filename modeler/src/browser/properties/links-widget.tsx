@@ -49,6 +49,11 @@ export namespace LinkNode {
 }
 type LinkFolder = LinkNode & ExpandableTreeNode;
 
+/** A row with a context menu: every row but a folder (a folder has no target, so no action applies to it). */
+export function hasRowMenu(node: Pick<LinkNode, 'link'>): boolean {
+    return node.link !== 'folder';
+}
+
 @injectable()
 export class LinksWidget extends TreeWidget {
     @inject(ModelFrontend) protected readonly modelFrontend: ModelFrontend;
@@ -299,7 +304,7 @@ export class LinksWidget extends TreeWidget {
         return t ? [t] : undefined;
     }
 
-    /** As the base class, but the menu opens after the actions of the row are known (action-menus.ts). */
+    /** As the base class, but the menu opens after the actions of the row are known (action-menus.ts). A folder opens no menu. */
     protected override handleContextMenuEvent(node: TreeNode | undefined, event: React.MouseEvent<HTMLElement>): void {
         const menuPath = this.props.contextMenuPath;
         if (!SelectableTreeNode.is(node) || !menuPath) return super.handleContextMenuEvent(node, event);
@@ -310,6 +315,7 @@ export class LinksWidget extends TreeWidget {
         const args = this.toContextMenuArgs(node);
         event.stopPropagation();
         event.preventDefault();
+        if (LinkNode.is(node) && !hasRowMenu(node)) return;
         void whenActionsKnown(this.actionService, this.actionService.targetOf(args?.[0]))
             .then(() => this.contextMenuRenderer.render({ menuPath, context, anchor: { x, y }, args }));
     }
