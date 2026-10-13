@@ -6,13 +6,48 @@ const path = require('node:path');
 const { test, root, withFixtureApp, navigator, navNode } = require('./harness.cjs');
 const { iriId } = require('../../packages/model/lib/ids.js');
 
+const failed = Symbol('failed');
+/**
+ * app.waitUntil, but an error of `observe` ends the wait at once: a CLI connection reset or a refused request is not retried into
+ * success. The error names the condition and gives the last observed state.
+ */
+const strictWait = app => async (description, observe, until = Boolean, options) => {
+  let last = '(not observed)';
+  const state = await app.waitUntil(description, async () => {
+    try { return last = await observe(); } catch (e) { return { [failed]: e }; }
+  }, s => Boolean(s?.[failed]) || until(s), options);
+  const e = state?.[failed];
+  if (e) throw new Error(`Stopped waiting until ${description}: ${e.message}. Last observed state: ${JSON.stringify(last)}`, { cause: e });
+  return state;
+};
+
+/**
+ * E2E_REPLY_DELAY_MS=<n>: every reply of the model service of the window (ctx.model.service) arrives n ms late. A focused run
+ * with a delay checks that the scenario waits for states, not for times. Install again after a page load.
+ */
+/** The connection times of the windows of the CLI bridge. */
+const connectedWindows = cli => cli('status').windows.map(w => w.connectedAt);
+/** After a page load: wait until the CLI bridge has one window, and it is not one of `before`. The CLI uses the newest window. */
+const waitForNewWindow = (waitUntil, cli, before) => waitUntil('the CLI bridge has only the window of the new page', () => connectedWindows(cli),
+  now => now.length === 1 && !before.includes(now[0]), { timeout: 15000 });
+
+const replyDelay = Number(process.env.E2E_REPLY_DELAY_MS) || 0;
+const delayReplies = cli => {
+  if (!replyDelay) return;
+  cli('eval', `const service = ctx.model.service, delay = ${replyDelay};
+    ctx.model.service = new Proxy(service, { get(t, name) {
+      const v = Reflect.get(t, name);
+      if (typeof v !== 'function' || name === 'then') return v;
+      return (...args) => Promise.resolve(v.apply(t, args)).then(
+        r => new Promise(resolve => setTimeout(() => resolve(r), delay)),
+        e => new Promise((_, reject) => setTimeout(() => reject(e), delay)));
+    } }); return true`);
+};
+
 test('browser: Turtle and TriG source language detection and token colors', { timeout: 45000 }, t => withFixtureApp(t, 'rdf-source', async ({ page, cli, workspace, logs }) => {
-  let status;
-  for (let i = 0; i < 50; i++) {
-    status = cli('status');
-    if (status.windows.length) break;
-    await page.waitForTimeout(100);
-  }
+  // withApp waits for the CLI bridge (phase "CLI bridge").
+  delayReplies(cli);
+  const status = cli('status');
   assert.ok(status.windows.length, 'CLI browser bridge is connected');
   assert.equal(status.build.stale, false);
   assert.equal(status.build.restartNeeded, false);
@@ -34,7 +69,10 @@ test('browser: Turtle and TriG source language detection and token colors', { ti
   assert.deepEqual(logs.join('').split('\n').filter(l => l.includes('[catenary]') && /written (as a whole|by triplify)/.test(l)), [], 'Every write is a text patch (no whole-file fallback)');
 }));
 
-test('browser: file presentations use document panes, focus existing panes and restore splits', { timeout: 90000 }, t => withFixtureApp(t, 'presentations', async ({ page, cli, dir, workspace }) => {
+test('browser: file presentations use document panes, focus existing panes and restore splits', { timeout: 90000 }, t => withFixtureApp(t, 'presentations', async app => {
+  const { page, cli, dir, workspace } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const data = path.join(workspace, 'data.ttl'), settings = path.join(workspace, 'workspace.trig');
   const main = '#theia-main-content-panel';
   const modelId = file => 'catenary-file-explorer:' + file;
@@ -68,8 +106,7 @@ test('browser: file presentations use document panes, focus existing panes and r
   // law_oneChoiceOpensAtOnce: Source's toolbar resolves the same file and leaves out Source. Model is the one choice: it opens with no pick.
   const openAsButton = () => page.locator(`[id=${JSON.stringify('catenary.openAs')}]`).filter({ visible: true }).last();
   await openAsButton().click();
-  for (let i = 0; i < 20 && current() !== modelId(data); i++) await page.waitForTimeout(100);
-  assert.equal(current(), modelId(data), 'Open as from Source opens Model at once');
+  await waitUntil('Open as from Source makes Model the current pane', current, id => id === modelId(data));
   assert.equal(await page.locator('.quick-input-widget').filter({ visible: true }).count(), 0, 'no quick pick');
   // Ctrl+click opens beside: the Model pane opens in a new split next to Source.
   cli('eval', `await ctx.shell.closeWidget(${JSON.stringify(modelId(data))}); await ctx.shell.activateWidget(${JSON.stringify(sourceId)}); return true`);
@@ -103,12 +140,9 @@ test('browser: file presentations use document panes, focus existing panes and r
   assert.equal(cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Reveal class', targetClass: 'urn:test:Reveal' })).result.ok, true);
   const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Reveal', label: 'Reveal me' })).result;
   assert.equal(instance.ok, true);
-  let source;
-  for (let i = 0; i < 20 && !source?.line; i++) {
-    source = cli('rpc', 'openTargets', JSON.stringify(instance.id)).result.find(t => t.presentation === 'Source');
-    if (!source?.line) await page.waitForTimeout(150);
-  }
-  assert.ok(source?.line, 'the saved file has the instance');
+  // The Source target has a line when the saved file has the instance.
+  const source = await waitUntil('the Source target of the instance has a line',
+    () => cli('rpc', 'openTargets', JSON.stringify(instance.id)).result.find(t => t.presentation === 'Source'), s => Boolean(s?.line));
   open(data, 'Model');
   await tree.getByRole('textbox', { name: 'Filter model elements', exact: true }).fill('reveal me');
   const revealRow = tree.locator('.catenary-tree-name').filter({ hasText: /^Reveal me$/ });
@@ -120,8 +154,7 @@ test('browser: file presentations use document panes, focus existing panes and r
   // law_gestureNoQuietWait: the double-click comes within the quiet time of the row selection.
   await selectRow();
   await revealRow.dblclick();
-  for (let i = 0; i < 40 && current() !== sourceId; i++) await page.waitForTimeout(100);
-  assert.equal(current(), sourceId);
+  await waitUntil('the double-click makes Source the current pane', current, id => id === sourceId);
   assert.deepEqual(cli('eval', 'const c = ctx.shell.currentWidget.editor.cursor; return [c.line, c.character]'), [source.line - 1, source.column - 1]);
   // Placed in a view: Enter in the tree asks between Source and Canvas.
   assert.equal(cli('exec', JSON.stringify({ kind: 'addToView', view, ids: [instance.id], at: { x: 0, y: 0 } })).result.ok, true);
@@ -154,9 +187,17 @@ test('browser: file presentations use document panes, focus existing panes and r
   assert.deepEqual(await tree.boundingBox(), moved, 'reopening keeps the arranged pane in place');
   const ids = widgets().sort();
   const splits = cli('eval', 'Array.from(ctx.shell.mainPanel.tabBars()).length');
-  await page.waitForTimeout(600); // Theia persists the modified layout on a debounce.
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  // Theia stores the layout in localStorage when the page unloads (FrontendApplication, windowsService.onUnload). Leave the
+  // application for a page of the same origin, read the stored layout there, then load the application again.
+  const appUrl = page.url(), windowsBefore = connectedWindows(cli);
+  await page.goto(new URL('/catenary-e2e-unloaded', appUrl).href, { waitUntil: 'domcontentloaded' });
+  const stored = await page.evaluate(() => Object.keys(localStorage).filter(k => k.endsWith(':layout')).map(k => localStorage.getItem(k)));
+  assert.equal(stored.length, 1, 'one stored layout');
+  assert.ok(stored[0].includes(JSON.stringify(data).slice(1, -1)), 'the stored layout has the Model presentation of data.ttl');
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await pane(modelId(data)).waitFor({ state: 'attached' });
+  await waitForNewWindow(waitUntil, cli, windowsBefore);
+  delayReplies(cli);
   assert.deepEqual(widgets().sort(), ids, 'all presentations restore through their existing widget factories');
   assert.equal(cli('eval', 'Array.from(ctx.shell.mainPanel.tabBars()).length'), splits);
   // Files of another workspace offer their presentations. Model first opens the workspace that reads the file.
@@ -172,6 +213,7 @@ test('browser: file presentations use document panes, focus existing panes and r
 }));
 
 test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placement and source-only file drop', { timeout: 90000 }, t => withFixtureApp(t, 'file-explorer', async ({ page, cli, workspace }) => {
+  delayReplies(cli);
   const source = path.join(workspace, 'data.ttl'), destination = path.join(workspace, 'shapes.ttl');
   const exec = command => { const r = cli('exec', JSON.stringify(command)).result; assert.equal(r.ok, true, JSON.stringify(r)); return r; };
   exec({ kind: 'createNodeShape', label: 'Transfer shape', targetClass: 'urn:test:Transfer' });
@@ -244,7 +286,10 @@ test('browser: law_typeToFilter: file explorer menu, fuzzy filter, folder placem
 
 }));
 
-test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async ({ page, cli }) => {
+test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave and return on close', { timeout: 60000 }, t => withFixtureApp(t, 'view-notes', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const status = cli('status');
   assert.equal(status.build.stale, false);
   assert.equal(status.build.restartNeeded, false);
@@ -272,20 +317,37 @@ test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave an
   await page.keyboard.press('Control+End');
   await page.keyboard.type(' More notes.');
   let expected = '# Purpose\n\nAn explanation. More notes.';
-  for (let i = 0; i < 50 && cli('rpc', 'properties', JSON.stringify(view)).result.description !== expected; i++) await page.waitForTimeout(100);
-  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, expected, 'typing saves without a button');
+  const description = () => cli('rpc', 'properties', JSON.stringify(view)).result.description;
+  const documentText = () => cli('eval', 'ctx.shell.currentWidget.editor.document.getText()');
+  const dirty = () => cli('eval', 'ctx.shell.currentWidget.editor.document.dirty');
+  await waitUntil('typing saves the notes without a button', description, d => d === expected);
   assert.equal(await panel.getByRole('button', { name: 'Save description', exact: true }).count(), 0);
   // Keep a native save in flight while more input arrives. The older completion must not mark the newer text clean.
-  cli('eval', `globalThis.notesExecute = ctx.model.execute.bind(ctx.model); globalThis.notesSaving = false; ctx.model.execute = async c => { const r = await globalThis.notesExecute(c); if (c.kind === 'setViewDescription') { globalThis.notesSaving = true; await new Promise(resolve => setTimeout(resolve, 500)); } return r; }; return true`);
-  await page.keyboard.type(' Slow save.');
-  await page.waitForFunction(() => globalThis.notesSaving);
-  await page.keyboard.type(' New input.');
-  expected += ' Slow save. New input.';
-  for (let i = 0; i < 50 && cli('rpc', 'properties', JSON.stringify(view)).result.description !== expected; i++) await page.waitForTimeout(100);
-  assert.equal(cli('rpc', 'properties', JSON.stringify(view)).result.description, expected);
-  for (let i = 0; i < 50 && cli('eval', 'ctx.shell.currentWidget.editor.document.dirty'); i++) await page.waitForTimeout(100);
-  assert.equal(cli('eval', 'ctx.shell.currentWidget.editor.document.dirty'), false);
-  cli('eval', 'ctx.model.execute = globalThis.notesExecute; delete globalThis.notesExecute; delete globalThis.notesSaving; return true');
+  // The gate holds each notes save after the backend answered it, until the test releases the gate.
+  cli('eval', `const g = globalThis.notesGate = { started: 0, finished: 0, execute: ctx.model.execute };
+    g.hold = new Promise(resolve => { g.release = resolve; });
+    ctx.model.execute = async c => {
+      const r = await g.execute.call(ctx.model, c);
+      if (c.kind === 'setViewDescription') { g.started++; await g.hold; g.finished++; }
+      return r;
+    }; return true`);
+  const gate = () => cli('eval', 'const g = globalThis.notesGate; return { started: g.started, finished: g.finished }');
+  try {
+    await page.keyboard.type(' Slow save.');
+    await waitUntil('a notes save starts and the gate holds it', gate, g => g.started >= 1);
+    await page.keyboard.type(' New input.');
+    expected += ' Slow save. New input.';
+    // While the gate holds the saves: the document has the new input, it stays dirty, and no held save has completed.
+    await waitUntil('the notes document has the new input', documentText, text => text === expected);
+    assert.equal(dirty(), true, 'the document stays dirty while its saves are held');
+    assert.equal(gate().finished, 0, 'no held save completes before the release');
+  } finally {
+    // A failed release must not hide the first failure; the waits below report a release that did not happen.
+    try { cli('eval', 'globalThis.notesGate.release(); return true'); } catch (e) { console.error(`view-notes: release of the save gate failed: ${e.message}`); }
+  }
+  await waitUntil('the saves end with the newest notes', description, d => d === expected);
+  await waitUntil('the notes document is clean after the held saves complete', dirty, d => d === false);
+  cli('eval', 'ctx.model.execute = globalThis.notesGate.execute; delete globalThis.notesGate; return true');
   // Edit and close in one browser turn: the 300 ms idle save cannot have run yet.
   cli('eval', `const w = ctx.shell.currentWidget; w.editor.getControl().trigger('test', 'type', {text: ' Last words.'}); await w.closeWithSaving(); return true`);
   await editor.waitFor({ state: 'detached' });
@@ -307,7 +369,10 @@ test('browser: law_notesSingleEditor: Notes move to native Markdown, autosave an
 }));
 
 // sh:targetSubjectsOf and sh:targetObjectsOf: the same textarea wiring, one app for both.
-test('browser: subject and object targets retain all predicates through Properties edits', { timeout: 60000 }, t => withFixtureApp(t, 'targets', async ({ page, cli }) => {
+test('browser: subject and object targets retain all predicates through Properties edits', { timeout: 60000 }, t => withFixtureApp(t, 'targets', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const view = cli('ui').currentView;
   const panel = page.locator('#catenary-properties');
   const targets = id => cli('rpc', 'shapes').result.nodeShapes[id];
@@ -322,22 +387,21 @@ test('browser: subject and object targets retain all predicates through Properti
     // ui-manifest §8.11: Properties shows its last data until the new answer arrives. The shapes answer of the revision before
     // setNodeShape already lists the shape, without targets: the textarea renders empty for one read, then again with the value.
     const expected = '<urn:test:first>\n<urn:test:second>';
-    for (let i = 0; i < 50 && await field.inputValue() !== expected; i++) await page.waitForTimeout(100);
-    assert.equal(await field.inputValue(), expected);
+    await waitUntil(`the ${key} textarea shows both targets`, () => field.inputValue(), v => v === expected);
     await field.fill('<urn:test:second>\n<urn:test:third>');
     await field.blur();
     await page.waitForFunction(l => Array.from(document.querySelectorAll('.shape-name')).some(x => x.textContent === l), label);
-    for (let i = 0; i < 50 && JSON.stringify(targets(shape.id)[key]) !== JSON.stringify(['urn:test:second', 'urn:test:third']); i++) await page.waitForTimeout(100);
-    assert.deepEqual(targets(shape.id)[key], ['urn:test:second', 'urn:test:third']);
+    await waitUntil(`the shape has the edited ${key}`, () => targets(shape.id)[key],
+      v => JSON.stringify(v) === JSON.stringify(['urn:test:second', 'urn:test:third']));
     await page.locator('.shape-class', { hasText: `${words} of second or third` }).first().waitFor();
     await field.fill('');
     await field.blur();
-    for (let i = 0; i < 50 && targets(shape.id)[key]; i++) await page.waitForTimeout(100);
-    assert.equal(targets(shape.id)[key], undefined);
+    await waitUntil(`the shape has no ${key}`, () => ({ value: targets(shape.id)[key] }), v => v.value === undefined);
   }
 }));
 
 test('browser: Links lists instances of a selected shape outside the current view', { timeout: 45000 }, t => withFixtureApp(t, 'shape-instances', async ({ page, cli }) => {
+  delayReplies(cli);
   const shape = cli('exec', JSON.stringify({ kind: 'createNodeShape', label: 'Instance list shape', targetClass: 'urn:test:InstanceList' })).result;
   assert.equal(shape.ok, true);
   const instance = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:InstanceList', label: 'Unplaced list instance' })).result;
@@ -353,7 +417,10 @@ test('browser: Links lists instances of a selected shape outside the current vie
   await panel.locator('.catenary-tree-description', { hasText: /^rdf:type$/ }).waitFor();
 }));
 
-test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and stays open, no duplicate (ui-manifest §8.6)', { timeout: 60000 }, t => withFixtureApp(t, 'find-element', async ({ page, cli }) => {
+test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and stays open, no duplicate (ui-manifest §8.6)', { timeout: 60000 }, t => withFixtureApp(t, 'find-element', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const view = cli('exec', JSON.stringify({ kind: 'createView', label: 'Find view' })).result.id;
   for (const label of ['Picked first', 'Picked second']) {
     assert.equal(cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Picked', label })).result.ok, true);
@@ -365,10 +432,7 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   const picker = page.locator('.quick-input-widget');
   const idOf = label => cli('rpc', 'search').result.find(h => h.label === label).id;
   const cards = label => { const id = idOf(label); return cli('rpc', 'view', JSON.stringify(view)).result.boxes.filter(b => b.kind === 'card' && b.element === id).length; };
-  const until = async (check, what) => {
-    for (let i = 0; i < 50 && !check(); i++) await page.waitForTimeout(100);
-    assert.ok(check(), what);
-  };
+  const until = (check, what) => waitUntil(what, check);
   await page.keyboard.press('F8');
   await picker.waitFor();
   await page.keyboard.type('Picked first');
@@ -390,9 +454,9 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.getByRole('option', { name: /Picked first/ }).first().waitFor();
   await page.keyboard.press('Enter');
   await picker.waitFor({ state: 'hidden' });
-  await page.waitForTimeout(500);
-  assert.equal(cards('Picked first'), 1, 'Enter on an element of the view adds no second card');
+  // The accept ends with the selection (an added card is also selected after its command): then the card count is final.
   await until(() => selected('Picked first'), 'Enter on an element of the view selects it there');
+  assert.equal(cards('Picked first'), 1, 'Enter on an element of the view adds no second card');
   // Ctrl+Enter on an element of the view: selected there, the picker stays open.
   await page.keyboard.press('F8');
   await picker.waitFor();
@@ -409,34 +473,48 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.getByRole('option', { name: /Product context/ }).first().waitFor();
   await page.keyboard.press('Control+Enter');
   await until(() => references().length === 1, 'Enter on a view adds a view reference');
-  await page.waitForTimeout(300);
+  // The accept ends when the picker marks the row as on this view. Then clear the selection: the next accept must select again.
+  const activeRow = page.locator('.quick-input-list .monaco-list-row.focused', { has: page.locator('.label-name', { hasText: /^Product context$/ }) });
+  await activeRow.locator('.label-description', { hasText: /(^| · )on this view$/ }).first().waitFor();
+  cli('eval', 'ctx.selection.set({ view: undefined, ids: [] }); return true');
+  await until(() => !cli('ui').selection.ids?.length, 'the selection is empty');
   await page.keyboard.press('Control+Enter');
   await until(() => cli('ui').selection.ids?.includes(references()[0].id), 'Ctrl+Enter on a view of the view selects its reference');
   assert.equal(references().length, 1, 'a view reference is added once');
   assert.equal(await picker.isVisible(), true);
 }));
 
-test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async ({ page, cli }) => {
+test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Linked view' }));
   assert.equal(created.result.ok, true);
   const view = created.result.id;
   const url = new URL(page.url());
   url.searchParams.set('view', view);
+  const windowsBefore = connectedWindows(cli);
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#shell-tab-explorer-view-container'));
-  await page.waitForTimeout(1000);
-  for (let i = 0; i < 50; i++) {
-    if (cli('ui').currentView === view) break;
-    await page.waitForTimeout(100);
-  }
-  assert.equal(cli('ui').currentView, view);
+  await waitForNewWindow(waitUntil, cli, windowsBefore);
+  // The state of the window for a failure: current view, active and current pane, page URL, pending CLI command.
+  // A CLI error (for example ECONNRESET) stops the wait at once with this state and the URL; it is not retried.
+  const windowState = () => {
+    let ui;
+    try { ui = cli('ui'); } catch (e) { throw new Error(`${e.message}; URL ${page.url()}`, { cause: e }); }
+    return { currentView: ui.currentView, activePane: ui.activeWidget?.id, currentPane: ui.currentWidget?.id, url: page.url(), pendingCommand: ui.pendingCommand ?? null };
+  };
+  await waitUntil(`the view of the URL (${view}) is the current view`, windowState, s => s.currentView === view, { timeout: 15000 });
   url.searchParams.set('view', 'missing-view');
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
   await page.getByText('The requested view is not in the current workspace.', { exact: true }).first().waitFor();
   assert.equal(cli('status').model.views, 2, 'an invalid link creates no view');
 }));
 
-test('browser: Apply Layout fits the viewport to the new layout; no zoom-out limit', { timeout: 45000 }, t => withFixtureApp(t, 'layout-fit', async ({ page, cli }) => {
+test('browser: Apply Layout fits the viewport to the new layout; no zoom-out limit', { timeout: 45000 }, t => withFixtureApp(t, 'layout-fit', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   const view = iriId('urn:name:Product%20context');
   cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
   await page.locator('svg.sprotty-graph:visible g.card').first().waitFor();
@@ -453,85 +531,143 @@ test('browser: Apply Layout fits the viewport to the new layout; no zoom-out lim
   const away = async () => {
     cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)}); const root = w.editorContext.modelRoot;
       await w.actionDispatcher.dispatch({ kind: 'viewport', elementId: root.id, newViewport: { scroll: { x: 200000, y: 200000 }, zoom: 0.02 }, animate: false }); return true`);
-    await page.waitForTimeout(300);
+    // The client model has the new viewport. A zoom-out limit shows as a zoom other than 0.02 in the timeout message.
+    return waitUntil('the viewport is at zoom 0.02, away from the cards', state, s => Math.abs(s.zoom - 0.02) < 1e-9 && s.cards > 0 && s.inside === 0);
   };
-  await away();
-  const before = state();
+  const before = await away();
   assert.ok(Math.abs(before.zoom - 0.02) < 1e-9, `zoom 0.02 is kept (got ${before.zoom})`);
   assert.ok(before.cards > 0 && before.inside === 0, `no card in the viewport before the layout: ${JSON.stringify(before)}`);
   for (const algorithm of ['force', 'layered']) {
     assert.equal(cli('run', 'catenary.layoutView', 'null', JSON.stringify(algorithm)).status, 'done');
-    let after;
-    for (let i = 0; i < 40; i++) {
-      await page.waitForTimeout(150);
-      after = state();
-      if (after.cards > 0 && after.inside === after.cards) break;
-    }
+    const after = await waitUntil(`${algorithm}: every card is in the viewport after the layout`, state, s => s.cards > 0 && s.inside === s.cards);
     assert.equal(after.inside, after.cards, `${algorithm}: every card is in the viewport after the layout: ${JSON.stringify(after)}`);
     console.log(`layout fit: ${algorithm} → ${after.inside}/${after.cards} cards in the viewport, zoom ${after.zoom.toFixed(3)}`);
     await away();
   }
 }));
 
-test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 90000 }, t => withFixtureApp(t, 'properties-stable', async ({ page, cli }) => {
-  // An instance with a SHACL form.
+test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 90000 }, t => withFixtureApp(t, 'properties-stable', async app => {
+  const { page, cli } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
+  // An instance with a SHACL form: its properties list a node shape or a plugin form (formSections, properties-widget.tsx).
   const hits = cli('rpc', 'search').result.filter(h => h.kind === 'instance');
-  let target;
-  for (const h of hits) {
-    cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(h.id)}] }); return true`);
-    if (!await page.locator('#catenary-properties .catenary-props').isVisible()) await page.locator('#shell-tab-property-view').click();
-    if (await page.locator('#catenary-properties .catenary-props shacl-form').first().waitFor({ timeout: 3000 }).then(() => true, () => false)) { target = h; break; }
-  }
+  const target = hits.find(h => {
+    const p = cli('rpc', 'properties', JSON.stringify(h.id)).result;
+    return p?.kind === 'instance' && p.shapes.length + (p.pluginForms?.length ?? 0) > 0;
+  });
   assert.ok(target, 'an instance of the fixtures has a SHACL form');
-  await page.waitForTimeout(1500);
-  const record = () => page.evaluate(() => {
-    const p = document.querySelector('#catenary-properties .catenary-props');
-    const log = window.__rec = { minPanel: Infinity, minForm: Infinity, visibleForms: new Set(), maxForms: 0, emptyActions: false };
-    const t0 = performance.now();
-    const tick = () => {
-      const forms = [...p.querySelectorAll('shacl-form')], shown = forms.find(f => f.style.visibility !== 'hidden');
-      log.maxForms = Math.max(log.maxForms, forms.length);
-      log.minPanel = Math.min(log.minPanel, p.scrollHeight);
-      log.minForm = Math.min(log.minForm, shown ? shown.getBoundingClientRect().height : 0);
-      if (shown) log.visibleForms.add(shown);
-      if (!p.querySelector('.catenary-toolbar')) log.emptyActions = true;
-      if (performance.now() - t0 < 4000) requestAnimationFrame(tick);
+  cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(target.id)}] }); return true`);
+  if (!await page.locator('#catenary-properties').isVisible()) await page.locator('#shell-tab-property-view').click();
+  await page.locator('#catenary-properties .catenary-props shacl-form').first().waitFor();
+  // The gate: while it is closed, the answers of ctx.model.service.properties wait for the release. The render wrapper records
+  // the request (file, revision, element) of the data that the panel rendered last.
+  const installed = cli('eval', `const w = ctx.shell.getWidgetById('property-view')?.contentWidget;
+    if (w?.id !== 'catenary-properties') return 'the Properties content widget is ' + w?.id;
+    const g = globalThis.propertiesGate = { widget: w, model: ctx.model, service: ctx.model.service, render: w.render, open: true, held: [], rendered: undefined };
+    ctx.model.service = new Proxy(g.service, { get(t, name) {
+      const v = Reflect.get(t, name);
+      if (name !== 'properties') return v;
+      return (...args) => {
+        const call = Promise.resolve(v.apply(t, args));
+        if (g.open) return call;
+        call.catch(() => {});
+        return new Promise((resolve, reject) => g.held.push(() => call.then(resolve, reject)));
+      };
+    } });
+    w.render = function () { const r = g.render.call(this); g.rendered = this.data?.request; return r; };
+    w.update();
+    return true`);
+  assert.equal(installed, true, String(installed));
+  const release = () => page.evaluate(() => { const g = globalThis.propertiesGate; g.open = true; for (const h of g.held.splice(0)) h(); });
+  try {
+    /** The panel: data and render for the current revision, open requests, held answers, forms, and whether the shown form has `label`. */
+    const panelState = label => page.evaluate(label => {
+      const g = globalThis.propertiesGate, w = g.widget, { file, revision } = g.model.snapshot, current = `${file}\n${revision}\n`;
+      const forms = [...document.querySelectorAll('#catenary-properties .catenary-props shacl-form')];
+      const shown = forms.filter(f => f.style.visibility !== 'hidden');
+      const values = [];
+      const walk = n => { if (n.shadowRoot) walk(n.shadowRoot); for (const c of n.children ?? []) { if (typeof c.value === 'string' && c.value) values.push(c.value); walk(c); } };
+      if (shown.length === 1) walk(shown[0]);
+      return { revision, data: w.data?.request?.startsWith(current) ?? false, rendered: g.rendered?.startsWith(current) ?? false,
+        asking: w.dataRequest !== undefined, formRequest: w.formRequest !== undefined, held: g.held.length, forms: forms.length,
+        shown: shown.length, toolbar: !!document.querySelector('#catenary-properties .catenary-props .catenary-toolbar'),
+        label: label === undefined || values.includes(label) };
+    }, label);
+    const settled = s => s.data && s.rendered && !s.asking && !s.formRequest && !s.held && s.forms === 1 && s.shown === 1 && s.label;
+    // The first form shows at once, before its initialization: wait until its fields have the values (the label of the instance).
+    await waitUntil('Properties shows the filled form of the instance for the current revision', () => panelState(target.label), settled);
+    // Each animation frame, from before the change until the end of the request: the smallest panel and form heights, the
+    // shown forms, and whether a frame had no action toolbar.
+    const record = () => page.evaluate(() => {
+      const p = document.querySelector('#catenary-properties .catenary-props');
+      const log = window.__rec = { minPanel: Infinity, minForm: Infinity, visibleForms: new Set(), maxForms: 0, emptyActions: false, stop: false };
+      log.sample = () => {
+        const forms = [...p.querySelectorAll('shacl-form')], shown = forms.find(f => f.style.visibility !== 'hidden');
+        log.maxForms = Math.max(log.maxForms, forms.length);
+        log.minPanel = Math.min(log.minPanel, p.scrollHeight);
+        log.minForm = Math.min(log.minForm, shown ? shown.getBoundingClientRect().height : 0);
+        if (shown) log.visibleForms.add(shown);
+        if (!p.querySelector('.catenary-toolbar')) log.emptyActions = true;
+      };
+      const tick = () => { log.sample(); if (!log.stop) requestAnimationFrame(tick); };
+      const before = { panel: p.scrollHeight, form: p.querySelector('shacl-form').getBoundingClientRect().height };
+      requestAnimationFrame(tick);
+      return before;
+    });
+    const recorded = (stop = false) => page.evaluate(stop => {
+      const r = window.__rec;
+      r.sample();
+      if (stop) r.stop = true;
+      return { minPanel: r.minPanel, minForm: r.minForm, visibleForms: r.visibleForms.size, maxForms: r.maxForms, emptyActions: r.emptyActions };
+    }, stop);
+    /**
+     * Record the panel, close the gate, apply `change`, and wait until Properties asks for the new revision. While the gate holds
+     * that answer, the panel keeps its last data: the same form, the toolbar, no shorter panel or form. Then release the gate
+     * and wait until the panel shows the answer (with `label` in the form).
+     */
+    const throughHeldRequest = async (what, change, label) => {
+      const before = await record();
+      await page.evaluate(() => { globalThis.propertiesGate.open = false; });
+      try {
+        change();
+        const held = await waitUntil(`${what}: Properties asks for the new revision and the gate holds the answer`, () => panelState(), s => s.held > 0);
+        assert.ok(held.asking && held.forms === 1 && held.shown === 1 && held.toolbar, `${what}: while the answer is held, the panel keeps its form and toolbar: ${JSON.stringify(held)}`);
+        const r = await recorded();
+        assert.equal(r.minPanel, before.panel, `${what}: while the answer is held, the panel keeps its height: ${JSON.stringify(r)}`);
+        assert.equal(r.visibleForms, 1, `${what}: while the answer is held, the same form stays`);
+        assert.ok(r.minForm >= before.form - 1, `${what}: while the answer is held, the form keeps its height: ${JSON.stringify(r)} ${JSON.stringify(before)}`);
+        assert.equal(r.emptyActions, false, `${what}: while the answer is held, the action toolbar stays`);
+      } finally {
+        await release();
+      }
+      await waitUntil(`${what}: Properties shows the answer for the new revision`, () => panelState(label), settled);
+      return { before, r: await recorded(true) };
     };
-    const before = { panel: p.scrollHeight, form: p.querySelector('shacl-form').getBoundingClientRect().height };
-    requestAnimationFrame(tick);
-    return before;
-  });
-  const result = async () => {
-    await page.waitForTimeout(4200);
-    return page.evaluate(() => { const r = window.__rec; return { ...r, visibleForms: r.visibleForms.size }; });
-  };
-  // A change of another instance: nothing in the panel changes size, the form stays.
-  const other = hits.find(h => h.id !== target.id);
-  let before = await record();
-  assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: other.id, label: 'Renamed other' })).result.ok, true);
-  let r = await result();
-  assert.equal(r.minPanel, before.panel, `other instance: the panel keeps its height: ${JSON.stringify(r)}`);
-  assert.equal(r.visibleForms, 1, 'other instance: the same form stays');
-  assert.equal(r.emptyActions, false, 'other instance: the action toolbar stays');
-  // A change of the selected instance: the form is replaced, without a frame with an empty or short form.
-  before = await record();
-  assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: target.id, label: 'Renamed target' })).result.ok, true);
-  r = await result();
-  assert.equal(r.visibleForms, 2, `selected instance: a new form replaces the shown one: ${JSON.stringify(r)}`);
-  assert.ok(r.minForm >= before.form - 1, `selected instance: the shown form never gets shorter: ${JSON.stringify(r)} ${JSON.stringify(before)}`);
-  assert.equal(r.emptyActions, false, 'selected instance: the action toolbar stays');
-  assert.equal(await page.locator('#catenary-properties .catenary-props shacl-form').count(), 1, 'one form after the swap');
-  const values = await page.evaluate(() => {
-    const out = [];
-    const walk = n => { if (n.shadowRoot) walk(n.shadowRoot); for (const c of n.children ?? []) { if (typeof c.value === 'string' && c.value) out.push(c.value); walk(c); } };
-    walk(document.querySelector('#catenary-properties .catenary-props shacl-form'));
-    return out;
-  });
-  assert.ok(values.includes('Renamed target'), `the new form shows the new label: ${values.slice(0, 10)}`);
-  console.log(`properties: form replaced once, min form height ${Math.round(r.minForm)} of ${Math.round(before.form)} px, panel never shorter`);
+    // A change of another instance: nothing in the panel changes size, the form stays.
+    const other = hits.find(h => h.id !== target.id);
+    let { before, r } = await throughHeldRequest('other instance',
+      () => assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: other.id, label: 'Renamed other' })).result.ok, true));
+    assert.equal(r.minPanel, before.panel, `other instance: the panel keeps its height: ${JSON.stringify(r)}`);
+    assert.equal(r.visibleForms, 1, 'other instance: the same form stays');
+    assert.equal(r.emptyActions, false, 'other instance: the action toolbar stays');
+    // A change of the selected instance: the form is replaced, without a frame with an empty or short form.
+    ({ before, r } = await throughHeldRequest('selected instance',
+      () => assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: target.id, label: 'Renamed target' })).result.ok, true), 'Renamed target'));
+    assert.equal(r.visibleForms, 2, `selected instance: a new form replaces the shown one: ${JSON.stringify(r)}`);
+    assert.ok(r.minForm >= before.form - 1, `selected instance: the shown form never gets shorter: ${JSON.stringify(r)} ${JSON.stringify(before)}`);
+    assert.equal(r.emptyActions, false, 'selected instance: the action toolbar stays');
+    assert.equal(await page.locator('#catenary-properties .catenary-props shacl-form').count(), 1, 'one form after the swap');
+    console.log(`properties: form replaced once, min form height ${Math.round(r.minForm)} of ${Math.round(before.form)} px, panel never shorter`);
+  } finally {
+    await release().catch(e => console.error(`properties-stable: release of the gate failed: ${e.message}`));
+  }
 }));
 
-test('browser: Insert View writes the view IRI at the cursor; Export Markdown of a folder renders each view once as SVG; a selection of a file and a folder exports under their common folder', { timeout: 90000 }, t => withFixtureApp(t, 'markdown', async ({ page, cli, url, dir, workspace }) => {
+test('browser: Insert View writes the view IRI at the cursor; Export Markdown of a folder renders each view once as SVG; a selection of a file and a folder exports under their common folder', { timeout: 90000 }, t => withFixtureApp(t, 'markdown', async app => {
+  const { page, cli, url, dir, workspace } = app;
+  const waitUntil = strictWait(app);
+  delayReplies(cli);
   // The CLI exits with 3 while a prompt waits: read its output anyway.
   const cliRaw = (...args) => {
     const r = require('node:child_process').spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(url).port, ...args], { encoding: 'utf8', timeout: 60000 });
@@ -560,14 +696,13 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.equal(cliRaw('answer', '--pick', 'Product context').status, 'done');
   await page.keyboard.type('\n\n## Components\n\n');
   // Typing is asynchronous: insert only after the last key is in the document.
-  for (let i = 0; i < 50 && !cli('eval', 'ctx.shell.currentWidget.editor.document.getText()').endsWith('## Components\n\n'); i++) await page.waitForTimeout(100);
+  await waitUntil('the document has the typed heading', () => cli('eval', 'ctx.shell.currentWidget.editor.document.getText()'), t => t.endsWith('## Components\n\n'));
   run = cliRaw('run', 'catenary.insertView');
   assert.equal(cliRaw('answer', '--pick', 'Second view').status, 'done');
   const text = cli('eval', 'ctx.shell.currentWidget.editor.document.getText()');
   assert.equal(text, `# Architecture\n\nThe system separates storage from presentation.\n\n![Product context](${context})\n\n## Components\n\n![Second view](${secondIri})`);
   cli('eval', 'await ctx.shell.currentWidget.editor.document.save(); return true');
-  for (let i = 0; i < 50 && fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8') !== text; i++) await page.waitForTimeout(100);
-  assert.equal(fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8'), text);
+  await waitUntil('Architecture.md on disk has the saved text', () => fs.readFileSync(path.join(docs, 'Architecture.md'), 'utf8'), t => t === text);
 
   // The menu of a folder and of a Markdown file in the navigator has Export Markdown; the menu of another file does not.
   const menuItem = label => page.locator('.lm-Menu .lm-Menu-itemLabel', { hasText: new RegExp(`^${label}$`) });
@@ -610,10 +745,12 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
     await folderDialog.locator('.dialogControl button.main').click();
     await exportDialog.locator('.catenary-export-path', { hasText: path.join(dir, name) }).waitFor();
   };
+  // The export command that `run` started ends after the dialog: the CLI bridge then has no pending command.
+  const exportEnds = () => waitUntil('Export Markdown ends', () => ({ pending: cli('ui').pendingCommand ?? null }), s => s.pending === null, { timeout: 60000 });
   const outDialog = path.join(dir, 'out-dialog');
   await chooseDestination('out-dialog');
   await exportDialog.locator('.dialogControl button.main:not([disabled])').click();
-  for (let i = 0; i < 100 && !fs.existsSync(path.join(outDialog, 'Architecture.md')); i++) await page.waitForTimeout(100);
+  await exportEnds();
   assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the checked document is exported');
   assert.equal(fs.existsSync(path.join(outDialog, 'Data model.md')), false, 'an unchecked document is not exported');
 
@@ -667,7 +804,7 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   const outBroken = path.join(dir, 'out-broken');
   await chooseDestination('out-broken');
   await exportDialog.locator('.dialogControl button.main:not([disabled])').click();
-  for (let i = 0; i < 100 && !fs.existsSync(path.join(outBroken, 'Architecture.md')); i++) await page.waitForTimeout(100);
+  await exportEnds();
   assert.ok(fs.existsSync(path.join(outBroken, 'Architecture.md')), 'the checked document is exported');
   assert.equal(fs.existsSync(path.join(outBroken, 'Broken.md')), false, 'the unchecked document with the unresolved embed is not exported');
 
