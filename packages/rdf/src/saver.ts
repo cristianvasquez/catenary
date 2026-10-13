@@ -57,7 +57,9 @@ export class Writer {
         const files = ws?.committable() ?? [];
         const error = !r.ok ? `Not written: ${r.error}` : files.length
             ? await tracer.span('file', 'commit', () => commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`)) : undefined;
-        if (r.ok && !error) ws!.written = [];
+        // No commit (auto-commit off, or no repository): keep the paths, so that a later read from disk does not take Catenary's
+        // writes for changes of the user, and a commit after auto-commit is turned on includes them.
+        if (r.ok && !error) ws!.written = ws!.commits ? [] : [...new Set(ws!.written)];
         if (error) this.commitNotes.unshift(...notes);
         if (error !== this.writeError || this.port.warnings.length !== warningCount) {
             this.port.warnings = [...this.port.warnings.filter(w => w !== this.writeError), ...(error ? [error] : [])];
@@ -128,6 +130,8 @@ export class Saver {
     protected uncommitted = new Set<string>();
     /** The workspace folder is in a git repository (recordUncommitted). */
     repo = false;
+    /** A write is committed: auto-commit is on and the workspace folder is in a repository. */
+    get commits(): boolean { return this.settings.autoCommit && this.repo; }
     protected cache?: { event: unknown; canonical: Canonical };
     /**
      * The entries of `cache` that a change made out of date: `f:<path>` a model file, `v:<view IRI>` a view. 'all': every entry. Each
@@ -269,7 +273,7 @@ export class Saver {
      * ws:autoCommit is false or the workspace is not in a repository: then no git command runs.
      */
     committable(): string[] {
-        if (!this.settings.autoCommit || !this.repo) return [];
+        if (!this.commits) return [];
         return [...new Set(this.written)].filter(file => {
             if (!this.uncommitted.has(pathKey(file))) return true;
             this.note(`not committed: ${portableRelative(this.settings.folder, file)} has changes that are not committed`);
