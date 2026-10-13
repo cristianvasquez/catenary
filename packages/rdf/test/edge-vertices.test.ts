@@ -13,8 +13,7 @@ import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
 afterEach(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -104,8 +103,7 @@ describe('edge vertices (UI §7.4)', () => {
         const first = Object.values(docOf(store).views)[0];
         const r0 = docOf(store).relations[first.edges.find(e => e.id)!.relation];
         const iri = docOf(store).instances[r0.subject].uri;
-        await store.idle();
-        store.close();
+        await store.dispose();
         rmSync(dir, { recursive: true, force: true });
         await open('base', DATA + `\n<${iri}> <${r0.predicate}> <${iri}> .\n`);
         const doc = docOf(store);

@@ -212,7 +212,7 @@ Paths are relative to the directory in the first column.
 
 ## Testing
 
-Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest layer that detects the failure.
+Vitest loads the TypeScript source, not `lib/`: `vitest.aliases.mts` maps each workspace package to its source entry. Keep each test at the lowest layer that detects the failure.
 
 | Layer | Tests |
 |---|---|
@@ -252,7 +252,13 @@ Performance: `pnpm test:perf` (`vitest.perf.config.mts`) runs `packages/*/test/p
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
 
-The test files of a Vitest thread share one module graph (`vitest.config.mts`). `vitest.setup.ts` resets the process-wide state (the prefix table, fake timers) before each file. A file that calls `vi.mock` or `vi.spyOn` runs in a process of its own: the config finds these files. Change the store through `ModelGraph.add` and `remove`. Transactions publish one scoped event. Rejected transactions publish none. Loads, unloads and reports use the same path. Cache keys retain the last relevant event.
+Isolation: each test file has its own module graph (`vitest.config.mts`). Do not disable isolation to make the suite faster. After each test, Vitest restores mocks, spies, stubbed globals (`vi.stubGlobal`) and stubbed environment variables (`vi.stubEnv`). `vitest.setup.ts` then resets the prefix table and the timer mode. A file that shares one store across its tests sets the prefixes of that store again before each test (`notation-engine.test.ts`).
+
+Cleanup: a test that edits gets a new fixture. Only a fixture that no test changes can be shared (`beforeAll`). Dispose each store with `await store.dispose()` before you remove its directory. Wait for a completion point: an operation promise, a deferred promise that the test resolves, or a predicate (`vi.waitFor`). Do not wait for a fixed delay or a zero-delay timer.
+
+Validation worker: `vitest.global-setup.mts` bundles `packages/rdf/src/validation-worker.ts` from source into a new temporary directory before the tests. `validation-runner.test.ts` runs a real worker thread from that file (`inject('validationWorker')`) and stops it with `stopValidationWorker()` after the test. No test reads `packages/rdf/lib`. The failure, exit and stale-reply cases use a fake worker (`WorkerLike`).
+
+Change the store through `ModelGraph.add` and `remove`. Transactions publish one scoped event. Rejected transactions publish none. Loads, unloads and reports use the same path. Cache keys retain the last relevant event.
 
 ### CI
 

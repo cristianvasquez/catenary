@@ -66,7 +66,7 @@ describe('RDF 1.2 terms', () => {
 
 const dirs: string[] = [], stores: ModelStore[] = [];
 afterEach(async () => {
-    for (const store of stores.splice(0)) { await store.idle(); store.close(); }
+    for (const store of stores.splice(0)) { await store.dispose(); }
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 async function workspace(files: Record<string, string>) {

@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, inject, it, vi } from 'vitest';
 import { NS, type Violation } from '@catenary/model';
 import * as validation from '../src/validate';
-import { ShaclWorker, ValidationRunner, ValidationSource, WorkerLike, useValidationWorker } from '../src/validation-runner';
+import { ShaclWorker, ValidationRunner, ValidationSource, WorkerLike, stopValidationWorker, useValidationWorker } from '../src/validation-runner';
 import { EventEmitter } from 'node:events';
 import { ModelGraph, REPORT_GRAPH } from '../src/graph';
 import { elementId } from '../src/ids';
@@ -9,12 +9,16 @@ import { Metamodel } from '../src/shapes';
 import { skosProjection, validationInput } from '../src/validation-data';
 import { rdf } from '../src/terms';
 import { DPROD, emptyGraph, load, meta } from './helpers';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { modelTriples, isInstance } from '../src/vocabulary';
 
-/** The compiled worker (pnpm check builds packages/rdf/lib): the bundled backend runs the same code next to its bundle. */
-const WORKER = join(process.cwd(), 'packages', 'rdf', 'lib', 'validation-worker.js');
+declare module 'vitest' {
+    export interface ProvidedContext {
+        /** The worker file that vitest.global-setup.mts bundled from current source for this run. */
+        validationWorker: string;
+    }
+}
 
 /** Timers that run only when the test says so. */
 function manualTimers() {
@@ -207,11 +211,34 @@ describe('ValidationRunner disposal (spec/manifest.hs §3.5)', () => {
         expect((await second).results.map(r => r.messages[0])).toEqual(['ok']);
         expect(worker.running).toBe(true);
     });
+
+    it('a reply of a replaced worker is stale: it does not answer the request with the same id of the new worker', async () => {
+        const workers: FakeWorker[] = [];
+        const worker = new ShaclWorker(() => { const w = new FakeWorker(); workers.push(w); return w; });
+        const first = worker.run([], []).catch((e: Error) => e.message);
+        workers[0].emit('error', new Error('crash'));
+        expect(await first).toBe('crash');
+        const second = worker.run([], []);
+        const id = workers[1].posted[0].id;
+        let answered = false;
+        void second.then(() => { answered = true; });
+        workers[0].answer(id, 'stale');
+        workers[0].answer(workers[0].posted[0].id, 'stale');
+        await Promise.resolve();
+        expect(answered).toBe(false);
+        workers[1].answer(id, 'fresh');
+        expect((await second).results.map(r => r.messages[0])).toEqual(['fresh']);
+    });
 });
 
 describe('validation in a worker thread', () => {
+    // The owner of useValidationWorker stops the shared worker at its end (law_workerShutdownStops).
+    afterEach(async () => {
+        useValidationWorker(undefined);
+        await stopValidationWorker();
+    });
 
-    it.skipIf(!existsSync(WORKER))('gives the violations and the report of a run in this thread', async () => {
+    it('gives the violations and the report of a run in this thread', async () => {
         const g = await load();
         const metamodel = await meta();
         // A data product without its required owner: a violation.
@@ -225,12 +252,8 @@ describe('validation in a worker thread', () => {
         useValidationWorker(undefined);
         const here = await run();
         expect(here.violations.length).toBeGreaterThan(0);
-        useValidationWorker(WORKER);
-        try {
-            expect(await run()).toEqual(here);
-        } finally {
-            useValidationWorker(undefined);
-        }
+        useValidationWorker(inject('validationWorker'));
+        expect(await run()).toEqual(here);
     });
 });
 

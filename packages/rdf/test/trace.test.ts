@@ -185,7 +185,7 @@ describe('traced store', () => {
         expect(causes(spans, listener)).toEqual(['change:edit', 'command:createView']);
         expect(spans.find(s => s.kind === 'change' && s.name === 'edit')?.detail).toMatch(/^1 listeners; tier data; views 1/);
         expect(causes(spans, spans.find(s => s.kind === 'file' && s.name === 'write')!)).toContain('command:createView');
-        store.close();
+        await store.dispose();
     });
 
     it.each([20, 200])('law_selectedReadScope: selections do not load unrelated cards (%i cards)', async count => {
@@ -235,8 +235,7 @@ describe('traced store', () => {
             expect(await store.save()).toEqual({ ok: true });
             expect(store.snapshot().revision).toBe(before);
         } finally {
-            await store.idle();
-            store.close();
+            await store.dispose();
         }
     });
 
@@ -267,7 +266,7 @@ describe('traced store', () => {
             expect(causes(spans, derives[0])).toEqual(['command:sync figures', 'command:removeFromView']);
             expect(store.reads.view(view!)!.edges.some(e => e.id === edge.id)).toBe(false);
         } finally {
-            store.close();
+            await store.dispose();
         }
     });
 

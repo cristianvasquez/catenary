@@ -87,8 +87,7 @@ describe('RDFS rules in the store', () => {
         expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
     });
     afterEach(async () => {
-        await store.idle();
-        store.close();
+        await store.dispose();
         rmSync(dir, { recursive: true, force: true });
     });
     const id = (local: string) => iriId(EX + local);

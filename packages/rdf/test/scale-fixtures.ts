@@ -10,7 +10,7 @@ import { ModelStore } from '../src/model-store';
 import { tracer } from '../src/trace';
 import { DATA as FIXTURE_DATA, SHAPES as FIXTURE_SHAPES, WORKSPACE, writeWorkspace } from './helpers';
 
-/** A store opened on a new temporary workspace. `dispose` stops the trace, waits for the file queue, closes the store and removes the files. */
+/** A store opened on a new temporary workspace. `dispose` stops the trace, awaits ModelStore.dispose and removes the files. */
 export interface Fixture {
     dir: string;
     store: ModelStore;
@@ -37,8 +37,7 @@ async function openFixture(prefix: string, files: Record<string, string>, opts: 
         files: Object.fromEntries(Object.keys(files).map(f => [f, statSync(join(dir, f)).size])),
         async dispose() {
             while (tracer.on) tracer.setClient(false);
-            await store.idle();
-            store.close();
+            await store.dispose();
             rmSync(dir, { recursive: true, force: true });
         }
     };

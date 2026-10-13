@@ -16,8 +16,7 @@ import { newModelGraph } from '../src/model-graph';
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
 afterEach(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 

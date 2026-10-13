@@ -33,8 +33,7 @@ beforeEach(async () => {
     expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
 });
 afterEach(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -82,8 +81,7 @@ describe('Problems: the results of the report graph', () => {
         parts.validation = new ValidationRunner(() => ({ graph: parts.graph, input: () => undefined, violations: () => [] }), () => {}, { set: () => undefined, clear: () => {} });
         expect(await fresh.open(writeWorkspace(dir))).toEqual({ ok: true });
         expect(fresh.reads.problems()).toEqual([]);
-        await fresh.idle();
-        fresh.close();
+        await fresh.dispose();
         expect(new ModelStore().reads.problems()).toEqual([]);
     });
 });

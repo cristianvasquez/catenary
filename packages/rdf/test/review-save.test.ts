@@ -34,7 +34,7 @@ function fixture(files: Record<string, string> = { 'data.ttl': data }, setting =
 }
 afterEach(async () => {
     vi.restoreAllMocks();
-    for (const store of stores.splice(0)) { await store.idle(); store.close(); }
+    for (const store of stores.splice(0)) { await store.dispose(); }
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 async function rename(store: ModelStore, label = 'After') {

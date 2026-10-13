@@ -55,9 +55,11 @@ describe('no blank nodes in the dataset (AGENTS.md)', () => {
 describe('files without blank nodes', () => {
     const dirs: string[] = [];
     beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-    afterEach(() => {
+    const stores: ModelStore[] = [];
+    afterEach(async () => {
         vi.clearAllTimers();
         vi.useRealTimers();
+        for (const store of stores.splice(0)) await store.dispose();
         for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
@@ -68,6 +70,7 @@ describe('files without blank nodes', () => {
         writeFileSync(join(dir, 'data.ttl'), `@prefix ex: <${EX}> . @prefix rdfs: <${NS.rdfs}> . ex:a a ex:T ; rdfs:label "A" ; ex:v [ ex:w 1 ] .`);
         writeWorkspace(dir);
         const store = new ModelStore();
+        stores.push(store);
         const r = await store.open(join(dir, 'workspace.trig'));
         if (!r.ok) throw new Error(r.error);
         expect(store.dirty).toBe(true);

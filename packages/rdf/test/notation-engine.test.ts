@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Join, LazyTripleIndex, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Join, LazyTripleIndex, PREFIXES as PREFIX_TABLE, setPrefixes, NQuad, Notations, Placements, TripleIndex, arrival, join as joinFigures, dataArrival, deriveFigures, iri, joinText, nkey, placedTerm, removal, sha256Hex, triple } from '@catenary/model';
 import { REPORT_GRAPH, type ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
 import { viewFigures } from '@catenary/model';
@@ -24,7 +24,7 @@ const PREFIXES = `@prefix ex: <${EX}> . @prefix sh: <http://www.w3.org/ns/shacl#
 @prefix dct: <http://purl.org/dc/terms/> . @prefix nt: <https://cristianvasquez.github.io/catenary/vocab/notation#> . @prefix shn: <https://cristianvasquez.github.io/catenary/vocab/notation/shapes#> .
 @prefix vsn: <https://cristianvasquez.github.io/catenary/vocab/notation/skos#> . @prefix mkn: <https://cristianvasquez.github.io/catenary/vocab/notation/marks#> .\n`;
 
-let dir: string, store: ModelStore, data: TripleIndex, base: NQuad[], notes: Notations;
+let dir: string, store: ModelStore, data: TripleIndex, base: NQuad[], notes: Notations, prefixes: Record<string, string>;
 beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), 'catenary-notation-'));
     cpSync(FIXTURE, dir, { recursive: true });
@@ -35,10 +35,12 @@ beforeAll(async () => {
     data = storeIndex(graph);
     base = nquads(graph.quads().filter(q => q.graph.value !== REPORT_GRAPH));
     notes = readNotations();
+    prefixes = { ...PREFIX_TABLE };
 });
+// The open set the process-wide prefix table; vitest.setup.ts resets it after each test. Each test reads with the prefixes of the workspace.
+beforeEach(() => setPrefixes(prefixes));
 afterAll(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 

@@ -132,8 +132,7 @@ describe('kept reads after data patches equal the reads of a new store (§11.3 l
                     expect(kept.figures).toEqual(read.figures);
                     expect(kept.warnings).toEqual(read.warnings);
                 } finally {
-                    await fresh.idle();
-                    fresh.close();
+                    await fresh.dispose();
                 }
             }
         } finally {

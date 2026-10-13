@@ -28,7 +28,7 @@ beforeEach(async () => {
     store = new ModelStore(); store.watching = false;
     expect(await store.open(dir)).toMatchObject({ ok: true });
 });
-afterEach(async () => { await store.idle(); store.close(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
 const move = (elements = [a]) => store.execute({ kind: 'moveElementsToFile', source: file('a'), destination: file('b'), ids: elements });
 
 describe('file explorer', () => {
@@ -57,8 +57,7 @@ describe('file explorer', () => {
         await store.idle();
         expect(await statements('a')).toEqual(before); expect(await statements('b')).toEqual(destination);
         expect(store.redo()).toEqual({ ok: true });
-        await store.idle();
-        store.close(); store = new ModelStore(); store.watching = false;
+        await store.dispose(); store = new ModelStore(); store.watching = false;
         expect(await store.open(dir)).toMatchObject({ ok: true });
         expect(ids('a')).toEqual([b]); expect(ids('b')).toContain(a); expect(ids('c')).toEqual([a]);
     });
@@ -107,7 +106,7 @@ describe('file explorer', () => {
         expect((await statements('b')).filter(t => t === 'urn:test:a ' + NS.rdf + 'type urn:test:Thing')).toHaveLength(1);
     });
     it('moves shape structural nodes and restores their graphs with undo', async () => {
-        store.close();
+        await store.dispose();
         writeFileSync(file('shape'), `${prefixes}<urn:test:S> a sh:NodeShape; sh:targetClass <urn:test:Thing>; sh:property <urn:test:p> .
             <urn:test:p> sh:path <urn:test:name>; sh:datatype <${NS.xsd}string> .`);
         store = new ModelStore(); store.watching = false; await store.open(dir);

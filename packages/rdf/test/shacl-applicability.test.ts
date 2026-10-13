@@ -23,7 +23,7 @@ beforeEach(async () => {
     store = new ModelStore(); store.watching = false;
     expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
 });
-afterEach(async () => { await store.idle(); store.close(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
 
 describe('shared SHACL behavior in the application', () => {
     it('Properties, Links, halo counts and pickers agree before and after showing a shape', () => {

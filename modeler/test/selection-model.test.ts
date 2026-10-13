@@ -242,12 +242,24 @@ describe('selection model', () => {
     });
 
     it('an answer for an older selection does not replace the resolved selection', async () => {
-        const { s } = selectionModel();
+        // The quiet timer fires only when the test says so; each answer comes when the test releases it.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        const { s, model } = selectionModel();
+        const answer = model.service.selected, held: { ids: string[]; release(): void }[] = [];
+        model.service.selected = sel => new Promise(r => held.push({ ids: sel.ids, release: () => r(answer(sel)) }));
         s.set({ ids: ['a'] });
+        const older = s.resolve();
         s.set({ ids: ['b'] });
-        await vi.waitFor(() => expect(s.resolved.instances).toEqual(['b']));
-        await new Promise(r => setTimeout(r, 0));
+        const newer = s.resolve();
+        expect(held.map(h => h.ids)).toEqual([['a'], ['b']]);
+        held[1].release();
+        expect((await newer).instances).toEqual(['b']);
+        // The older answer comes last: it gives the answer of the current selection, after the quiet time.
+        held[0].release();
+        await vi.runAllTimersAsync();
+        expect((await older).instances).toEqual(['b']);
         expect(s.resolved.instances).toEqual(['b']);
+        expect(held).toHaveLength(2);
     });
 });
 

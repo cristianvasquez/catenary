@@ -16,8 +16,7 @@ beforeEach(async () => {
     expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
 });
 afterEach(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 

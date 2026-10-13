@@ -34,6 +34,8 @@ function canvas(view: string, cards: Record<string, string>) {
         view, ids, highlight, rootChanged, dispatched: [] as Dispatched[], selected: [] as string[],
         /** As the GLSP dispatcher: an action applies after the current task (a microtask here), not during dispatch. */
         async: false,
+        /** The actions that the asynchronous dispatcher has not applied yet (`settle` waits for them). */
+        queued: [] as Promise<void>[],
         viewerOptions: { baseDiv: `base-${view}` },
         node: { contains: () => true },
         disposed: { connect: () => undefined },
@@ -53,7 +55,8 @@ function canvas(view: string, cards: Record<string, string>) {
                     }
                     if (a.kind === HighlightAction.KIND) highlight.ids = new Set(a.ids);
                 };
-                if (w.async) queueMicrotask(apply); else apply();
+                if (w.async) w.queued.push(new Promise<void>(done => queueMicrotask(() => { apply(); done(); })));
+                else apply();
             }
         },
         /** A user gesture: GLSP selects, and the forwarder (the canvas has the focus) sets the window selection. */
@@ -177,17 +180,20 @@ describe('selection sync (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow)',
             w.actionDispatcher.dispatch({ kind: 'elementSelected', selectedElementsIDs: on ? [] : [id], deselectedElementsIDs: on ? [id] : [] });
         }
     }
-    const settle = () => new Promise(r => setTimeout(r, 0));
+    /** Wait until both dispatchers have applied their actions, also the actions that an applied action dispatched. */
+    async function settle(...ws: Canvas[]) {
+        for (let queued = ws.flatMap(w => w.queued.splice(0)); queued.length; queued = ws.flatMap(w => w.queued.splice(0))) await Promise.all(queued);
+    }
 
     it('law_oneSelectionPerWindow: a Ctrl click on a highlighted element removes it, with an asynchronous dispatcher', async () => {
         const { selection, sync, A, B } = setup();
         A.async = B.async = true;
         A.click(selection, 'pa', 'pb');
-        await settle();
+        await settle(A, B);
         expect([...B.highlight.ids].sort()).toEqual(['qa', 'qb']);
         A.node.contains = () => false;   // the press is in B
         ctrlPress(sync, B, 'qa');
-        await settle();
+        await settle(A, B);
         expect(selection.selection).toEqual({ view: 'B', ids: ['qb'] });
         expect(B.selected).toEqual(['qb']);
         expect([...B.highlight.ids]).toEqual([]);
@@ -200,10 +206,10 @@ describe('selection sync (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow)',
         A.async = B.async = true;
         B.ids = diagramIds([{ id: 'qa', element: 'a' }, { id: 'qb', element: 'b' }, { id: 'qg' }, { id: 'qg_label' }]);
         A.click(selection, 'pa');
-        await settle();
+        await settle(A, B);
         A.node.contains = () => false;
         ctrlPress(sync, B, 'qg_label');
-        await settle();
+        await settle(A, B);
         expect(selection.selection).toEqual({ view: 'B', ids: ['qa', 'qg'] });
     });
 
@@ -211,10 +217,10 @@ describe('selection sync (spec/ui-manifest.hs §3.3 law_oneSelectionPerWindow)',
         const { selection, sync, A, B } = setup();
         A.async = B.async = true;
         A.click(selection, 'pa');
-        await settle();
+        await settle(A, B);
         A.node.contains = () => false;
         ctrlPress(sync, B, 'qb');
-        await settle();
+        await settle(A, B);
         expect(selection.selection).toEqual({ view: 'B', ids: ['qa', 'qb'] });
         expect(B.selected.sort()).toEqual(['qa', 'qb']);
         expect(A.selected).toEqual([]);

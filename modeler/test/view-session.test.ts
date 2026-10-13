@@ -83,13 +83,16 @@ async function queuedClient(store: ModelStore, viewId: string) {
     session.start(viewId);
     // The initial model, as RequestModelActionHandler sends it: a SetModelAction with revision 0.
     await dispatcher.dispatchAll(await submission.submitInitialModel(RequestModelAction.create({ options: { uri: viewId } })));
-    let release = () => {};
-    handlers.set('testWait', { actionKinds: ['testWait'], execute: () => new Promise<Action[]>(resolve => { release = () => resolve([]); }) });
+    let release = () => {}, started = () => {};
+    const handlerStarted = new Promise<void>(r => { started = r; });
+    handlers.set('testWait', { actionKinds: ['testWait'], execute: () => new Promise<Action[]>(resolve => { release = () => resolve([]); started(); }) });
     return {
         session, dispatcher, received, refresh, modelState,
         updates: () => received.filter(UpdateModelAction.is),
         flushed: () => Promise.all(refresh.mock.results.map(r => r.value)),
         wait: () => dispatcher.dispatch({ kind: 'testWait' }),
+        /** Resolves when the handler of `wait` runs: the queue is busy until `release`. */
+        waiting: () => handlerStarted,
         release: () => release(),
         move: (command: EditCommand) => {
             handlers.set('testMove', { actionKinds: ['testMove'], execute: async () => { await session.edit(command); return []; } });
@@ -98,7 +101,6 @@ async function queuedClient(store: ModelStore, viewId: string) {
         dispose: () => { dispatcher.dispose(); sessions.addListener.mock.calls[0][0].sessionDisposed(); }
     };
 }
-const macrotask = () => new Promise<void>(resolve => setImmediate(resolve));
 
 let dir: string;
 let store: ModelStore;
@@ -122,9 +124,10 @@ beforeEach(async () => {
     edit({ kind: 'addToView', view: second, ids: [instance], at: { x: 600, y: 300 } });
     expect(await store.save()).toEqual({ ok: true });
 });
-afterEach(() => {
+afterEach(async () => {
     vi.clearAllTimers();
     vi.useRealTimers();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -601,15 +604,14 @@ describe('law_clientGetsNoOlderModel: the backend sends no model older than one 
         const c = await queuedClient(store, first);
         const card = cardOf(docOf(store).views[first], instance)!;
         expect(c.received.filter(SetModelAction.is).map(a => a.newRoot.revision)).toEqual([0]);
-        // A handler waits (the queue is busy across a macrotask). A store change builds a refresh model behind a queued move.
+        // A handler waits (the queue is busy until release). A store change builds a refresh model behind a queued move.
         const waiting = c.wait();
-        await macrotask();
+        await c.waiting();
         edit({ kind: 'rename', id: instance, label: 'Renamed' });
         const moved = c.move({ kind: 'setBounds', view: first, bounds: [{ id: card.id, x: 1234, y: 567 }] });
-        await macrotask();
-        await macrotask();
+        // The refresh model is built (revision 1) and waits in the queue.
+        await vi.waitFor(() => expect(c.modelState.root.revision).toBe(1));
         expect(c.refresh).toHaveBeenCalledTimes(1);
-        expect(c.modelState.root.revision).toBe(1);   // the refresh model is built (revision 1) and waits in the queue
         expect(c.updates()).toEqual([]);
         c.release();
         await Promise.all([waiting, moved, c.flushed()]);

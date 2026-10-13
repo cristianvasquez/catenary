@@ -10,7 +10,7 @@ import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
 
 const dirs: string[] = [], stores: ModelStore[] = [];
 afterEach(async () => {
-    for (const s of stores.splice(0)) { s.close(); await s.idle(); }
+    for (const s of stores.splice(0)) { await s.dispose(); }
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 

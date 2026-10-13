@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Doc, NS, SnapshotChange, boxes, emptyDoc } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import { OxigraphStore } from 'rdf-files';
@@ -149,7 +149,8 @@ describe('refreshes', () => {
 describe('law_keptDocEqualsRead: the DataPatch merge of a kept part (mergeRecords, ModelStore.mergeChanged)', () => {
     let dir: string, store: ModelStore, viewId: string, a: string, b: string, outside: string;
     const ok = (r: ReturnType<ModelStore['execute']>) => { if (!r.ok) throw new Error(r.error); return r; };
-    beforeAll(async () => {
+    // Each test edits the store: each gets a new workspace.
+    beforeEach(async () => {
         dir = mkdtempSync(join(tmpdir(), 'catenary-change-'));
         store = new ModelStore();
         store.watching = false;
@@ -161,7 +162,7 @@ describe('law_keptDocEqualsRead: the DataPatch merge of a kept part (mergeRecord
         const shape = ok(store.execute({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' })).id!;
         for (const p of ['urn:p', 'urn:q']) ok(store.execute({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: p }, range: { kind: 'class', class: 'urn:Class' } }));
     });
-    afterAll(async () => { await store.idle(); store.close(); rmSync(dir, { recursive: true, force: true }); });
+    afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
     /** What toSchema reads: boxes, edges, arrows, the label, types and fields of the shown instances, the relations between them. */
     const shown = (doc: Doc) => {
         const v = doc.views[viewId];

@@ -14,9 +14,11 @@ const rdfQuery = createRequire(join(process.cwd(), 'package.json'))('./scripts/r
 
 const dirs: string[] = [];
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-afterEach(() => {
+const stores: ModelStore[] = [];
+afterEach(async () => {
     vi.clearAllTimers();
     vi.useRealTimers();
+    for (const store of stores.splice(0)) await store.dispose();
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -38,6 +40,7 @@ ex:size a sh:PropertyShape ; sh:path ex:size ${property} .\n`);
 
 async function opened(path: string): Promise<ModelStore> {
     const store = new ModelStore();
+    stores.push(store);
     store.watching = false;
     const r = await store.open(path);
     if (!r.ok) throw new Error(r.error);

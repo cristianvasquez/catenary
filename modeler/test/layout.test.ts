@@ -80,7 +80,7 @@ it.each(['layered', 'force'] as const)('%s: list boxes are laid out; private pil
     for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) if (!privates.includes(a.id) && !privates.includes(b.id)) expect(overlap(a, b), `${a.id} ${b.id}`).toBe(false);
     // The list boxes keep their place after the layout: setBounds moved their placements.
     for (const id of lists) expect(nodes.find(n => n.id === id)).toMatchObject({ x: bounds.find(b => b.id === id)!.x, y: bounds.find(b => b.id === id)!.y });
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -103,6 +103,7 @@ it('fixture: each algorithm in turn leaves no overlapping cards and keeps group 
         expect(membership(), algorithm).toEqual(before);
     }
     await store.idle();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -160,6 +161,7 @@ it.each(LAYOUT_ALGORITHMS.flatMap(a => [1, 2].map(scale => [a.id, scale] as cons
         for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) expect(overlap(a, b), `${view.label}: ${a.id} ${b.id}`).toBe(false);
     }
     await store.idle();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 }, 60_000);
 

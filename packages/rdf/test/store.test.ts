@@ -9,10 +9,14 @@ import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
 
 const workspaces: string[] = [];
+/** The stores of the test: afterEach disposes them (dispose gives the same promise again for a store that a test disposed). */
+const stores: ModelStore[] = [];
+const tracked = (store: ModelStore) => (stores.push(store), store);
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-afterEach(() => {
+afterEach(async () => {
     vi.clearAllTimers();
     vi.useRealTimers();
+    for (const store of stores.splice(0)) await store.dispose();
     for (const dir of workspaces.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -35,7 +39,7 @@ const settled = () => vi.runAllTimersAsync();
 describe('model store', () => {
     it('the read host uses the current graph and file after each open', async () => {
         const { a, b } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         expect(store.reads.search()).toEqual([]);
         expect(store.reads.explorerChildren()).toEqual({ rows: [], total: 0 });
@@ -53,7 +57,7 @@ describe('model store', () => {
 
     it('law_viewDescriptionStorage: saves Markdown in the view file, reads Properties, and undoes one edit', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         const view = Object.keys(docOf(store).views)[0];
         const text = '# Explanation\n\n- **Bold** and _italic_\n\n```text\n<example>\n```\n';
@@ -80,7 +84,7 @@ describe('model store', () => {
 
     it('reports a view IRI change as a moved view id, for the edit, its undo and its redo', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         const old = Object.keys(docOf(store).views)[0];
         const r = store.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/view' });
@@ -96,7 +100,7 @@ describe('model store', () => {
 
     it('reports an instance IRI change as a moved id, for the edit and its undo', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         const old = Object.keys(docOf(store).instances)[0];
         const r = store.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/moved' });
@@ -108,7 +112,7 @@ describe('model store', () => {
 
     it('a save and an open that overlap run one after the other: the save goes to the old files, the new model stays clean', async () => {
         const { dir, a, b } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         expect((await store.open(a)).ok).toBe(true);
         expect(store.execute({ kind: 'createView', label: 'Unsaved' }).ok).toBe(true);
         const save = store.save();
@@ -124,7 +128,7 @@ describe('model store', () => {
 
     it('law_placementPatchStaysInView, law_viewPatchWritesOneFile: a placement change touches the view graph and writes the view file only', async () => {
         const { a, dir } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         await store.open(a);
         await store.idle();
@@ -159,7 +163,7 @@ describe('model store', () => {
 
     it('a validation result that is older than the last model edit is dropped', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         await settled();
         expect(store.violations).toEqual([]);
@@ -187,7 +191,7 @@ describe('model store', () => {
 
     it('a layout edit does not start a validation', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         await settled();
         const reasons: string[] = [];
@@ -203,7 +207,7 @@ describe('model store', () => {
 
     it('setColor colors all cards, edges and groups of the selection in one undo step', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         const view = Object.values(docOf(store).views)[0];
         const cards = boxes(view, 'card').map(n => n.element);
@@ -221,7 +225,7 @@ describe('model store', () => {
 
     it('undo and redo restore content and dirty state; a failed command adds no undo step', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         await store.open(a);
         expect(store.execute({ kind: 'createView', label: ' bad' }).ok).toBe(false);
         expect(store.canUndo).toBe(false);
@@ -242,7 +246,7 @@ describe('store disposal (§3.5)', () => {
 
     it('law_disposedStoreSilent: dispose cancels the pending validation, writes the queued edit, and no event follows', async () => {
         const { dir, a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         await store.open(a);
         await settled();
@@ -273,7 +277,7 @@ describe('store disposal (§3.5)', () => {
 
     it('law_disposalAwaitsRuns: dispose waits for the running validation and drops its result; each call gives the same promise', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         await store.open(a);
         await settled();
@@ -299,7 +303,7 @@ describe('store disposal (§3.5)', () => {
 
     it('law_disposalAwaitsRuns: dispose waits for a running syncFromDisk and the write that it queues', async () => {
         const { a } = workspace();
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         await store.open(a);
         await settled();
@@ -327,7 +331,7 @@ describe('store disposal (§3.5)', () => {
 
     it('disposing one store leaves another store usable', async () => {
         const first = workspace(), second = workspace();
-        const one = new ModelStore(), two = new ModelStore();
+        const one = tracked(new ModelStore()), two = tracked(new ModelStore());
         one.watching = two.watching = false;
         await one.open(first.a);
         await two.open(second.a);
@@ -347,7 +351,7 @@ describe('store disposal (§3.5)', () => {
 
 describe('patch notification integration', () => {
     it('law_eventVersion: edit and replay notify once with the same event that keys the snapshot', async () => {
-        const { a } = workspace(), store = new ModelStore();
+        const { a } = workspace(), store = tracked(new ModelStore());
         store.watching = false;
         try {
             expect((await store.open(a)).ok).toBe(true);
@@ -371,11 +375,11 @@ describe('patch notification integration', () => {
             const revision = store.snapshot().revision;
             await store.save();
             expect(store.snapshot().revision).toBe(revision);
-        } finally { store.close(); }
+        } finally { await store.dispose(); }
     });
 
     it('law_readWarningsCurrent and law_placementWarningExplains: refresh placement warnings after data arrival, removal and undo (kata d8w7)', async () => {
-        const { a, dir } = workspace(), store = new ModelStore();
+        const { a, dir } = workspace(), store = tracked(new ModelStore());
         store.watching = false;
         writeFileSync(join(dir, 'warnings.view.trig'), `<urn:warning:view> {
             <urn:warning:view> a <${NS.view}View>; <${NS.rdfs}label> "Warnings" .
@@ -408,11 +412,11 @@ describe('patch notification integration', () => {
             await store.syncFromDisk();
             expect(warnings()).toEqual([warning]);
             expect(store.snapshot().warnings.some(w => w.includes('was removed on disk'))).toBe(true);
-        } finally { await store.idle(); store.close(); }
+        } finally { await store.dispose(); }
     });
 
     it('file reload and unload notify their effective patches without entering undo or dirty state', async () => {
-        const { a, dir } = workspace(), store = new ModelStore();
+        const { a, dir } = workspace(), store = tracked(new ModelStore());
         store.watching = false;
         try {
             expect((await store.open(a)).ok).toBe(true);
@@ -434,7 +438,7 @@ describe('patch notification integration', () => {
             expect(changes[2].event.patch.some(c => c.op === 'remove' && c.quad.subject.value === 'urn:event:new')).toBe(true);
             expect(store.snapshot()).toMatchObject({ canUndo: false, dirty: false });
             await store.idle();
-        } finally { store.close(); }
+        } finally { await store.dispose(); }
     });
 });
 
@@ -457,7 +461,7 @@ describe('store trap (§3.4)', () => {
     async function trappingStore() {
         const { a } = workspace();
         const stores: TrappingStore[] = [];
-        const store = new ModelStore();
+        const store = tracked(new ModelStore());
         store.watching = false;
         store.newStore = () => { const s = new TrappingStore(); stores.push(s); return s; };
         expect(await store.open(a)).toEqual({ ok: true });

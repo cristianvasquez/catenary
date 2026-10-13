@@ -36,8 +36,7 @@ beforeAll(async () => {
     doc = docOf(store);
 });
 afterAll(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -125,12 +124,24 @@ describe('request-scoped read models give the answers of the whole read model', 
         for (const w of project(g).warnings) expect(store.warnings, w).toContain(w);
     });
 
-    it('a node shape IRI change is a moved id (moved-ids.ts), for the edit and its undo', () => {
-        const old = Object.keys(doc.shapes.nodeShapes)[0];
-        const r = store.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/moved-shape' });
-        if (!r.ok) throw new Error(r.error);
-        expect(store.snapshot().movedIds).toEqual({ [old]: r.id });
-        store.undo();
-        expect(store.snapshot().movedIds).toEqual({ [r.id!]: old });
+    it('a node shape IRI change is a moved id (moved-ids.ts), for the edit and its undo', async () => {
+        // An edit: a store of its own, so the shared store of the other tests stays unchanged.
+        const own = mkdtempSync(join(tmpdir(), 'catenary-scoped-'));
+        writeFileSync(join(own, 'shapes.ttl'), SHAPES);
+        writeFileSync(join(own, 'data.ttl'), DATA);
+        const edited = new ModelStore();
+        edited.watching = false;
+        try {
+            expect(await edited.open(writeWorkspace(own))).toEqual({ ok: true });
+            const old = Object.keys(docOf(edited).shapes.nodeShapes)[0];
+            const r = edited.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/moved-shape' });
+            if (!r.ok) throw new Error(r.error);
+            expect(edited.snapshot().movedIds).toEqual({ [old]: r.id });
+            edited.undo();
+            expect(edited.snapshot().movedIds).toEqual({ [r.id!]: old });
+        } finally {
+            await edited.dispose();
+            rmSync(own, { recursive: true, force: true });
+        }
     });
 });

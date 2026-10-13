@@ -197,14 +197,14 @@ describe('file sync', () => {
     });
 
     it('runs queued operations one at a time, also after a failure', async () => {
-        const q = new SerialQueue(), log: string[] = [], gate = deferred();
-        const first = q.run(async () => { log.push('first start'); await gate.promise; log.push('first end'); });
+        const q = new SerialQueue(), log: string[] = [], gate = deferred(), started = deferred();
+        const first = q.run(async () => { log.push('first start'); started.resolve(); await gate.promise; log.push('first end'); });
         const failed = q.run(async () => { log.push('fail'); throw new Error('x'); });
         const last = q.run(async () => { log.push('last'); });
         let idle = false;
         const settled = q.idle().then(() => { idle = true; });
-        // Let all ready microtasks run: only the first operation has started; it waits for the gate.
-        await new Promise(r => setImmediate(r));
+        // The first operation has started and waits for the gate: the next ones wait for it.
+        await started.promise;
         expect(log).toEqual(['first start']);
         expect(idle).toBe(false);
         gate.resolve();

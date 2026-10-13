@@ -76,8 +76,7 @@ describe('ModelStore.viewFigures keeps the figures of a view over a move', () =>
             expect(renamed.derivation).not.toBe(first.derivation);
             expect(renamed.derivation.figures.some(f => f.title === 'Renamed')).toBe(true);
         } finally {
-            await store.idle();
-            store.close();
+            await store.dispose();
             rmSync(dir, { recursive: true, force: true });
         }
     });

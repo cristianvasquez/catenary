@@ -34,8 +34,7 @@ beforeEach(async () => {
     await open();
 });
 afterEach(async () => {
-    await store.idle();
-    store.close();
+    await store.dispose();
     rmSync(dir, { recursive: true, force: true });
 });
 

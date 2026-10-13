@@ -1,42 +1,26 @@
-import { readFileSync, globSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
-
-const root = fileURLToPath(new URL('.', import.meta.url));
-const include = ['packages/*/test/**/*.test.ts', 'modeler/test/**/*.test.ts'];
-// A file that mocks or spies runs in a process of its own (the `isolated` project). Vitest resets mocks between files only in isolated
-// workers, and a spy on a shared module also sees the calls of async work that an earlier file of the worker left running.
-const mocking = include.flatMap(p => globSync(p, { cwd: root })).filter(f => /\bvi\.(mock|doMock|spyOn)\(/.test(readFileSync(new URL(f, import.meta.url), 'utf8')));
+import { fileURLToPath } from 'node:url';
+import { sourceAliases } from './vitest.aliases.mts';
 
 export default defineConfig({
-    root,
-    resolve: {
-        // Test current source, never a stale package build. No tsc or webpack in the edit/test loop.
-        alias: {
-            '@catenary/shacl/common': fileURLToPath(new URL('./packages/shacl/src/common/index.ts', import.meta.url)),
-            '@catenary/shacl/backend': fileURLToPath(new URL('./packages/shacl/src/backend/index.ts', import.meta.url)),
-            '@catenary/contracts': fileURLToPath(new URL('./packages/contracts/src/index.ts', import.meta.url)),
-            '@catenary/rdfs': fileURLToPath(new URL('./packages/rdfs/src/index.ts', import.meta.url)),
-            '@catenary/model': fileURLToPath(new URL('./packages/model/src/index.ts', import.meta.url)),
-            '@catenary/rdf': fileURLToPath(new URL('./packages/rdf/src/index.ts', import.meta.url)),
-            'rdf-files': fileURLToPath(new URL('./packages/rdf-files/src/index.ts', import.meta.url)),
-            'rdf-core': fileURLToPath(new URL('./packages/rdf-core/src/index.ts', import.meta.url))
-        }
-    },
+    root: fileURLToPath(new URL('.', import.meta.url)),
+    // Test current source, never a stale package build. No tsc or webpack in the edit/test loop.
+    resolve: { alias: sourceAliases },
     test: {
+        include: ['packages/*/test/**/*.test.ts', 'modeler/test/**/*.test.ts'],
         environment: 'node',
         pool: 'threads',
+        // Each test file has its own module graph (Vitest isolation, the default): module state, mocks and spies of one file do not
+        // reach another file. Do not set isolate: false to make the suite faster (docs/architecture.md → Testing).
+        poolOptions: { threads: { isolate: true } },
         // GitHub runners are slower than a developer machine. With 4 workers (and their SHACL worker threads) on 4 vCPUs, the main
         // Vitest thread got no CPU time ("Timeout calling onTaskUpdate"), and the fixture-wide tests did not pass in 5 s.
         ...(process.env.CI ? { maxWorkers: 2, testTimeout: 30_000 } : { maxWorkers: 4 }),
+        // After each test: restore spies and mocks, stubbed globals and stubbed environment variables. vitest.setup.ts restores the rest.
         restoreMocks: true,
-        // The files of a thread share one module graph: Oxigraph, SHACL and the TypeScript transform load once per worker, not once per
-        // file (about half of the CPU time of the suite). vitest.setup.ts resets the process-wide state for each file.
-        poolOptions: { threads: { isolate: false } },
-        projects: [
-            { extends: true, test: { name: 'shared', include, exclude: mocking, setupFiles: ['./vitest.setup.ts'] } },
-            // One process at a time: the shared project already uses each core.
-            { extends: true, test: { name: 'isolated', include: mocking, pool: 'forks', poolOptions: { forks: { singleFork: true, isolate: true } } } }
-        ]
+        unstubGlobals: true,
+        unstubEnvs: true,
+        globalSetup: ['./vitest.global-setup.mts'],
+        setupFiles: ['./vitest.setup.ts']
     }
 });

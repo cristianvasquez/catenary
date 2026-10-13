@@ -10,7 +10,7 @@ import { rdf } from '../src/terms';
 import { docOf } from './helpers';
 
 const active: { store: ModelStore; dir: string }[] = [];
-afterEach(() => { for (const { store, dir } of active.splice(0)) { store.close(); rmSync(dir, { recursive: true, force: true }); } });
+afterEach(async () => { for (const { store, dir } of active.splice(0)) { await store.dispose(); rmSync(dir, { recursive: true, force: true }); } });
 const prepared = (r: RdfPaste) => { if (!r.ok) throw new Error(r.error); return r; };
 const nn = (value: string) => rdf.namedNode(value);
 class ClipboardStore extends ModelStore { get dataset() { return this.graph; } }
