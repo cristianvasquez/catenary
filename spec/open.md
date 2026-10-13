@@ -66,6 +66,8 @@ The F identifiers retain continuity with the earlier review. Unless a row says o
 
 | ID | Report | Next check |
 |---|---|---|
+| LABEL1 | Source check (roborev 100, `1b9fd5f`): the label of a concept scheme, a collection and their members reads skos:prefLabel, then rdfs:label (`packages/rdf/src/shapes-read.ts` `labelOf`). sh:name is not read: a value set or member with only sh:name shows a name from its IRI. | Add sh:name as the last predicate. Test a value set and a member with only sh:name, and with competing skos:prefLabel and rdfs:label. |
+| LABEL2 | Source check (roborev 101, `bf77116`): a node shape description is read from sh:description or rdfs:comment (`packages/rdf/src/shapes-read.ts`), but an edit always writes sh:description (`packages/rdf/src/shape-ops.ts` `setNodeShape`, `replaceShownLiteral`). On a shape with only rdfs:comment, an edit adds a second description, and a clear removes nothing. | Keep the predicate of the shown literal and replace or remove that one. Test an edit and a clear of an rdfs:comment-only description in two languages. |
 | LINKS1 | A Links folder opens an empty context menu (`modeler/src/browser/properties/links-widget.tsx`). | Reproduce with a folder row. Suppress menus without actions. Check empty menus on other panels too. |
 | F-DEL-1 | Del on a logical-constraint circle gives a property-specific message (`modeler/src/browser/diagram/canvas.ts`). | Check GLSP hints and handler text. Del must not become model deletion. |
 | F-LINK-1 / F-EXP-1 | Creation and expansion controls differ across kinds (`modeler/src/browser/diagram/card-chrome.ts`). | Compare current halos with backend facts. Incoming creation controls now exist for instance and shape cards. |
