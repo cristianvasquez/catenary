@@ -190,6 +190,8 @@ Paths are relative to the directory in the first column.
 | | `explorer/`, `properties/`, `prefixes/` | Panels and Workspace settings. `explorer/model-explorer.tsx`: file Model documents, pages, the flat fuzzy filter and folder drags. |
 | | `rdf-language*.ts`, `cli-bridge.ts`, `file-kinds-decorator.ts` | Text highlighting, CLI window adapter, file navigator labels |
 | `scripts` | `esbuild-catenary.mjs`, `dev-workspace.sh`, `start-browser.sh`, `desktop.sh`, `verify.mjs`, `e2e.cjs`, `catenary.mjs`, `check-boundaries.mjs`, `check-manifests.mjs` | Build, example workspace setup, hosts, verification, browser tests, CLI, import rules, manifest typecheck |
+| | `e2e/harness.cjs` | Browser tests: registration and selection (`E2E_LIST`, `E2E_TEST`), fixtures, CLI, backend and browser lifetime, `waitUntil`, failure diagnostics |
+| | `e2e/rendering.cjs`, `e2e/clipboard-shapes.cjs`, `e2e/editors.cjs`, `e2e/panels-canvas.cjs` | Browser scenarios: rendering without a backend; clipboard and shapes view; editors and persistence; panels and canvases |
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |
 | | `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs` | CI: CLI and RPC contract smoke test, Markdown links, style sheets |
 | | `rdf-query.cjs` | SPARQL on RDF files (Oxigraph) for tests and agents |
@@ -223,7 +225,7 @@ Vitest loads the TypeScript source, not `lib/`: `vitest.aliases.mts` maps each w
 | `packages/rdf/test` | RDF commands, transactions, undo, queries, validation, file round trips |
 | `packages/rdf/test/perf` | Elapsed time against `readBudgetMs` (`pnpm test:perf` only) |
 | `modeler/test` | Store-to-GLSP updates, frontend actions, selection, layout |
-| `scripts/e2e.cjs` | Browser wiring of gestures and rendering only |
+| `scripts/e2e.cjs`, `scripts/e2e/` | Browser wiring of gestures and rendering only |
 | `scripts/smoke-cli.mjs` | CLI and RPC contract of the browser backend: authentication, edits on disk, undo, read back |
 | `scripts/smoke-desktop.mjs` | The desktop app or a package: paths, writes, Git, watcher, plugins, native modules |
 
@@ -244,7 +246,7 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 | `modeler/test/selection-sync.test.ts`, `modeler/test/diagram-ids.test.ts`, `modeler/test/selection-model.test.ts` | `law_oneSelectionPerWindow`, `law_highlightKeys`, `law_selectionReadsLastOnly` |
 | `modeler/test/after-revision.test.ts` | `law_revealAfterShowUpdate` |
 | `modeler/test/action-service.test.ts` | `law_selectionReadsLastOnly`, `law_gestureNoQuietWait` |
-| `scripts/e2e.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations) |
+| `scripts/e2e/panels-canvas.cjs`, `scripts/e2e/editors.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations) |
 
 Read budget: `packages/rdf/test/scale-fixtures.ts` generates the scale fixtures: a view of 600 cards, a view of 300 placed instances and an explorer file of 600 subjects. Each open writes a new temporary workspace, so a test that edits owns its fixture. The functional tests assert no elapsed time. `read-budget.test.ts` checks that each panel read of 600 elements and each step of a content change is one tracer span, and that the kept reads equal the reads of a new store after each edit, undo and redo. `selection-scale.test.ts` and `explorer.test.ts` bound the SPARQL queries and store reads.
 
