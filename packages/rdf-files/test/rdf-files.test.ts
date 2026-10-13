@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { performance } from 'node:perf_hooks';
 import { basename, join } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-    FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles, parseRdf, rdf,
-    readUnchanged, serializeRdf, writeAll, writeProblem
+    FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, WatchSource, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles,
+    parseRdf, rdf, readUnchanged, serializeRdf, writeAll, writeProblem
 } from 'rdf-files';
 
 const dirs: string[] = [];
@@ -18,9 +19,54 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 
 const EX = 'http://example.org/';
 
-/** Resolves when `ok()` is true; fails after `ms`. */
-async function until(ok: () => boolean, ms = 5000): Promise<void> {
-    for (const end = Date.now() + ms; !ok(); await new Promise(r => setTimeout(r, 10))) if (Date.now() > end) throw new Error('timeout');
+/** Watchers of a test: closed after the test, also when it fails. */
+const watchers: FolderWatcher[] = [];
+const watcher = (...args: ConstructorParameters<typeof FolderWatcher>) => {
+    const w = new FolderWatcher(...args);
+    watchers.push(w);
+    return w;
+};
+afterEach(() => {
+    for (const w of watchers.splice(0)) w.close();
+    vi.useRealTimers();
+});
+
+/** Resolves when `ok()` is true. A stalled test fails after `ms` (monotonic clock), with the last observed state. */
+async function until(ok: () => boolean, state: () => unknown, ms = 5000): Promise<void> {
+    for (const end = performance.now() + ms; !ok(); await new Promise(r => setTimeout(r, 10))) {
+        if (performance.now() > end) throw new Error(`timeout after ${ms} ms; last state: ${JSON.stringify(state())}`);
+    }
+}
+
+/** A promise that the test resolves. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>(r => { resolve = r; });
+    return { promise, resolve };
+}
+
+/** A watch source that the test controls: `emit` delivers an event to the open watch of a folder. */
+function syntheticSource() {
+    const open = new Map<string, { onEvent: (name: string | null) => void; onError: () => void }>();
+    const started: string[] = [];
+    let missing = new Set<string>();
+    const source: WatchSource = (folder, onEvent, onError) => {
+        started.push(folder);
+        if (missing.has(folder)) return undefined;
+        open.set(folder, { onEvent, onError });
+        return { close: () => { open.delete(folder); } };
+    };
+    const at = (folder: string) => {
+        const w = open.get(folder);
+        if (!w) throw new Error(`no open watch of ${folder}`);
+        return w;
+    };
+    return {
+        source, started, open,
+        emit: (folder: string, ...names: (string | null)[]) => { for (const n of names) at(folder).onEvent(n); },
+        fail: (folder: string) => at(folder).onError(),
+        setMissing: (folders: string[]) => { missing = new Set(folders); }
+    };
 }
 
 describe('formats', () => {
@@ -151,50 +197,152 @@ describe('file sync', () => {
     });
 
     it('runs queued operations one at a time, also after a failure', async () => {
-        const q = new SerialQueue(), log: string[] = [];
-        const slow = q.run(async () => { await new Promise(r => setTimeout(r, 20)); log.push('slow'); });
+        const q = new SerialQueue(), log: string[] = [], gate = deferred();
+        const first = q.run(async () => { log.push('first start'); await gate.promise; log.push('first end'); });
         const failed = q.run(async () => { log.push('fail'); throw new Error('x'); });
-        const fast = q.run(async () => { log.push('fast'); });
+        const last = q.run(async () => { log.push('last'); });
+        let idle = false;
+        const settled = q.idle().then(() => { idle = true; });
+        // Let all ready microtasks run: only the first operation has started; it waits for the gate.
+        await new Promise(r => setImmediate(r));
+        expect(log).toEqual(['first start']);
+        expect(idle).toBe(false);
+        gate.resolve();
+        await first;
         await expect(failed).rejects.toThrow('x');
-        await Promise.all([slow, fast, q.idle()]);
-        expect(log).toEqual(['slow', 'fail', 'fast']);
+        await Promise.all([last, settled]);
+        expect(log).toEqual(['first start', 'first end', 'fail', 'last']);
+        expect(idle).toBe(true);
     });
 
-    it('calls back once after a burst of changes, not for hidden files', async () => {
+    describe('FolderWatcher with a controlled source and clock', () => {
+        const root = join(tmpdir(), 'watched'), other = join(tmpdir(), 'other');
+        const setup = (options: { debounce?: number; ignore?: (name: string) => boolean } = {}) => {
+            vi.useFakeTimers();
+            const src = syntheticSource(), calls: (string[] | undefined)[] = [];
+            const w = watcher(changed => calls.push(changed), { debounce: 250, ...options, source: src.source });
+            w.watch(root);
+            return { src, calls, w };
+        };
+
+        it('calls back at the debounce expiry, not before', () => {
+            const { src, calls } = setup();
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(249);
+            expect(calls).toEqual([]);
+            vi.advanceTimersByTime(1);
+            expect(calls).toEqual([[join(root, 'a.ttl')]]);
+            vi.advanceTimersByTime(10_000);
+            expect(calls).toHaveLength(1);
+        });
+
+        it('an event before the expiry starts the debounce again: one call for the burst', () => {
+            const { src, calls } = setup();
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(200);
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(249);
+            expect(calls).toEqual([]);
+            vi.advanceTimersByTime(1);
+            expect(calls).toEqual([[join(root, 'a.ttl')]]);
+        });
+
+        it('ignores hidden names; they do not start or extend the debounce', () => {
+            const { src, calls } = setup();
+            src.emit(root, '.hidden', '.git/index', 'sub/.a.ttl.tmp');
+            vi.advanceTimersByTime(10_000);
+            expect(calls).toEqual([]);
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(200);
+            src.emit(root, '.hidden');
+            vi.advanceTimersByTime(50);
+            expect(calls).toEqual([[join(root, 'a.ttl')]]);
+        });
+
+        it('a caller rule replaces the hidden rule', () => {
+            const { src, calls } = setup({ ignore: name => name.endsWith('.bak') });
+            src.emit(root, 'a.bak', '.a.ttl');
+            vi.advanceTimersByTime(250);
+            expect(calls).toEqual([[join(root, '.a.ttl')]]);
+        });
+
+        it('gives each path once, only the paths of the events since the last call', () => {
+            const { src, calls } = setup();
+            src.emit(root, 'a.ttl', 'b.ttl', 'a.ttl', 'sub/c.ttl', 'b.ttl');
+            vi.advanceTimersByTime(250);
+            src.emit(root, 'b.ttl', 'b.ttl');
+            vi.advanceTimersByTime(250);
+            expect(calls).toEqual([[join(root, 'a.ttl'), join(root, 'b.ttl'), join(root, 'sub/c.ttl')], [join(root, 'b.ttl')]]);
+        });
+
+        it('an event without a name: no paths for that call; the next call has paths again', () => {
+            const { src, calls } = setup();
+            src.emit(root, 'a.ttl', null, 'b.ttl');
+            vi.advanceTimersByTime(250);
+            src.emit(root, 'c.ttl');
+            vi.advanceTimersByTime(250);
+            expect(calls).toEqual([undefined, [join(root, 'c.ttl')]]);
+        });
+
+        it('close stops the source and cancels the pending call', () => {
+            const { src, calls, w } = setup();
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(100);
+            w.close();
+            expect(w.folder).toBeUndefined();
+            expect(src.open.size).toBe(0);
+            vi.advanceTimersByTime(10_000);
+            expect(calls).toEqual([]);
+        });
+
+        it('a watch of the same folder keeps the watch; another folder replaces it and drops its pending paths', () => {
+            const { src, calls, w } = setup();
+            w.watch(root);
+            expect(src.started).toEqual([root]);
+            src.emit(root, 'a.ttl');
+            w.watch(other);
+            expect(w.folder).toBe(other);
+            expect([...src.open.keys()]).toEqual([other]);
+            src.emit(other, 'b.ttl');
+            vi.advanceTimersByTime(250);
+            expect(calls).toEqual([[join(other, 'b.ttl')]]);
+        });
+
+        it('no watch when the source gives none, or after a watch error; the next call tries again', () => {
+            vi.useFakeTimers();
+            const src = syntheticSource(), calls: (string[] | undefined)[] = [];
+            const w = watcher(changed => calls.push(changed), { debounce: 250, source: src.source });
+            src.setMissing([root]);
+            w.watch(root);
+            expect(w.folder).toBeUndefined();
+            src.setMissing([]);
+            w.watch(root);
+            expect(w.folder).toBe(root);
+            src.fail(root);
+            expect(w.folder).toBeUndefined();
+            expect(src.open.size).toBe(0);
+            w.watch(root);
+            expect(src.started).toEqual([root, root, root]);
+            src.emit(root, 'a.ttl');
+            vi.advanceTimersByTime(250);
+            expect(calls).toEqual([[join(root, 'a.ttl')]]);
+        });
+    });
+
+    it('a watch of a real folder reports the written files, not hidden files; events can be grouped or repeated', async () => {
         const root = tempDir();
+        const seen = new Set<string>();
         let calls = 0;
-        const w = new FolderWatcher(() => calls++, { debounce: 50 });
+        const w = watcher(changed => { calls++; for (const f of changed ?? ['(no name)']) seen.add(f); }, { debounce: 50 });
         w.watch(root);
-        try {
-            writeFileSync(join(root, '.hidden'), 'x');
-            await new Promise(r => setTimeout(r, 200));
-            expect(calls).toBe(0);
-            writeFileSync(join(root, 'a.ttl'), '1');
-            writeFileSync(join(root, 'a.ttl'), '2');
-            await until(() => calls > 0);
-            await new Promise(r => setTimeout(r, 200));
-            expect(calls).toBe(1);
-        } finally {
-            w.close();
-        }
-    });
-
-    it('gives the paths of the events since the last call', async () => {
-        const root = tempDir();
-        const calls: (string[] | undefined)[] = [];
-        const w = new FolderWatcher(changed => calls.push(changed), { debounce: 50 });
-        w.watch(root);
-        try {
-            writeFileSync(join(root, 'a.ttl'), '1');
-            writeFileSync(join(root, 'b.ttl'), '1');
-            await until(() => calls.length > 0);
-            expect([...new Set(calls[0])].sort()).toEqual([join(root, 'a.ttl'), join(root, 'b.ttl')]);
-            writeFileSync(join(root, 'b.ttl'), '2');
-            await until(() => calls.length > 1);
-            expect([...new Set(calls[1])]).toEqual([join(root, 'b.ttl')]);
-        } finally {
-            w.close();
-        }
+        writeFileSync(join(root, '.hidden'), 'x');
+        writeFileSync(join(root, 'a.ttl'), '1');
+        writeFileSync(join(root, 'b.ttl'), '1');
+        writeFileSync(join(root, 'b.ttl'), '2');
+        // The platform can group the writes in one or more calls, repeat a path, or give no name (then the call has no paths).
+        await until(() => seen.has(join(root, 'a.ttl')) && seen.has(join(root, 'b.ttl')) || seen.has('(no name)'), () => ({ calls, seen: [...seen] }));
+        expect(calls).toBeGreaterThan(0);
+        expect([...seen].filter(f => f.endsWith('.hidden'))).toEqual([]);
     });
 
     it('own writes: a file is own while it has the noted text, also when another text keeps its size and time', async () => {
@@ -222,18 +370,14 @@ describe('file sync', () => {
     it('watches a folder that was missing at the first call, at the next call', async () => {
         const root = join(tempDir(), 'later');
         let calls = 0;
-        const w = new FolderWatcher(() => calls++, { debounce: 20 });
+        const w = watcher(() => calls++, { debounce: 20 });
         w.watch(root);
         expect(w.folder).toBeUndefined();
         mkdirSync(root);
         w.watch(root);
-        try {
-            expect(w.folder).toBe(root);
-            writeFileSync(join(root, 'a.ttl'), '1');
-            await until(() => calls > 0);
-        } finally {
-            w.close();
-        }
+        expect(w.folder).toBe(root);
+        writeFileSync(join(root, 'a.ttl'), '1');
+        await until(() => calls > 0, () => ({ calls, folder: w.folder }));
     });
 });
 

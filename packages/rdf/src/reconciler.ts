@@ -26,12 +26,17 @@ export interface ReconcilerPort {
 
 /** Watch events run after the writes that caused them, in the shared file queue. */
 export class Reconciler {
-    protected readonly watcher = new FolderWatcher(changed => void this.port.queue.run(() => this.syncFromWatch(changed)));
+    protected readonly watcher = new FolderWatcher(changed => void this.settled(changed));
 
     constructor(protected readonly port: ReconcilerPort) {}
 
     watch(folder: string): void { this.watcher.watch(folder); }
     close(): void { this.watcher.close(); }
+
+    /** The watch callback: queue the read of the changed files. Resolves when that queued read is done. Tests call it to deliver an event. */
+    settled(changed?: string[]): Promise<void> {
+        return this.port.queue.run(() => this.syncFromWatch(changed));
+    }
 
     /** Skip events whose files still hold Catenary's own writes. */
     protected async syncFromWatch(changed?: string[]): Promise<void> {

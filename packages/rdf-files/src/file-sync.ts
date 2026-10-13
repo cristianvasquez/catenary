@@ -2,7 +2,7 @@
 // and writes of several files that succeed or fail together.
 
 import { createHash } from 'crypto';
-import { FSWatcher, promises as fs, statSync, watch } from 'fs';
+import { promises as fs, statSync, watch } from 'fs';
 import * as path from 'path';
 
 /** Run async operations one at a time, in the order of the calls. A failure does not stop the next operation. */
@@ -29,14 +29,41 @@ export interface WatchOptions {
     debounce?: number;
     /** Events of these names (relative to the folder) are ignored. Default: `isHidden`. */
     ignore?: (name: string) => boolean;
+    /** The events of a folder. Default: `fsWatchSource`. Tests give a source that they control. */
+    source?: WatchSource;
 }
+
+/** A started watch of a folder. */
+export interface WatchHandle {
+    close(): void;
+}
+
+/**
+ * Start a watch of `folder`. `onEvent` gets the name of each event relative to the folder (null: the platform gave no name). `onError`
+ * runs when the watch stops with an error. Undefined: no watch (for example the folder is not on disk).
+ */
+export type WatchSource = (folder: string, onEvent: (name: string | null) => void, onError: () => void) => WatchHandle | undefined;
+
+/** A recursive `fs.watch` that does not keep the process alive. */
+export const fsWatchSource: WatchSource = (folder, onEvent, onError) => {
+    // A recursive watch of a missing folder does not throw on every platform: check first.
+    if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory()) return undefined;
+    try {
+        const w = watch(folder, { recursive: true, persistent: false }, (_event, name) => onEvent(name === null ? null : String(name)));
+        // An error event without a listener stops the process.
+        w.on('error', onError);
+        return w;
+    } catch {
+        return undefined;
+    }
+};
 
 /**
  * A recursive watch of one folder. `onSettled` runs after `debounce` ms without events, with the absolute paths of the events since the
  * last call. `changed` is undefined when an event had no file name (the platform did not give one). The watch does not keep the process alive.
  */
 export class FolderWatcher {
-    protected watcher?: FSWatcher;
+    protected watcher?: WatchHandle;
     protected timer?: ReturnType<typeof setTimeout>;
     protected watched?: string;
     /** Paths of the events since the last `onSettled`. Undefined: an event without a name. */
@@ -54,10 +81,10 @@ export class FolderWatcher {
         if (folder === this.watched) return;
         this.close();
         const ignore = this.options.ignore ?? isHidden;
-        const onEvent = (_event: string, name: string | Buffer | null) => {
-            if (name && ignore(String(name))) return;
+        const onEvent = (name: string | null) => {
+            if (name && ignore(name)) return;
             if (!name) this.changed = undefined;
-            else this.changed?.add(path.join(folder, String(name)));
+            else this.changed?.add(path.join(folder, name));
             clearTimeout(this.timer);
             this.timer = setTimeout(() => {
                 const changed = this.changed && [...this.changed];
@@ -66,17 +93,11 @@ export class FolderWatcher {
             }, this.options.debounce ?? 150);
             this.timer.unref?.();
         };
-        // A recursive watch of a missing folder does not throw on every platform: check first.
-        if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory()) return;
-        try {
-            const w = watch(folder, { recursive: true, persistent: false }, onEvent);
-            // An error event without a listener stops the process. After an error (the folder was removed), the next call tries again.
-            w.on('error', () => { if (this.watcher === w) this.close(); });
-            this.watcher = w;
-            this.watched = folder;
-        } catch {
-            // no watch: the next call tries again
-        }
+        // After an error (the folder was removed), the next call tries again.
+        const w: WatchHandle | undefined = (this.options.source ?? fsWatchSource)(folder, onEvent, () => { if (this.watcher === w) this.close(); });
+        if (!w) return;
+        this.watcher = w;
+        this.watched = folder;
     }
 
     close(): void {

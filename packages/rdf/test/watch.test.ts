@@ -1,5 +1,6 @@
 import { mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { performance } from 'node:perf_hooks';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelStore } from '../src/model-store';
@@ -28,6 +29,14 @@ async function workspace(watching = false) {
     return { dir, store, file, read: (name: string) => readFileSync(file(name), 'utf8') };
 }
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
+/** Resolves when `ok()` is true. A stalled test fails after `ms` (monotonic clock), with the last observed state. */
+async function until(ok: () => boolean, state: () => unknown, ms = 5000): Promise<void> {
+    for (const end = performance.now() + ms; !ok(); await new Promise(r => setTimeout(r, 20))) {
+        if (performance.now() > end) throw new Error(`timeout after ${ms} ms; last state: ${JSON.stringify(state())}`);
+    }
+}
+/** Deliver the debounced paths of a watch to the store, as its watcher does. Resolves when the queued reconciliation is done. */
+const deliver = (store: ModelStore, changed?: string[]) => store['reconciler'].settled(changed);
 const labels = (store: ModelStore) => Object.values(docOf(store).instances).map(i => i.label);
 const views = (store: ModelStore) => Object.values(docOf(store).views).map(v => v.label).sort();
 const VIEW = (iri: string, label: string) => `<${iri}> { <${iri}> a <https://cristianvasquez.github.io/catenary/vocab/view#View> ; <http://www.w3.org/2000/01/rdf-schema#label> "${label}" . }\n`;
@@ -140,24 +149,42 @@ describe('changes on disk', () => {
     it('the watcher reads a change without a call', async () => {
         const { store, file, read } = await workspace(true);
         writeFileSync(file('data.ttl'), read('data.ttl').replace('"Product usage data"', '"Seen by the watcher"'));
-        for (let i = 0; i < 100 && !labels(store).includes('Seen by the watcher'); i++) await new Promise(r => setTimeout(r, 50));
-        expect(labels(store)).toContain('Seen by the watcher');
+        await until(() => labels(store).includes('Seen by the watcher'), () => labels(store));
     });
 
     it('the watch events of own writes do not read the files again; a change by another program in the same burst does', async () => {
-        const { store, file, read } = await workspace(true);
+        const { store, file, read } = await workspace();
         const sync = vi.spyOn(store, 'syncFromDisk');
         const id = Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!.id;
         ok(store.execute({ kind: 'rename', id, label: 'Mine' }));
         await store.idle();
-        // The watch debounce is 150 ms: wait past it, then for the queued work.
-        await new Promise(r => setTimeout(r, 500));
-        await store.idle();
-        expect(sync).not.toHaveBeenCalled();
         expect(read('data.ttl')).toContain('"Mine"');
+        await deliver(store, [file('data.ttl')]);
+        expect(sync).not.toHaveBeenCalled();
+        // The event queues after the write that caused it: the file holds the own write when the reconciliation reads it.
         ok(store.execute({ kind: 'rename', id, label: 'Mine again' }));
+        const own = deliver(store, [file('data.ttl')]);
         writeFileSync(file('shapes.ttl'), read('shapes.ttl') + '\n');
-        for (let i = 0; i < 100 && !sync.mock.calls.length; i++) await new Promise(r => setTimeout(r, 50));
+        await own;
+        expect(sync).not.toHaveBeenCalled();
+        await deliver(store, [file('data.ttl'), file('shapes.ttl')]);
+        expect(sync).toHaveBeenCalledTimes(1);
+        expect(read('data.ttl')).toContain('"Mine again"');
+        // An event without a name can be any file: read.
+        await deliver(store, undefined);
+        expect(sync).toHaveBeenCalledTimes(2);
+    });
+
+    it('a real watch: a change by another program after an own write is read', async () => {
+        const { store, file, read } = await workspace(true);
+        const sync = vi.spyOn(store, 'syncFromDisk');
+        const id = Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!.id;
+        ok(store.execute({ kind: 'rename', id, label: 'Mine' }));
+        writeFileSync(file('shapes.ttl'), read('shapes.ttl').replace('sh:name "Dataset"', 'sh:name "Data set"'));
+        const shapes = () => Object.values(docOf(store).shapes.nodeShapes).map(s => s.label);
+        await until(() => shapes().includes('Data set'), () => ({ calls: sync.mock.calls.length, shapes: shapes() }));
+        await store.idle();
         expect(sync).toHaveBeenCalled();
+        expect(read('data.ttl')).toContain('"Mine"');
     });
 });
