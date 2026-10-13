@@ -37,6 +37,14 @@ export default defineConfig({
           { text: 'Documents and export', link: '/reference/documents' },
           { text: 'Keys', link: '/reference/keys' }
         ]
+      },
+      {
+        text: 'Vocabularies',
+        items: [
+          { text: 'View', link: '/vocab/view' },
+          { text: 'Workspace', link: '/vocab/workspace' },
+          { text: 'Notation', link: '/vocab/notation' }
+        ]
       }
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/cristianvasquez/catenary' }],

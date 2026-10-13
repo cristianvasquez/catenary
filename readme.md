@@ -19,7 +19,8 @@ Read in this order, from overview to detail:
 |---|---|
 | [Overview](docs/overview.md) | Purpose, main ideas, vocabulary |
 | [Architecture](docs/architecture.md) | Data flow, store layout, packages, code map, persistence, testing |
-| [Notation vocabulary](docs/notation/) | The `nt:` vocabulary and the SHACL of views, placements and notations (ADR 0014) |
+| [Vocabularies](www/public/vocab/) | The `view:`, `ws:` and `nt:` vocabularies in Turtle. `pnpm www:vocab` writes their site pages to `www/vocab/` |
+| [Notation shapes](docs/notation/) | The SHACL of views, placements and notations (ADR 0014) |
 | [Data contract](spec/manifest.hs) | Files, RDF, commands, transactions, persistence, queries, CLI protocol |
 | [Interaction contract](spec/ui-manifest.hs) | Interaction rules, keys, selection, panels, controls |
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
@@ -49,6 +50,7 @@ pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is 
 pnpm build:browser    # the build without the Electron app
 pnpm www:dev          # the site (www/) with live reload; www:build and www:preview build and serve it
 pnpm www:screenshots  # regenerate the pictures of the site from the built browser app (needs Chromium)
+pnpm www:vocab        # write the vocabulary pages www/vocab/*.md from www/public/vocab/*.ttl (needs the rdf-files build)
 node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests

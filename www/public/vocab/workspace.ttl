@@ -1,0 +1,76 @@
+# The workspace vocabulary of Catenary: the settings in the manifest graph <urn:name:workspace> of a workspace file.
+# Pages: www/vocab/workspace.md (pnpm www:vocab writes it from this file).
+
+@prefix ws:   <https://cristianvasquez.github.io/catenary/vocab/workspace#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<https://cristianvasquez.github.io/catenary/vocab/workspace> a owl:Ontology ;
+    dct:title "Catenary workspace vocabulary" ;
+    dct:description "The settings of a workspace. The workspace file (TriG) stores them in its manifest graph. Paths are relative to the folder of the workspace file." ;
+    dct:license <https://spdx.org/licenses/AGPL-3.0-or-later.html> ;
+    vann:preferredNamespacePrefix "ws" ;
+    vann:preferredNamespaceUri "https://cristianvasquez.github.io/catenary/vocab/workspace#" .
+
+ws:Workspace a rdfs:Class ;
+    rdfs:label "Workspace" ;
+    rdfs:comment "The settings of a workspace. The subject is the manifest graph <urn:name:workspace>." .
+
+ws:defaultFile a rdf:Property ;
+    rdfs:label "default file" ;
+    rdfs:comment "The file for new subjects when \"near\" finds no file." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:placeShapes a rdf:Property ;
+    rdfs:label "place shapes" ;
+    rdfs:comment "Where new shapes go: a file path, or \"near\" (near their kind)." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:placeConcepts a rdf:Property ;
+    rdfs:label "place concepts" ;
+    rdfs:comment "Where new SKOS resources go: a file path, or \"near\" (near their kind)." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:placeInstances a rdf:Property ;
+    rdfs:label "place instances" ;
+    rdfs:comment "Where other new subjects go: a file path, or \"near\" (near their kind)." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:exclude a rdf:Property ;
+    rdfs:label "exclude" ;
+    rdfs:comment "A glob of files that are not model files. The glob is relative to the folder of the workspace file." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:imported a rdf:Property ;
+    rdfs:label "imported" ;
+    rdfs:comment "A glob of imported model files. Catenary reads them and does not change them. The glob is relative to the folder of the workspace file." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:validation a rdf:Property ;
+    rdfs:label "validation" ;
+    rdfs:comment "What SHACL validation checks: \"off\", \"views\" (the elements on the open views) or \"all\". Without a value: \"all\"." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:language a rdf:Property ;
+    rdfs:label "language" ;
+    rdfs:comment "The language of the labels that Catenary shows, as a language tag such as \"en\"." ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .
+
+ws:protect a rdf:Property ;
+    rdfs:label "protect" ;
+    rdfs:comment "The old name of ws:imported. Catenary reads it and does not write it." ;
+    owl:deprecated true ;
+    rdfs:domain ws:Workspace ;
+    rdfs:range xsd:string .

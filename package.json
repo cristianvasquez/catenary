@@ -24,7 +24,8 @@
     "www:dev": "pnpm -C www dev",
     "www:build": "pnpm -C www build",
     "www:preview": "pnpm -C www preview",
-    "www:screenshots": "node scripts/www-screenshots.mjs"
+    "www:screenshots": "node scripts/www-screenshots.mjs",
+    "www:vocab": "node scripts/www-vocab.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

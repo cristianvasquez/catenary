@@ -1,0 +1,145 @@
+# The view vocabulary of Catenary: views, placements and marks. View files store these statements.
+# Pages: www/vocab/view.md (pnpm www:vocab writes it from this file).
+
+@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix vann: <http://purl.org/vocab/vann/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<https://cristianvasquez.github.io/catenary/vocab/view> a owl:Ontology ;
+    dct:title "Catenary view vocabulary" ;
+    dct:description "The terms of view files: a view, the placements of elements and statements in a view, and the marks that live in a view." ;
+    dct:license <https://spdx.org/licenses/AGPL-3.0-or-later.html> ;
+    vann:preferredNamespacePrefix "view" ;
+    vann:preferredNamespaceUri "https://cristianvasquez.github.io/catenary/vocab/view#" .
+
+# --- Views ---------------------------------------------------------------------------
+
+view:View a rdfs:Class ;
+    rdfs:label "View" ;
+    rdfs:comment "A diagram of the model. A view is a named graph, and the graph IRI is also the view subject. Its rdfs:label is its name." .
+
+view:description a rdf:Property ;
+    rdfs:label "description" ;
+    rdfs:comment "The text that describes a view." ;
+    rdfs:domain view:View ;
+    rdfs:range xsd:string .
+
+# --- Placements ----------------------------------------------------------------------
+
+view:Placement a rdfs:Class ;
+    rdfs:label "Placement" ;
+    rdfs:comment "Shows one element or one statement in one view. A placement of an element has view:element. A placement of a statement has rdf:reifies." .
+
+view:view a rdf:Property ;
+    rdfs:label "view" ;
+    rdfs:comment "The view of a placement." ;
+    rdfs:domain view:Placement ;
+    rdfs:range view:View .
+
+view:element a rdf:Property ;
+    rdfs:label "element" ;
+    rdfs:comment "The element that a placement shows. The element is an IRI, often in another file." ;
+    rdfs:domain view:Placement .
+
+view:x a rdf:Property ;
+    rdfs:label "x" ;
+    rdfs:comment "The horizontal position of a box, in canvas units." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:integer .
+
+view:y a rdf:Property ;
+    rdfs:label "y" ;
+    rdfs:comment "The vertical position of a box, in canvas units." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:integer .
+
+view:width a rdf:Property ;
+    rdfs:label "width" ;
+    rdfs:comment "The width of a box, in canvas units." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:integer .
+
+view:height a rdf:Property ;
+    rdfs:label "height" ;
+    rdfs:comment "The height of a box, in canvas units." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:integer .
+
+view:color a rdf:Property ;
+    rdfs:label "color" ;
+    rdfs:comment "The color of a box or a line." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:string .
+
+view:display a rdf:Property ;
+    rdfs:label "display" ;
+    rdfs:comment "The content of a box. The value \"simple\" shows the title and the tags only. Without a value, the box shows all its rows." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:string .
+
+view:fromSide a rdf:Property ;
+    rdfs:label "from side" ;
+    rdfs:comment "The side of the start box where a line starts: \"top\", \"right\", \"bottom\" or \"left\". It is a routing hint." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:string .
+
+view:toSide a rdf:Property ;
+    rdfs:label "to side" ;
+    rdfs:comment "The side of the end box where a line ends: \"top\", \"right\", \"bottom\" or \"left\". It is a routing hint." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:string .
+
+view:vertices a rdf:Property ;
+    rdfs:label "vertices" ;
+    rdfs:comment "The bends of a line from its start to its end, as \"x,y x,y ...\" in canvas units." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:string .
+
+view:keptByLines a rdf:Property ;
+    rdfs:label "kept by lines" ;
+    rdfs:comment "On the placement of a box (true): a line or a hub brought the box. The box leaves the view with its last line. A box that the user placed has no value and stays." ;
+    rdfs:domain view:Placement ;
+    rdfs:range xsd:boolean .
+
+# --- Marks: elements that live in a view file -------------------------------------------
+
+view:Note a rdfs:Class ;
+    rdfs:label "Note" ;
+    rdfs:comment "A mark with Markdown text." .
+
+view:text a rdf:Property ;
+    rdfs:label "text" ;
+    rdfs:comment "The Markdown text of a note." ;
+    rdfs:domain view:Note ;
+    rdfs:range xsd:string .
+
+view:Frame a rdfs:Class ;
+    rdfs:label "Frame" ;
+    rdfs:comment "A mark with a label. The geometry of one view gives what is inside the frame." .
+
+view:FileRef a rdfs:Class ;
+    rdfs:label "File reference" ;
+    rdfs:comment "A mark that links to a file." .
+
+view:file a rdf:Property ;
+    rdfs:label "file" ;
+    rdfs:comment "The path of the linked file, relative to the view file." ;
+    rdfs:domain view:FileRef ;
+    rdfs:range xsd:string .
+
+view:EntityGroup a rdfs:Class ;
+    rdfs:label "Entity group" ;
+    rdfs:comment "A mark that groups entities of the model." .
+
+view:member a rdf:Property ;
+    rdfs:label "member" ;
+    rdfs:comment "An entity of an entity group." ;
+    rdfs:domain view:EntityGroup .
+
+view:arrow a rdf:Property ;
+    rdfs:label "arrow" ;
+    rdfs:comment "An arrow from one element to another. It is visual only and is not part of the model. Its placements keep it." .

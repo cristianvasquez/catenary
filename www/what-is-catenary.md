@@ -39,3 +39,4 @@ In no fixed order:
 
 - The [tutorial](/tutorial/01-new-workspace) builds a small bookshop model from an empty folder.
 - The [reference](/reference/workspace) describes each part of the screen.
+- The vocabularies define the terms of [view files](/vocab/view), of the [workspace file](/vocab/workspace) and of [notations](/vocab/notation).
