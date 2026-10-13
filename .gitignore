@@ -17,3 +17,5 @@ dist/
 
 # Local upload script with credentials
 scripts/upload-windows-koofr.sh
+www/.vitepress/dist/
+www/.vitepress/cache/

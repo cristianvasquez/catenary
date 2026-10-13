@@ -3,6 +3,7 @@ packages:
   - modeler
   - app
   - electron-app
+  - www
 
 # Theia apps need a flat node_modules (same as the GLSP repositories).
 shamefullyHoist: true

@@ -20,7 +20,11 @@
     "catenary": "node scripts/catenary.mjs",
     "verify": "node scripts/verify.mjs",
     "package": "bash scripts/package.sh",
-    "package:win": "bash scripts/package.sh win32-x64"
+    "package:win": "bash scripts/package.sh win32-x64",
+    "www:dev": "pnpm -C www dev",
+    "www:build": "pnpm -C www build",
+    "www:preview": "pnpm -C www preview",
+    "www:screenshots": "node scripts/www-screenshots.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

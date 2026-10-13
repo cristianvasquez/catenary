@@ -64,7 +64,7 @@ Open choices for the user:
 - `packages/rdf/src/commands.ts`: `pasteIntoView` loses its copy branch; new `duplicate`, `moveBetweenViews`. `cutFromView` is removed.
 - `modeler/src/browser/diagram/diagram-configuration.ts`: cut marks, paste sends the move; Ctrl+C writes Turtle as text.
 - `spec/open.md` F-UNDO-1: remove "Cut and paste remain separate operations".
-- `docs/user-guide.md` lines 76 to 81.
+- `www/reference/canvas.md`, section Copy, cut, paste, duplicate.
 - Tests: `packages/rdf/test/copy-paste.test.ts` rewritten per table.
 
 ## Feedback of a cut

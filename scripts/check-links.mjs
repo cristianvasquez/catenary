@@ -8,9 +8,11 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const files = process.argv.length > 2
+// The site (www/) links by site path, without extension; `pnpm www:build` checks its links.
+const files = (process.argv.length > 2
     ? process.argv.slice(2)
-    : execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    : execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean))
+    .filter(f => !/^www\//.test(relative(root, resolve(root, f))));
 
 /** Markdown text without fenced code blocks and inline code, with the line numbers kept. */
 const prose = text => {

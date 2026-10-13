@@ -41,6 +41,6 @@ Catenary runs as a browser app and as an Electron app on Linux. The release pack
 
 ## Where to read next
 
-1. [User guide](user-guide.md): what a user can do, panel by panel.
+1. [The site](../www/reference/workspace.md): what a user can do, panel by panel.
 2. [Architecture](architecture.md): packages, data flow, persistence.
 3. [Data contract](../spec/manifest.hs) and [interaction contract](../spec/ui-manifest.hs): the exact rules.

@@ -12,7 +12,7 @@ Theia + GLSP editor for RDF models. Files are the source of truth. One backend `
 
 - Keep data and transaction contracts in `spec/manifest.hs`. Keep interaction contracts in `spec/ui-manifest.hs`.
 - Keep unresolved decisions and implementation gaps in `spec/open.md`. Do not change a contract merely to match the code.
-- Keep commands and the documentation map in `readme.md`. Keep packages, the code map and test guidance in `docs/architecture.md`. Keep user-visible behavior in `docs/user-guide.md`.
+- Keep commands and the documentation map in `readme.md`. Keep packages, the code map and test guidance in `docs/architecture.md`. Keep user-visible behavior in the site `www/` (reference pages per panel, a tutorial, Simple English). The pictures come from `pnpm www:screenshots`.
 - Record a design rule in the manifest that owns it, with a one-line reason. A rule that code cites by number goes in the "Design rules" index at the top of `spec/manifest.hs`. Do not add decision records or one file per decision.
 - Documents in `docs/` are for people: short, current state only, no history. The manifests are the full contract for agents.
 - Do not add journals, status inventories or feature specs. Git history holds work records. `spec/open.md` holds what is not finished.

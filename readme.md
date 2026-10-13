@@ -18,13 +18,13 @@ Read in this order, from overview to detail:
 | Document | Content |
 |---|---|
 | [Overview](docs/overview.md) | Purpose, main ideas, vocabulary |
-| [User guide](docs/user-guide.md) | What a user does: workspace, views, shapes, keys, settings |
 | [Architecture](docs/architecture.md) | Data flow, store layout, packages, code map, persistence, testing |
 | [Notation vocabulary](docs/notation/) | The `nt:` vocabulary and the SHACL of views, placements and notations (ADR 0014) |
 | [Data contract](spec/manifest.hs) | Files, RDF, commands, transactions, persistence, queries, CLI protocol |
 | [Interaction contract](spec/ui-manifest.hs) | Interaction rules, keys, selection, panels, controls |
 | [Open work](spec/open.md) | Open decisions, known defects, verification gaps |
 | [Agent guide](AGENTS.md) | Work rules for agents and documentation style |
+| [Site](www/) | What Catenary is, a tutorial, and the reference of each panel (VitePress, GitHub Pages) |
 | [rdf-files](packages/rdf-files/readme.md) | The RDF files package: modules, WASM files, grammar build, limits, tests |
 
 The contracts are Haskell modules. The optional `pnpm check:manifests` target typechecks them with GHC. It skips the check when GHC is absent. A mismatch of names or types fails when GHC is available.
@@ -47,6 +47,8 @@ pnpm test             # source-based tests
 pnpm check            # package boundaries, Markdown links, CSS and TypeScript
 pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is absent
 pnpm build:browser    # the build without the Electron app
+pnpm www:dev          # the site (www/) with live reload; www:build and www:preview build and serve it
+pnpm www:screenshots  # regenerate the pictures of the site from the built browser app (needs Chromium)
 node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests
@@ -111,9 +113,9 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '["/tmp/catenary-test/d
 
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
 
-`rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See [Performance checks](docs/user-guide.md#performance-checks) for the five Trace metrics.
+`rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See the Trace section of [the site](www/reference/properties.md) for the five Trace metrics.
 
-`rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Canvas refresh spans and snapshot spans are listed in [Performance checks](docs/user-guide.md#performance-checks). `rpc stopTracing 0` returns the final batch before stopping the CLI connection. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.
+`rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Canvas refresh spans and snapshot spans are listed in the Trace section of [the site](www/reference/properties.md). `rpc stopTracing 0` returns the final batch before stopping the CLI connection. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.
 
 Model RDF files open as file-scoped Model documents. **Open as…** (`catenary.openAs`) and **Open beside…** (`catenary.openBeside`) select a presentation. Both accept a file path and a presentation name: `Source`, `Model`, `Canvas`, or `Settings`. Reopening focuses the existing pane. `explorerChildren(key, file, offset)` returns one page of rows of a source file. `explorerSearch(text, file)` returns the flat filter list. `explorerDrag(selection)` resolves complete folder contents. The `moveElementsToFile` edit moves source statements, and `placeExplorerElements` places a mixed selection in one undo step.
 
