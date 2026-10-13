@@ -49,6 +49,7 @@ pnpm check:manifests  # optional manifest typecheck with GHC; skips when GHC is 
 pnpm build:browser    # the build without the Electron app
 pnpm www:dev          # the site (www/) with live reload; www:build and www:preview build and serve it
 pnpm www:screenshots  # regenerate the pictures of the site from the built browser app (needs Chromium)
+pnpm migrate-vocab <folder> [--dry-run]   # rewrite old osg://vocab/ namespaces to the published ones, in place
 node scripts/smoke-cli.mjs      # CLI and RPC contract against the browser backend (build first)
 pnpm verify           # check → test → build, stops at the first failure
 pnpm verify --e2e     # also run browser smoke tests

@@ -59,6 +59,19 @@ To import files:
 
 A file that is already in the workspace is locked where it is. For a file from outside the workspace, Catenary writes a Turtle copy to `imported/<name>.ttl` and locks the copy. If one file cannot be read, Catenary imports none of them. Each blank node gets an IRI. Catenary adds a prefix of the file to the workspace prefixes if the workspace does not use that name or namespace. The import reads the workspace again. This clears the undo history.
 
+## Old namespaces
+
+Catenary now uses published namespaces for its own terms, under `https://cristianvasquez.github.io/catenary/vocab/`. Older workspaces use namespaces that start with `osg://vocab/`, for example `osg://vocab/view#`. An old workspace still opens. Catenary reads each old term as the new term, and a save writes the new namespace.
+
+To rewrite all files of an old workspace at one time:
+
+1. Close the workspace in Catenary.
+2. Open a terminal in the Catenary repository.
+3. Run `pnpm migrate-vocab <folder> --dry-run` to see which files change.
+4. Run `pnpm migrate-vocab <folder>` to write the files.
+
+The command changes only the namespace text. It keeps the formatting and the comments of each file. It does not change a file without old terms. The packaged desktop app does not include the command.
+
 ## History and Git
 
 If the workspace is in a Git repository, each write makes a commit of the changed files only. Other staged changes stay out of it. The **Source Control** view shows changes and history. A file changed outside Catenary is read again. This clears the undo history.
