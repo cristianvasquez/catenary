@@ -1573,6 +1573,8 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
   const canvas = page.locator('svg.sprotty-graph:visible');
   await canvas.waitFor();
+  // Theia removes its loading screen after a fade: until then it is on top and takes the presses of the line drag.
+  await page.locator('.theia-preload').waitFor({ state: 'detached' });
   const file = path.join(workspace, 'views', 'product-context.view.trig');
   const vertices = () => (fs.readFileSync(file, 'utf8').match(/view:vertices "([^"]*)"/) ?? [])[1];
   const until = async (ok, what) => { for (let i = 0; i < 50; i++) { if (ok()) return; await page.waitForTimeout(100); } assert.fail(what); };
@@ -1581,7 +1583,10 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   // bounding box: Playwright calls it hidden, so wait for it attached.
   cli('eval', `const w = ctx.editors.find(${JSON.stringify(view)}); await w.actionDispatcher.dispatch({ kind: 'fit', elementIds: [], padding: 40, maxZoom: 1, animate: false }); return true`);
   await page.waitForTimeout(500);
-  const edge = canvas.locator('.catenary-edge:not(.property):not(.arrow-edge)').first();
+  // The edge by its id, not by its place: a selected edge is drawn last, so `.first()` names another edge while this one is selected.
+  const first = canvas.locator('.catenary-edge:not(.property):not(.arrow-edge)').first();
+  await first.waitFor({ state: 'attached' });
+  const edge = canvas.locator(`[id="${await first.getAttribute('id')}"]`);
   const line = edge.locator('.line');
   await line.waitFor({ state: 'attached' });
   const middle = () => line.evaluate(el => {
@@ -1614,25 +1619,22 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   assert.equal(vertices(), saved, 'a click on a bend handle changes nothing in the view file');
   assert.equal(await drawn(), drawnBefore, 'a click on a bend handle keeps the drawn route');
   // The view file is locked: a drag of the handle asks to unlock it; Cancel refuses the edit, and the drawn route goes back to the
-  // saved one (law_refusedBendKeepsSaved). Skipped by default: under load the drawn route loses the bend after the Cancel, so the
-  // handle never shows (open.md BEND1). E2E_REFUSED_BEND=1 runs it.
-  if (process.env.E2E_REFUSED_BEND) {
-    assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'true').result.ok, true);
-    c = await handleCenter();
-    await page.mouse.move(c.x, c.y);
-    await page.mouse.down();
-    await page.mouse.move(c.x + 60, c.y + 40, { steps: 6 });
-    await page.mouse.up();
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await page.waitForTimeout(500);
-    assert.equal(vertices(), saved, 'a refused bend edit leaves the view file');
-    // The dialog takes the selection with it: a click on the line selects the edge again.
-    at = await middle();
-    await page.mouse.click(at.x, at.y);
-    await handle.waitFor();
-    assert.equal(await drawn(), drawnBefore, 'a refused bend edit restores the drawn route');
-    assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'false').result.ok, true);
-  }
+  // saved one (law_refusedBendKeepsSaved).
+  assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'true').result.ok, true);
+  c = await handleCenter();
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 60, c.y + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(vertices(), saved, 'a refused bend edit leaves the view file');
+  // The dialog can take the selection with it (open.md BEND3): a click on the line selects the edge again.
+  at = await middle();
+  await page.mouse.click(at.x, at.y);
+  await handle.waitFor();
+  assert.equal(await drawn(), drawnBefore, 'a refused bend edit restores the drawn route');
+  assert.equal(cli('rpc', 'setImported', JSON.stringify(file), 'false').result.ok, true);
   // A double-click on the handle, off its center, removes the bend with one command: one undo restores the saved route.
   c = await handleCenter();
   await page.mouse.dblclick(c.x + 3, c.y + 3);
