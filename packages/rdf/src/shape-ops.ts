@@ -334,7 +334,12 @@ export function setNodeShape(g: ModelGraph, id: string, patch: NodeShapePatch): 
         // rdf:type is on every instance: a closed shape ignores it.
         if (patch.closed && !g.object(s, S.ignoredProperties, graph)) g.add(s, S.ignoredProperties, writeList(g, [P.type], graph, s.value + '-ignoredProperties'), graph);
     }
-    if (patch.description !== undefined) replaceShownLiteral(g, s, S.description, graph, before?.description, before?.descriptionLanguage, patch.description);
+    if (patch.description !== undefined) {
+        // The read shows sh:description, else rdfs:comment (shapes-read.ts): the edit changes the literal on the predicate where it is.
+        const shown = (p: NamedNode) => g.match(s, p, null, graph).some(q => q.object.termType === 'Literal' && q.object.value === before?.description && q.object.language === (before?.descriptionLanguage ?? ''));
+        const predicate = [S.description, S.comment].find(shown) ?? S.description;
+        replaceShownLiteral(g, s, predicate, graph, before?.description, before?.descriptionLanguage, patch.description);
+    }
     return ok(undefined);
 }
 

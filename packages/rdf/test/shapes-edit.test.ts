@@ -123,6 +123,45 @@ describe('shapes graphs to the shapes read model', () => {
         expect(g.match(shape, S.targetSubjectsOf, null, GRAPH)).toHaveLength(0);
     });
 
+    describe('a node shape description: the edit keeps the predicate of the shown literal (LABEL2)', () => {
+        const THING = rdf.namedNode(EX + 'Thing');
+        /** The shapes file with ex:Thing, a node shape with `ttl` (predicate-object list), added before the first read. */
+        const thing = async (ttl: string) => {
+            const g = await load();
+            const quads = await parseQuads(`@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<${THING.value}> a sh:NodeShape ; ${ttl} .`);
+            for (const q of quads) g.store.add(rdf.quad(q.subject, q.predicate, q.object, GRAPH));
+            return g;
+        };
+        /** The literals of ex:Thing `p`, as "value@tag", sorted. */
+        const literals = (g: ModelGraph, p: typeof S.comment) => g.match(THING, p, null, GRAPH).map(q => `${q.object.value}@${(q.object as { language?: string }).language ?? ''}`).sort();
+
+        it('rdfs:comment only: an edit changes the shown comment and keeps the other language; no sh:description', async () => {
+            const g = await thing('rdfs:comment "a"@en, "b"@de');
+            const id = shapeId(g, THING.value);
+            expect(shapesOf(g).nodeShapes[id]).toMatchObject({ description: 'a', descriptionLanguage: 'en' });
+            exec(g, { kind: 'setNodeShape', id, patch: { description: 'c' } });
+            expect(literals(g, S.comment)).toEqual(['b@de', 'c@en']);
+            expect(literals(g, S.description)).toEqual([]);
+        });
+
+        it('rdfs:comment only: a clear removes the shown comment and keeps the other language; no sh:description', async () => {
+            const g = await thing('rdfs:comment "a"@en, "b"@de');
+            const id = shapeId(g, THING.value);
+            exec(g, { kind: 'setNodeShape', id, patch: { description: '' } });
+            expect(literals(g, S.comment)).toEqual(['b@de']);
+            expect(literals(g, S.description)).toEqual([]);
+        });
+
+        it('sh:description and rdfs:comment: an edit changes sh:description only', async () => {
+            const g = await thing('sh:description "a"@en ; rdfs:comment "a"@en');
+            const id = shapeId(g, THING.value);
+            exec(g, { kind: 'setNodeShape', id, patch: { description: 'c' } });
+            expect(literals(g, S.description)).toEqual(['c@en']);
+            expect(literals(g, S.comment)).toEqual(['a@en']);
+        });
+    });
+
 
     it('keeps the shapes graphs out of the views and the view warnings', async () => {
         const g = await load();
