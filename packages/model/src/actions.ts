@@ -132,6 +132,7 @@ export const ACTIONS: ActionDef[] = [
     // Edit
     { id: 'catenary.rename', label: 'Rename', key: 'F2', scope: 'elements',
         applies: f => { const i = one(f); return !!i && (has(i, ...NAMED) || (!!f.view && has(i, 'group', 'note'))); } },
+    { id: 'catenary.changeClass', label: 'Change Class…', scope: 'elements', applies: f => all(f, i => has(i, 'instance') && !has(i, 'shape', 'valueSet')) },
     { id: 'catenary.editPath', label: 'Edit Path…', key: 'F2', scope: 'elements', applies: f => { const i = one(f); return !!i?.property && !has(i, ...NAMED); } },
     { id: 'catenary.editTarget', label: 'Change Target…', scope: 'elements', applies: f => !!one(f)?.property },
     { id: 'catenary.addAlternative', label: 'Add Target (One Of)…', scope: 'elements', applies: f => !!one(f)?.property },

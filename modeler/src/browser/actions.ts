@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, viewFileBase, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, boxes, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View
+    COMMON_DATATYPES, CommandResult, baseName, dirName, relativePath, freeViewFile, copyViewFile, viewFileInput, viewFileBase, VIEW_EXT, SimpleRange, iriId, alternativesOf, orRange, propertyNodeId, targetCard, rangeKey, rangeText, EditCommand, LogicalOperator, Migration, NODE_KINDS, NodeShapePatch, PathJSON, PropertyShapePatch, NewInstance, NewShapeTarget, Point, Range, ShapesModel, Side, byLabel, compactIri, expandIri, formatPath, labelProblem, SEARCH_KINDS, SEARCH_KIND_NAMES, type SearchHit, hitCard, boxes, nextCardinality, termIri, classIri, parseIri, rangeOfShape, shortIri, cardOf, VIEW_CLASS, localName, type PropertyShape, type View, isVocabularyType
 } from '@catenary/model';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
@@ -314,6 +314,66 @@ export class ModelActions {
         const pick = await this.quick.showQuickPick(classes.map(c => ({ label: c.name, description: c.iri, iri: c.iri })),
             { placeholder: 'Class of the new instance', matchOnDescription: true });
         return pick?.iri;
+    }
+
+    /**
+     * Ask for a class: a known class (of the shapes, the RDFS rules or the instance types; the classes used last first), or typed
+     * text (name, prefix:local or <iri>, as `typedClass`). Vocabulary types and `exclude` are not offered. Undefined: cancelled.
+     */
+    async askClass(title: string, exclude: string[] = []): Promise<string | undefined> {
+        type Item = QuickPickItem & { iri?: string };
+        const rank = (iri: string) => { const i = this.recentClasses.indexOf(iri); return i < 0 ? Infinity : i; };
+        const known = await this.service.knownClasses();
+        // knownClasses lists a class of the metamodel (with its name) first, and again as an instance type: keep the first.
+        const unique = [...new Map(known.map(c => [c.iri, c] as const).reverse()).values()];
+        const items: Item[] = unique.filter(c => !isVocabularyType(c.iri) && !exclude.includes(c.iri))
+            .map(c => ({ label: c.name ?? compactIri(c.iri), description: compactIri(c.iri), iri: c.iri }))
+            .sort((a, b) => rank(a.iri) - rank(b.iri) || a.label.localeCompare(b.label));
+        return new Promise(resolve => {
+            const qp = this.quick.createQuickPick<Item>();
+            qp.title = title;
+            qp.placeholder = 'Class name, prefix:local or <iri>';
+            qp.matchOnDescription = true;
+            const refresh = () => {
+                const text = qp.value.trim();
+                const r = text ? classIri(text, known) : undefined;
+                const exact = r && 'iri' in r && items.some(i => i.iri === r.iri);
+                const typed: Item[] = r && 'iri' in r && !exact ? [{ label: `Use ${text}`, description: r.iri, alwaysShow: true, iri: r.iri }]
+                    : r && 'error' in r ? [{ label: r.error, alwaysShow: true }] : [];
+                qp.items = [...typed, ...(typed.length ? [{ type: 'separator', label: 'Known classes' } as never] : []), ...items];
+                if (typed[0]?.iri) qp.activeItems = [typed[0]];
+            };
+            refresh();
+            qp.onDidChangeValue(refresh);
+            let done = false;
+            qp.onDidAccept(() => {
+                const item = qp.selectedItems[0] ?? qp.activeItems[0];
+                if (!item?.iri) return;
+                if (isVocabularyType(item.iri)) { this.messages.warn(`${compactIri(item.iri)} is a type of a vocabulary: the class of an instance cannot be one.`); return; }
+                done = true;
+                qp.hide();
+                resolve(item.iri);
+            });
+            qp.onDidHide(() => { if (!done) resolve(undefined); qp.dispose(); });
+            qp.show();
+        });
+    }
+
+    /** Change Class…: the picked class replaces the classes of the instances (`types`: their types). Vocabulary types stay. One undo step. */
+    async changeClass(ids: string[], types: string[]): Promise<void> {
+        const own = types.filter(t => !isVocabularyType(t));
+        const iri = await this.askClass(ids.length === 1 ? 'Change class' : `Change class of ${ids.length} instances`, own.length === 1 ? own : []);
+        if (!iri) return;
+        this.useClass(iri);
+        await this.model.execute({ kind: 'setTypes', ids, add: [iri], remove: own.filter(t => t !== iri) });
+    }
+
+    /** Add a class to an instance (Properties, "+" of Class). `types`: its types, not offered. */
+    async addClass(id: string, types: string[]): Promise<void> {
+        const iri = await this.askClass('Add class', types);
+        if (!iri) return;
+        this.useClass(iri);
+        await this.model.execute({ kind: 'setTypes', ids: [id], add: [iri], remove: [] });
     }
 
     /**

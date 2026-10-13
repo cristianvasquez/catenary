@@ -865,6 +865,7 @@ data EditCommand
   | Rename Id String
   | SetUri Id (Maybe Iri)                                    -- Nothing: mint from the label
   | SetStatements Id [(Iri, [Term])]
+  | SetTypes [Id] [Iri] [Iri]                                -- instances, classes to add, classes to remove
   | MoveElementsToFile FilePath FilePath [Id]                -- source, destination, elements
   | Delete [Id]
   | CreateRelation NewEnd Iri NewEnd (Maybe Id)              -- subject, predicate, object, view
@@ -944,7 +945,7 @@ law_missingViewRejected b c = maybe False (not . viewExists b) (viewNamed c) ==>
 
 -- 6.2 Resource edits ------------------------------------------------------------------
 
--- | Resource edits: createInstance, rename, setUri, setStatements, delete, createRelation, reconnectRelation.
+-- | Resource edits: createInstance, rename, setUri, setStatements, setTypes, delete, createRelation, reconnectRelation.
 -- Labels are not identity. Reject empty labels and surrounding spaces. A copy label uses the next free numeric suffix.
 -- New IRIs come from canonical-md and are free. An explicit IRI keeps its spelling. An empty Set IRI input mints from the label.
 -- rename updates the applicable label predicate (rdfs:label, skos:prefLabel, sh:name).
@@ -1012,6 +1013,24 @@ law_setStatementsScope b i vs p =
          Nothing -> objectsOf b' s p == objectsOf b s p
          Just ts -> failed (fst (step b (Execute (SetStatements i vs)))) || sameSet (objectsOf b' s p) ts
        Nothing -> True
+
+-- | setTypes changes the classes of instances: it removes the rdf:type statements it names, then adds the ones it names.
+-- It changes no other statement. Reason: Catenary is a drafting environment; a value that the new class does not describe shows
+-- in "Not in shapes" and in validation, so the user decides. A class of a vocabulary (rdf, rdfs, owl, sh, skos, view, ws) is
+-- refused: it gives an element its kind. A SKOS subject of a shapes file keeps its types.
+isVocabularyType :: Iri -> Bool
+law_setTypesScope :: Backend -> [Id] -> [Iri] -> [Iri] -> Iri -> Iri -> Bool
+law_setTypesScope b is add rm s p =
+  let (r, b') = step b (Execute (SetTypes is add rm))
+  in failed r || p == "rdf:type" || objectsOf b' s p == objectsOf b s p
+law_setTypesResult :: Backend -> [Id] -> [Iri] -> [Iri] -> Bool
+law_setTypesResult b is add rm =
+  let (r, b') = step b (Execute (SetTypes is add rm))
+  in failed r || and [ all (\c -> NamedNode c `elem` objectsOf b' s "rdf:type") add
+                       && all (\c -> NamedNode c `notElem` objectsOf b' s "rdf:type" || c `elem` add) rm
+                     | Just s <- map idIri is ]
+law_vocabularyTypeRefused :: Backend -> [Id] -> [Iri] -> [Iri] -> Bool
+law_vocabularyTypeRefused b is add rm = any isVocabularyType (add ++ rm) ==> failed (fst (step b (Execute (SetTypes is add rm))))
 
 -- | A relation must satisfy the metamodel (the links of the vocabulary plugins of §8.5), must not duplicate a triple and must not link an
 -- instance to itself.
@@ -1973,6 +1992,7 @@ lastPatch = manifestOnly
 viewExists = manifestOnly
 mintIri = manifestOnly
 objectsOf = manifestOnly
+isVocabularyType = manifestOnly
 permitted = manifestOnly
 isViewGraph = manifestOnly
 viewDescriptionText = manifestOnly

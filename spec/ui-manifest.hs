@@ -18,7 +18,7 @@ import Data.List (isSuffixOf, nub, sortOn)
 import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Catenary.Manifest
   ( EditCommand (..), Id, Iri, NewEnd (..), Point, RelationEnd (..), Side, ViewElementPatch
-  , (==>), elementId, firstFree, isTrig, manifestOnly, relationId, sameSet, unique )
+  , (==>), elementId, firstFree, isTrig, isVocabularyType, manifestOnly, relationId, sameSet, unique )
 
 --------------------------------------------------------------------------------
 -- Part I. The model as the user sees it
@@ -1527,6 +1527,16 @@ law_uncovered e = all (\st -> not (any (`covers` st) (applies e))) (uncovered e)
 -- Instance: one form for each applicable node shape, then one form "<Class> (RDFS)" for the RDFS rules of each of its classes.
 -- With one form, its title is "Description". The link picker and connect errors name the shapes and the RDFS rules ("No shape or RDFS rule permits ...").
 -- Literal constraints and statements not in shapes are closed by default. Their headings show a summary.
+-- | Instance Class row: one pill per rdf:type. A pill has × (setTypes remove) unless it is a vocabulary type or locked; + adds a class.
+-- Change Class… (an action on one or more instances) replaces the classes that are not vocabulary types with one picked class.
+-- The class picker lists the known classes (shapes, RDFS rules, instance types) and accepts a name, prefix:local or <iri>.
+-- Reason: the values stay (spec/manifest.hs §6.2 setTypes), so a wrong pick is one undo step.
+changeClassCommand :: [Id] -> [Iri] -> Iri -> EditCommand   -- instances, their types, the picked class
+changeClassCommand is ts c = SetTypes is [c] [t | t <- ts, not (isVocabularyType t), t /= c]
+law_changeClassKeepsVocabulary :: [Id] -> [Iri] -> Iri -> Bool
+law_changeClassKeepsVocabulary is ts c = case changeClassCommand is ts c of
+  SetTypes _ _ rm -> not (any isVocabularyType rm)
+  _ -> False
 moreActionsMenu :: [String] -> [String]            -- the other applicable actions
 moreActionsMenu as = filter (/= "Delete from Model") as ++ ["Delete from Model" | "Delete from Model" `elem` as]
 cardinalityButtons :: [Cardinality]

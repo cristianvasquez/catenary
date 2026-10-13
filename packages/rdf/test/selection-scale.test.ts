@@ -79,7 +79,7 @@ describe('selection reads of a few hundred placements (§11.3 law readBudgetMs)'
         expect(sparql).toBeLessThanOrEqual(25);
         expect(reads).toBeLessThanOrEqual(PER_INSTANCE + 100);
         expect(answer.items).toHaveLength(N);
-        expect(answer.actions.map(a => a.id)).toEqual(['catenary.proposeShapes', 'catenary.collect', 'catenary.removeFromView', 'catenary.deleteFromModel']);
+        expect(answer.actions.map(a => a.id)).toEqual(['catenary.changeClass', 'catenary.proposeShapes', 'catenary.collect', 'catenary.removeFromView', 'catenary.deleteFromModel']);
         for (const [i, item] of answer.items.entries()) {
             expect(item).toMatchObject({
                 id: ids[i], element: iriId(instance(i)), kinds: ['instance'], types: [i % 2 ? LOOSE : THING], placed: true, placedInActive: true, views: 1, files: 1,

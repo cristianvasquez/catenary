@@ -17,7 +17,7 @@ import {
     ACTIONS, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
     ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formatPath, inside,
     parseCardinality, parsePath, permittedRelations, predicateName, primaryClass, rangeText, verbalizeConstraint, verbalizeProperty, verbalizeShape, alternativesOf,
-    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged
+    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged, RDF_TYPE, isVocabularyType
 } from '@catenary/model';
 import { ViewEditors } from '../diagram/view-editors';
 import { ViewNotesEditors, ViewNotesField } from '../notes/view-notes';
@@ -344,9 +344,12 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
             {/* All violations: the form marks invalid values, but not empty required fields. */}
             {problems.length ? <Warning title={`${problems.length} ${problems.length === 1 ? 'violation' : 'violations'}`} items={problems.map(problemText)} /> : undefined}
             <Section title='Identity'>
-                <Row label='Class' inline>
-                    <div className='catenary-pills'>{inst.types.length ? inst.types.map(t => <span key={t} className='catenary-pill' title={t}>{compactIri(t)}</span>)
-                        : <span className='catenary-none'>none</span>}</div>
+                <Row label='Class' term='rdf:type' inline tip='× removes a class, + adds one. Change Class… (More actions) replaces them. The values stay: a value that no class describes shows in "Not in shapes".'>
+                    <div className='catenary-pills'>{inst.types.length ? inst.types.map(t => <span key={t} className='catenary-pill' title={t}>{compactIri(t)}
+                        {isVocabularyType(t) ? undefined : locked.has(lockedKey(RDF_TYPE, { termType: 'NamedNode', value: t })) ? <span className='codicon codicon-lock' title='From a locked file (read only)' />
+                            : <IconButton icon='close' title='Remove the class' onClick={() => this.exec({ kind: 'setTypes', ids: [inst.id], add: [], remove: [t] })} />}</span>)
+                        : <span className='catenary-none'>none</span>}
+                        <IconButton icon='add' title='Add a class' onClick={() => void this.actions.addClass(inst.id, inst.types)} /></div>
                 </Row>
                 {this.shapeRow(inst)}
                 {inst.importedFiles ? <Row label='Locked' inline tip={`Values from locked files are read only. New values go to ${this.model.snapshot.files.defaultFile

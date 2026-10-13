@@ -16,6 +16,9 @@ export const XSD_STRING = NS.xsd + 'string';
 export const RDF_TYPE = NS.rdf + 'type';
 export const RDFS_LABEL = NS.rdfs + 'label';
 
+/** A class of the vocabularies (rdf, rdfs, owl, sh, skos, view, ws): it gives an element its kind. setTypes does not add or remove one. */
+export const isVocabularyType = (iri: string): boolean => [NS.rdf, NS.rdfs, NS.owl, NS.sh, NS.skos, NS.view, NS.ws].some(ns => iri.startsWith(ns));
+
 /** An RDF term as JSON: IRIs and literals only. */
 export interface TermJSON {
     termType: 'NamedNode' | 'Literal';

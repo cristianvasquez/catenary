@@ -25,7 +25,7 @@ import { PROBLEMS_CONTEXT_MENU } from './problems';
 /** Menu groups of the actions, the same in every context menu. Order inside a group: the order of ACTIONS. */
 export const ACTION_GROUPS: [string, string[]][] = [
     ['1_open', ['catenary.openIn', 'catenary.addToView']],
-    ['2_edit', ['catenary.rename', 'catenary.editPath', 'catenary.editTarget', 'catenary.addAlternative', 'catenary.groupOr', 'catenary.groupXone', 'catenary.groupAnd',
+    ['2_edit', ['catenary.rename', 'catenary.changeClass', 'catenary.editPath', 'catenary.editTarget', 'catenary.addAlternative', 'catenary.groupOr', 'catenary.groupXone', 'catenary.groupAnd',
         'catenary.ungroup', 'catenary.duplicateView', 'catenary.proposeShapes', 'catenary.showAsEdge', 'catenary.showAsRow', 'catenary.collect', 'catenary.uncollect']],
     ['3_delete', ['catenary.removeFromView', 'catenary.deleteFromModel']]
 ];
@@ -118,6 +118,7 @@ export class ActionContribution implements CommandContribution, MenuContribution
             case 'catenary.nextOccurrence': return this.editors.nextOccurrence(1);
             case 'catenary.previousOccurrence': return this.editors.nextOccurrence(-1);
             case 'catenary.rename': return this.rename(one, view);
+            case 'catenary.changeClass': return a.changeClass(items.map(i => i.element), [...new Set(items.flatMap(i => i.types))]);
             case 'catenary.editPath': return a.editPath(one.element, view);
             case 'catenary.editTarget': return a.editRange(one.element, view);
             case 'catenary.addAlternative': return a.addAlternative(one.element, view);

@@ -5,7 +5,7 @@
 import {
     Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
-    pillSize, pills, rangeText, formatVertices, parseVertices, nkey, shortIri
+    pillSize, pills, rangeText, formatVertices, parseVertices, nkey, shortIri, isVocabularyType
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
@@ -320,6 +320,26 @@ export function setStatements(g: ModelGraph, meta: Classes, id: string, values: 
             if (isInstance(g, q.object)) removeEdgeLayouts(g, s, predicate, q.object);
         }
         for (const o of keep) g.add(s, predicate, o, home);
+    }
+    return ok(undefined);
+}
+
+/**
+ * Change the classes of instances: remove the rdf:type statements of `remove`, then add those of `add`. The statements of the
+ * instance stay. A SKOS subject of a shapes file keeps its types.
+ */
+export function setTypes(g: ModelGraph, ids: string[], add: string[], remove: string[]): Result {
+    for (const t of [...add, ...remove]) {
+        if (!IRI_SYNTAX.test(t)) return fail(`'${t}' is not an absolute IRI`);
+        if (isVocabularyType(t)) return fail(`${shortIri(t)} is a type of a vocabulary: the class of an instance cannot be one.`);
+    }
+    for (const id of ids) {
+        const s = instanceTerm(g, id);
+        if (!s) return gone('instance', id);
+        const home = homeOf(g, s);
+        if (!home.equals(g.union)) return fail(`${label(g, s)} is a SKOS subject of a shapes file: its types do not change.`);
+        for (const t of remove) g.remove(rdf.quad(s, P.type, rdf.namedNode(t), home));
+        for (const t of add) g.add(s, P.type, rdf.namedNode(t), home);
     }
     return ok(undefined);
 }

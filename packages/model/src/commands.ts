@@ -25,6 +25,11 @@ export type EditCommand =
     /** Replace the statements (instance, predicate, *) for the given predicates. IRIs of instances are relations. */
     | { kind: 'setStatements'; id: string; values: Record<string, TermJSON[]> }
     /**
+     * Classes of instances: remove the rdf:type statements of `remove`, then add `add`. Other statements stay (values that the new
+     * classes do not describe show as "Not in shapes"). A type of the vocabularies (rdf, rdfs, owl, sh, skos, view, ws) is refused.
+     */
+    | { kind: 'setTypes'; ids: string[]; add: string[]; remove: string[] }
+    /**
      * Delete elements of any kind in one step: instances and relations (from the model and all views), views (with the references to
      * them), node shapes (with their property shapes and cards), property shapes, unused value sets; constraints are dissolved.
      */

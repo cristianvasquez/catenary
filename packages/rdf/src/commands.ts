@@ -250,6 +250,8 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
             return ops.setViewDescription(g, c.view, c.text, c.expectedText);
         case 'setStatements':
             return ops.setStatements(g, meta, c.id, c.values);
+        case 'setTypes':
+            return ops.setTypes(g, c.ids, c.add, c.remove);
         case 'delete':
             return deleteElements(g, c.ids);
         case 'moveElementsToFile':
