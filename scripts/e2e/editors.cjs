@@ -595,7 +595,8 @@ test('browser: Properties keeps its content during a model change; the SHACL for
         label: label === undefined || values.includes(label) };
     }, label);
     const settled = s => s.data && s.rendered && !s.asking && !s.formRequest && !s.held && s.forms === 1 && s.shown === 1 && s.label;
-    await waitUntil('Properties shows the form of the instance for the current revision', () => panelState(), settled);
+    // The first form shows at once, before its initialization: wait until its fields have the values (the label of the instance).
+    await waitUntil('Properties shows the filled form of the instance for the current revision', () => panelState(target.label), settled);
     // Each animation frame, from before the change until the end of the request: the smallest panel and form heights, the
     // shown forms, and whether a frame had no action toolbar.
     const record = () => page.evaluate(() => {
