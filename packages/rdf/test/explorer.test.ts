@@ -1,52 +1,17 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXPLORER_PAGE, ExplorerRow, NS, VIEW_CLASS, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { tracer } from '../src/trace';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { docOf } from './helpers';
+import { AGENT, EXPLORER_BIG as BIG, Fixture, openExplorerFixture, traced } from './scale-fixtures';
 
-// spec/manifest.hs §11.3 readBudgetMs.
-const READ_BUDGET_MS = 50;
-const BIG = 600;
-
-const AGENT = 'http://www.w3.org/ns/prov#Agent';
-const MORE = `@prefix rdfs: <${NS.rdfs}> .
-<urn:x:Robot> rdfs:subClassOf <${AGENT}> .
-<urn:x:untyped> rdfs:label "Untyped" .
-<urn:x:task> a <osg://vocab/data-product-draft#Task> ; rdfs:label "Task without action" .
-<urn:x:two> a <${AGENT}>, <urn:x:Robot> ; rdfs:label "Two types" .
-<urn:x:A> rdfs:subClassOf <urn:x:B> . <urn:x:B> rdfs:subClassOf <urn:x:A> .
-<urn:x:a> a <urn:x:A> ; rdfs:label "In a cycle" .
-${Array.from({ length: EXPLORER_PAGE + 5 }, (_, i) => `<urn:x:m${i}> a <urn:x:Many> .`).join('\n')}
-`;
-
-let dir: string, store: ModelStore;
+// A new workspace for each test (scale-fixtures.ts). `pnpm test:perf` measures the time of the reads of big.ttl (perf/explorer.perf.ts).
+let fixture: Fixture, dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-explorer-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'more.ttl'), MORE);
-    writeFileSync(join(dir, 'owner.ttl'), `@prefix sh: <${NS.sh}> . <urn:x:S> a sh:NodeShape ; sh:property <urn:x:P> .`);
-    writeFileSync(join(dir, 'property.ttl'), `@prefix sh: <${NS.sh}> . <urn:x:P> sh:path <urn:x:q> .`);
-    // A class declared in a shapes file, and a data file that types an instance with it.
-    writeFileSync(join(dir, 'declared.ttl'), `@prefix sh: <${NS.sh}> . @prefix rdfs: <${NS.rdfs}> .
-<urn:y:C> a rdfs:Class, sh:NodeShape ; rdfs:label "Declared" .`);
-    writeFileSync(join(dir, 'typed.ttl'), `@prefix rdfs: <${NS.rdfs}> . <urn:y:i> a <urn:y:C> ; rdfs:label "Typed" ; <urn:y:refers> <urn:y:other> .`);
-    writeFileSync(join(dir, 'big.ttl'), `@prefix rdfs: <${NS.rdfs}> .
-${Array.from({ length: BIG }, (_, i) => `<urn:z:i${i}> a <urn:z:Big> ; rdfs:label "Big ${i}" ; <urn:z:next> <urn:z:i${i + 1}> .`).join('\n')}`);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+    fixture = await openExplorerFixture();
+    ({ dir, store } = fixture);
 });
-afterEach(async () => {
-    while (tracer.on) tracer.setClient(false);
-    await store.idle();
-    store.close();
-    rmSync(dir, { recursive: true, force: true });
-});
+afterEach(() => fixture.dispose());
 
 const at = (file: string) => join(dir, file);
 const rows = (key: string | undefined, file: string) => store.reads.explorerChildren(key, at(file)).rows;
@@ -54,17 +19,6 @@ const elements = (key: string, file: string) => store.reads.explorerElements(key
 const paths = (id: string, file: string) => store.reads.explorerPaths(iriId(id), at(file)).map(p => p.keys);
 const names = (rs: ExplorerRow[]) => rs.map(r => r.name);
 const cls = (iri: string) => 'rdfs/class:' + iri;
-
-/** A read under the tracer: its answer, its SPARQL queries and its time (selection-scale.test.ts). */
-function measure<T>(name: string, read: () => T): { answer: T; sparql: number; ms: number } {
-    tracer.setClient(true);
-    const t0 = performance.now();
-    const answer = tracer.span('rpc', name, read);
-    const ms = performance.now() - t0;
-    const batch = tracer.take();
-    tracer.setClient(false);
-    return { answer, sparql: batch.spans.filter(s => s.kind === 'sparql').length, ms };
-}
 
 describe('Model explorer plugins (ADR 0006)', () => {
     it('the sections of the plugins: Classes (rdfs), then Shapes (shacl); a section with no rows of the file is not shown', () => {
@@ -168,17 +122,15 @@ describe('Model explorer plugins (ADR 0006)', () => {
         for (const file of ['data.ttl', 'shapes.ttl', 'more.ttl']) expect(elements('rdfs/classes', file)).not.toContain(iriId(NS.sh + 'ValidationResult'));
     });
 
-    it(`explorerChildren of a file with ${BIG} subjects: under readBudgetMs, a bounded number of SPARQL queries (§11.3 law readBudgetMs)`, () => {
+    it(`explorerChildren of a file with ${BIG} subjects: a bounded number of SPARQL queries (§11.3 law readBudgetMs)`, () => {
         const key = cls('urn:z:Big');
         store.reads.explorerChildren(key, at('big.ttl'));
-        const sections = measure('sections', () => store.reads.explorerChildren(undefined, at('big.ttl')));
-        const children = measure('children', () => store.reads.explorerChildren(key, at('big.ttl')));
+        const sections = traced('sections', () => store.reads.explorerChildren(undefined, at('big.ttl')));
+        const children = traced('children', () => store.reads.explorerChildren(key, at('big.ttl')));
         expect(children.answer.total).toBe(BIG);
         expect(sections.sparql).toBeLessThanOrEqual(8);
         expect(children.sparql).toBeLessThanOrEqual(8);
-        expect(sections.ms).toBeLessThan(READ_BUDGET_MS);
-        expect(children.ms).toBeLessThan(READ_BUDGET_MS);
-        const drag = measure('drag', () => store.reads.explorerDrag({ file: at('big.ttl'), ids: [], folders: ['rdfs/classes'] }));
+        const drag = traced('drag', () => store.reads.explorerDrag({ file: at('big.ttl'), ids: [], folders: ['rdfs/classes'] }));
         expect(drag.answer).toHaveLength(BIG);
         expect(drag.sparql).toBeLessThanOrEqual(8);
     });

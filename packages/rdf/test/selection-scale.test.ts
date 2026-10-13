@@ -2,69 +2,23 @@
 // (SPARQL queries and pattern matches), not one or more per selected id. The tracer counts the SPARQL queries of the store as spans
 // and all store reads in the `queries` of the enclosing span (report-read.test.ts pattern).
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { NS, iriId } from '@catenary/model';
+import { iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { tracer } from '../src/trace';
-import { WORKSPACE } from './helpers';
+import {
+    Fixture, KNOWS, LOOSE, SELECTION_EDGES as EDGES, SELECTION_N as N, THING, instance, openSelectionFixture, selectionEdge as edge,
+    selectionElements as elements, selectionIds as ids, selectionView as view, traced as measure
+} from './scale-fixtures';
 
-const N = 300, EDGES = 10;
-const THING = 'urn:x:Thing', LOOSE = 'urn:x:Loose', KNOWS = 'urn:x:knows', VIEW = 'urn:name:Big';
-const instance = (i: number) => `urn:x:i${String(i).padStart(4, '0')}`;
-const placement = (i: number) => `${VIEW}/p/${String(i).padStart(4, '0')}`;
-const edge = (i: number) => `${VIEW}/e/${String(i).padStart(4, '0')}`;
-
-const SHAPES = `@prefix sh: <${NS.sh}> .
-<urn:x:ThingShape> a sh:NodeShape ; sh:targetClass <${THING}> ; sh:name "Thing" ;
-  sh:property [ sh:path <${NS.rdfs}label> ; sh:datatype <http://www.w3.org/2001/XMLSchema#string> ] ;
-  sh:property [ sh:path <${KNOWS}> ; sh:class <${THING}> ] .
-`;
-// Even instances: Thing (a node shape targets it). Odd instances: Loose (no node shape). Each instance knows the next one.
-const DATA = [...Array(N).keys()].map(i => `<${instance(i)}> a <${i % 2 ? LOOSE : THING}> ; <${NS.rdfs}label> "Item ${i}" ${i + 1 < N ? `; <${KNOWS}> <${instance(i + 1)}>` : ''} .`).join('\n');
-// A card per instance, and an edge for the first EDGES relations: the other relations are hidden.
-const VIEW_FILE = `<${VIEW}> {
-  <${VIEW}> a <${NS.view}View> ; <${NS.rdfs}label> "Big" .
-${[...Array(N).keys()].map(i => `  <${placement(i)}> a <${NS.view}Placement> ; <${NS.view}element> <${instance(i)}> ; <${NS.view}x> ${(i % 20) * 200} ; <${NS.view}y> ${Math.floor(i / 20) * 100} ; <${NS.view}view> <${VIEW}> .`).join('\n')}
-${[...Array(EDGES).keys()].map(i => `  <${edge(i)}> a <${NS.view}Placement> ; <${NS.rdf}reifies> <<( <${instance(i)}> <${KNOWS}> <${instance(i + 1)}> )>> ; <${NS.view}view> <${VIEW}> .`).join('\n')}
-}
-`;
-
-let dir: string, store: ModelStore;
+// A new workspace for each test (scale-fixtures.ts). This file asserts no elapsed time: `pnpm test:perf` measures the outline
+// read (perf/selection-scale.perf.ts).
+let fixture: Fixture, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-selection-scale-'));
-    writeFileSync(join(dir, 'workspace.trig'), WORKSPACE);
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    mkdirSync(join(dir, 'views'));
-    writeFileSync(join(dir, 'views', 'big.view.trig'), VIEW_FILE);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
+    fixture = await openSelectionFixture();
+    store = fixture.store;
 });
-afterEach(async () => {
-    while (tracer.on) tracer.setClient(false);
-    await store.idle();
-    store.close();
-    rmSync(dir, { recursive: true, force: true });
-});
+afterEach(() => fixture.dispose());
 
-/** A read under the tracer: its answer, its SPARQL queries, all its store reads (queries and matches) and its time. */
-function measure<T>(name: string, read: () => T): { answer: T; sparql: number; reads: number; ms: number } {
-    tracer.setClient(true);
-    const t0 = performance.now();
-    const answer = tracer.span('rpc', name, read);
-    const ms = performance.now() - t0;
-    const batch = tracer.take();
-    tracer.setClient(false);
-    const span = batch.spans.find(s => s.kind === 'rpc' && s.name === name)!;
-    return { answer, sparql: batch.spans.filter(s => s.kind === 'sparql').length, reads: span.queries ?? 0, ms };
-}
-
-const view = iriId(VIEW), ids = [...Array(N).keys()].map(i => iriId(placement(i))), elements = [...Array(N).keys()].map(i => iriId(instance(i)));
 const relation = (i: number) => `r-${iriId(instance(i)).slice(2)}-${iriId(KNOWS).slice(2)}-${iriId(instance(i + 1)).slice(2)}`;
 /**
  * The store reads that a scoped read of n instances still makes once per instance: the file of each instance (model-store.ts
@@ -134,10 +88,9 @@ describe('selection reads of a few hundred placements (§11.3 law readBudgetMs)'
         expect(answer!.hidden[0]).toEqual({ id: relation(EDGES), label: `Item ${EDGES} — knows → Item ${EDGES + 1}` });
     });
 
-    it('outline: the nodes of each card from the view statements indexed once, in time linear in the placements', () => {
-        const { answer, sparql, ms } = measure('outline', () => store.reads.outline(view, { view, ids: ids.slice(0, 3) }));
+    it('outline: the nodes of each card from the view statements indexed once', () => {
+        const { answer, sparql } = measure('outline', () => store.reads.outline(view, { view, ids: ids.slice(0, 3) }));
         expect(sparql).toBeLessThanOrEqual(8);
-        expect(ms).toBeLessThan(1000);
         expect(answer).toHaveLength(N);
         expect(answer.filter(n => n.selected)).toHaveLength(3);
         expect(answer[0].children.map(c => c.kind)).toEqual(['out']);

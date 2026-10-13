@@ -221,6 +221,7 @@ Vitest loads the TypeScript source, not `lib/`. Keep each test at the lowest lay
 | `packages/rdf-files/test` | Formats, listing, disk changes, atomic writes, watch, Git |
 | `packages/rdf-core/test` | Undo and redo stacks and the patch queue |
 | `packages/rdf/test` | RDF commands, transactions, undo, queries, validation, file round trips |
+| `packages/rdf/test/perf` | Elapsed time against `readBudgetMs` (`pnpm test:perf` only) |
 | `modeler/test` | Store-to-GLSP updates, frontend actions, selection, layout |
 | `scripts/e2e.cjs` | Browser wiring of gestures and rendering only |
 | `scripts/smoke-cli.mjs` | CLI and RPC contract of the browser backend: authentication, edits on disk, undo, read back |
@@ -234,7 +235,8 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 |---|---|
 | `packages/rdf/test/change.test.ts`, `modeler/test/view-session.test.ts` | `law_keptDocEqualsRead`, `law_canvasEditErrorsOnce`, `law_revealAfterShowUpdate`, `law_clientGetsNoOlderModel` |
 | `packages/rdf/test/read-budget.test.ts`, `packages/rdf/test/shacl-targets.test.ts` | `law_keptReadsEqualRead`, `readBudgetMs` |
-| `packages/rdf/test/selection-scale.test.ts` | `readBudgetMs`: the store reads of a panel read of a few hundred placements stay bounded |
+| `packages/rdf/test/selection-scale.test.ts`, `packages/rdf/test/explorer.test.ts` | `readBudgetMs`: the store reads of a panel read of a few hundred placements stay bounded |
+| `packages/rdf/test/perf/*.perf.ts` | `readBudgetMs`: elapsed time of the same reads (`pnpm test:perf`) |
 | `packages/rdf/test/store.test.ts`, `packages/rdf-files/test/trap.test.ts` | `law_trapReadsFilesOnce`, `law_trapStopsStoreCalls` |
 | `packages/rdf-files/test/text-patch.test.ts`, `packages/rdf/test/review-save.test.ts` | `law_graphPatchKeepsText` |
 | `packages/rdf/test/explorer.test.ts`, `packages/rdf/test/file-explorer.test.ts` | `law_fileRowsOwnSubjects` |
@@ -244,7 +246,9 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 | `modeler/test/action-service.test.ts` | `law_selectionReadsLastOnly`, `law_gestureNoQuietWait` |
 | `scripts/e2e.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations) |
 
-Read budget: `packages/rdf/test/read-budget.test.ts` generates a view of 600 cards. It holds each panel read of 600 elements and each step of a content change with an open canvas to `readBudgetMs` (manifest §11.3), by the tracer spans of the fastest of three runs. Reads that still exceed the budget are listed with their `spec/open.md` row and a ceiling. The same file checks that the kept reads equal the reads of a new store after each edit.
+Read budget: `packages/rdf/test/scale-fixtures.ts` generates the scale fixtures: a view of 600 cards, a view of 300 placed instances and an explorer file of 600 subjects. Each open writes a new temporary workspace, so a test that edits owns its fixture. The functional tests assert no elapsed time. `read-budget.test.ts` checks that each panel read of 600 elements and each step of a content change is one tracer span, and that the kept reads equal the reads of a new store after each edit, undo and redo. `selection-scale.test.ts` and `explorer.test.ts` bound the SPARQL queries and store reads.
+
+Performance: `pnpm test:perf` (`vitest.perf.config.mts`) runs `packages/*/test/perf/*.perf.ts`, one file at a time in one process. `pnpm verify` and CI do not run it. Each step has 2 unmeasured warm-up runs and 20 samples. Its p50 must keep `readBudgetMs` (manifest §11.3) or the ceiling of its exception. The exceptions are listed in `perf/read-budget.perf.ts` with their `spec/open.md` row. Each file writes a JSON report to `CATENARY_PERF_DIR` (default: a new temporary directory): the samples, p50, p95, maximum, overruns, runtime, CPU allocation and fixture size. The tracer spans measure elapsed time, which includes the time that the thread waits for a CPU. A run is diagnostic, and an overrun is inconclusive, unless `CATENARY_PERF_ENV` describes a controlled environment. The load average is recorded but does not classify a run. Do not run other builds or tests on the same CPUs during a measurement.
 
 Test oracles: `packages/rdf/test/project-full.ts` (read model of the whole dataset) and `packages/model/test/doc-reference.ts`. The application uses neither. `scoped-doc.test.ts` compares the store answers with them. An oracle reads the whole dataset: compute it once before a loop, not in a loop or in an assertion message.
 
