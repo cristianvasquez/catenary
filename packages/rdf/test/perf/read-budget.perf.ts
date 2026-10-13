@@ -20,18 +20,13 @@ const READ_BUDGET_MS = 50;
  * `snapshot/files` compares the canonical form of the changed files with the saved one. The execute ceiling below is accepted as is (kata 5f5r: will not fix).
  */
 const OVER_BUDGET: Record<string, { row: string; ceilingMs: number }> = {
+    // The default PERF7 ceiling.
+    ...Object.fromEntries(['appearance', 'deletePlan', 'elementRows', 'occurrence', 'outline', 'selectionActions', 'unplaced', 'view']
+        .map(name => [name, { row: 'PERF7', ceilingMs: 400 }])),
     // 43 to 52 ms: at the budget, over it when other test files load the machine.
     selected: { row: 'PERF7', ceilingMs: 150 },
     links: { row: 'PERF7', ceilingMs: 3000 },
     copyAsRdf: { row: 'PERF7', ceilingMs: 1500 },
-    appearance: { row: 'PERF7', ceilingMs: 400 },
-    deletePlan: { row: 'PERF7', ceilingMs: 400 },
-    elementRows: { row: 'PERF7', ceilingMs: 400 },
-    occurrence: { row: 'PERF7', ceilingMs: 400 },
-    outline: { row: 'PERF7', ceilingMs: 400 },
-    selectionActions: { row: 'PERF7', ceilingMs: 400 },
-    unplaced: { row: 'PERF7', ceilingMs: 400 },
-    view: { row: 'PERF7', ceilingMs: 400 },
     execute: { row: 'none', ceilingMs: 400 }
 };
 /** The limit of a span: a step of CHANGE_STEPS keeps the budget, also inside a span of OVER_BUDGET. */

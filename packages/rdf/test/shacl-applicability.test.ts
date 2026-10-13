@@ -1,17 +1,16 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InstanceProperties, TYPES, boxes, iriId, toSchema } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { writeWorkspace } from './helpers';
+import { writeWorkspace, openStore, tempWorkspace } from './helpers';
 import { readShapes } from '../src/shapes-read';
 import { parseRdfSync } from 'rdf-files';
 
 const prefix = '@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .';
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-shacl-applicability-'));
+    dir = tempWorkspace({}, 'catenary-shacl-applicability-').dir;
     writeFileSync(join(dir, 'shapes.ttl'), prefix + `
         <urn:S> a sh:NodeShape ; sh:targetSubjectsOf <urn:p> ; sh:property <urn:ps> ; sh:node <urn:Same> .
         <urn:ps> sh:path <urn:p> ; sh:node <urn:Value> .
@@ -20,10 +19,8 @@ beforeEach(async () => {
         <urn:Objects> sh:targetObjectsOf <urn:p> ; sh:property <urn:objectName> .
         <urn:objectName> sh:path <urn:title> ; sh:minCount 1 .`);
     writeFileSync(join(dir, 'data.ttl'), prefix + '<urn:a> a <urn:C> ; rdfs:label "A" ; <urn:p> <urn:b> . <urn:b> a <urn:C> ; rdfs:label "B" .');
-    store = new ModelStore(); store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+    store = await openStore(writeWorkspace(dir));
 });
-afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
 
 describe('shared SHACL behavior in the application', () => {
     it('Properties, Links, halo counts and pickers agree before and after showing a shape', () => {

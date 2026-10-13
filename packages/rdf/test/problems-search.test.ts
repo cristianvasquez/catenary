@@ -1,14 +1,11 @@
 // Problems panel (ADR 0007 step 6): the query of the store compared with the violation list of the validation, on the fixtures.
 // Find Element: search.test.ts.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { NS, Violation } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { ValidationRunner } from '../src/validation-runner';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 <urn:k:S> a skos:ConceptScheme ; skos:prefLabel "Scheme" .
@@ -24,17 +21,8 @@ const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-panels-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'more.ttl'), MORE);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA, 'more.ttl': MORE }, 'catenary-panels-').dir;
+    store = await openStore(writeWorkspace(dir));
 });
 
 /** Run the validation now (the store runs it after a delay). */

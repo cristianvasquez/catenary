@@ -2,11 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ModelSnapshot } from '@catenary/model';
 import { ModelFrontend, ModelWatcher } from '../src/browser/model-client';
 
-function deferred<T>() {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>(r => { resolve = r; });
-    return { promise, resolve };
-}
 const snapshot = (revision: number, shapesVersion = 0): ModelSnapshot => ({
     revision, shapesVersion, file: '/workspace.trig', files: { files: [], views: [] }, meta: { classes: [] },
     counts: { instances: 0, results: 0, violations: 0 }, warnings: [], migrations: [], movedIds: {}, prefixes: { table: {}, stored: false }, dirty: false, canUndo: false, canRedo: false
@@ -14,7 +9,7 @@ const snapshot = (revision: number, shapesVersion = 0): ModelSnapshot => ({
 
 describe('frontend model notifications', () => {
     it('does not overwrite a pushed edit with a late startup snapshot or subscribe twice', async () => {
-        const initial = deferred<ModelSnapshot>();
+        const initial = Promise.withResolvers<ModelSnapshot>();
         const watcher = new ModelWatcher();
         const service = { getSnapshot: vi.fn(() => initial.promise), shapesText: vi.fn(async () => '') };
         const frontend = Object.assign(new ModelFrontend(), { watcher, service });
@@ -34,7 +29,7 @@ describe('frontend model notifications', () => {
     });
 
     it('does not publish stale shapes to the properties form after shapes are reloaded', async () => {
-        const oldShapes = deferred<string>(), newShapes = deferred<string>();
+        const oldShapes = Promise.withResolvers<string>(), newShapes = Promise.withResolvers<string>();
         const watcher = new ModelWatcher();
         const service = {
             getSnapshot: async () => snapshot(1, 1),

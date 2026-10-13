@@ -81,18 +81,11 @@ describe('ValidationRunner', () => {
     });
 });
 
-/** A promise and its resolve function. */
-function deferred<T>() {
-    let resolve!: (v: T) => void;
-    const promise = new Promise<T>(r => { resolve = r; });
-    return { promise, resolve };
-}
-
 /** A worker thread that answers only when the test says so. `terminate` resolves when the test calls `exit`. */
 class FakeWorker extends EventEmitter implements WorkerLike {
     readonly posted: { id: number }[] = [];
     terminated = false;
-    protected exited = deferred<number>();
+    protected exited = Promise.withResolvers<number>();
     postMessage(m: { id: number }): void { this.posted.push(m); }
     unref(): void {}
     terminate(): Promise<number> { this.terminated = true; return this.exited.promise; }
@@ -123,7 +116,7 @@ describe('ValidationRunner disposal (spec/manifest.hs §3.5)', () => {
     });
 
     it('law_disposalAwaitsRuns: dispose resolves after the running run ends, and drops its result; each call gives the same promise', async () => {
-        const held = deferred<validation.ValidationReport>();
+        const held = Promise.withResolvers<validation.ValidationReport>();
         vi.spyOn(validation, 'validate').mockReturnValueOnce(held.promise);
         const g = emptyGraph();
         let changes = 0;

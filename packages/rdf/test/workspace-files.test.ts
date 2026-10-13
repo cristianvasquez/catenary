@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,37 +7,21 @@ import { DEFAULT_PREFIXES, Doc, PREFIXES, compactIri, emptyShapes, boxes } from 
 import { ModelStore } from '../src/model-store';
 import { ModelGraph, shapesGraphIri } from '../src/graph';
 import { parseTrig } from '../src/trig';
-import { DATA, MODEL, SHAPES, WORKSPACE, doc, example, parseQuads, writeWorkspace, docOf } from './helpers';
+import { DATA, MODEL, SHAPES, WORKSPACE, doc, example, parseQuads, writeWorkspace, docOf, openStore, tempWorkspace, workspaceTrig } from './helpers';
 
-const dirs: string[] = [];
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-const stores: ModelStore[] = [];
-afterEach(async () => {
+afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
-    for (const store of stores.splice(0)) await store.dispose();
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-
 
 /** A temporary folder with the fixture files; `workspace: false`: without the workspace file and its views (for create). */
 function files({ workspace = true } = {}) {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-files-'));
-    dirs.push(dir);
-    const f = (name: string, text: string) => { writeFileSync(join(dir, name), text); return join(dir, name); };
-    return {
-        dir, shapes: f('shapes.ttl', SHAPES), data: f('data.ttl', DATA), ws: workspace ? writeWorkspace(dir) : '',
-        read: (name: string) => readFileSync(join(dir, name), 'utf8')
-    };
+    const w = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-files-');
+    return { ...w, shapes: w.path('shapes.ttl'), data: w.path('data.ttl'), ws: workspace ? writeWorkspace(w.dir) : '' };
 }
 
-async function opened(path: string): Promise<ModelStore> {
-    const store = new ModelStore();
-    stores.push(store);
-    const r = await store.open(path);
-    if (!r.ok) throw new Error(r.error);
-    return store;
-}
+const opened = (path: string) => openStore(path, { watching: true });
 
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
 const viewId = (store: ModelStore, label: string) => Object.values(docOf(store).views).find(v => v.label === label)!.id;
@@ -45,8 +29,7 @@ const instanceId = (store: ModelStore, label: string) => Object.values(docOf(sto
 
 describe('workspace files', () => {
     it('loads the bundled bookshop example with both views, six domain instances and its value set', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-bookshop-'));
-        dirs.push(dir);
+        const dir = tempWorkspace({}, 'catenary-bookshop-').dir;
         cpSync(new URL('../../../examples/bookshop/', import.meta.url), dir, { recursive: true });
         const store = await opened(join(dir, 'workspace.trig'));
         expect(store.snapshot().warnings.filter(w => !w.startsWith('not committed:'))).toEqual([
@@ -72,7 +55,7 @@ describe('workspace files', () => {
         mkdirSync(join(f.dir, '.hidden'));
         writeFileSync(join(f.dir, '.hidden', 'h.ttl'), '<urn:x:h> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Hidden" .\n');
         mkdirSync(join(f.dir, 'nested'));
-        writeFileSync(join(f.dir, 'nested', 'w.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
+        writeFileSync(join(f.dir, 'nested', 'w.trig'), workspaceTrig());
         writeFileSync(join(f.dir, 'nested', 'n.ttl'), '<urn:x:n> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Nested" .\n');
         const store = await opened(f.ws);
         const graphs = () => new Set((store as unknown as { graph: ModelGraph }).graph.quads().map(q => q.graph.value));
@@ -172,7 +155,7 @@ describe('workspace files', () => {
 
     it('no default file in the manifest: the first model file by path', async () => {
         const f = files();
-        writeFileSync(f.ws, '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
+        writeFileSync(f.ws, workspaceTrig());
         writeFileSync(join(f.dir, 'agents.ttl'), '<urn:x:a1> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "A1" .\n');
         const store = await opened(f.ws);
         expect(store.files.defaultFile).toEqual({ path: join(f.dir, 'agents.ttl'), set: false });
@@ -182,8 +165,7 @@ describe('workspace files', () => {
         const f = files();
         writeFileSync(join(f.dir, 'agents.ttl'), '<urn:x:a1> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "A1" .\n');
         writeFileSync(join(f.dir, 'skip.ttl'), '<urn:x:s> a <http://www.w3.org/ns/prov#Agent> ; <http://www.w3.org/2000/01/rdf-schema#label> "Skipped" .\n');
-        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ; <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl" ;
-            <https://cristianvasquez.github.io/catenary/vocab/workspace#placeInstances> "default" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#exclude> "skip*.ttl" . }\n`);
+        writeFileSync(f.ws, workspaceTrig({ defaultFile: 'data.ttl', placeInstances: 'default', exclude: 'skip*.ttl' }));
         const store = await opened(f.ws);
         expect(store.files).toMatchObject({ defaultFile: { path: f.data, set: true }, placement: { shapes: f.data, concepts: 'near', instances: f.data }, exclude: ['skip*.ttl'] });
         expect(Object.values(docOf(store).instances).map(i => i.label)).not.toContain('Skipped');
@@ -399,8 +381,7 @@ describe('workspace files', () => {
         writeFileSync(join(f.dir, 'other', 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://w3id.org/catenary/workspace#Workspace> . }\n');
         writeFileSync(join(f.dir, 'other', 'deep', 'far.trig'), view('urn:name:Far', 'Far'));
         writeFileSync(join(f.dir, 'both.trig'), '<urn:name:workspace> { <urn:name:workspace> <urn:p> 1 . }\n' + view('urn:name:Both', 'Both'));
-        const lone = mkdtempSync(join(tmpdir(), 'catenary-lone-'));
-        dirs.push(lone);
+        const lone = tempWorkspace({}, 'catenary-lone-').dir;
         writeFileSync(join(lone, 'lone.trig'), view('urn:name:Lone', 'Lone'));
         await store.idle();
         const plan = await store.reads.fileContent(join(f.dir, 'plan.trig'));
@@ -640,7 +621,7 @@ describe('shapes files in the store', () => {
 });
 
 describe('open a folder', () => {
-    const manifestText = '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n';
+    const manifestText = workspaceTrig();
 
     it('a folder with workspace.trig opens it', async () => {
         const f = files();
@@ -692,7 +673,7 @@ describe('open a folder', () => {
     it('a workspace file that another program writes later is read', async () => {
         const f = files({ workspace: false });
         const store = await opened(f.dir);
-        writeFileSync(join(f.dir, 'workspace.trig'), manifestText.replace(' . }', ' ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeInstances> "data.ttl" . }'));
+        writeFileSync(join(f.dir, 'workspace.trig'), workspaceTrig({ placeInstances: 'data.ttl' }));
         expect(await store.syncFromDisk()).toEqual(['workspace.trig']);
         expect(store.files.placement?.instances).toBe(join(f.dir, 'data.ttl'));
         expect(store.files.workspace).toMatchObject({ onDisk: true });

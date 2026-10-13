@@ -1,60 +1,41 @@
 // Imported files (manifest ws:imported, spec/manifest.hs §2.6): reads, refused changes, additions in the default file, import.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditCommand, NS, TermJSON, PREFIXES, lockedKey } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { parseRdf } from '../src/files';
 import { parseTrig } from '../src/trig';
-import { docOf } from './helpers';
+import { docOf, openStore, tempWorkspace, workspaceTrig } from './helpers';
 
-const dirs: string[] = [];
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-const stores: ModelStore[] = [];
-afterEach(async () => {
+afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
-    for (const store of stores.splice(0)) await store.dispose();
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 const LABEL = NS.rdfs + 'label', DESCRIPTION = 'http://purl.org/dc/terms/description';
 
 /** A workspace: official.ttl (one dataset), own.ttl (the default file, "Everything else"), a workspace file that sets it. */
 function workspace() {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-imported-'));
-    dirs.push(dir);
-    const f = (name: string, text: string) => { writeFileSync(join(dir, name), text); return join(dir, name); };
-    return {
-        dir,
-        official: f('official.ttl', `@prefix dcat: <http://www.w3.org/ns/dcat#> . @prefix rdfs: <${NS.rdfs}> .
-<urn:x:sales> a dcat:Dataset ; rdfs:label "Sales" ; <${DESCRIPTION}> "Official text." .\n`),
-        own: f('own.ttl', `@prefix rdfs: <${NS.rdfs}> .\n<urn:x:note> a <urn:x:Note> ; rdfs:label "Note" .\n`),
-        ws: f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
-            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" . }\n`),
-        read: (name: string) => readFileSync(join(dir, name), 'utf8')
-    };
-}
-
-async function opened(path: string): Promise<ModelStore> {
-    const store = new ModelStore();
-    stores.push(store);
-    store.watching = false;
-    const r = await store.open(path);
-    if (!r.ok) throw new Error(r.error);
-    return store;
+    const w = tempWorkspace({
+        'official.ttl': `@prefix dcat: <http://www.w3.org/ns/dcat#> . @prefix rdfs: <${NS.rdfs}> .
+<urn:x:sales> a dcat:Dataset ; rdfs:label "Sales" ; <${DESCRIPTION}> "Official text." .\n`,
+        'own.ttl': `@prefix rdfs: <${NS.rdfs}> .\n<urn:x:note> a <urn:x:Note> ; rdfs:label "Note" .\n`,
+        'workspace.trig': workspaceTrig({ defaultFile: 'own.ttl' })
+    }, 'catenary-imported-');
+    return { ...w, official: w.path('official.ttl'), own: w.path('own.ttl'), ws: w.path('workspace.trig') };
 }
 
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
 const instanceId = (store: ModelStore, label: string) => Object.values(docOf(store).instances).find(i => i.label === label)!.id;
-const manifestValues = async (text: string, local: string) => (await parseTrig(text)).quads.filter(q => q.predicate.value === `https://cristianvasquez.github.io/catenary/vocab/workspace#${local}`).map(q => q.object.value);
+const manifestValues = async (text: string, local: string) => (await parseTrig(text)).quads.filter(q => q.predicate.value === NS.ws + local).map(q => q.object.value);
 
 describe('imported files', () => {
     it('marking as imported stores the path in the manifest; a change of an imported statement is refused as a whole and names the file', async () => {
         const f = workspace();
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         ok(await store.setImported('official.ttl', true));
         await store.idle();
         expect(await manifestValues(f.read('workspace.trig'), 'imported')).toEqual(['official.ttl']);
@@ -81,7 +62,7 @@ describe('imported files', () => {
 
     it('a new statement about an imported subject goes to the default file ("Everything else") and can change there', async () => {
         const f = workspace();
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         ok(await store.setImported('official.ttl', true));
         const sales = instanceId(store, 'Sales');
         const official: TermJSON = { termType: 'Literal', value: 'Official text.' };
@@ -103,7 +84,7 @@ describe('imported files', () => {
 
     it('mark as own: the change is then possible; a file that a glob matches stays imported, with an error that names the glob', async () => {
         const f = workspace();
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         ok(await store.setSettings({ imported: ['*.ttl'] }));
         const r = await store.setImported('official.ttl', false);
         expect(r).toEqual({ ok: false, error: 'official.ttl stays locked by the glob "*.ttl". Remove the glob in the Workspace settings.' });
@@ -117,9 +98,8 @@ describe('imported files', () => {
 
     it('a workspace file with the legacy ws:protect reads it as ws:imported; a write stores ws:imported', async () => {
         const f = workspace();
-        writeFileSync(f.ws, `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
-            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#protect> "official.ttl" . }\n`);
-        const store = await opened(f.ws);
+        writeFileSync(f.ws, workspaceTrig({ defaultFile: 'own.ttl', protect: 'official.ttl' }));
+        const store = await openStore(f.ws);
         expect(store.files.imported).toEqual(['official.ttl']);
         ok(await store.setImported('own.ttl', true));
         await store.idle();
@@ -129,7 +109,7 @@ describe('imported files', () => {
 
     it('undo and redo of a step that changes a file that is imported now are refused; the step stays (law_settingsNoUndo)', async () => {
         const f = workspace();
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         const sales = instanceId(store, 'Sales');
         ok(store.execute({ kind: 'rename', id: sales, label: 'Revenue' }));
         ok(await store.setImported('official.ttl', true));
@@ -147,7 +127,7 @@ describe('imported files', () => {
 
     it('settings: an imported file cannot be a file of new subjects; marking the default file as imported clears it', async () => {
         const f = workspace();
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         ok(await store.setSettings({ imported: ['official.ttl'] }));
         expect(await store.setSettings({ defaultFile: 'official.ttl' })).toEqual({ ok: false, error: 'official.ttl is a locked file.' });
         expect((await store.setSettings({ placement: { instances: 'official.ttl' } })).ok).toBe(false);
@@ -164,7 +144,7 @@ describe('imported files', () => {
         writeFileSync(join(f.dir, 'blank.ttl'), `<urn:x:b> <urn:x:p> [ <urn:x:q> "v" ] ; <${LABEL}> "B" .\n`);
         writeFileSync(join(f.dir, 'blank.rdf'), `<?xml version="1.0"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="urn:x:c"><rdf:value rdf:parseType="Resource"><rdf:value>w</rdf:value></rdf:value></rdf:Description></rdf:RDF>\n`);
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         ok(await store.setImported('blank.ttl', true));
         const quads = await parseRdf(f.read('blank.ttl'), join(f.dir, 'blank.ttl'));
         expect(quads.length).toBe(3);
@@ -175,12 +155,11 @@ describe('imported files', () => {
 
     it('import: a Turtle copy in imported/ with IRIs for blank nodes, marked as imported; new prefixes go to the workspace, conflicting ones do not', async () => {
         const f = workspace();
-        const source = mkdtempSync(join(tmpdir(), 'catenary-source-'));
-        dirs.push(source);
+        const source = tempWorkspace({}, 'catenary-source-').dir;
         const file = join(source, 'catalog.ttl');
         writeFileSync(file, `@prefix cat: <https://example.org/catalog#> . @prefix dcat: <https://example.org/not-dcat#> . @prefix rdfs: <${NS.rdfs}> .
 cat:c1 a cat:Catalog ; rdfs:label "Catalog" ; cat:publisher [ rdfs:label "Office" ] ; dcat:x "y" .\n`);
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         const changes: { reason: string; prefixWarning: boolean }[] = [];
         const listener = store.onDidChange(({ reason }) => changes.push({ reason, prefixWarning: store.warnings.some(w => w.includes('prefixes not added')) }));
         const r = await store.importFiles([file]);
@@ -219,14 +198,13 @@ cat:c1 a cat:Catalog ; rdfs:label "Catalog" ; cat:publisher [ rdfs:label "Office
 
     it('import: an RDF/XML file becomes a Turtle copy (Catenary writes no RDF/XML); its xmlns prefixes join the workspace', async () => {
         const f = workspace();
-        const source = mkdtempSync(join(tmpdir(), 'catenary-source-'));
-        dirs.push(source);
+        const source = tempWorkspace({}, 'catenary-source-').dir;
         const file = join(source, 'register.rdf');
         writeFileSync(file, `<?xml version="1.0"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:reg="https://example.org/register#">
   <reg:Entry rdf:about="https://example.org/register#e1"><reg:part rdf:parseType="Resource"><reg:code>A</reg:code></reg:part></reg:Entry>
 </rdf:RDF>\n`);
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         const r = await store.importFiles([file]);
         expect(r).toEqual({ ok: true, files: [join(f.dir, 'imported', 'register.ttl')], prefixes: ['reg'] });
         const copy = join(f.dir, 'imported', 'register.ttl');
@@ -237,8 +215,7 @@ cat:c1 a cat:Catalog ; rdfs:label "Catalog" ; cat:publisher [ rdfs:label "Office
     });
 
     it('validation reads own statements, the statements of their subjects and the types of what they refer to; not the rest of imported files', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-imported-'));
-        dirs.push(dir);
+        const dir = tempWorkspace({}, 'catenary-imported-').dir;
         const f = (name: string, text: string) => writeFileSync(join(dir, name), text);
         f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> .
 ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ;
@@ -254,9 +231,8 @@ ex:org1 a ex:Org .\n`);
         f('own.ttl', `@prefix ex: <urn:ex:> .
 ex:mine a ex:Thing ; ex:name "Mine" ; ex:owner ex:org1 .
 ex:i3 ex:note "ours" .\n`);
-        f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
-            <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "own.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeShapes> "shapes.ttl" . }\n`);
-        const store = await opened(join(dir, 'workspace.trig'));
+        f('workspace.trig', workspaceTrig({ defaultFile: 'own.ttl', placeShapes: 'shapes.ttl' }));
+        const store = await openStore(join(dir, 'workspace.trig'));
         const validation = (store as unknown as { validation: { now(): Promise<void>; violations: { focus: string }[] } }).validation;
         await validation.now();
         expect(validation.violations.map(v => v.focus)).toEqual(['urn:ex:i1']);
@@ -271,11 +247,10 @@ ex:i3 ex:note "ours" .\n`);
         const f = workspace();
         writeFileSync(f.official, `@prefix off: <https://example.org/official#> . @prefix rdfs: <${NS.rdfs}> .
 off:sales a off:Dataset ; rdfs:label "Sales" ; off:part [ rdfs:label "Part" ] .\n`);
-        const source = mkdtempSync(join(tmpdir(), 'catenary-source-'));
-        dirs.push(source);
+        const source = tempWorkspace({}, 'catenary-source-').dir;
         const outside = join(source, 'outside.ttl');
         writeFileSync(outside, `<urn:x:o> <${LABEL}> "Outside" .\n`);
-        const store = await opened(f.ws);
+        const store = await openStore(f.ws);
         expect(await store.importFiles([f.official])).toEqual({ ok: true, files: [f.official], prefixes: ['off'] });
         await store.idle();
         expect(existsSync(join(f.dir, 'imported'))).toBe(false);

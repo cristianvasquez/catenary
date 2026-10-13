@@ -1,5 +1,3 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Doc, NS, SnapshotChange, boxes, emptyDoc } from '@catenary/model';
@@ -10,7 +8,7 @@ import { ModelGraph, REPORT_GRAPH, dataGraphIri } from '../src/graph';
 import { elementId } from '../src/ids';
 import { ModelStore } from '../src/model-store';
 import { rdf } from '../src/terms';
-import { docOf } from './helpers';
+import { docOf, tempWorkspace } from './helpers';
 import { newModelGraph } from '../src/model-graph';
 
 // spec/manifest.hs §11.3 Change propagation and §9 validates: the rules of change.ts, one function each.
@@ -151,7 +149,7 @@ describe('law_keptDocEqualsRead: the DataPatch merge of a kept part (mergeRecord
     const ok = (r: ReturnType<ModelStore['execute']>) => { if (!r.ok) throw new Error(r.error); return r; };
     // Each test edits the store: each gets a new workspace.
     beforeEach(async () => {
-        dir = mkdtempSync(join(tmpdir(), 'catenary-change-'));
+        dir = tempWorkspace({}, 'catenary-change-').dir;
         store = new ModelStore();
         store.watching = false;
         expect(await store.create(join(dir, 'workspace.trig'), { instances: 'data.ttl' })).toEqual({ ok: true });
@@ -162,7 +160,7 @@ describe('law_keptDocEqualsRead: the DataPatch merge of a kept part (mergeRecord
         const shape = ok(store.execute({ kind: 'createNodeShape', label: 'Class shape', targetClass: 'urn:Class' })).id!;
         for (const p of ['urn:p', 'urn:q']) ok(store.execute({ kind: 'createPropertyShape', shape, path: { kind: 'iri', iri: p }, range: { kind: 'class', class: 'urn:Class' } }));
     });
-    afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
+    afterEach(() => store.dispose());
     /** What toSchema reads: boxes, edges, arrows, the label, types and fields of the shown instances, the relations between them. */
     const shown = (doc: Doc) => {
         const v = doc.views[viewId];

@@ -1,38 +1,29 @@
 // The bends of an edge (UI §7.4): stored on the connector placement as one view:vertices literal, moved with both ends, cleared by Apply Layout.
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { EditCommand, NS, boxes, iriId, nkey } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { rdf } from '../src/terms';
 import type { ModelGraph } from '../src/graph';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
-});
 
 async function open(fixture: 'base' | 'dcat' | 'notation' = 'base', data = DATA): Promise<void> {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-edge-vertices-'));
-    store = new ModelStore();
-    store.watching = false;
+    dir = tempWorkspace({}, 'catenary-edge-vertices-').dir;
     if (fixture === 'dcat') {
         for (const [from, to] of [['dcat-workspace.trig', 'workspace.trig'], ['dcat-data.ttl', 'data.ttl'], ['dcat-shapes.ttl', 'shapes.ttl']]) cpSync(FIXTURES + from, join(dir, to));
         cpSync(FIXTURES + 'dcat-views', join(dir, 'dcat-views'), { recursive: true });
-        expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-    } else if (fixture === 'notation') {
-        cpSync(FIXTURES + 'notation', dir, { recursive: true });
-        expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-    } else {
+    } else if (fixture === 'notation') cpSync(FIXTURES + 'notation', dir, { recursive: true });
+    else {
         writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
         writeFileSync(join(dir, 'data.ttl'), data);
-        expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+        writeWorkspace(dir);
     }
+    store = await openStore(join(dir, 'workspace.trig'));
 }
 
 function edit(command: EditCommand): void {
@@ -104,7 +95,6 @@ describe('edge vertices (UI §7.4)', () => {
         const r0 = docOf(store).relations[first.edges.find(e => e.id)!.relation];
         const iri = docOf(store).instances[r0.subject].uri;
         await store.dispose();
-        rmSync(dir, { recursive: true, force: true });
         await open('base', DATA + `\n<${iri}> <${r0.predicate}> <${iri}> .\n`);
         const doc = docOf(store);
         const view = Object.values(doc.views)[0];

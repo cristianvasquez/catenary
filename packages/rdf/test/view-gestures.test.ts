@@ -1,35 +1,28 @@
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
     EdgeLayout, View, arrowProblem, boxOf, boxShowing, boxes, broaderProblem, cardOf, conceptParents, edgeLayout, elementLabel, freeRelations, isHidden,
     isValueSetMember, placementOfId, predicateName, propertyTargetProblem, reconnectProblem, relationLabel, relationsInView, viewsShowing
 } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 import { fileURLToPath } from 'node:url';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
-});
 
 async function open(dcat: boolean): Promise<void> {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-view-gestures-'));
-    store = new ModelStore();
-    store.watching = false;
+    dir = tempWorkspace({}, 'catenary-view-gestures-').dir;
     if (dcat) {
         for (const [from, to] of [['dcat-workspace.trig', 'workspace.trig'], ['dcat-data.ttl', 'data.ttl'], ['dcat-shapes.ttl', 'shapes.ttl']]) cpSync(FIXTURES + from, join(dir, to));
         cpSync(FIXTURES + 'dcat-views', join(dir, 'dcat-views'), { recursive: true });
-        expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
     } else {
         writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
         writeFileSync(join(dir, 'data.ttl'), DATA);
-        expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+        writeWorkspace(dir);
     }
+    store = await openStore(join(dir, 'workspace.trig'));
 }
 
 /** The candidate ids that a canvas sends: the card elements of what the view shows, the box ids, and '' (no id). */

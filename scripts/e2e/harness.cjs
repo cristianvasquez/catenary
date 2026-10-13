@@ -91,11 +91,13 @@ const navNode = (page, name) => page.locator('#files .theia-TreeNode')
   .filter({ has: page.locator('.theia-TreeNodeSegmentGrow', { hasText: new RegExp(`^${name.replace(/[.]/g, '\\.')}$`) }) });
 /** Show the file navigator and expand the folders of `folders`. */
 async function navigator(page, ...folders) {
-  // A click on the current tab collapses the side panel, a second click shows it again.
+  // A click on the current tab collapses the side panel (no tab is current), a second click shows it again.
   const tab = page.locator('#shell-tab-explorer-view-container');
-  if (!await page.locator('#files').isVisible()) await tab.click();
-  await page.waitForTimeout(200);
-  if (!await page.locator('#files').isVisible()) await tab.click();
+  const current = () => tab.evaluate(t => t.classList.contains('lm-mod-current'));
+  if (!await page.locator('#files').isVisible()) {
+    if (await current()) { await tab.click(); await waitUntil('the side panel is collapsed', current, c => !c); }
+    await tab.click();
+  }
   await page.locator('#files').waitFor();
   for (const f of folders) {
     const node = navNode(page, f).first();

@@ -1,12 +1,9 @@
 // Find Element (search.ts): the things of the store, their kinds, labels and views, on the fixtures.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { NS, SearchHit, iriId, viewsShowing } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 <urn:k:S> a skos:ConceptScheme ; skos:prefLabel "Scheme" .
@@ -21,21 +18,12 @@ const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 
 let dir: string, store: ModelStore;
 async function open(): Promise<void> {
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+    store = await openStore(writeWorkspace(dir));
     await store.validate();
 }
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-search-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'more.ttl'), MORE);
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA, 'more.ttl': MORE }, 'catenary-search-').dir;
     await open();
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
 });
 
 const byIri = (hits: SearchHit[]) => new Map(hits.map(h => [h.iri, h]));

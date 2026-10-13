@@ -1,26 +1,21 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { NS, RdfPaste, copyFromView, iriId } from '@catenary/model';
 import { parseRdfSync } from 'rdf-files';
 import { ModelStore } from '../src/model-store';
 import { prepareRdfPaste } from '../src/clipboard';
 import { rdf } from '../src/terms';
-import { docOf } from './helpers';
+import { docOf, tempWorkspace, workspaceTrig } from './helpers';
 
-const active: { store: ModelStore; dir: string }[] = [];
-afterEach(async () => { for (const { store, dir } of active.splice(0)) { await store.dispose(); rmSync(dir, { recursive: true, force: true }); } });
 const prepared = (r: RdfPaste) => { if (!r.ok) throw new Error(r.error); return r; };
 const nn = (value: string) => rdf.namedNode(value);
 class ClipboardStore extends ModelStore { get dataset() { return this.graph; } }
 
 async function workspace() {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-rdf-clipboard-'));
-    writeFileSync(join(dir, 'workspace.trig'), `@prefix ws: <${NS.ws}> .
-        <urn:name:workspace> { <urn:name:workspace> a ws:Workspace; ws:placeShapes "shapes.ttl"; ws:placeConcepts "concepts.ttl"; ws:placeInstances "data.ttl". }`);
+    const { dir } = tempWorkspace({ 'workspace.trig': workspaceTrig({ placeShapes: 'shapes.ttl', placeConcepts: 'concepts.ttl', placeInstances: 'data.ttl' }) }, 'catenary-rdf-clipboard-');
     const store = new ClipboardStore();
-    active.push({ store, dir });
+    onTestFinished(() => store.dispose());
     expect((await store.open(join(dir, 'workspace.trig'))).ok).toBe(true);
     const result = store.execute({ kind: 'createView', label: 'Clipboard' });
     if (!result.ok) throw new Error(result.error);

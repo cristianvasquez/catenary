@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ModelStore } from '../src/model-store';
@@ -8,35 +7,23 @@ import { parseRdf } from '../src/files';
 import { rdf } from '../src/terms';
 import * as patcher from 'rdf-files';
 import { boxes } from '@catenary/model';
-import { docOf } from './helpers';
+import { docOf, openStore, tempWorkspace } from './helpers';
 
-const dirs: string[] = [], stores: ModelStore[] = [];
 const data = '<urn:a> a <urn:Class> ; <http://www.w3.org/2000/01/rdf-schema#label> "Before" .\n';
 const AUTO_COMMIT = 'https://cristianvasquez.github.io/catenary/vocab/workspace#autoCommit';
 /** `setting`: more manifest statements. The fixture turns auto-commit on (the default is off). */
 function fixture(files: Record<string, string> = { 'data.ttl': data }, setting = '', autoCommit = true) {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-review-'));
-    dirs.push(dir);
+    const dir = tempWorkspace({}, 'catenary-review-').dir;
     const put = (file: string, text: string) => writeFileSync(join(dir, file), text);
     put('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ${autoCommit ? `; <${AUTO_COMMIT}> true` : ''} ${setting} . }\n`);
     for (const [file, text] of Object.entries(files)) put(file, text);
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    return { dir, put, git, read: (file: string) => readFileSync(join(dir, file), 'utf8'), async open() {
-        const store = new ModelStore();
-        store.watching = false;
-        stores.push(store);
-        expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-        return store;
-    }, init() {
+    return { dir, put, git, read: (file: string) => readFileSync(join(dir, file), 'utf8'), open: () => openStore(join(dir, 'workspace.trig')), init() {
         git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.org');
         git('add', '-A'); git('commit', '-qm', 'initial');
     } };
 }
-afterEach(async () => {
-    vi.restoreAllMocks();
-    for (const store of stores.splice(0)) { await store.dispose(); }
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(() => vi.restoreAllMocks());
 async function rename(store: ModelStore, label = 'After') {
     const id = Object.values(docOf(store).instances).find(i => i.uri === 'urn:a')!.id;
     expect(store.execute({ kind: 'rename', id, label }).ok).toBe(true);

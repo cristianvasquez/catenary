@@ -1,13 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { rdfsRules } from '@catenary/rdfs';
 import { InstanceProperties, NS, classDef, iriId, permittedRelations, pluginFormShape } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { queryPort } from '../src/authoring';
 import { rdf } from '../src/terms';
-import { DATA, DPROD, PROV, SHAPES, emptyGraph, parseQuads, writeWorkspace } from './helpers';
+import { DATA, DPROD, PROV, SHAPES, emptyGraph, parseQuads, writeWorkspace, openStore, tempWorkspace } from './helpers';
 
 const EX = 'http://ex/';
 const ONTOLOGY = `@prefix rdf: <${NS.rdf}> . @prefix rdfs: <${NS.rdfs}> . @prefix xsd: <${NS.xsd}> . @prefix owl: <${NS.owl}> .
@@ -78,17 +77,8 @@ describe('RDFS domain and range providers (@catenary/rdfs)', () => {
 describe('RDFS rules in the store', () => {
     let dir: string, store: ModelStore;
     beforeEach(async () => {
-        dir = mkdtempSync(join(tmpdir(), 'catenary-rdfs-'));
-        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-        writeFileSync(join(dir, 'data.ttl'), DATA);
-        writeFileSync(join(dir, 'ontology.ttl'), ONTOLOGY);
-        store = new ModelStore();
-        store.watching = false;
-        expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-    });
-    afterEach(async () => {
-        await store.dispose();
-        rmSync(dir, { recursive: true, force: true });
+        dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA, 'ontology.ttl': ONTOLOGY }, 'catenary-rdfs-').dir;
+        store = await openStore(writeWorkspace(dir));
     });
     const id = (local: string) => iriId(EX + local);
 

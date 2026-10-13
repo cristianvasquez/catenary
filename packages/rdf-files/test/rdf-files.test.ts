@@ -1,9 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { performance } from 'node:perf_hooks';
 import { basename, join } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     FolderWatcher, OwnWrites, OxigraphStore, SerialQueue, WatchSource, canonical, commitFiles, diskChanges, gitChanges, globRegExp, listRdfFiles,
     parseRdf, rdf, readUnchanged, serializeRdf, writeAll, writeProblem
@@ -31,19 +30,8 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-/** Resolves when `ok()` is true. A stalled test fails after `ms` (monotonic clock), with the last observed state. */
-async function until(ok: () => boolean, state: () => unknown, ms = 5000): Promise<void> {
-    for (const end = performance.now() + ms; !ok(); await new Promise(r => setTimeout(r, 10))) {
-        if (performance.now() > end) throw new Error(`timeout after ${ms} ms; last state: ${JSON.stringify(state())}`);
-    }
-}
-
-/** A promise that the test resolves. */
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-    let resolve!: () => void;
-    const promise = new Promise<void>(r => { resolve = r; });
-    return { promise, resolve };
-}
+/** vi.waitFor options of the real watch tests: a stalled test fails after 5 s with the last failed expect. */
+const WATCH = { timeout: 5000, interval: 10 };
 
 /** A watch source that the test controls: `emit` delivers an event to the open watch of a folder. */
 function syntheticSource() {
@@ -197,7 +185,7 @@ describe('file sync', () => {
     });
 
     it('runs queued operations one at a time, also after a failure', async () => {
-        const q = new SerialQueue(), log: string[] = [], gate = deferred(), started = deferred();
+        const q = new SerialQueue(), log: string[] = [], gate = Promise.withResolvers<void>(), started = Promise.withResolvers<void>();
         const first = q.run(async () => { log.push('first start'); started.resolve(); await gate.promise; log.push('first end'); });
         const failed = q.run(async () => { log.push('fail'); throw new Error('x'); });
         const last = q.run(async () => { log.push('last'); });
@@ -340,7 +328,7 @@ describe('file sync', () => {
         writeFileSync(join(root, 'b.ttl'), '1');
         writeFileSync(join(root, 'b.ttl'), '2');
         // The platform can group the writes in one or more calls, repeat a path, or give no name (then the call has no paths).
-        await until(() => seen.has(join(root, 'a.ttl')) && seen.has(join(root, 'b.ttl')) || seen.has('(no name)'), () => ({ calls, seen: [...seen] }));
+        await vi.waitFor(() => expect(seen.has(join(root, 'a.ttl')) && seen.has(join(root, 'b.ttl')) || seen.has('(no name)'), JSON.stringify({ calls, seen: [...seen] })).toBe(true), WATCH);
         expect(calls).toBeGreaterThan(0);
         expect([...seen].filter(f => f.endsWith('.hidden'))).toEqual([]);
     });
@@ -377,18 +365,15 @@ describe('file sync', () => {
         w.watch(root);
         expect(w.folder).toBe(root);
         writeFileSync(join(root, 'a.ttl'), '1');
-        await until(() => calls > 0, () => ({ calls, folder: w.folder }));
+        await vi.waitFor(() => expect(calls, `folder: ${w.folder}`).toBeGreaterThan(0), WATCH);
     });
 });
 
 describe('git', () => {
     // Not the git configuration of the user (signing, hooks, templates): the module and the test run git with the same environment.
-    const saved = { ...process.env };
-    beforeAll(() => Object.assign(process.env, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.org', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.org' }));
-    afterAll(() => {
-        for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
-        Object.assign(process.env, saved);
-    });
+    // vi.stubEnv: the configuration (unstubEnvs) restores the environment after each test.
+    beforeEach(() => Object.entries({ GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.org', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.org' })
+        .forEach(([k, v]) => vi.stubEnv(k, v)));
     const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' });
     const repo = () => {
         const root = tempDir();
@@ -443,13 +428,9 @@ describe('git', () => {
 
     it('says when a folder is not in a repository', async () => {
         const root = tempDir();
-        process.env.GIT_CEILING_DIRECTORIES = join(root, '..');
-        try {
-            const r = await gitChanges(root);
-            expect(!r.ok && r.repo).toBe(false);
-        } finally {
-            delete process.env.GIT_CEILING_DIRECTORIES;
-        }
+        vi.stubEnv('GIT_CEILING_DIRECTORIES', join(root, '..'));
+        const r = await gitChanges(root);
+        expect(!r.ok && r.repo).toBe(false);
     });
 
 });

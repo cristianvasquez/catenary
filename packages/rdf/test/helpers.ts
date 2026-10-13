@@ -1,14 +1,16 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { onTestFinished } from 'vitest';
 import { executeCommand } from '../src/commands';
 import { SHAPES_GRAPH_PREFIX, ModelGraph } from '../src/graph';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { Metamodel, metamodelFromQuads } from '../src/shapes';
-import { Classes, Doc, EditCommand, Violation } from '@catenary/model';
+import { Classes, Doc, EditCommand, NS, Violation } from '@catenary/model';
 import { validate, violationsOf } from '../src/validate';
 import { validationInput } from '../src/validation-data';
 import { project } from './project-full';
-import type { ModelStore } from '../src/model-store';
+import { ModelStore } from '../src/model-store';
 import { parseTrig } from '../src/trig';
 import { OxigraphStore } from 'rdf-files';
 import { skolemize } from 'rdf-core';
@@ -90,3 +92,27 @@ export async function violationsIn(data: Quad[], meta: Metamodel, instanceId: (i
     const shapes = [...meta.dataset];
     return violationsOf((await validate(validationInput(data, shapes), shapes)).results, meta, instanceId);
 }
+
+/** A temporary folder with `files` (name -> text), removed when the test finishes. Call it in a test or in beforeEach. */
+export function tempWorkspace(files: Record<string, string> = {}, prefix = 'catenary-') {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+    const path = (name: string) => join(dir, name);
+    for (const [name, text] of Object.entries(files)) writeFileSync(path(name), text);
+    return { dir, path, read: (name: string) => readFileSync(path(name), 'utf8') };
+}
+
+/** A store on `path`, disposed when the test finishes (before the removal of an earlier tempWorkspace). Throws if the open fails. */
+export async function openStore(path: string, { watching = false } = {}): Promise<ModelStore> {
+    const store = new ModelStore();
+    onTestFinished(() => store.dispose());
+    store.watching = watching;
+    const r = await store.open(path);
+    if (!r.ok) throw new Error(r.error);
+    return store;
+}
+
+/** The text of a workspace file (manifest): one ws:<key> statement per value; a string is a plain literal; a falsy value writes nothing. */
+export const workspaceTrig = (settings: Record<string, string | boolean | undefined> = {}): string =>
+    `<urn:name:workspace> { <urn:name:workspace> a <${NS.ws}Workspace>${Object.entries(settings).filter(([, v]) => v)
+        .map(([key, v]) => ` ; <${NS.ws}${key}> ${typeof v === 'string' ? JSON.stringify(v) : v}`).join('')} . }\n`;

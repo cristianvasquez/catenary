@@ -9,7 +9,6 @@ vi.mock('../src/browser/model-client', () => ({ ModelServiceProxy: Symbol('Model
 const stat = (calls: number): TraceStat => ({ kind: 'rpc', name: 'properties', calls, totalMs: calls * 2, maxMs: 2, size: 0, last: 0 });
 const batch = (calls: number): TraceBatch => ({ seq: calls, on: true, dropped: 0, stats: calls ? [stat(calls)] : [],
     spans: Array.from({ length: calls }, (_, i): TraceSpan => ({ id: i + 1, kind: 'rpc', name: 'properties', start: 0, ms: 2 })) });
-const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; };
 
 class TestTraceWidget extends TraceWidget {
     seed(calls = 0): void {
@@ -50,7 +49,7 @@ describe('Trace panel final batch', () => {
     });
 
     it('waits for the final batch before a new recording starts', async () => {
-        const final = deferred<TraceBatch>();
+        const final = Promise.withResolvers<TraceBatch>();
         const { widget, service } = fixture(() => final.promise);
         widget.seed();
         const stopped = widget.end();
@@ -65,7 +64,7 @@ describe('Trace panel final batch', () => {
     });
 
     it('a rapid Pause, Resume, Pause drains one backend session only once', async () => {
-        const final = deferred<TraceBatch>();
+        const final = Promise.withResolvers<TraceBatch>();
         const { widget, service } = fixture(() => final.promise);
         widget.seed(1);
         void widget.end();
@@ -81,7 +80,7 @@ describe('Trace panel final batch', () => {
     });
 
     it('Clear prevents a pending final batch from restoring removed measurements', async () => {
-        const final = deferred<TraceBatch>();
+        const final = Promise.withResolvers<TraceBatch>();
         const { widget } = fixture(() => final.promise);
         widget.seed(1);
         const stopped = widget.end();
@@ -93,7 +92,7 @@ describe('Trace panel final batch', () => {
     });
 
     it('discards an old poll that completes after the final batch', async () => {
-        const poll = deferred<TraceBatch>();
+        const poll = Promise.withResolvers<TraceBatch>();
         const { widget, service } = fixture(async () => batch(2));
         service.trace.mockImplementation(() => poll.promise);
         widget.seed();

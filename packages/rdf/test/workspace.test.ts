@@ -1,7 +1,6 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { MODEL_QUERIES, NS } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { openWorkspace } from '../src/loader';
@@ -11,17 +10,13 @@ import { Saver } from '../src/saver';
 import { rdf } from '../src/terms';
 import { TracedStore } from '../src/trace';
 import { newModelGraph } from '../src/model-graph';
+import { tempWorkspace } from './helpers';
 
 const EX = 'http://example.org/';
-const dirs: string[] = [];
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 /** A folder with two data files and no workspace file, opened with the sync modules as ModelStore wires them (no ModelStore). */
 async function open() {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-ws-'));
-    dirs.push(dir);
-    writeFileSync(join(dir, 'a.ttl'), `@prefix ex: <${EX}> .\nex:a a ex:C .\n`);
-    writeFileSync(join(dir, 'b.ttl'), `@prefix ex: <${EX}> .\nex:b a ex:D .\n`);
+    const { dir } = tempWorkspace({ 'a.ttl': `@prefix ex: <${EX}> .\nex:a a ex:C .\n`, 'b.ttl': `@prefix ex: <${EX}> .\nex:b a ex:D .\n` }, 'catenary-ws-');
     const notes: string[] = [];
     const graph = newModelGraph(new TracedStore(new OxigraphStore()));
     const r = await openWorkspace(graph, join(dir, 'workspace.trig'), true);

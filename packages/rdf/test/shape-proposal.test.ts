@@ -1,11 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { ActionTarget, iriId } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { metamodelFromQuads } from '../src/shapes';
-import { DATA, SHAPES, parseQuads, writeWorkspace, docOf, violationsIn } from './helpers';
+import { DATA, SHAPES, parseQuads, writeWorkspace, docOf, violationsIn, openStore, tempWorkspace } from './helpers';
 
 const X = 'urn:x:';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
@@ -21,17 +20,8 @@ x:Book a rdfs:Class .
 
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-propose-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'books.ttl'), BOOKS);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA, 'books.ttl': BOOKS }, 'catenary-propose-').dir;
+    store = await openStore(writeWorkspace(dir));
 });
 
 const state = (t: ActionTarget) => store.reads.selectionActions(t).actions.find(a => a.id === 'catenary.proposeShapes');

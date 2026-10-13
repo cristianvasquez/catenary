@@ -1,14 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Quad } from '@rdfjs/types';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseRdf, serializeRdf } from '../src/files';
-import { ModelStore } from '../src/model-store';
 import { skolemize } from 'rdf-core';
 import { canonical, parseTrig, writeTrig } from '../src/trig';
 import { UNION_GRAPH } from '../src/graph';
-import { docOf } from './helpers';
+import { docOf, openStore, tempWorkspace, workspaceTrig } from './helpers';
 
 // RDF 1.2: triple terms, reified triples, annotations (readme → Known problems and limits → RDF 1.2).
 const TTL = `@prefix ex: <http://ex/> .
@@ -64,21 +60,9 @@ describe('RDF 1.2 terms', () => {
     });
 });
 
-const dirs: string[] = [], stores: ModelStore[] = [];
-afterEach(async () => {
-    for (const store of stores.splice(0)) { await store.dispose(); }
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
 async function workspace(files: Record<string, string>) {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-rdf12-'));
-    dirs.push(dir);
-    writeFileSync(join(dir, 'workspace.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
-    for (const [file, text] of Object.entries(files)) writeFileSync(join(dir, file), text);
-    const store = new ModelStore();
-    store.watching = false;
-    stores.push(store);
-    expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-    return { store, path: (file: string) => join(dir, file), read: (file: string) => readFileSync(join(dir, file), 'utf8') };
+    const w = tempWorkspace({ 'workspace.trig': workspaceTrig(), ...files }, 'catenary-rdf12-');
+    return { ...w, store: await openStore(w.path('workspace.trig')) };
 }
 
 describe('RDF 1.2 terms in the store', () => {

@@ -1941,8 +1941,8 @@ law_keptReadsEqualRead :: Backend -> Op -> KeptRead -> Bool
 law_keptReadsEqualRead b op r = let b' = snd (step b op) in keptRead b' r == freshRead b' r
 -- | No read on the backend thread blocks a change: a panel read of n records runs in time linear in n (report-read.ts, open work: spec/open.md PERF7).
 -- Reason: the GLSP server and every RPC share the backend thread.
--- The test (read-budget.test.ts): on a generated view of 600 cards, each panel read of 600 elements and each step of a content change
--- with an open canvas is one tracer span within the budget. The reads that still exceed it are listed there with their open.md row.
+-- The check (perf/read-budget.perf.ts, `pnpm test:perf`): on a generated view of 600 cards, each panel read of 600 elements and each
+-- step of a content change with an open canvas is one tracer span within the budget. The reads that still exceed it are listed there with their open.md row.
 readBudgetMs :: Int
 readBudgetMs = 50
 -- | A panel read of n elements asks the store a bounded number of SPARQL queries, whatever n: one query for all elements

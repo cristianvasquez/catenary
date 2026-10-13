@@ -1,17 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NS } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { ModelGraph } from '../src/graph';
-import { ModelStore } from '../src/model-store';
 import * as ops from '../src/ops';
 import { OxigraphStore } from 'rdf-files';
 import { SKOLEM_BASE, skolemize } from 'rdf-core';
 import { rdf } from '../src/terms';
 import { parseTrig } from '../src/trig';
-import { SHAPES, value, writeWorkspace } from './helpers';
+import { SHAPES, openStore, tempWorkspace, value, writeWorkspace } from './helpers';
 import { newModelGraph } from '../src/model-graph';
 
 const blank = (qs: Quad[]) => qs.filter(q => q.subject.termType === 'BlankNode' || q.object.termType === 'BlankNode');
@@ -53,26 +51,18 @@ describe('no blank nodes in the dataset (AGENTS.md)', () => {
 });
 
 describe('files without blank nodes', () => {
-    const dirs: string[] = [];
     beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-    const stores: ModelStore[] = [];
-    afterEach(async () => {
+    afterEach(() => {
         vi.clearAllTimers();
         vi.useRealTimers();
-        for (const store of stores.splice(0)) await store.dispose();
-        for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
     it('open: a file with blank nodes is changed, with a warning; the next save writes the skolem IRIs', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-noblank-'));
-        dirs.push(dir);
+        const dir = tempWorkspace({}, 'catenary-noblank-').dir;
         writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
         writeFileSync(join(dir, 'data.ttl'), `@prefix ex: <${EX}> . @prefix rdfs: <${NS.rdfs}> . ex:a a ex:T ; rdfs:label "A" ; ex:v [ ex:w 1 ] .`);
         writeWorkspace(dir);
-        const store = new ModelStore();
-        stores.push(store);
-        const r = await store.open(join(dir, 'workspace.trig'));
-        if (!r.ok) throw new Error(r.error);
+        const store = await openStore(join(dir, 'workspace.trig'), { watching: true });
         expect(store.dirty).toBe(true);
         expect(store.snapshot().warnings.filter(w => w.includes('data.ttl') && w.includes('replaced by IRIs')).length).toBe(1);
         expect((await store.execute({ kind: 'rename', id: 'n-http_3a_2f_2fex_2fa', label: 'A2' })).ok).toBe(true);

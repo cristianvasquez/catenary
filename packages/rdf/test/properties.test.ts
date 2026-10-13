@@ -1,11 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InstanceProperties, NS, PropertyShapeProperties, RelationProperties, Violation, WorkspaceProperties, byLabel, describeProperties, descriptionKey, formPredicates, primaryClass } from '@catenary/model';
 import { describeInstance } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 import { rdf } from '../src/terms';
 import { S } from '../src/shapes-read';
 
@@ -18,17 +15,8 @@ const SKOS_DATA = `@prefix skos: <${NS.skos}> .
 
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-properties-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    writeFileSync(join(dir, 'more.ttl'), SKOS_DATA);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA, 'more.ttl': SKOS_DATA }, 'catenary-properties-').dir;
+    store = await openStore(writeWorkspace(dir));
 });
 
 /** The SHACL report graph and the violation list of one validation. */

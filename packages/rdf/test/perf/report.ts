@@ -1,10 +1,10 @@
-// The measurement report of `pnpm test:perf` (vitest.perf.config.mts). Each measured step has its individual samples, p50, p95 and
-// maximum, and the limit that its p50 must keep. The report states the runtime, the CPU allocation and the fixture size. A run is
-// diagnostic unless the operator sets CATENARY_PERF_ENV to a description of a controlled environment: then an overrun is a
-// regression. In a diagnostic run an overrun is inconclusive. The load average is recorded, but it does not classify a run.
+// The measurement report of `pnpm test:perf` (vitest.perf.config.mts). Each measured step has its samples, p50 and maximum, and the
+// limit that its p50 must keep. The report states the Node version and the fixture size. A run is diagnostic unless the operator sets
+// CATENARY_PERF_ENV to a description of a controlled environment: then an overrun is a regression. In a diagnostic run an overrun is
+// inconclusive.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import os from 'node:os';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from 'vitest';
 import { tracer } from '../../src/trace';
@@ -39,33 +39,14 @@ export interface Measurement {
     exception?: string;
     samplesMs: number[];
     p50: number;
-    p95: number;
     max: number;
     over: boolean;
 }
 
-/** The nearest-rank percentile of `xs`. */
-export const percentile = (xs: number[], p: number): number => {
-    const s = [...xs].sort((a, b) => a - b);
-    return s[Math.min(s.length - 1, Math.max(0, Math.ceil((p / 100) * s.length) - 1))];
-};
+/** The nearest-rank median of `xs`. */
+const p50 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length / 2) - 1)];
 
 const round = (ms: number) => Math.round(ms * 10) / 10;
-
-function cpuAllocation() {
-    const cpus = os.cpus();
-    const read = (file: string) => { try { return readFileSync(file, 'utf8').trim(); } catch { return undefined; } };
-    return {
-        model: cpus[0]?.model,
-        logicalCpus: cpus.length,
-        availableParallelism: os.availableParallelism(),
-        // Linux: the CPUs that the process may run on, and the CPU quota of its cgroup ("max 100000" is no quota).
-        cpusAllowed: /Cpus_allowed_list:\s*(.+)/.exec(read('/proc/self/status') ?? '')?.[1] ?? null,
-        cgroupCpuMax: read('/sys/fs/cgroup/cpu.max') ?? null,
-        totalMemMiB: Math.round(os.totalmem() / 2 ** 20),
-        loadAverage: os.loadavg().map(round)
-    };
-}
 
 /** The report of one perf file. `write` saves it as JSON in CATENARY_PERF_DIR and prints a table. */
 export class PerfReport {
@@ -80,7 +61,7 @@ export class PerfReport {
     check(step: string, samplesMs: number[], limitMs: number, exception?: string): void {
         const m: Measurement = {
             step, limitMs, exception, samplesMs: samplesMs.map(round),
-            p50: round(percentile(samplesMs, 50)), p95: round(percentile(samplesMs, 95)), max: round(Math.max(...samplesMs)), over: false
+            p50: round(p50(samplesMs)), max: round(Math.max(...samplesMs)), over: false
         };
         m.over = m.p50 > limitMs;
         this.measurements.push(m);
@@ -89,22 +70,12 @@ export class PerfReport {
     }
 
     write(): string {
-        const dir = process.env.CATENARY_PERF_DIR ?? join(os.tmpdir(), 'catenary-perf');
+        const dir = process.env.CATENARY_PERF_DIR ?? join(tmpdir(), 'catenary-perf');
         mkdirSync(dir, { recursive: true });
         const file = join(dir, `${this.name}.json`);
-        const report = {
-            name: this.name,
-            date: new Date().toISOString(),
-            environment: this.environment,
-            runtime: { node: process.version, v8: process.versions.v8, platform: process.platform, arch: process.arch, osRelease: os.release() },
-            cpu: cpuAllocation(),
-            warmup: `${WARMUP} unmeasured runs of each step after the open, then ${SAMPLES} measured runs; the limit applies to the p50`,
-            fixture: this.fixture,
-            measurements: this.measurements,
-            overruns: this.measurements.filter(m => m.over).map(m => m.step)
-        };
+        const report = { name: this.name, environment: this.environment, node: process.version, fixture: this.fixture, measurements: this.measurements };
         writeFileSync(file, JSON.stringify(report, null, 2) + '\n');
-        const rows = this.measurements.map(m => `${m.over ? 'OVER' : 'ok  '} ${m.step.padEnd(36)} p50 ${String(m.p50).padStart(7)}  p95 ${String(m.p95).padStart(7)}  max ${String(m.max).padStart(7)}  limit ${m.limitMs}${m.exception ? ` (${m.exception})` : ''}`);
+        const rows = this.measurements.map(m => `${m.over ? 'OVER' : 'ok  '} ${m.step.padEnd(36)} p50 ${String(m.p50).padStart(7)}  max ${String(m.max).padStart(7)}  limit ${m.limitMs}${m.exception ? ` (${m.exception})` : ''}`);
         console.log([`${this.name} [${this.environment.kind}]: ${file}`, ...rows].join('\n'));
         return file;
     }

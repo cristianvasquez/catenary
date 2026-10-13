@@ -1,14 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NS, boxes, cardOf, iriId } from '@catenary/model';
 import { DISPOSED_MESSAGE, ModelChange, ModelStore, TRAP_RECOVERED } from '../src/model-store';
 import { OxigraphStore } from 'rdf-files';
 import * as validation from '../src/validate';
-import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, DCT, SHAPES, writeWorkspace, docOf, tempWorkspace, workspaceTrig } from './helpers';
 
-const workspaces: string[] = [];
 /** The stores of the test: afterEach disposes them (dispose gives the same promise again for a store that a test disposed). */
 const stores: ModelStore[] = [];
 const tracked = (store: ModelStore) => (stores.push(store), store);
@@ -17,18 +15,14 @@ afterEach(async () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     for (const store of stores.splice(0)) await store.dispose();
-    for (const dir of workspaces.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 function workspace(): { dir: string; a: string; b: string } {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-store-'));
-    workspaces.push(dir);
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
+    const { dir } = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-store-');
     writeWorkspace(dir, 'a.trig');
-    writeFileSync(join(dir, 'data.ttl'), DATA);
     // Another workspace: its own folder (a nested workspace is not part of a).
     mkdirSync(join(dir, 'b'));
-    writeFileSync(join(dir, 'b', 'b.trig'), '<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> . }\n');
+    writeFileSync(join(dir, 'b', 'b.trig'), workspaceTrig());
     writeFileSync(join(dir, 'b', 'b.ttl'), '<urn:b> a <http://ex.org/B> ; <http://www.w3.org/2000/01/rdf-schema#label> "Only in B" .\n');
     return { dir, a: join(dir, 'a.trig'), b: join(dir, 'b', 'b.trig') };
 }

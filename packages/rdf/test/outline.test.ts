@@ -1,23 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Box, Classes, Doc, OutlineNode, View, ViewCard, ViewGroup, boxes, groupOf, isHidden, placementOfId, predicateName, relationsInView } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-outline-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-outline-').dir;
+    store = await openStore(writeWorkspace(dir));
 });
 
 /** The tree that the Outline computed from the read model before ADR 0007 step 4 (outline.ts `build`), without selection. */

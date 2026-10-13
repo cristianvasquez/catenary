@@ -1,16 +1,14 @@
 // scripts/migrate-vocab.mjs: rewrites the legacy Catenary namespaces to the published ones, as text, only in files that change.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { LEGACY_NAMESPACES } from '@catenary/model';
+import { tempWorkspace } from './helpers';
 
 const SCRIPT = fileURLToPath(new URL('../../../scripts/migrate-vocab.mjs', import.meta.url));
 const run = (...args: string[]) => execFileSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
-const dirs: string[] = [];
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 it('the script uses the same namespace map as the model', async () => {
     const script = await import(SCRIPT);
@@ -18,8 +16,7 @@ it('the script uses the same namespace map as the model', async () => {
 });
 
 it('rewrites old namespaces in prefixes and full IRIs (also JSON-LD .json), keeps other files and plain .json byte-identical, and a second run changes nothing', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-migrate-'));
-    dirs.push(dir);
+    const dir = tempWorkspace({}, 'catenary-migrate-').dir;
     const a = '# a comment\n@prefix view: <osg://vocab/view#> .\n@prefix ex: <http://example.org/> .\n\nex:v a view:View ;   view:shows ex:x .\n';
     const b = '<osg://vocab/workspace#ws> {\n  <osg://vocab/workspace#ws> <osg://vocab/notation/shapes#mode> <osg://vocab/notation#Default> .\n}\n';
     const c = '@prefix ex: <http://example.org/> .\nex:a ex:b "osg://vocab/other" .\n';

@@ -1,40 +1,18 @@
-import { mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { performance } from 'node:perf_hooks';
+import { renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ModelStore } from '../src/model-store';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 // ADR 0003 step 5: a change on disk by another program is read into its graph.
 
-const dirs: string[] = [], stores: ModelStore[] = [];
-afterEach(async () => {
-    for (const s of stores.splice(0)) { await s.dispose(); }
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
-
 async function workspace(watching = false) {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-watch-'));
-    dirs.push(dir);
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    const ws = writeWorkspace(dir);
-    const store = new ModelStore();
-    store.watching = watching;
-    stores.push(store);
-    const r = await store.open(ws);
-    if (!r.ok) throw new Error(r.error);
-    const file = (name: string) => join(dir, name);
-    return { dir, store, file, read: (name: string) => readFileSync(file(name), 'utf8') };
+    const { dir, path: file, read } = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-watch-');
+    return { dir, store: await openStore(writeWorkspace(dir), { watching }), file, read };
 }
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
-/** Resolves when `ok()` is true. A stalled test fails after `ms` (monotonic clock), with the last observed state. */
-async function until(ok: () => boolean, state: () => unknown, ms = 5000): Promise<void> {
-    for (const end = performance.now() + ms; !ok(); await new Promise(r => setTimeout(r, 20))) {
-        if (performance.now() > end) throw new Error(`timeout after ${ms} ms; last state: ${JSON.stringify(state())}`);
-    }
-}
+/** vi.waitFor options of the real watch tests: a stalled test fails after 5 s with the last failed expect. */
+const WATCH = { timeout: 5000, interval: 20 };
 /** Deliver the debounced paths of a watch to the store, as its watcher does. Resolves when the queued reconciliation is done. */
 const deliver = (store: ModelStore, changed?: string[]) => store['reconciler'].settled(changed);
 const labels = (store: ModelStore) => Object.values(docOf(store).instances).map(i => i.label);
@@ -149,7 +127,7 @@ describe('changes on disk', () => {
     it('the watcher reads a change without a call', async () => {
         const { store, file, read } = await workspace(true);
         writeFileSync(file('data.ttl'), read('data.ttl').replace('"Product usage data"', '"Seen by the watcher"'));
-        await until(() => labels(store).includes('Seen by the watcher'), () => labels(store));
+        await vi.waitFor(() => expect(labels(store)).toContain('Seen by the watcher'), WATCH);
     });
 
     it('the watch events of own writes do not read the files again; a change by another program in the same burst does', async () => {
@@ -182,7 +160,7 @@ describe('changes on disk', () => {
         ok(store.execute({ kind: 'rename', id, label: 'Mine' }));
         writeFileSync(file('shapes.ttl'), read('shapes.ttl').replace('sh:name "Dataset"', 'sh:name "Data set"'));
         const shapes = () => Object.values(docOf(store).shapes.nodeShapes).map(s => s.label);
-        await until(() => shapes().includes('Data set'), () => ({ calls: sync.mock.calls.length, shapes: shapes() }));
+        await vi.waitFor(() => expect(shapes(), `syncFromDisk calls: ${sync.mock.calls.length}`).toContain('Data set'), WATCH);
         await store.idle();
         expect(sync).toHaveBeenCalled();
         expect(read('data.ttl')).toContain('"Mine"');

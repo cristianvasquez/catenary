@@ -6,7 +6,7 @@ import { Doc, boxes, deletePlan, elementRows, knownPredicates, neighborChoices, 
 import { hiddenNeighborCounts, instancesNamed, knownClasses, memberOptions, unplacedInstances, unplacedRelations } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
 import { project } from './project-full';
-import { DATA, SHAPES, docOf, writeWorkspace } from './helpers';
+import { DATA, SHAPES, docOf, writeWorkspace, openStore, tempWorkspace } from './helpers';
 
 // ADR 0012: the store answers each request from a request-scoped read model (scoped-doc.ts). Oracle: the same pure functions of
 // @catenary/model on the read model of the whole dataset (project-full.ts, test only), for every element of the fixture workspace.
@@ -126,22 +126,12 @@ describe('request-scoped read models give the answers of the whole read model', 
 
     it('a node shape IRI change is a moved id (moved-ids.ts), for the edit and its undo', async () => {
         // An edit: a store of its own, so the shared store of the other tests stays unchanged.
-        const own = mkdtempSync(join(tmpdir(), 'catenary-scoped-'));
-        writeFileSync(join(own, 'shapes.ttl'), SHAPES);
-        writeFileSync(join(own, 'data.ttl'), DATA);
-        const edited = new ModelStore();
-        edited.watching = false;
-        try {
-            expect(await edited.open(writeWorkspace(own))).toEqual({ ok: true });
-            const old = Object.keys(docOf(edited).shapes.nodeShapes)[0];
-            const r = edited.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/moved-shape' });
-            if (!r.ok) throw new Error(r.error);
-            expect(edited.snapshot().movedIds).toEqual({ [old]: r.id });
-            edited.undo();
-            expect(edited.snapshot().movedIds).toEqual({ [r.id!]: old });
-        } finally {
-            await edited.dispose();
-            rmSync(own, { recursive: true, force: true });
-        }
+        const edited = await openStore(writeWorkspace(tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-scoped-').dir));
+        const old = Object.keys(docOf(edited).shapes.nodeShapes)[0];
+        const r = edited.execute({ kind: 'setUri', id: old, uri: 'https://ex.org/moved-shape' });
+        if (!r.ok) throw new Error(r.error);
+        expect(edited.snapshot().movedIds).toEqual({ [old]: r.id });
+        edited.undo();
+        expect(edited.snapshot().movedIds).toEqual({ [r.id!]: old });
     });
 });

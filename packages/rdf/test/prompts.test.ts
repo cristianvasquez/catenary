@@ -1,30 +1,19 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { boxes, hiddenNeighbors, isHidden, relationsInView, unnamedLabel } from '@catenary/model';
 import { hiddenNeighborCounts } from '../../model/test/doc-reference';
 import { ModelStore } from '../src/model-store';
 import { elementId } from '../src/ids';
 import { rdf } from '../src/terms';
 import { S } from '../src/shapes-read';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
 // The queries that replace the read model of the frontend (ADR 0007): the selection, the boxes of a view, the content of the
 // dialogs and pickers of the user actions, labels of new elements.
 
 let dir: string, store: ModelStore;
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-prompts-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
-});
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-prompts-').dir;
+    store = await openStore(writeWorkspace(dir));
 });
 
 /** A view with an instance card, the card and its instance. */

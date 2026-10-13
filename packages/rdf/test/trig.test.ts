@@ -1,6 +1,5 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NS, boxes } from '@catenary/model';
@@ -10,7 +9,7 @@ import * as ops from '../src/ops';
 import { project } from './project-full';
 import { rdf } from '../src/terms';
 import { canonical as canonicalOf, parseTrig, writeTrig } from '../src/trig';
-import { DCT, MODEL, byLabel, doc, example, load, meta, value, violationsIn } from './helpers';
+import { DCT, MODEL, byLabel, doc, example, load, meta, tempWorkspace, value, violationsIn } from './helpers';
 import { modelTriples, isInstance } from '../src/vocabulary';
 
 /** scripts/rdf-query.cjs: Oxigraph, a parser independent of the one that Catenary writes with. */
@@ -111,8 +110,7 @@ describe('TriG round trip', () => {
     it('another parser (Oxigraph) reads the file: one model graph and one named graph per view', async () => {
         const g = await example();
         ops.createView(g, 'Empty view');
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-'));
-        const file = join(dir, 'out.trig');
+        const file = tempWorkspace().path('out.trig');
         writeFileSync(file, await writeTrig(g.quads()));
         const graphs = rdfQuery.rows(file, 'SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }').map(r => r.g);
         expect(graphs.sort()).toEqual(['urn:name:Empty%20view', 'urn:name:Product%20context', 'urn:name:model']);

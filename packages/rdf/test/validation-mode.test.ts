@@ -1,7 +1,6 @@
 // The validation mode of the manifest (ws:validation, spec/manifest.hs §9): off, the elements on the open views, or the model.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REPORT_GRAPH } from '../src/graph';
@@ -10,44 +9,29 @@ import { ModelStore } from '../src/model-store';
 import { manifestQuads, readManifest, NEAR, WS } from '../src/files';
 import { parseTrig } from '../src/trig';
 import { rdf } from '../src/terms';
+import { openStore, tempWorkspace, workspaceTrig } from './helpers';
 
-const dirs: string[] = [];
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-const stores: ModelStore[] = [];
-afterEach(async () => {
+afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
-    for (const store of stores.splice(0)) await store.dispose();
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 const VIEW = 'urn:ex:view';
-const VALIDATION = 'https://cristianvasquez.github.io/catenary/vocab/workspace#validation';
 
 /** Two things without a name (both violate), one of them on the view; `mode`: the manifest value, if any. */
 function workspace(mode?: string) {
-    const dir = mkdtempSync(join(tmpdir(), 'catenary-validation-'));
-    dirs.push(dir);
-    const f = (name: string, text: string) => writeFileSync(join(dir, name), text);
-    f('shapes.ttl', `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> .
+    const w = tempWorkspace({
+        'shapes.ttl': `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <urn:ex:> .
 ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ; sh:property ex:ThingShape-name .
-ex:ThingShape-name sh:path ex:name ; sh:minCount 1 .\n`);
-    f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing .\nex:hidden a ex:Thing .\n`);
-    f('main.view.trig', `@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+ex:ThingShape-name sh:path ex:name ; sh:minCount 1 .\n`,
+        'data.ttl': `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing .\nex:hidden a ex:Thing .\n`,
+        'main.view.trig': `@prefix view: <https://cristianvasquez.github.io/catenary/vocab/view#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 <${VIEW}> { <${VIEW}> a view:View ; rdfs:label "Main" .
-  <${VIEW}/p/1> a view:Placement ; view:element <urn:ex:shown> ; view:view <${VIEW}> ; view:x 0 ; view:y 0 . }\n`);
-    f('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ;
-        <https://cristianvasquez.github.io/catenary/vocab/workspace#defaultFile> "data.ttl" ; <https://cristianvasquez.github.io/catenary/vocab/workspace#placeShapes> "shapes.ttl"${mode ? ` ; <${VALIDATION}> "${mode}"` : ''} . }\n`);
-    return { dir, path: join(dir, 'workspace.trig'), read: () => readFileSync(join(dir, 'workspace.trig'), 'utf8') };
-}
-
-async function opened(path: string): Promise<ModelStore> {
-    const store = new ModelStore();
-    stores.push(store);
-    store.watching = false;
-    const r = await store.open(path);
-    if (!r.ok) throw new Error(r.error);
-    return store;
+  <${VIEW}/p/1> a view:Placement ; view:element <urn:ex:shown> ; view:view <${VIEW}> ; view:x 0 ; view:y 0 . }\n`,
+        'workspace.trig': workspaceTrig({ defaultFile: 'data.ttl', placeShapes: 'shapes.ttl', validation: mode })
+    }, 'catenary-validation-');
+    return { dir: w.dir, path: w.path('workspace.trig'), read: () => w.read('workspace.trig') };
 }
 
 const ok = (r: { ok: boolean; error?: string }) => { if (!r.ok) throw new Error(r.error); };
@@ -69,7 +53,7 @@ describe('validation mode', () => {
     });
 
     it('all validates the model', async () => {
-        const store = await opened(workspace().path);
+        const store = await openStore(workspace().path);
         await store.validate();
         expect(store.files.validation).toBe('all');
         expect(foci(store)).toEqual(['urn:ex:hidden', 'urn:ex:shown']);
@@ -78,7 +62,7 @@ describe('validation mode', () => {
 
     it('off: no violations, an empty report graph; the setting is written and all validates again', async () => {
         const ws = workspace();
-        const store = await opened(ws.path);
+        const store = await openStore(ws.path);
         await store.validate();
         expect(reportSize(store)).toBeGreaterThan(0);
         ok(await store.setSettings({ validation: 'off' }));
@@ -86,7 +70,7 @@ describe('validation mode', () => {
         expect(store.violations).toEqual([]);
         expect(reportSize(store)).toBe(0);
         await store.save();
-        const stored = (await parseTrig(ws.read())).quads.filter(q => q.predicate.value === VALIDATION).map(q => q.object.value);
+        const stored = (await parseTrig(ws.read())).quads.filter(q => q.predicate.equals(WS.validation)).map(q => q.object.value);
         expect(stored).toEqual(['off']);
         ok(await store.setSettings({ validation: 'all' }));
         await store.validate();
@@ -94,14 +78,14 @@ describe('validation mode', () => {
     });
 
     it('a change of the model does not validate when off', async () => {
-        const store = await opened(workspace('off').path);
+        const store = await openStore(workspace('off').path);
         await store.validate();
         expect(store.violations).toEqual([]);
         expect(store.files.validation).toBe('off');
     });
 
     it('views validates the elements on the open views only, and follows the open views', async () => {
-        const store = await opened(workspace('views').path);
+        const store = await openStore(workspace('views').path);
         await store.validate();
         // No open view: nothing to check.
         expect(store.violations).toEqual([]);
@@ -122,7 +106,7 @@ describe('validation mode', () => {
     });
 
     it('views: a placement on an open view starts a run; a move does not', async () => {
-        const store = await opened(workspace('views').path);
+        const store = await openStore(workspace('views').path);
         const view = elementId(rdf.namedNode(VIEW));
         store.setOpenView('client-1', view);
         await store.validate();
@@ -138,7 +122,7 @@ describe('validation mode', () => {
 
     it('law_layoutChangeNoValidation: a layout-only patch schedules no run in any mode', async () => {
         for (const mode of ['all', 'views', 'off'] as const) {
-            const store = await opened(workspace(mode).path);
+            const store = await openStore(workspace(mode).path);
             const view = elementId(rdf.namedNode(VIEW));
             store.setOpenView('client-1', view);
             await store.validate();
@@ -161,7 +145,7 @@ ex:ConceptShape-note sh:path skos:note ; sh:minCount 1 .
 ex:scheme a skos:ConceptScheme .
 # An sh: statement puts the concept into the shapes graph of the file: its SKOS statements are the vocabulary of validation.
 ex:loose a skos:Concept ; skos:inScheme ex:scheme ; sh:name "Loose" .\n`);
-        const store = await opened(ws.path);
+        const store = await openStore(ws.path);
         await store.validate();
         expect(store.violations).toEqual([]);
         ok(await store.setSettings({ validation: 'all' }));
@@ -193,7 +177,7 @@ ex:green a skos:Concept ; skos:note "Green." ; sh:name "Green" .
 ex:loose a skos:Concept ; skos:inScheme ex:colors ; sh:name "Loose" .\n`);
         f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing ; ex:color ex:red .\nex:other a ex:Thing ; ex:color ex:blue .\nex:hidden a ex:Thing ; ex:color ex:green .\n`);
         return async () => {
-            const store = await opened(ws.path);
+            const store = await openStore(ws.path);
             if (vocab === 'imported') ok(await store.setImported('vocab.ttl', true));
             if (mode === 'views') store.setOpenView('client-1', elementId(rdf.namedNode(VIEW)));
             await store.validate();
@@ -237,7 +221,7 @@ ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .\n`);
 ex:colors a skos:ConceptScheme ; skos:hasTopConcept ex:white .
 ex:gray a skos:Concept ; skos:inScheme ex:colors .\nex:white a skos:Concept .\nex:black a skos:Concept .\n`);
         f('data.ttl', `@prefix ex: <urn:ex:> .\nex:shown a ex:Thing ; ex:color ex:gray .\nex:hidden a ex:Thing ; ex:color ex:white .\nex:other a ex:Thing ; ex:color ex:black .\n`);
-        const store = await opened(ws.path);
+        const store = await openStore(ws.path);
         ok(await store.setImported('official.ttl', true));
         await store.validate();
         expect(foci(store)).toEqual(['urn:ex:other']);
@@ -256,7 +240,7 @@ ex:ColorsShape-scheme sh:path skos:inScheme ; sh:hasValue ex:colors .\n`);
         f('official.ttl', `@prefix ex: <urn:ex:> . @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 ex:colors skos:prefLabel "Colors" ; skos:hasTopConcept ex:white .\nex:gray skos:prefLabel "Gray" ; skos:topConceptOf ex:colors .\n`);
         f('data.ttl', `@prefix ex: <urn:ex:> .\nex:a a ex:Thing ; ex:color ex:gray .\nex:b a ex:Thing ; ex:color ex:white .\n`);
-        const store = await opened(ws.path);
+        const store = await openStore(ws.path);
         ok(await store.setImported('official.ttl', true));
         await store.validate();
         // The imported vocabulary is not checked; its scheme membership still makes gray and white values in the scheme.
@@ -266,7 +250,7 @@ ex:colors skos:prefLabel "Colors" ; skos:hasTopConcept ex:white .\nex:gray skos:
     it('views: an instance that only an imported file describes is not counted as checked', async () => {
         const ws = workspace('views');
         writeFileSync(join(ws.dir, 'official.ttl'), `@prefix ex: <urn:ex:> .\nex:official a ex:Thing ; ex:name "Official" .\n`);
-        const store = await opened(ws.path);
+        const store = await openStore(ws.path);
         ok(await store.setImported('official.ttl', true));
         const view = elementId(rdf.namedNode(VIEW));
         ok(store.execute({ kind: 'addToView', view, ids: [elementId(rdf.namedNode('urn:ex:official'))], at: { x: 200, y: 0 } }));
@@ -277,7 +261,7 @@ ex:colors skos:prefLabel "Colors" ; skos:hasTopConcept ex:white .\nex:gray skos:
     });
 
     it('rejects an unknown mode', async () => {
-        const store = await opened(workspace().path);
+        const store = await openStore(workspace().path);
         const r = await store.setSettings({ validation: 'some' as never });
         expect(r.ok).toBe(false);
         expect(store.files.validation).toBe('all');

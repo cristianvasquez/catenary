@@ -1,41 +1,30 @@
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Doc, EditCommand, boxes, toSchema } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { OxigraphStore } from 'rdf-files';
 import { project } from './project-full';
 import { rdf } from '../src/terms';
 import { showsShapes } from '../src/view-read';
-import { DATA, SHAPES, writeWorkspace, docOf } from './helpers';
+import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 import { viewPart } from './view-part-reference';
 import { fileURLToPath } from 'node:url';
 import { newModelGraph } from '../src/model-graph';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 let dir: string, store: ModelStore;
-afterEach(async () => {
-    await store.dispose();
-    rmSync(dir, { recursive: true, force: true });
-});
 
 async function openFixtures(): Promise<void> {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-view-read-'));
-    writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-    writeFileSync(join(dir, 'data.ttl'), DATA);
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+    dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-view-read-').dir;
+    store = await openStore(writeWorkspace(dir));
 }
 
 async function openDcat(): Promise<void> {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-view-read-'));
+    dir = tempWorkspace({}, 'catenary-view-read-').dir;
     for (const [from, to] of [['dcat-workspace.trig', 'workspace.trig'], ['dcat-data.ttl', 'data.ttl'], ['dcat-shapes.ttl', 'shapes.ttl']]) cpSync(FIXTURES + from, join(dir, to));
     cpSync(FIXTURES + 'dcat-views', join(dir, 'dcat-views'), { recursive: true });
-    store = new ModelStore();
-    store.watching = false;
-    expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
+    store = await openStore(join(dir, 'workspace.trig'));
 }
 
 /** The Doc of a view on the path before ADR 0007 step 5: the part query into a store, then the projection. */
@@ -130,12 +119,8 @@ describe('view diagram from SPARQL rows (ADR 0007 step 5)', () => {
     });
 
     it('full read keeps rdf:type of a placed instance when its class has a label in the model graph', async () => {
-        dir = mkdtempSync(join(tmpdir(), 'catenary-view-read-'));
-        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-        writeFileSync(join(dir, 'data.ttl'), DATA + '\n<http://www.w3.org/ns/prov#Agent> <http://www.w3.org/2000/01/rdf-schema#label> "Agent".\n');
-        store = new ModelStore();
-        store.watching = false;
-        expect(await store.open(writeWorkspace(dir))).toEqual({ ok: true });
+        dir = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA + '\n<http://www.w3.org/ns/prov#Agent> <http://www.w3.org/2000/01/rdf-schema#label> "Agent".\n' }, 'catenary-view-read-').dir;
+        store = await openStore(writeWorkspace(dir));
         const view = Object.values(docOf(store).views)[0];
         const doc = store.viewDoc(view.id);
         const instance = Object.values(doc.instances).find(i => i.uri === 'urn:name:Analysis%20%2F%20dashboards')!;

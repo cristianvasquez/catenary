@@ -432,22 +432,21 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   const picker = page.locator('.quick-input-widget');
   const idOf = label => cli('rpc', 'search').result.find(h => h.label === label).id;
   const cards = label => { const id = idOf(label); return cli('rpc', 'view', JSON.stringify(view)).result.boxes.filter(b => b.kind === 'card' && b.element === id).length; };
-  const until = (check, what) => waitUntil(what, check);
   await page.keyboard.press('F8');
   await picker.waitFor();
   await page.keyboard.type('Picked first');
   await page.getByRole('option', { name: /Picked first/ }).first().waitFor();
   await page.keyboard.press('Control+Enter');
-  await until(() => cards('Picked first') === 1, 'Ctrl+Enter adds the element to the view');
+  await waitUntil('Ctrl+Enter adds the element to the view', () => cards('Picked first') === 1);
   assert.equal(await picker.isVisible(), true, 'Ctrl+Enter keeps the picker open');
   await page.locator('.quick-input-box input').fill('Picked second');
   await page.getByRole('option', { name: /Picked second/ }).first().waitFor();
   await page.keyboard.press('Enter');
-  await until(() => cards('Picked second') === 1, 'Enter adds the element to the view');
+  await waitUntil('Enter adds the element to the view', () => cards('Picked second') === 1);
   await picker.waitFor({ state: 'hidden' });
   // The selection holds placements: compare the elements that the backend resolved for it.
   const selected = label => { const id = idOf(label); return cli('eval', `return ctx.selection.resolved.elements.includes(${JSON.stringify(id)})`) === true; };
-  await until(() => selected('Picked second'), 'the added card is selected');
+  await waitUntil('the added card is selected', () => selected('Picked second'));
   await page.keyboard.press('F8');
   await picker.waitFor();
   await page.keyboard.type('Picked first');
@@ -455,7 +454,7 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.keyboard.press('Enter');
   await picker.waitFor({ state: 'hidden' });
   // The accept ends with the selection (an added card is also selected after its command): then the card count is final.
-  await until(() => selected('Picked first'), 'Enter on an element of the view selects it there');
+  await waitUntil('Enter on an element of the view selects it there', () => selected('Picked first'));
   assert.equal(cards('Picked first'), 1, 'Enter on an element of the view adds no second card');
   // Ctrl+Enter on an element of the view: selected there, the picker stays open.
   await page.keyboard.press('F8');
@@ -463,7 +462,7 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.keyboard.type('Picked second');
   await page.getByRole('option', { name: /Picked second/ }).first().waitFor();
   await page.keyboard.press('Control+Enter');
-  await until(() => selected('Picked second'), 'Ctrl+Enter on an element of the view selects it there');
+  await waitUntil('Ctrl+Enter on an element of the view selects it there', () => selected('Picked second'));
   assert.equal(await picker.isVisible(), true, 'Ctrl+Enter on an element of the view keeps the picker open');
   assert.equal(cards('Picked second'), 1);
   // A view: a view reference; the second time it is selected, not added again.
@@ -472,14 +471,14 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await page.locator('.quick-input-box input').fill('Product context');
   await page.getByRole('option', { name: /Product context/ }).first().waitFor();
   await page.keyboard.press('Control+Enter');
-  await until(() => references().length === 1, 'Enter on a view adds a view reference');
+  await waitUntil('Enter on a view adds a view reference', () => references().length === 1);
   // The accept ends when the picker marks the row as on this view. Then clear the selection: the next accept must select again.
   const activeRow = page.locator('.quick-input-list .monaco-list-row.focused', { has: page.locator('.label-name', { hasText: /^Product context$/ }) });
   await activeRow.locator('.label-description', { hasText: /(^| · )on this view$/ }).first().waitFor();
   cli('eval', 'ctx.selection.set({ view: undefined, ids: [] }); return true');
-  await until(() => !cli('ui').selection.ids?.length, 'the selection is empty');
+  await waitUntil('the selection is empty', () => !cli('ui').selection.ids?.length);
   await page.keyboard.press('Control+Enter');
-  await until(() => cli('ui').selection.ids?.includes(references()[0].id), 'Ctrl+Enter on a view of the view selects its reference');
+  await waitUntil('Ctrl+Enter on a view of the view selects its reference', () => cli('ui').selection.ids?.includes(references()[0].id));
   assert.equal(references().length, 1, 'a view reference is added once');
   assert.equal(await picker.isVisible(), true);
 }));

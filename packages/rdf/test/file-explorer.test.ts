@@ -1,11 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { iriId, NS, boxes } from '@catenary/model';
 import { dataGraphIri, ModelGraph } from '../src/graph';
 import { ModelStore } from '../src/model-store';
-import { parseQuads } from './helpers';
+import { parseQuads, openStore, tempWorkspace } from './helpers';
 import { relationId } from '../src/ids';
 import { rdf } from '../src/terms';
 
@@ -21,14 +20,12 @@ const file = (name: string) => join(dir, name + '.ttl');
 const ids = (name: string) => store.reads.explorerChildren(type, file(name)).rows.map(r => r.element);
 const statements = async (name: string) => (await parseQuads(readFileSync(file(name), 'utf8'))).map(q => `${q.subject.value} ${q.predicate.value} ${q.object.value}`).sort();
 beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'catenary-file-explorer-'));
+    dir = tempWorkspace({}, 'catenary-file-explorer-').dir;
     writeFileSync(file('a'), textA);
     writeFileSync(file('b'), `${prefixes}<urn:test:destination> a <urn:test:Other>; rdfs:label "Destination" .`);
     writeFileSync(file('c'), `${prefixes}<urn:test:a> a <urn:test:Thing>; rdfs:comment "Other file" . <urn:test:incoming> <urn:test:link> <urn:test:a> .`);
-    store = new ModelStore(); store.watching = false;
-    expect(await store.open(dir)).toMatchObject({ ok: true });
+    store = await openStore(dir);
 });
-afterEach(async () => { await store.dispose(); rmSync(dir, { recursive: true, force: true }); });
 const move = (elements = [a]) => store.execute({ kind: 'moveElementsToFile', source: file('a'), destination: file('b'), ids: elements });
 
 describe('file explorer', () => {
@@ -57,8 +54,7 @@ describe('file explorer', () => {
         await store.idle();
         expect(await statements('a')).toEqual(before); expect(await statements('b')).toEqual(destination);
         expect(store.redo()).toEqual({ ok: true });
-        await store.dispose(); store = new ModelStore(); store.watching = false;
-        expect(await store.open(dir)).toMatchObject({ ok: true });
+        await store.dispose(); store = await openStore(dir);
         expect(ids('a')).toEqual([b]); expect(ids('b')).toContain(a); expect(ids('c')).toEqual([a]);
     });
     it('same-file transfer is a no-op and an unknown destination is rejected', () => {
@@ -109,7 +105,7 @@ describe('file explorer', () => {
         await store.dispose();
         writeFileSync(file('shape'), `${prefixes}<urn:test:S> a sh:NodeShape; sh:targetClass <urn:test:Thing>; sh:property <urn:test:p> .
             <urn:test:p> sh:path <urn:test:name>; sh:datatype <${NS.xsd}string> .`);
-        store = new ModelStore(); store.watching = false; await store.open(dir);
+        store = await openStore(dir);
         const before = await statements('shape');
         expect(store.execute({ kind: 'moveElementsToFile', source: file('shape'), destination: file('b'), ids: [iriId('urn:test:S')] }).ok).toBe(true);
         await store.idle(); expect(await statements('shape')).toEqual([]);

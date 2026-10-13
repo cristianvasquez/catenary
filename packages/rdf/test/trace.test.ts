@@ -1,25 +1,21 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { queryKey, type TraceSpan } from '@catenary/model';
 import * as model from '@catenary/model';
 import { OxigraphStore, parseRdfSync } from 'rdf-files';
 import { shapeTargetMatches } from '../src/shacl-targets';
-import { ModelStore } from '../src/model-store';
 import { TracedStore, Tracer, tracer } from '../src/trace';
 import { rdf } from '../src/terms';
 import * as validation from '../src/validate';
 import { ValidationRunner } from '../src/validation-runner';
 import { syncFigures } from '../src/figure-edits';
-import { DATA, SHAPES, emptyGraph, writeWorkspace } from './helpers';
+import { DATA, SHAPES, emptyGraph, openStore, tempWorkspace, writeWorkspace } from './helpers';
 import { newModelGraph } from '../src/model-graph';
 
-const dirs: string[] = [];
 afterEach(() => {
     vi.restoreAllMocks();
     while (tracer.on) tracer.setClient(false);
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 const byId = (spans: TraceSpan[]) => new Map(spans.map(s => [s.id, s]));
@@ -167,13 +163,7 @@ describe('traced store', () => {
     });
 
     it('an edit gives a command span with the change, its listeners and the file write below it', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-trace-'));
-        dirs.push(dir);
-        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-        writeFileSync(join(dir, 'data.ttl'), DATA);
-        const store = new ModelStore();
-        store.watching = false;
-        expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
+        const store = await openStore(writeWorkspace(tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-trace-').dir));
         store.onDidChange(() => tracer.span('refresh', 'listener', () => store.reads.viewLabels()));
         tracer.setClient(true);
         expect(store.execute({ kind: 'createView', label: 'Traced' }).ok).toBe(true);
@@ -189,14 +179,11 @@ describe('traced store', () => {
     });
 
     it.each([20, 200])('law_selectedReadScope: selections do not load unrelated cards (%i cards)', async count => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-links-trace-'));
-        dirs.push(dir);
+        const dir = tempWorkspace({}, 'catenary-links-trace-').dir;
         const uris = Array.from({ length: count }, (_, i) => `urn:trace:instance:${i}`);
         writeFileSync(join(dir, 'data.ttl'), uris.map(uri => `<${uri}> <http://www.w3.org/2000/01/rdf-schema#label> "Card" .`).join('\n'));
-        const store = new ModelStore();
-        store.watching = false;
+        const store = await openStore(writeWorkspace(dir));
         try {
-            expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
             expect(await store.setSettings({ validation: 'off' })).toEqual({ ok: true });
             expect(store.execute({ kind: 'createView', label: 'Connections trace' }).ok).toBe(true);
             const view = Object.keys(store.reads.viewLabels()).find(id => store.reads.viewLabels()[id] === 'Connections trace')!;
@@ -240,14 +227,8 @@ describe('traced store', () => {
     });
 
     it('derives separately during edge removal and the following canvas refresh', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-edge-trace-'));
-        dirs.push(dir);
-        writeFileSync(join(dir, 'shapes.ttl'), SHAPES);
-        writeFileSync(join(dir, 'data.ttl'), DATA);
-        const store = new ModelStore();
-        store.watching = false;
+        const store = await openStore(writeWorkspace(tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-edge-trace-').dir));
         try {
-            expect((await store.open(writeWorkspace(dir))).ok).toBe(true);
             const view = Object.keys(store.reads.viewLabels()).find(id => store.reads.view(id)?.edges.length);
             expect(view).toBeDefined();
             const edge = store.reads.view(view!)!.edges[0];

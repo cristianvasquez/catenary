@@ -1,16 +1,16 @@
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { NTerm, Violation, nkey } from '@catenary/model';
 import { OxigraphStore } from 'rdf-files';
 import { REPORT_GRAPH } from '../src/graph';
-import { ModelStore, violationScope } from '../src/model-store';
+import { violationScope } from '../src/model-store';
 import { LAYOUT_PREDICATES } from '../src/change';
 import { readNotations, storeIndex, storeInput } from '../src/notations';
 import { rdf } from '../src/terms';
 import { newModelGraph } from '../src/model-graph';
+import { openStore, tempWorkspace } from './helpers';
 
 const n = (l: string) => rdf.namedNode('urn:x:' + l);
 const j = (l: string): NTerm => ({ termType: 'NamedNode', value: 'urn:x:' + l });
@@ -59,26 +59,19 @@ describe('the figures do not read the geometry of placements', () => {
 
 describe('ModelStore.viewFigures keeps the figures of a view over a move', () => {
     it('a move joins the same figures with the new placements; a rename derives them again', async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'catenary-figures-'));
+        const dir = tempWorkspace({}, 'catenary-figures-').dir;
         cpSync(fileURLToPath(new URL('./fixtures/notation/', import.meta.url)), dir, { recursive: true });
-        const store = new ModelStore();
-        store.watching = false;
-        try {
-            expect(await store.open(join(dir, 'workspace.trig'))).toEqual({ ok: true });
-            const viewId = Object.keys(store.reads.viewLabels())[0];
-            const card = store.viewDoc(viewId).views[viewId].boxes.find(b => b.kind === 'card')!;
-            const first = store.viewFigures(viewId)!;
-            expect(store.execute({ kind: 'setBounds', view: viewId, bounds: [{ id: card.id, x: card.x + 40, y: card.y }] }).ok).toBe(true);
-            const moved = store.viewFigures(viewId)!;
-            expect(moved.derivation).toBe(first.derivation);
-            expect(store.execute({ kind: 'rename', id: card.element, label: 'Renamed' }).ok).toBe(true);
-            const renamed = store.viewFigures(viewId)!;
-            expect(renamed.derivation).not.toBe(first.derivation);
-            expect(renamed.derivation.figures.some(f => f.title === 'Renamed')).toBe(true);
-        } finally {
-            await store.dispose();
-            rmSync(dir, { recursive: true, force: true });
-        }
+        const store = await openStore(join(dir, 'workspace.trig'));
+        const viewId = Object.keys(store.reads.viewLabels())[0];
+        const card = store.viewDoc(viewId).views[viewId].boxes.find(b => b.kind === 'card')!;
+        const first = store.viewFigures(viewId)!;
+        expect(store.execute({ kind: 'setBounds', view: viewId, bounds: [{ id: card.id, x: card.x + 40, y: card.y }] }).ok).toBe(true);
+        const moved = store.viewFigures(viewId)!;
+        expect(moved.derivation).toBe(first.derivation);
+        expect(store.execute({ kind: 'rename', id: card.element, label: 'Renamed' }).ok).toBe(true);
+        const renamed = store.viewFigures(viewId)!;
+        expect(renamed.derivation).not.toBe(first.derivation);
+        expect(renamed.derivation.figures.some(f => f.title === 'Renamed')).toBe(true);
     });
 });
 

@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "rootDir": ".",
     "noEmit": true,
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
       "@catenary/model": [
