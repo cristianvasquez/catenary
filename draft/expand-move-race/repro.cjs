@@ -29,8 +29,10 @@ if (process.env.VALIDATION_DATA === '1') {
   fs.writeFileSync(shapes, fs.readFileSync(shapes, 'utf8').replace(/\n\s*sh:node <urn:name:Book%20shape> ;/, ''));
 }
 if (GIT) {
-  const git = (...a) => execFileSync('git', ['-c', 'user.name=repro', '-c', 'user.email=repro@example.org', ...a], { cwd: workspace, stdio: 'pipe' });
-  git('init', '-q'); git('add', '-A'); git('commit', '-q', '-m', 'copy');
+  const git = (...a) => execFileSync('git', a, { cwd: workspace, stdio: 'pipe' });
+  // A local identity: the auto-commits of the backend (plain `git commit`) also work without a global one.
+  git('init', '-q'); git('config', 'user.name', 'repro'); git('config', 'user.email', 'repro@example.org');
+  git('add', '-A'); git('commit', '-q', '-m', 'copy');
 }
 const logs = [];
 const proc = fork(path.join(root, 'app/lib/backend/main.js'), [workspace, '--hostname', '127.0.0.1', '--port', '0'], {

@@ -29,13 +29,14 @@ Kata ayb7, worktree build of 803fe81 (after rkyk), headless Chromium, copies of 
 | e | d + FAST | 1.18 | yes: → (160,570) | no (last change at +6, the drop frame) | Update +11 (160,570). Validation run +107, refresh +121, update rev 4 at +127 with the new position (160,570). |
 | f50 | e + DRAG_DELAY 50 | 0.82 | yes: → (160,570) | no (last change at +3) | Update +12 (160,570). Validation run +38, update rev 4 at +62 with the new position. |
 | f100 | e + DRAG_DELAY 100 | 0.78 | yes: → (420,440) | no (last change at +6) | Validation run -13 found 0 violations, `change validation` with 0 elements, no refresh. Update +11 (420,440). |
+| g | c + FAST, local git identity in the copy (roborev 142) | 1.16 | yes: → (160,570) | no (last change at +3) | Expand update -144 (820,240); update +10 (160,570). Commits by the local identity "repro". |
 
 - In runs d, e, f50 and f100 the canvas scale differs: when the first open puts the halo arrow under the Properties panel, the script zooms out with one wheel step (scale 0.61). The drag then moves the card to (160,570) in the model.
 - No run has a `read changed files` or `own write` span: no watch event reached the backend in the 4 s after the drop.
 - Run d shows that a validation refresh can send a model with the old position during the drag. The move tool feedback keeps the card under the pointer, and the ChangeBounds goes after it. Each model after the drop has the new position, because the server builds it from the store after `setBounds`. Thus `pending-bounds` never had to hold a move against a stale model in these runs.
 - The selection of the new card comes 50 to 180 ms after the expand update (a: 158 ms, d: 182 ms, e: 54 ms). With FAST=1 it comes during the drag. It does not move the card.
 
-Result: negative. The jump back is not reproduced with a git repository, with auto-commit, or with a validation refresh before or after the drop.
+Result: negative, 8 runs. The jump back is not reproduced with a git repository, with auto-commit, or with a validation refresh before or after the drop.
 
 ## Next things to try
 
