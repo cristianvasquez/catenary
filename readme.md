@@ -9,9 +9,20 @@ layout: node.js
 
 # Catenary
 
-Catenary edits RDF models with Theia and GLSP. SHACL shapes supply fields, relation choices and validation. Several diagrams can show the same elements. The files on disk are the model: each edit writes them and can make a Git commit.
+A scribble tool for RDF models. Sketch shapes and instances on a canvas, in any order, until the model is consistent. Then write it up with diagrams and share it.
 
-## Documentation
+![Shapes, a value set and example data on one canvas](www/public/images/showcase.png)
+
+- **Site**: [cristianvasquez.github.io/catenary](https://cristianvasquez.github.io/catenary/), with [what Catenary is](https://cristianvasquez.github.io/catenary/what-is-catenary) and a [tutorial](https://cristianvasquez.github.io/catenary/tutorial/01-new-workspace) that builds a small model from an empty folder.
+- **Download**: the [releases](https://github.com/cristianvasquez/catenary/releases) page, for Linux, Windows and macOS.
+
+Catenary is a personal tool for small datasets. It is incomplete, and it does not replace mature RDF tools. I add a function when I need it, so progress is slow. The ergonomics are still rough: suggestions are welcome in the [issues](https://github.com/cristianvasquez/catenary/issues). Each edit writes the files at once: use a copy of valuable data.
+
+## For developers and agents
+
+The rest of this file is the technical reference: the documentation map, the build, the release packages and the command-line interface.
+
+### Documentation
 
 Read in this order, from overview to detail:
 
@@ -29,7 +40,7 @@ Read in this order, from overview to detail:
 
 The contracts are Haskell modules. The optional `pnpm check:manifests` target typechecks them with GHC. It skips the check when GHC is absent. A mismatch of names or types fails when GHC is available.
 
-## Run
+### Run
 
 Use Node 22.23.3 and pnpm 11.3.0. Dependencies: Theia 1.74.1, GLSP 2.8.0, [shaclxtract](https://www.npmjs.com/package/shaclxtract).
 
@@ -64,7 +75,7 @@ The Windows package is built on Linux. The workflow `.github/workflows/windows.y
 
 The install script builds `drivelist` in a temporary directory because node-gyp fails on some paths with spaces. Both applications load the downloaded plugins for Source Control with `--plugins=local-dir:plugins`.
 
-## Releases
+### Releases
 
 The [release workflow](.github/workflows/release.yml) builds portable packages for Linux, Windows and macOS. To publish a release, push a version tag:
 
@@ -89,7 +100,7 @@ A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A pull reque
 - Windows: SmartScreen can show a warning. Select More info → Run anyway. Source Control needs `git.exe` on the PATH.
 - Linux: the AppImage needs FUSE 2 (`libfuse2`). Without FUSE, run it with `--appimage-extract-and-run`. The AppImage turns off the Electron sandbox when the kernel does not allow unprivileged user namespaces, for example on Ubuntu 24.04. If the tar.gz package stops with a sandbox error, run `./catenary --no-sandbox`, or give `chrome-sandbox` to root with mode 4755.
 
-## Command-line interface
+### Command-line interface
 
 `pnpm -s catenary` controls a running backend. Use `--help` for syntax and `rpc` for the available methods. Each backend writes `$XDG_RUNTIME_DIR/catenary/<pid>.json` (port, token, workspace). The CLI selects the backend from `--port`, then `CATENARY_PORT`, then the only running backend, then the backend of the workspace that contains the current directory. Otherwise it fails and lists the running backends. The [data contract](spec/manifest.hs) defines authentication and exit codes.
 

@@ -5,8 +5,8 @@ hero:
   text: A scribble tool for RDF models
   tagline: Sketch shapes and instances on a canvas, in any order, until the model is consistent. Then write it up with diagrams and share it.
   image:
-    src: /images/bookshop-canvas.png
-    alt: The Bookshop view of the example workspace
+    src: /images/showcase.png
+    alt: Shapes, a value set and example data on one canvas
   actions:
     - theme: brand
       text: What is Catenary

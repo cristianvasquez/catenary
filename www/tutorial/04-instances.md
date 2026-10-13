@@ -5,9 +5,9 @@ Instances go on a second view. One view per facet keeps the shapes readable and 
 ## A view for the books
 
 1. Click the **+** after the editor tabs.
-2. Type `books` as the file name and press Enter.
+2. Type `Books` as the file name and press Enter.
 
-The view **Books** opens as an empty canvas.
+The view opens as an empty canvas with the label **Books**, the base name of the file. The label gives the IRI of the view, `urn:name:Books`, which the document of step 6 uses.
 
 ## Two books and an author
 

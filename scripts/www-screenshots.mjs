@@ -216,7 +216,56 @@ An author was born in a city of the Cities scheme.
   ]);
 }
 
-const sets = { bookshop, scratch };
+// --- One canvas with many kinds of things: the picture of the home page and the readme. ---
+async function showcase(dir) {
+  const workspace = path.join(dir, 'showcase');
+  fs.mkdirSync(workspace);
+  const xsd = P.xsd;
+  await session(workspace, path.join(dir, 'config'), [
+    async ({ cli, exec, openView, page, settle, canvas, fit }) => {
+      const r = cli('rpc', 'create', JSON.stringify(path.join(workspace, 'workspace.catenary.trig')));
+      if (!r.result?.ok) throw new Error('create: ' + JSON.stringify(r));
+      const view = cli('model', 'views', '--keys')[0];
+      await openView(view);
+      const setUp = page.locator('.dialogBlock', { hasText: 'Set Up Workspace' });
+      if (await setUp.isVisible()) { await setUp.getByRole('button', { name: 'Cancel' }).click(); await settle(); }
+      // Shapes: a Work has a title and a creator that is a Person or an Organization (an Or constraint).
+      const work = exec({ kind: 'createNodeShape', label: 'Work', targetClass: 'urn:name:Work', view, at: { x: 40, y: 200 } }).id;
+      exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:title' }, range: { kind: 'datatype', datatype: xsd('string') }, minCount: 1, maxCount: 1, view });
+      const person = exec({ kind: 'createNodeShape', label: 'Person', targetClass: 'urn:name:Person', view, at: { x: 560, y: 120 } }).id;
+      exec({ kind: 'createPropertyShape', shape: person, path: { kind: 'iri', iri: 'urn:name:born' }, range: { kind: 'datatype', datatype: xsd('date') }, maxCount: 1, view });
+      const org = exec({ kind: 'createNodeShape', label: 'Organization', targetClass: 'urn:name:Organization', view, at: { x: 560, y: 380 } }).id;
+      const toPerson = exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:creator' }, range: { kind: 'node', shape: person }, view }).id;
+      const toOrg = exec({ kind: 'createPropertyShape', shape: work, path: { kind: 'iri', iri: 'urn:name:creator' }, range: { kind: 'node', shape: org }, view }).id;
+      exec({ kind: 'groupProperties', ids: [toPerson, toOrg], operator: 'or' });
+      // A SKOS scheme of cities, the range of Person.city, and one concept placed on its own.
+      const cities = exec({ kind: 'createValueSet', valueSet: 'scheme', label: 'Cities', view, at: { x: 1080, y: 120 } }).id;
+      exec({ kind: 'addConcept', set: cities, label: 'Comala' });
+      exec({ kind: 'addConcept', set: cities, label: 'Macondo' });
+      exec({ kind: 'createPropertyShape', shape: person, path: { kind: 'iri', iri: 'urn:name:city' }, range: { kind: 'scheme', schemes: ['urn:name:Cities'] }, maxCount: 1, view });
+      // Instances: a work, its creator, and the city of the creator (a concept).
+      const farm = exec({ kind: 'createInstance', classIri: 'urn:name:Work', label: 'Animal Farm', view, at: { x: 40, y: 600 } }).id;
+      exec({ kind: 'setStatements', id: farm, values: { 'urn:name:title': [{ termType: 'Literal', value: 'Animal Farm' }] } });
+      exec({ kind: 'createRelation', subject: farm, predicate: 'urn:name:creator', object: { classIri: 'urn:name:Person', label: 'George Orwell' }, view, at: { x: 560, y: 640 } });
+      exec({ kind: 'createRelation', subject: iriId('urn:name:George%20Orwell'), predicate: 'urn:name:city', object: iriId('urn:name:Comala'), view, at: { x: 1080, y: 560 } });
+      const note = exec({ kind: 'createNote', view, text: 'Shapes, a value set and example data on one canvas.', at: { x: 40, y: 40 } }).id;
+      // Explicit bounds: a new instance card takes a large default size.
+      const bounds = [
+        [note, 40, 40, 300, 70], [work, 40, 250, 300, 150], [person, 520, 120, 300, 150], [org, 520, 360, 300, 110], [cities, 980, 120, 260, 150],
+        [farm, 40, 580, 300, 110], [iriId('urn:name:George%20Orwell'), 520, 580, 300, 110], [iriId('urn:name:Comala'), 980, 580, 260, 110]
+      ].filter(([id]) => id).map(([id, x, y, width, height]) => (width ? { id, x, y, width, height } : { id, x, y }));
+      exec({ kind: 'setLayout', view, bounds });
+      await openView(view);
+      await fit();
+      await canvas.screenshot({ path: file('showcase') });
+      // Trim the empty canvas margins, with a border of 40 px (ImageMagick, when present).
+      try { execFileSync('magick', [file('showcase'), '-trim', '-bordercolor', '#1e1e1e', '-border', '40', file('showcase')]); } catch { /* keep the untrimmed picture */ }
+      console.log('wrote www/public/images/showcase.png');
+    }
+  ]);
+}
+
+const sets = { bookshop, scratch, showcase };
 
 async function main() {
   const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(sets);

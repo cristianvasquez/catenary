@@ -14,12 +14,14 @@ A node shape describes a class: its attributes, its relations, and what counts a
 
 1. Create a second shape `Author` the same way.
 2. Add the attribute `born` with the datatype `xsd:date`.
-3. Hover the Author card and click the **+** on its right side. Select **city** as the path and the **Cities** scheme as the range. The line goes to the imported scheme.
+3. Hover the Author card and click the **+** on its right side. Select the **Cities** scheme as the target. The line goes to the imported scheme, and the path editor opens on it.
+4. Type `city` as the path and press Enter.
 
 ## Connect the two
 
 1. Hover the Book card and click **+**.
-2. Type `author` and select the **Author** shape as the range.
+2. Select the **Author** shape as the target.
+3. Type `author` in the path editor of the new line and press Enter.
 
 A line with the cardinality `0..*` goes from Book to Author.
 

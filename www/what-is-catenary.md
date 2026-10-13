@@ -22,7 +22,7 @@ Catenary does not replace mature RDF tools. It is designed for small datasets: a
 Catenary is a personal tool. I add a function when I need it, bit by bit, and my time is limited. Read these notes before you use it:
 
 - **The application is incomplete.** Some paths work well, others are rough. The [open work](https://github.com/cristianvasquez/catenary/blob/main/spec/open.md) file lists known defects and open decisions.
-- **The ergonomics are sub-optimal.** Some actions take more clicks than they should, and some panels are dense. I hope to make this better.
+- **The ergonomics are rough.** Some actions take more clicks than they should, and some panels are dense. I hope to make this better. Suggestions are welcome in the [issues](https://github.com/cristianvasquez/catenary/issues).
 - **Each edit writes the files at once.** Use a copy of valuable data for experiments. Reads keep the statements, but merge the source named graphs of model files. Writes do not restore those graph names.
 - **No blank nodes.** A read replaces each blank node with an IRI. The files that Catenary writes do not contain blank nodes.
 - **Platforms.** Linux is tested. The Windows package is checked on a Windows runner. The macOS package is built, but not tested on macOS.
