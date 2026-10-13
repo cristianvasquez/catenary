@@ -195,6 +195,7 @@ data WorkspaceSettings = WorkspaceSettings
   , imported :: [String]                         -- ws:imported globs (§2.6)
   , validation :: ValidationMode                 -- ws:validation (§9)
   , language :: Maybe String                     -- ws:language: the language tag of the labels (§6.2 pickLabel); Nothing: not set
+  , autoCommit :: Bool                           -- ws:autoCommit (§10.3); writers store only true
   }
 workspaceGraph, workspaceNamespace :: Iri
 workspaceGraph = "urn:name:workspace"
@@ -1656,11 +1657,18 @@ mayOverwrite disk known = disk == known
 
 -- | Git: each write batch is one commit of its changed files, git commit --only. Unrelated staged changes stay out.
 -- Files with outside uncommitted changes, found at open or reload, are not committed automatically. Ignored files stay out.
--- No repository: write files and warn once. A failed commit path is retried at a later write.
+-- No repository: write files, run no git command and give no warning. A failed commit path is retried at a later write.
+-- ws:autoCommit true: commit each write batch. False is the default, and writers do not store it. False: write files, no git command.
+-- Reason: a commit changes the history of the user; the author turns it on. A folder without a repository has nothing to commit to.
 -- A batch can hold several command kinds. There is no promise of one commit per EditCommand.
 data FileState = FileState { written :: Bool, outsideChanges :: Bool, gitIgnored :: Bool }
-commitPaths :: [(FilePath, FileState)] -> [FilePath]   -- the files of one write batch
-commitPaths fs = [f | (f, s) <- fs, written s, not (outsideChanges s), not (gitIgnored s)]
+data GitState = GitState { inRepository :: Bool, autoCommitOn :: Bool }
+commitPaths :: GitState -> [(FilePath, FileState)] -> [FilePath]   -- the files of one write batch
+commitPaths g fs
+  | not (inRepository g && autoCommitOn g) = []
+  | otherwise = [f | (f, s) <- fs, written s, not (outsideChanges s), not (gitIgnored s)]
+autoCommitValue :: Bool -> Maybe String           -- the literal of ws:autoCommit; Nothing: not written
+autoCommitValue on = if on then Just "true" else Nothing
 gitArguments :: String -> [FilePath] -> [String]   -- message, the commitPaths of the batch
 gitArguments msg ps = ["commit", "--only", "-q", "-m", msg, "--"] ++ ps
 

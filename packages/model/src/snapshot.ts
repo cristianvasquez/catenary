@@ -92,6 +92,10 @@ export interface WorkspaceFiles {
     validation?: ValidationMode;
     /** The language of the labels (manifest ws:language). Undefined: not set. */
     language?: string;
+    /** Whether a write is committed to git (manifest ws:autoCommit). Undefined: no workspace. */
+    autoCommit?: boolean;
+    /** Whether the workspace folder is in a git repository. Undefined: no workspace. */
+    repo?: boolean;
     files: ModelFileInfo[];
     views: ViewFileInfo[];
 }

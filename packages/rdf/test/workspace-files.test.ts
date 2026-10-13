@@ -578,6 +578,10 @@ describe('shapes files in the store', () => {
 
     it('git: each write is one commit of the written files; staged changes of the user stay out; an undo removes a new view file', async () => {
         const f = files();
+        // Auto-commit is off by default: turn it on before the repository exists, so that the initial commit has it.
+        const before = await opened(f.ws);
+        ok(await before.setSettings({ autoCommit: true }));
+        await before.idle();
         const git = (...args: string[]) => execFileSync('git', args, { cwd: f.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
         git('init', '-q');
         git('config', 'user.name', 'Test');

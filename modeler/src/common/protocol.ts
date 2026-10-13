@@ -69,6 +69,8 @@ export interface WorkspaceSettings {
     validation?: ValidationMode;
     /** The language of the labels (ws:language): a language tag. Empty: clears the setting. */
     language?: string;
+    /** Whether Catenary commits its writes to git (ws:autoCommit). */
+    autoCommit?: boolean;
 }
 
 /** What to export: files and folders (absolute paths), and documents to leave out (paths relative to the root). */

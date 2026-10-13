@@ -1995,7 +1995,7 @@ law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now ==
 -- 10. Settings ---------------------------------------------------------------
 
 -- | Project settings live in the workspace file: prefixes, default file, placement of new subjects, exclusions, imported files,
--- the validation mode.
+-- the validation mode, auto-commit.
 -- Person settings stay outside the workspace: fonts, theme, visible right-area sections.
 -- Workspace settings open as a main-area document, independent of the element selection (open.md D6).
 -- Each kind of new subject (Shapes, SKOS / Collections, Everything else) is Auto or a file. Auto stores "near".
@@ -2006,10 +2006,12 @@ law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now ==
 -- Import Files asks for one or more RDF files, then shows the paths of the copies and the prefixes that the import added.
 -- Validation is a segmented control: Off, Open views, All (spec/manifest.hs §9 ValidationMode). One click writes the mode.
 -- Reason: three named buttons show the choices and the current mode; a slider suggests values between them.
+-- Auto-commit is a segmented control: On, Off (spec/manifest.hs §10.3). One click writes the setting. Its scope text says
+-- "not a git repository" when the workspace folder is not in a repository.
 -- The status bar shows the mode: Off shows "validation off", not "valid"; Open views shows how many instances it checked.
 -- A rejected change shows its message below its row, not as a notification.
 data SettingOwner = ProjectSetting | PersonSetting deriving Eq
-data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | ValidationSetting | Fonts | Theme | VisibleSections
+data Setting = Prefixes | DefaultFile | PlacementSetting | Exclusions | ImportedFiles | ValidationSetting | AutoCommitSetting | Fonts | Theme | VisibleSections
   deriving (Eq, Enum, Bounded)
 ownerOfSetting :: Setting -> SettingOwner
 ownerOfSetting s = if s `elem` [Fonts, Theme, VisibleSections] then PersonSetting else ProjectSetting

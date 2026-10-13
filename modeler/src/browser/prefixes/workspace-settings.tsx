@@ -115,6 +115,7 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                 {this.status()}
                 {this.placesSection()}
                 {this.validationSection()}
+                {this.gitSection()}
                 {this.languageSection()}
                 {this.prefixSection()}
                 {this.excludeSection()}
@@ -196,6 +197,20 @@ export class WorkspaceSettingsWidget extends ReactWidget {
                     className={mode === r.mode ? 'on' : undefined} onClick={() => mode !== r.mode && this.setSettings('validation', { validation: r.mode })}>{r.label}</button>)}
             </div>
             {this.problems.validation ? <div className='catenary-problem'>{this.problems.validation}</div> : undefined}
+        </Section>;
+    }
+
+    /** Whether a write is committed to git (ws:autoCommit): On or Off, written at once. Outside a repository nothing is committed. */
+    protected gitSection(): React.ReactNode {
+        const files = this.model.snapshot.files, on = files.autoCommit ?? false;
+        const scope = !files.repo ? 'not a git repository' : on ? 'commits each write' : 'no commits';
+        return <Section title='Auto-commit' scope={scope}
+            help='Commit each write of Catenary to git. A file with changes that Catenary did not write is not committed. Outside a git repository, Catenary writes the files and commits nothing.'>
+            <div className='catenary-segmented' role='radiogroup' aria-label='Auto-commit'>
+                {[true, false].map(v => <button key={String(v)} role='radio' aria-checked={on === v}
+                    className={on === v ? 'on' : undefined} onClick={() => on !== v && this.setSettings('autoCommit', { autoCommit: v })}>{v ? 'On' : 'Off'}</button>)}
+            </div>
+            {this.problems.autoCommit ? <div className='catenary-problem'>{this.problems.autoCommit}</div> : undefined}
         </Section>;
     }
 

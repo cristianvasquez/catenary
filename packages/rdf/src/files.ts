@@ -29,6 +29,8 @@ export const WS = {
     validation: rdf.namedNode(NS.ws + 'validation'),
     /** The language of the labels that Catenary shows (a language tag, such as "en"). Not written when not set. */
     language: rdf.namedNode(NS.ws + 'language'),
+    /** Whether Catenary commits its writes to git: true turns it on. Not written for false (the default). */
+    autoCommit: rdf.namedNode(NS.ws + 'autoCommit'),
     /** Legacy name of ws:imported (read, not written). */
     protect: rdf.namedNode(NS.ws + 'protect')
 };
@@ -84,6 +86,8 @@ export interface Manifest {
     validation?: ValidationMode;
     /** The language of the labels (ws:language). Undefined: not set. */
     language?: string;
+    /** Whether Catenary commits its writes to git (ws:autoCommit). Undefined: false. */
+    autoCommit?: boolean;
 }
 
 export { VIEW_EXT, isViewFile } from '@catenary/model';
@@ -168,6 +172,7 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
     }
     const validation = literals(WS.validation).find(v => (VALIDATION_MODES as readonly string[]).includes(v)) as ValidationMode | undefined;
     const language = literals(WS.language).map(v => v.trim()).filter(Boolean).sort()[0];
+    const autoCommit = literals(WS.autoCommit).includes('true');
     return {
         ...(defaultFile ? { defaultFile } : {}),
         placement: { shapes: place(WS.placeShapes, 'shapes'), concepts: place(WS.placeConcepts, 'concepts'), instances: place(WS.placeInstances, 'instances') },
@@ -175,7 +180,8 @@ export function readManifest(quads: Quad[], workspaceFile: string, platform: Pat
         imported: [...new Set([...literals(WS.imported), ...literals(WS.protect)])].sort(),
         ...(Object.keys(prefixes).length ? { prefixes } : {}),
         ...(validation && validation !== 'all' ? { validation } : {}),
-        ...(language ? { language } : {})
+        ...(language ? { language } : {}),
+        ...(autoCommit ? { autoCommit } : {})
     };
 }
 
@@ -194,6 +200,7 @@ export function manifestQuads(m: Manifest, workspaceFile: string, platform: Path
         ...m.imported.map(e => rdf.quad(g, WS.imported, rdf.literal(e), g)),
         ...(m.validation && m.validation !== 'all' ? [rdf.quad(g, WS.validation, rdf.literal(m.validation), g)] : []),
         ...(m.language ? [rdf.quad(g, WS.language, rdf.literal(m.language), g)] : []),
+        ...(m.autoCommit ? [rdf.quad(g, WS.autoCommit, rdf.literal('true', rdf.namedNode(NS.xsd + 'boolean')), g)] : []),
         ...Object.entries(m.prefixes ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([prefix, ns]) => {
             const d = rdf.namedNode(`${MANIFEST_GRAPH}-declare-${prefix}`);
             return [

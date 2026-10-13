@@ -12,11 +12,13 @@ import { docOf } from './helpers';
 
 const dirs: string[] = [], stores: ModelStore[] = [];
 const data = '<urn:a> a <urn:Class> ; <http://www.w3.org/2000/01/rdf-schema#label> "Before" .\n';
-function fixture(files: Record<string, string> = { 'data.ttl': data }, setting = '') {
+const AUTO_COMMIT = 'https://cristianvasquez.github.io/catenary/vocab/workspace#autoCommit';
+/** `setting`: more manifest statements. The fixture turns auto-commit on (the default is off). */
+function fixture(files: Record<string, string> = { 'data.ttl': data }, setting = '', autoCommit = true) {
     const dir = mkdtempSync(join(tmpdir(), 'catenary-review-'));
     dirs.push(dir);
     const put = (file: string, text: string) => writeFileSync(join(dir, file), text);
-    put('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ${setting} . }\n`);
+    put('workspace.trig', `<urn:name:workspace> { <urn:name:workspace> a <https://cristianvasquez.github.io/catenary/vocab/workspace#Workspace> ${autoCommit ? `; <${AUTO_COMMIT}> true` : ''} ${setting} . }\n`);
     for (const [file, text] of Object.entries(files)) put(file, text);
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     return { dir, put, git, read: (file: string) => readFileSync(join(dir, file), 'utf8'), async open() {
@@ -118,12 +120,46 @@ it.each(['open', 'reload'])('git preserves user changes present at %s and warns 
     expect(store.warnings.filter(w => w.includes('not committed: data file.ttl has changes that are not committed'))).toHaveLength(1);
 });
 
-it('outside git gives one warning', async () => {
+it('outside git: the files are written, no git command, no warning', async () => {
     const f = fixture();
     const store = await f.open();
+    const commit = vi.spyOn(patcher, 'commitFiles');
     await rename(store);
+    expect(f.read('data.ttl')).toContain('"After"');
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.files.repo).toBe(false);
+    expect(store.warnings.filter(w => w.startsWith('not committed:'))).toEqual([]);
+});
+
+it('auto-commit off (the default): the files are written and not committed; on commits again', async () => {
+    const f = fixture(undefined, '', false);
+    f.init();
+    const store = await f.open();
+    expect(store.files).toMatchObject({ repo: true, autoCommit: false });
+    const commit = vi.spyOn(patcher, 'commitFiles');
+    await rename(store);
+    expect(f.read('data.ttl')).toContain('"After"');
+    expect(commit).not.toHaveBeenCalled();
+    expect(f.git('log', '-1', '--format=%s')).toBe('initial');
+    expect(store.warnings.filter(w => w.startsWith('not committed:'))).toEqual([]);
+    expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
     await rename(store, 'Again');
-    expect(store.warnings.filter(w => w.includes('not a git repository'))).toHaveLength(1);
+    expect(f.git('log', '-1', '--format=%s')).toMatch(/^Catenary: /);
+    expect(f.git('status', '--porcelain')).toBe('');
+});
+
+it('the manifest stores ws:autoCommit true only; false is the default', async () => {
+    const f = fixture(undefined, '', false);
+    const store = await f.open();
+    expect(store.files.autoCommit).toBe(false);
+    expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
+    await store.idle();
+    const values = async () => (await parseRdf(f.read('workspace.trig'), join(f.dir, 'workspace.trig'))).filter(q => q.predicate.value === AUTO_COMMIT).map(q => q.object.value);
+    expect(await values()).toEqual(['true']);
+    expect((await f.open()).files.autoCommit).toBe(true);
+    expect(await store.setSettings({ autoCommit: false })).toEqual({ ok: true });
+    await store.idle();
+    expect(await values()).toEqual([]);
 });
 
 it('a failed commit keeps its paths for the next write', async () => {

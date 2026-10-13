@@ -55,7 +55,8 @@ export class Writer {
         const notes = [...new Set(this.commitNotes.splice(0))];
         const warningCount = this.port.warnings.length;
         const files = ws?.committable() ?? [];
-        const error = r.ok ? await tracer.span('file', 'commit', () => commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`)) : `Not written: ${r.error}`;
+        const error = !r.ok ? `Not written: ${r.error}` : files.length
+            ? await tracer.span('file', 'commit', () => commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`)) : undefined;
         if (r.ok && !error) ws!.written = [];
         if (error) this.commitNotes.unshift(...notes);
         if (error !== this.writeError || this.port.warnings.length !== warningCount) {
@@ -125,6 +126,8 @@ export class Saver {
     readonly ownWrites = new OwnWrites();
     /** pathKey of each file with changes in git that Catenary did not write. */
     protected uncommitted = new Set<string>();
+    /** The workspace folder is in a git repository (recordUncommitted). */
+    repo = false;
     protected cache?: { event: unknown; canonical: Canonical };
     /**
      * The entries of `cache` that a change made out of date: `f:<path>` a model file, `v:<view IRI>` a view. 'all': every entry. Each
@@ -244,14 +247,12 @@ export class Saver {
 
     /**
      * The files with changes in git that Catenary did not write (at open, and for the files read again by the watcher): their writes
-     * are not committed, so that a commit never takes changes of the user. Outside a repository: one warning.
+     * are not committed, so that a commit never takes changes of the user. Outside a repository: no commit and no warning.
      */
     async recordUncommitted(reloaded: string[] = []): Promise<void> {
         const changes = await gitChanges(this.settings.folder);
-        if (!changes.ok && !changes.repo) {
-            this.note('not committed: workspace is not a git repository');
-            return;
-        }
+        this.repo = changes.ok || changes.repo;
+        if (!this.repo) return;
         // No status (for example a locked or damaged index): no auto-commit at all, but the workspace opens.
         if (!changes.ok) {
             this.note(`not committed: git status failed (${changes.error})`);
@@ -263,8 +264,12 @@ export class Saver {
         this.uncommitted = new Set(changes.files.map(f => pathKey(f)).filter(k => !written.has(k) || read.has(k)));
     }
 
-    /** The written paths to commit: not the files with changes in git that Catenary did not write (a note for each). */
+    /**
+     * The written paths to commit: not the files with changes in git that Catenary did not write (a note for each). None when
+     * ws:autoCommit is false or the workspace is not in a repository: then no git command runs.
+     */
     committable(): string[] {
+        if (!this.settings.autoCommit || !this.repo) return [];
         return [...new Set(this.written)].filter(file => {
             if (!this.uncommitted.has(pathKey(file))) return true;
             this.note(`not committed: ${portableRelative(this.settings.folder, file)} has changes that are not committed`);

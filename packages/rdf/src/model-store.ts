@@ -686,7 +686,7 @@ export class ModelStore {
     }
 
     get files(): WorkspaceFiles {
-        return this.settings ? this.settings.info(views(this.graph).map(v => elementId(v)), this.saver!.savedState()) : { files: [], views: [] };
+        return this.settings ? { ...this.settings.info(views(this.graph).map(v => elementId(v)), this.saver!.savedState()), repo: this.saver!.repo } : { files: [], views: [] };
     }
 
     /** The file for new subjects when "near" finds no file (settings.ts). */
@@ -780,11 +780,11 @@ export class ModelStore {
      * Change the settings of the manifest (ADR 0004): the default file and the file of each kind (a model file, or a new RDF file in
      * the workspace folder; a kind: also "near"), the exclude globs. Written at once. A new exclude glob reads the files again. No undo step.
      */
-    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }): Promise<CommandResult> {
+    setSettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string; autoCommit?: boolean }): Promise<CommandResult> {
         return this.serial(() => this.applySettings(settings));
     }
 
-    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }): Promise<CommandResult> {
+    protected async applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string; autoCommit?: boolean }): Promise<CommandResult> {
         const ws = this.settings;
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.

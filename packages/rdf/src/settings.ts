@@ -42,6 +42,8 @@ export class Settings {
     protected imported: string[];
     /** What SHACL validation checks (manifest ws:validation). */
     validation: ValidationMode;
+    /** Whether a write is committed to git (manifest ws:autoCommit). */
+    autoCommit: boolean;
     /** The language of the labels (manifest ws:language); the graph reads it (ModelGraph.language). Undefined: not set. */
     language?: string;
     /** Prefix table of the workspace file. Undefined: the file declares none (DEFAULT_PREFIXES apply, the file stays as it is). */
@@ -60,6 +62,7 @@ export class Settings {
         this.exclude = manifest.exclude;
         this.imported = manifest.imported;
         this.validation = manifest.validation ?? 'all';
+        this.autoCommit = manifest.autoCommit ?? false;
         this.language = manifest.language;
         graph.language = manifest.language;
         this.prefixes = manifest.prefixes;
@@ -109,6 +112,7 @@ export class Settings {
             exclude: [...this.exclude],
             imported: [...this.imported],
             validation: this.validation,
+            autoCommit: this.autoCommit,
             ...(this.language ? { language: this.language } : {}),
             files: [...this.modelFiles.values()].sort((a, b) => cmp(a.path, b.path))
                 .map(f => ({
@@ -153,7 +157,8 @@ export class Settings {
             imported: [...this.imported],
             ...(this.prefixes ? { prefixes: this.prefixes } : {}),
             ...(this.validation !== 'all' ? { validation: this.validation } : {}),
-            ...(this.language ? { language: this.language } : {})
+            ...(this.language ? { language: this.language } : {}),
+            ...(this.autoCommit ? { autoCommit: true } : {})
         };
     }
 
@@ -312,7 +317,7 @@ export class Settings {
      * clears it). `reread`: the exclude globs or the language changed, so the files must be read again. `saved`: what differs from the
      * files (saver.ts).
      */
-    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string }, saved: Saved): { error: string } | { reread: boolean } {
+    applySettings(settings: { defaultFile?: string; placement?: Partial<Placement>; exclude?: string[]; imported?: string[]; validation?: ValidationMode; language?: string; autoCommit?: boolean }, saved: Saved): { error: string } | { reread: boolean } {
         if (settings.validation !== undefined && !VALIDATION_MODES.includes(settings.validation)) return { error: `Validation: "${settings.validation}" (use off, views or all).` };
         // Imported globs first: the files of new subjects are checked against the new globs. An error keeps the old globs.
         const was = this.imported;
@@ -328,6 +333,7 @@ export class Settings {
             return r;
         }
         if (settings.validation) this.validation = settings.validation;
+        if (settings.autoCommit !== undefined) this.autoCommit = settings.autoCommit;
         const language = settings.language === undefined ? this.language : settings.language.trim() || undefined;
         const relabel = language !== this.language;
         this.language = language;

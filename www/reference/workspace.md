@@ -38,6 +38,7 @@ Open the workspace file to show the Workspace settings. A change writes the work
 - **Exclude**: globs of files that are not model files, relative to the workspace folder. A change reads the files again.
 - **Locked files**: globs of locked (read-only) files, relative to the workspace folder.
 - **Validation**: what SHACL validation checks after each change. **Off** shows no problems and no badges. **Open views** checks only the elements on the open views. It is faster on a large model, but a shape that reads elements outside the open views can report too much or too little. **All** checks the whole model. The status bar shows the mode.
+- **Auto-commit**: **On** commits each write to Git. **Off** (the default) writes the files and makes no commit. Outside a Git repository, Catenary makes no commit and the section shows "not a git repository".
 - **Label language**: a language tag, for example `en`. Labels in this language show first (`rdfs:label`, `skos:prefLabel`, `sh:name`). `en` also takes `en-GB`. Empty: a label without a language, else the first in order.
 
 Person settings (theme, text sizes, edge style, layout spacing) are preferences of the application. They are not in the workspace.
@@ -74,7 +75,7 @@ The command changes only the namespace text. It keeps the formatting and the com
 
 ## History and Git
 
-If the workspace is in a Git repository, each write makes a commit of the changed files only. Other staged changes stay out of it. The **Source Control** view shows changes and history. A file changed outside Catenary is read again. This clears the undo history.
+If the workspace is in a Git repository and Auto-commit is On, each write makes a commit of the changed files only. Other staged changes stay out of it. The **Source Control** view shows changes and history. A file changed outside Catenary is read again. This clears the undo history.
 
 All windows of a workspace share one undo history. One edit is one transaction and one undo step.
 
