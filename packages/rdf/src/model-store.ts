@@ -96,6 +96,18 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
+/** File operations, one at a time, with a count of the operations queued so far: `ModelStore.dispose` drains the queue. */
+class FileQueue extends SerialQueue {
+    queued = 0;
+    override run<T>(fn: () => Promise<T>): Promise<T> {
+        this.queued++;
+        return super.run(fn);
+    }
+}
+
+/** The error of a call of a disposed store (§3.5). */
+export const DISPOSED_MESSAGE = 'The model store is disposed: make a new ModelStore.';
+
 /** The warning of a snapshot after a trap of the store and a read of the files (§3.4). */
 export const TRAP_RECOVERED = 'The model index failed and was read again from the files. Undo history was cleared.';
 
@@ -135,7 +147,9 @@ export class ModelStore {
     /** Old id -> new id, for the view and the instance whose IRI the last change changed. */
     protected movedIds: Record<string, string> = {};
     /** File operations, one at a time: a save and an open cannot overlap. */
-    protected readonly fileQueue = new SerialQueue();
+    protected readonly fileQueue = new FileQueue();
+    /** Set by `dispose` (§3.5). */
+    protected disposal?: Promise<void>;
 
     protected readonly writer = (() => {
         const store = this;
@@ -168,6 +182,7 @@ export class ModelStore {
 
     /** Call `listener` after each change. */
     onDidChange(listener: Listener): { dispose(): void } {
+        this.assertLive();
         this.listeners.add(listener);
         return { dispose: () => this.listeners.delete(listener) };
     }
@@ -186,7 +201,7 @@ export class ModelStore {
     protected trapped(trap: StoreTrap, guard: TrapGuard): void {
         // A trap during the read after a trap, of the old or the new store (also in the listeners of the load): the read failed.
         if (this.trapState?.recovering) { this.trapState.again = true; return; }
-        if (guard !== this.guard || this.trapState) return;
+        if (guard !== this.guard || this.trapState || this.disposal) return;
         console.error('[catenary] the model index failed (WebAssembly trap); the files are read again:', trap.cause.stack);
         this.trapState = { recovering: true };
         void this.serial(() => this.recover());
@@ -300,7 +315,7 @@ export class ModelStore {
      * The reads of each view that a move or a resize keeps: they read which elements the view shows, not where. Kept while the store
      * changes only in the geometry of placements and the validation report (ModelGraph.keys.data retains the last event that affects these reads).
      */
-    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads>; graph?: ModelGraph; changed?: Set<string> } = { byView: new Map() };
+    protected viewReadCache: { event?: GraphChange; byView: Map<string, ViewReads>; graph?: ModelGraph; changed?: Set<string>; listener?: { dispose(): void } } = { byView: new Map() };
 
     /**
      * The kept reads of a view. A change of the data key drops them, but the hidden neighbor counts stay with the IRIs of the changed
@@ -311,7 +326,8 @@ export class ModelStore {
         if (cache.graph !== g) {
             cache.graph = g;
             cache.event = undefined;
-            g.onDidChange(e => {
+            cache.listener?.dispose();
+            cache.listener = g.onDidChange(e => {
                 if (cache.graph !== g || (!e.data && !e.shapes)) return;
                 const quads = e.patch.filter(c => c.quad.graph.value !== REPORT_GRAPH);
                 if (e.shapes || !quads.length || !cache.changed || quads.length > NEIGHBOR_PATCH_LIMIT || quads.some(c => !g.isDataGraph(c.quad.graph))) { cache.changed = undefined; return; }
@@ -403,7 +419,7 @@ export class ModelStore {
     get violations(): Violation[] { return this.validation.violations; }
 
     /** Validate the model now, without the delay after a change. */
-    validate(): Promise<void> { return this.validation.now(); }
+    validate(): Promise<void> { return this.disposal ? Promise.reject(new Error(DISPOSED_MESSAGE)) : this.validation.now(); }
 
     setOpenView(client: string, viewId: string | undefined): void {
         this.validationData.setOpenView(client, viewId);
@@ -441,6 +457,7 @@ export class ModelStore {
 
     /** Run a command as one transaction. On an error, the dataset does not change. */
     execute(command: EditCommand): CommandResult {
+        this.assertLive();
         return tracer.span('command', command.kind, () => this.executeNow(command));
     }
 
@@ -505,8 +522,8 @@ export class ModelStore {
     }
 
 
-    undo(): CommandResult { return tracer.span('command', 'undo', () => this.replay('undo')); }
-    redo(): CommandResult { return tracer.span('command', 'redo', () => this.replay('redo')); }
+    undo(): CommandResult { this.assertLive(); return tracer.span('command', 'undo', () => this.replay('undo')); }
+    redo(): CommandResult { this.assertLive(); return tracer.span('command', 'redo', () => this.replay('redo')); }
 
     /**
      * Apply the last patch of the undo (backwards) or redo stack. The patch queue goes back to its state of that step. A step that
@@ -531,6 +548,7 @@ export class ModelStore {
 
     /** Remove an entry of the patch queue without applying it. Not an undo step. */
     dismissMigration(id: string): void {
+        this.assertLive();
         if (this.history.dismiss(id)) this.changed('queue');
     }
 
@@ -613,13 +631,43 @@ export class ModelStore {
      * change nothing (the text on disk is the text it wrote).
      */
     protected watch(): void {
+        if (this.disposal) return;
         if (!this.settings || !this.watching || this.settings.gone) return this.close();
         this.reconciler.watch(this.folder);
     }
 
-    /** Stop watching the files. */
+    /** Stop watching the files. The store stays usable; a later open or read of the files watches again. */
     close(): void {
         this.reconciler.close();
+    }
+
+    /**
+     * Stop the store (§3.5 law_disposedStoreSilent): stop the watcher and the validation, wait for the file operations that are queued
+     * (also the writes that they queue), and remove the listeners. No change event and no report after the promise resolves. A later
+     * call that changes the store throws DISPOSED_MESSAGE. The shared validation worker stays: other stores can use it
+     * (stopValidationWorker). Each call gives the same promise.
+     */
+    dispose(): Promise<void> {
+        return this.disposal ??= (async () => {
+            this.close();
+            await this.validation.dispose();
+            for (let queued = -1; queued !== this.fileQueue.queued;) {
+                queued = this.fileQueue.queued;
+                await this.fileQueue.idle();
+            }
+            this.listeners.clear();
+            this.viewReadCache.listener?.dispose();
+            this.viewReadCache = { byView: new Map() };
+        })();
+    }
+
+    /** The store is disposed (§3.5). */
+    get disposed(): boolean {
+        return !!this.disposal;
+    }
+
+    protected assertLive(): void {
+        if (this.disposal) throw new Error(DISPOSED_MESSAGE);
     }
 
     /**
@@ -628,6 +676,7 @@ export class ModelStore {
      * is pending. No undo across it. Returns the names of the files read.
      */
     syncFromDisk(): Promise<string[]> {
+        if (this.disposal) return Promise.reject(new Error(DISPOSED_MESSAGE));
         return this.reconciler.syncFromDisk();
     }
 
@@ -672,6 +721,7 @@ export class ModelStore {
 
     /** Run file operations one at a time, so that a save and an open cannot overlap. */
     protected serial<T>(fn: () => Promise<T>): Promise<T> {
+        if (this.disposal) return Promise.reject(new Error(DISPOSED_MESSAGE));
         return this.fileQueue.run(fn);
     }
 

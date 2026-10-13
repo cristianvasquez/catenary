@@ -3,5 +3,5 @@
 
 export { ChangeScope, ModelChange, ModelStore } from './model-store';
 export { refreshes, tierOf } from './change';
-export { useValidationWorker } from './validation-runner';
+export { stopValidationWorker, useValidationWorker } from './validation-runner';
 export { tracer } from './trace';
