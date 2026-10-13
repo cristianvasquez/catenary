@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NS, boxes, cardOf, iriId } from '@catenary/model';
-import { ModelChange, ModelStore, TRAP_RECOVERED } from '../src/model-store';
+import { DISPOSED_MESSAGE, ModelChange, ModelStore, TRAP_RECOVERED } from '../src/model-store';
 import { OxigraphStore } from 'rdf-files';
 import * as validation from '../src/validate';
 import { DATA, DCT, SHAPES, writeWorkspace, docOf } from './helpers';
@@ -232,6 +232,116 @@ describe('model store', () => {
         expect(store.dirty).toBe(false);
         store.redo();
         expect(store.dirty).toBe(true);
+    });
+});
+
+describe('store disposal (§3.5)', () => {
+    /** The id of the instance whose description an edit removes (one violation) or restores. */
+    const product = (store: ModelStore) => Object.values(docOf(store).instances).find(i => i.label === 'Product usage data')!.id;
+    const setDescription = (store: ModelStore, text?: string) => store.execute({ kind: 'setStatements', id: product(store), values: { [DCT + 'description']: text ? [{ termType: 'Literal', value: text }] : [] } });
+
+    it('law_disposedStoreSilent: dispose cancels the pending validation, writes the queued edit, and no event follows', async () => {
+        const { dir, a } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        await store.open(a);
+        await settled();
+        const validate = vi.spyOn(validation, 'validate');
+        const reasons: string[] = [];
+        store.onDidChange(e => reasons.push(e.reason));
+        setDescription(store);
+        expect(store.dirty).toBe(true);
+        await store.dispose();
+        expect(store.disposed).toBe(true);
+        expect(store.dirty).toBe(false);
+        expect(readFileSync(join(dir, 'data.ttl'), 'utf8')).not.toBe(DATA);
+        const after = [...reasons];
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(validate).not.toHaveBeenCalled();
+        expect(reasons).toEqual(after);
+        expect(reasons).not.toContain('validation');
+        // Reuse is an error; close stays the watcher operation.
+        expect(() => setDescription(store, 'Again.')).toThrow(DISPOSED_MESSAGE);
+        expect(() => store.undo()).toThrow(DISPOSED_MESSAGE);
+        expect(() => store.onDidChange(() => undefined)).toThrow(DISPOSED_MESSAGE);
+        await expect(store.open(a)).rejects.toThrow(DISPOSED_MESSAGE);
+        await expect(store.save()).rejects.toThrow(DISPOSED_MESSAGE);
+        await expect(store.validate()).rejects.toThrow(DISPOSED_MESSAGE);
+        await expect(store.syncFromDisk()).rejects.toThrow(DISPOSED_MESSAGE);
+        expect(() => store.close()).not.toThrow();
+    });
+
+    it('law_disposalAwaitsRuns: dispose waits for the running validation and drops its result; each call gives the same promise', async () => {
+        const { a } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        await store.open(a);
+        await settled();
+        let finish!: (result: validation.ValidationReport) => void;
+        const held = new Promise<validation.ValidationReport>(resolve => { finish = resolve; });
+        const validate = vi.spyOn(validation, 'validate').mockReturnValueOnce(held);
+        const reasons: string[] = [];
+        store.onDidChange(e => reasons.push(e.reason));
+        setDescription(store);
+        await vi.advanceTimersByTimeAsync(250);
+        expect(validate).toHaveBeenCalledTimes(1);
+        const disposal = store.dispose();
+        expect(store.dispose()).toBe(disposal);
+        let done = false;
+        void disposal.then(() => { done = true; });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(done).toBe(false);
+        finish({ results: [{ focus: docOf(store).instances[product(store)].uri, component: NS.sh + 'MinCountConstraintComponent', severity: NS.sh + 'Violation', messages: ['Late result'] }], report: [] });
+        await disposal;
+        expect(store.violations).toEqual([]);
+        expect(reasons).not.toContain('validation');
+    });
+
+    it('law_disposalAwaitsRuns: dispose waits for a running syncFromDisk and the write that it queues', async () => {
+        const { a } = workspace();
+        const store = new ModelStore();
+        store.watching = false;
+        await store.open(a);
+        await settled();
+        const port = store as unknown as { reconciler: { syncFromDisk(): Promise<string[]> }; changed(reason: string): void };
+        let release!: () => void;
+        const held = new Promise<void>(resolve => { release = resolve; });
+        const write = vi.fn();
+        vi.spyOn(port.reconciler, 'syncFromDisk').mockImplementationOnce(async () => {
+            await held;
+            port.changed('files');
+            (store as unknown as { fileQueue: { run(fn: () => Promise<void>): Promise<void> } }).fileQueue.run(async () => write());
+            return ['data.ttl'];
+        });
+        const read = store.syncFromDisk();
+        const disposal = store.dispose();
+        let done = false;
+        void disposal.then(() => { done = true; });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(done).toBe(false);
+        release();
+        expect(await read).toEqual(['data.ttl']);
+        await disposal;
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('disposing one store leaves another store usable', async () => {
+        const first = workspace(), second = workspace();
+        const one = new ModelStore(), two = new ModelStore();
+        one.watching = two.watching = false;
+        await one.open(first.a);
+        await two.open(second.a);
+        await settled();
+        await one.dispose();
+        const reasons: string[] = [];
+        two.onDidChange(e => reasons.push(e.reason));
+        expect(setDescription(two).ok).toBe(true);
+        await settled();
+        expect(two.violations).toHaveLength(1);
+        expect(reasons).toContain('validation');
+        await two.idle();
+        expect(two.dirty).toBe(false);
+        await two.dispose();
     });
 });
 

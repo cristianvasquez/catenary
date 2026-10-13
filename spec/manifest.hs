@@ -626,6 +626,52 @@ law_trapReadsFilesOnce b op = let b' = snd (step b op) in trapReads b' <= min 1 
 law_trapStopsStoreCalls :: Backend -> Op -> Bool
 law_trapStopsStoreCalls b op = storeCallsAfterTrap (snd (step b op)) == 0
 
+-- 3.5 Store disposal --------------------------------------------------------------
+
+-- | Code: ModelStore.dispose (model-store.ts), ValidationRunner.dispose and ShaclWorker (validation-runner.ts).
+-- dispose stops one store. It closes the watcher, stops the validation runner, drains the file queue and removes the store listeners.
+-- The file queue drains also the writes that queued operations add. The promise resolves after this owned work ends.
+-- After that, the store sends no change event and writes no report. Each call gives the same promise.
+-- A call that changes a disposed store fails with one error: edit, undo, redo, open, save, validate, disk read, new listener.
+-- close stops only the watcher. The store stays usable. Reason: a test or a backend that ends must know that no store work runs later.
+data Lifecycle = Live | Disposing | Disposed deriving Eq
+lifecycle :: Backend -> Lifecycle
+ownedWork :: Backend -> Int          -- the pending and running validation runs and the queued file operations of the store
+eventsAfter :: Backend -> Op -> Int  -- the change events and reports that the Op causes
+law_disposalAwaitsRuns :: Backend -> Bool
+law_disposalAwaitsRuns b = lifecycle b == Disposed ==> ownedWork b == 0
+law_disposedStoreSilent :: Backend -> Op -> Bool
+law_disposedStoreSilent b op =
+  let (r, b') = step b op in lifecycle b == Disposed ==> (failed r && eventsAfter b op == 0 && storeQuads b' == storeQuads b)
+-- | ValidationRunner.dispose cancels the pending run and makes a running run stale (reportIsCurrent is False for it).
+-- It resolves after the started runs end. A disposed runner starts no run and publishes no report.
+data Runner
+runnerDisposed :: Runner -> Bool
+runnerScheduled :: Runner -> Bool    -- a run is pending or running
+reportsAfter :: Runner -> Int        -- the reports and change calls after dispose resolved
+law_disposedRunnerSilent :: Runner -> Bool
+law_disposedRunnerSilent r = runnerDisposed r ==> (not (runnerScheduled r) && reportsAfter r == 0)
+-- | One worker thread serves the runs of all stores of a process. A store disposal does not stop it: another store can use it.
+-- The owner that sets the worker file stops it (stopValidationWorker). The waiting requests fail at once.
+-- The promise resolves after the thread stops. A later run starts a new worker.
+data WorkerOwner
+workerRunning :: WorkerOwner -> Bool
+waitingRequests :: WorkerOwner -> [WorkerRequest]
+shutdownWorker :: WorkerOwner -> WorkerOwner          -- after the promise resolved
+storeDisposal :: Backend -> WorkerOwner -> WorkerOwner -- the worker after the disposal of one store
+law_workerShutdownStops :: WorkerOwner -> Bool
+law_workerShutdownStops w = let w' = shutdownWorker w in not (workerRunning w') && null (waitingRequests w')
+law_disposalKeepsWorker :: Backend -> WorkerOwner -> Bool
+law_disposalKeepsWorker b w =
+  let w' = storeDisposal b w in workerRunning w' == workerRunning w && waitingRequests w' == waitingRequests w
+-- | A request belongs to the worker that got it. An error or an exit of worker k fails only the requests of k.
+-- Reason: a replaced worker that stops later must not fail the requests of the new worker.
+data WorkerRequest = WorkerRequest { requestId :: Int, requestWorker :: Int } deriving Eq
+afterWorkerFailure :: Int -> [WorkerRequest] -> [WorkerRequest]   -- the worker that failed, the waiting requests; the requests that stay
+afterWorkerFailure k = filter ((/= k) . requestWorker)
+law_failureKeepsOtherWorkers :: Int -> [WorkerRequest] -> Bool
+law_failureKeepsOtherWorkers k rs = sameSet (afterWorkerFailure k rs) [r | r <- rs, requestWorker r /= k]
+
 -- 4. Views in RDF ------------------------------------------------------------
 
 -- 4.1 Notations and placements ----------------------------------------------------
@@ -1970,6 +2016,16 @@ storeHealth = manifestOnly
 trapCount = manifestOnly
 trapReads = manifestOnly
 storeCallsAfterTrap = manifestOnly
+lifecycle = manifestOnly
+ownedWork = manifestOnly
+eventsAfter = manifestOnly
+runnerDisposed = manifestOnly
+runnerScheduled = manifestOnly
+reportsAfter = manifestOnly
+workerRunning = manifestOnly
+waitingRequests = manifestOnly
+shutdownWorker = manifestOnly
+storeDisposal = manifestOnly
 clipboardHasNamedGraphs = manifestOnly
 copiedDomainRdf = manifestOnly
 isPlacementQuad = manifestOnly

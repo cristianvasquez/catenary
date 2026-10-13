@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NS, type Violation } from '@catenary/model';
 import * as validation from '../src/validate';
-import { ValidationRunner, ValidationSource, useValidationWorker } from '../src/validation-runner';
+import { ShaclWorker, ValidationRunner, ValidationSource, WorkerLike, useValidationWorker } from '../src/validation-runner';
+import { EventEmitter } from 'node:events';
 import { ModelGraph, REPORT_GRAPH } from '../src/graph';
 import { elementId } from '../src/ids';
 import { Metamodel } from '../src/shapes';
@@ -73,6 +74,138 @@ describe('ValidationRunner', () => {
         await stale;
         expect(r.violations).toEqual([]);
         expect(changes).toBe(0);
+    });
+});
+
+/** A promise and its resolve function. */
+function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>(r => { resolve = r; });
+    return { promise, resolve };
+}
+
+/** A worker thread that answers only when the test says so. `terminate` resolves when the test calls `exit`. */
+class FakeWorker extends EventEmitter implements WorkerLike {
+    readonly posted: { id: number }[] = [];
+    terminated = false;
+    protected exited = deferred<number>();
+    postMessage(m: { id: number }): void { this.posted.push(m); }
+    unref(): void {}
+    terminate(): Promise<number> { this.terminated = true; return this.exited.promise; }
+    /** Answer the request `id` with one violation whose message is `message`. */
+    answer(id: number, message: string): void { this.emit('message', { id, results: [result(message)], report: [] }); }
+    exit(code = 1): void { this.emit('exit', code); this.exited.resolve(code); }
+}
+
+describe('ValidationRunner disposal (spec/manifest.hs §3.5)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('law_disposedRunnerSilent: dispose cancels the pending run; later changes start nothing', async () => {
+        const spy = vi.spyOn(validation, 'validate').mockResolvedValue({ results: [result('x')], report: [] });
+        const t = manualTimers();
+        let changes = 0;
+        const r = new ValidationRunner(() => stub(), () => changes++, t.timers);
+        r.invalidate();
+        expect(t.count()).toBe(1);
+        await r.dispose();
+        expect(t.count()).toBe(0);
+        r.invalidate();
+        expect(t.count()).toBe(0);
+        await r.now();
+        t.fire();
+        expect(spy).not.toHaveBeenCalled();
+        expect(changes).toBe(0);
+        expect(r.disposed).toBe(true);
+    });
+
+    it('law_disposalAwaitsRuns: dispose resolves after the running run ends, and drops its result; each call gives the same promise', async () => {
+        const held = deferred<validation.ValidationReport>();
+        vi.spyOn(validation, 'validate').mockReturnValueOnce(held.promise);
+        const g = emptyGraph();
+        let changes = 0;
+        const r = new ValidationRunner(() => stub(g), () => changes++, manualTimers().timers);
+        const running = r.now();
+        const disposal = r.dispose();
+        expect(r.dispose()).toBe(disposal);
+        let done = false;
+        void disposal.then(() => { done = true; });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(done).toBe(false);
+        held.resolve({ results: [result('stale')], report: [rdf.quad(rdf.namedNode('urn:r'), rdf.namedNode('urn:p'), rdf.literal('stale'))] });
+        await disposal;
+        expect(done).toBe(true);
+        await running;
+        expect(r.violations).toEqual([]);
+        expect(g.match(null, null, null, rdf.namedNode(REPORT_GRAPH))).toHaveLength(0);
+        expect(changes).toBe(0);
+    });
+
+    it('law_disposalKeepsWorker: two runners share a worker; disposing one keeps the worker and the other runner reports', async () => {
+        const workers: FakeWorker[] = [];
+        const worker = new ShaclWorker(() => { const w = new FakeWorker(); workers.push(w); return w; });
+        const changed: string[] = [];
+        const one = new ValidationRunner(() => stub(), () => changed.push('one'), manualTimers().timers, worker);
+        const two = new ValidationRunner(() => stub(), () => changed.push('two'), manualTimers().timers, worker);
+        useValidationWorker('fake-worker.js');
+        try {
+            const runs = [one.now(), two.now()];
+            await vi.waitFor(() => expect(workers[0]?.posted).toHaveLength(2));
+            const [a, b] = workers[0].posted.map(m => m.id);
+            const disposal = one.dispose();
+            workers[0].answer(a, 'from one');
+            await disposal;
+            workers[0].answer(b, 'from two');
+            await Promise.all(runs);
+            expect(changed).toEqual(['two']);
+            expect(two.violations.map(v => v.message)).toEqual(['from two']);
+            expect(one.violations).toEqual([]);
+            expect(workers).toHaveLength(1);
+            expect(workers[0].terminated).toBe(false);
+            expect(worker.running).toBe(true);
+        } finally {
+            useValidationWorker(undefined);
+        }
+    });
+
+    it('law_workerShutdownStops: shutdown fails the waiting requests and resolves after the thread stopped', async () => {
+        const w = new FakeWorker();
+        const worker = new ShaclWorker(() => w);
+        const request = worker.run([], []);
+        const failed = request.catch((e: Error) => e.message);
+        const shutdown = worker.shutdown();
+        expect(await failed).toBe('the validation worker was stopped');
+        expect(w.terminated).toBe(true);
+        expect(worker.running).toBe(false);
+        let done = false;
+        void shutdown.then(() => { done = true; });
+        await Promise.resolve();
+        expect(done).toBe(false);
+        // A second call while the thread stops waits too.
+        let again = false;
+        void worker.shutdown().then(() => { again = true; });
+        await Promise.resolve();
+        expect(again).toBe(false);
+        w.exit(0);
+        await shutdown;
+        expect(done).toBe(true);
+        await vi.waitFor(() => expect(again).toBe(true));
+        await worker.shutdown();
+    });
+
+    it('law_failureKeepsOtherWorkers: an error or exit of a replaced worker does not fail the requests of the new worker', async () => {
+        const workers: FakeWorker[] = [];
+        const worker = new ShaclWorker(() => { const w = new FakeWorker(); workers.push(w); return w; });
+        const first = worker.run([], []).catch((e: Error) => e.message);
+        workers[0].emit('error', new Error('crash'));
+        expect(await first).toBe('crash');
+        const second = worker.run([], []);
+        expect(workers).toHaveLength(2);
+        workers[0].exit(1);
+        workers[0].emit('error', new Error('late'));
+        workers[1].answer(workers[1].posted[0].id, 'ok');
+        expect((await second).results.map(r => r.messages[0])).toEqual(['ok']);
+        expect(worker.running).toBe(true);
     });
 });
 
