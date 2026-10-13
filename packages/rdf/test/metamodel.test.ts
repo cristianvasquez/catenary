@@ -10,7 +10,8 @@ describe('shapes to palette', () => {
     it('makes one palette class per sh:targetClass, named by the class IRI (not sh:name of the shape), ordered by sh:order', async () => {
         const m = await meta();
         expect(m.classes.map(c => c.name)).toEqual(
-            ['dprod:DataProduct', 'dcat:Dataset', 'dcat:DataService', 'dpm:NamedGraph', 'prov:Agent', 'dpm:Domain', 'dpm:Task']);
+            // dpm: is not a default prefix: a class of an undeclared namespace is named by its local name.
+            ['dprod:DataProduct', 'dcat:Dataset', 'dcat:DataService', 'NamedGraph', 'prov:Agent', 'Domain', 'Task']);
         expect(m.classes.map(instanceNoun)).toEqual(
             ['Data Product', 'Dataset', 'Data Service', 'Named Graph', 'Agent', 'Domain', 'Task']);
         expect(m.classes[0].iri).toBe(DPROD + 'DataProduct');

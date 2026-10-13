@@ -28,7 +28,7 @@ export const LAYOUT_ALGORITHMS = [
 ] as const;
 export type LayoutAlgorithm = typeof LAYOUT_ALGORITHMS[number]['id'];
 /** Space between boxes (px) of Apply Layout: user preference `catenary.layoutSpacing`, sent with each layout request. */
-export const LAYOUT_SPACING = { default: 120, min: 20, max: 400 } as const;
+export const LAYOUT_SPACING = { default: 200, min: 20, max: 400 } as const;
 /** A spacing in range; else the default. */
 export function layoutSpacing(value: unknown): number {
     const n = Number(value);

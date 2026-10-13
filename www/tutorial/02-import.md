@@ -32,4 +32,8 @@ The scheme appears as a card with its three concepts.
 
 A locked file is read-only. If you try to change one of its statements, Catenary asks whether to unlock the file. Statements that you add about its subjects go to your own files.
 
+## Or paste a snippet
+
+Import is for files that you keep as they are. For a quick sketch, you can also paste RDF text straight onto a canvas: copy a Turtle snippet, click the canvas and press Ctrl+V. Catenary adds the statements to your files and places the new elements as cards. This is often the fastest way to start a draft from an example that you found somewhere.
+
 Next: [Draw the shapes](./03-shapes).

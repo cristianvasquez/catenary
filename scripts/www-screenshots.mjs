@@ -88,11 +88,13 @@ async function bookshop(dir) {
   const workspace = path.join(dir, 'bookshop');
   fs.cpSync(path.join(root, 'examples/bookshop'), workspace, { recursive: true });
   await session(workspace, path.join(dir, 'config'), [
-    async ({ cli, openView, shot, canvas }) => {
+    async ({ cli, openView, shot, canvas, fit }) => {
       cli('rpc', 'open', JSON.stringify(path.join(workspace, 'workspace.trig')));
       await openView(bookshopViews.model);
+      await fit();
       await shot('bookshop-model');
       await openView(bookshopViews.bookshop);
+      await fit();
       await shot('bookshop-view');
       await canvas.screenshot({ path: file('bookshop-canvas') });
     },
@@ -162,7 +164,7 @@ cities:Comala a skos:Concept ; skos:prefLabel "Comala" ; skos:inScheme cities:Ci
       await shot('scratch-import');
     },
     // 3. Shapes: the Shape tool, + attribute, and a property to another shape.
-    async ({ exec, shot, fit }) => {
+    async ({ exec, shot, fit, openView }) => {
       state.book = exec({ kind: 'createNodeShape', label: 'Book', targetClass: 'urn:name:Book', view: state.main, at: { x: 80, y: 80 } }).id;
       exec({ kind: 'createPropertyShape', shape: state.book, path: { kind: 'iri', iri: 'urn:name:title' }, range: { kind: 'datatype', datatype: P.xsd('string') }, minCount: 1, maxCount: 1, view: state.main });
       exec({ kind: 'createPropertyShape', shape: state.book, path: { kind: 'iri', iri: 'urn:name:publicationYear', name: 'publication year' }, range: { kind: 'datatype', datatype: P.xsd('integer') }, maxCount: 1, view: state.main });
@@ -170,6 +172,12 @@ cities:Comala a skos:Concept ; skos:prefLabel "Comala" ; skos:inScheme cities:Ci
       exec({ kind: 'createPropertyShape', shape: state.author, path: { kind: 'iri', iri: 'urn:name:born' }, range: { kind: 'datatype', datatype: P.xsd('date') }, maxCount: 1, view: state.main });
       exec({ kind: 'createPropertyShape', shape: state.author, path: { kind: 'iri', iri: 'urn:name:city' }, range: { kind: 'scheme', schemes: [P.scheme] }, maxCount: 1, view: state.main });
       state.authorProperty = exec({ kind: 'createPropertyShape', shape: state.book, path: { kind: 'iri', iri: 'urn:name:author' }, range: { kind: 'node', shape: state.author }, view: state.main }).id;
+      // Explicit bounds at the default card text: Book above Author, the Cities scheme to the right.
+      exec({ kind: 'setLayout', view: state.main, bounds: [
+        { id: state.book, x: 40, y: 80, width: 420, height: 280 }, { id: state.author, x: 40, y: 560, width: 420, height: 280 },
+        { id: iriId(P.scheme), x: 700, y: 300, width: 380, height: 440 }
+      ] });
+      await openView(state.main);
       await fit();
       await shot('scratch-shapes');
     },
@@ -187,11 +195,14 @@ cities:Comala a skos:Concept ; skos:prefLabel "Comala" ; skos:inScheme cities:Ci
       await shot('scratch-instances');
     },
     // 5. Update the shape: author becomes required. The book without an author is a violation.
-    async ({ exec, cli, shot, settle, page }) => {
+    async ({ exec, cli, shot, settle, page, openView, fit }) => {
       exec({ kind: 'setPropertyShape', id: state.authorProperty, patch: { minCount: 1 } });
       // The toggle does not report back to the CLI: ignore its "waits for an answer" result.
       try { cli('run', 'problemsView:toggle'); } catch {}
       await settle(2000);
+      // The panel takes a part of the canvas: fit the view again so the card with the violation stays visible.
+      await openView(state.books);
+      await fit();
       await shot('scratch-update-shape');
     },
     // 6. A document with a view, and its export.
@@ -248,11 +259,12 @@ async function showcase(dir) {
       exec({ kind: 'setStatements', id: farm, values: { 'urn:name:title': [{ termType: 'Literal', value: 'Animal Farm' }] } });
       exec({ kind: 'createRelation', subject: farm, predicate: 'urn:name:creator', object: { classIri: 'urn:name:Person', label: 'George Orwell' }, view, at: { x: 560, y: 640 } });
       exec({ kind: 'createRelation', subject: iriId('urn:name:George%20Orwell'), predicate: 'urn:name:city', object: iriId('urn:name:Comala'), view, at: { x: 1080, y: 560 } });
-      const note = exec({ kind: 'createNote', view, text: 'Shapes, a value set and example data on one canvas.', at: { x: 40, y: 40 } }).id;
+      const note = exec({ kind: 'createNote', view, text: 'Shapes and data on one canvas.', at: { x: 40, y: 40 } }).id;
       // Explicit bounds: a new instance card takes a large default size.
       const bounds = [
-        [note, 40, 40, 300, 70], [work, 40, 250, 300, 150], [person, 520, 120, 300, 150], [org, 520, 360, 300, 110], [cities, 980, 120, 260, 150],
-        [farm, 40, 580, 300, 110], [iriId('urn:name:George%20Orwell'), 520, 580, 300, 110], [iriId('urn:name:Comala'), 980, 580, 260, 110]
+        // Card heights at the default card text (scale 40/22).
+        [note, 40, 40, 440, 170], [work, 40, 360, 400, 260], [person, 600, 120, 400, 260], [org, 600, 480, 400, 200], [cities, 1160, 120, 360, 260],
+        [farm, 40, 800, 400, 200], [iriId('urn:name:George%20Orwell'), 600, 800, 400, 200], [iriId('urn:name:Comala'), 1160, 800, 360, 200]
       ].filter(([id]) => id).map(([id, x, y, width, height]) => (width ? { id, x, y, width, height } : { id, x, y }));
       exec({ kind: 'setLayout', view, bounds });
       await openView(view);

@@ -16,35 +16,35 @@
 
   <urn:name:Bookshop%20model/p/48a9cdb480d9> a view:Placement;
     view:element <urn:name:Bookshop>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop%20model>;
-    view:width 200;
-    view:x 760;
-    view:y 210.
+    view:width 420;
+    view:x 1140;
+    view:y 315.
 
   <urn:name:Bookshop%20model/p/4db7d79b8754> a view:Placement;
     view:element <urn:name:Author%20shape>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop%20model>;
-    view:width 300;
-    view:x 1090;
-    view:y -340.
+    view:width 450;
+    view:x 1635;
+    view:y -310.
 
   <urn:name:Bookshop%20model/p/7139963bee9d> a view:Placement;
     view:element <urn:name:Bookshop%20shape>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop%20model>;
-    view:width 300;
-    view:x -10;
-    view:y -540.
+    view:width 450;
+    view:x -15;
+    view:y -810.
 
   <urn:name:Bookshop%20model/p/a12a3911c890> a view:Placement;
     view:element <urn:name:unnamed%20collection%201>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop%20model>;
-    view:width 320;
-    view:x 530;
-    view:y -660.
+    view:width 480;
+    view:x 795;
+    view:y -990.
 
   <urn:name:Bookshop%20model/p/aec82d36da50> a view:Placement;
     view:element <urn:name:Bookshop%20shape-city>;
@@ -57,11 +57,11 @@
   <urn:name:Bookshop%20model/p/d4355b87c04e> a view:Placement;
     view:color "5";
     view:element <urn:name:Book%20shape>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop%20model>;
-    view:width 300;
-    view:x 540;
-    view:y -340.
+    view:width 450;
+    view:x 810;
+    view:y -310.
 
   <urn:name:Bookshop%20model/p/d738c19b5883> a view:Placement;
     view:element <urn:name:Book%20shape-author>;
@@ -69,19 +69,19 @@
 
   <urn:name:Bookshop%20model/p/ee7a149dad91> a view:Placement;
     view:element <urn:name:Cities%20member>;
-    view:height 120;
+    view:height 180;
     view:keptByLines true;
     view:view <urn:name:Bookshop%20model>;
-    view:width 520;
-    view:x 560;
-    view:y -900.
+    view:width 780;
+    view:x 840;
+    view:y -1350.
 
   <urn:name:Bookshop%20model/p/f85d566ada46> a view:Placement;
     view:color "4";
     view:element <urn:name:Bookshop%20model/m/s2dhuy>;
-    view:height 140;
+    view:height 420;
     view:view <urn:name:Bookshop%20model>;
-    view:width 280;
-    view:x 330;
-    view:y 50.
+    view:width 560;
+    view:x 495;
+    view:y 75.
 }

@@ -13,11 +13,11 @@
 
   <urn:name:Bookshop/p/014989b917c9> a view:Placement;
     view:element <urn:name:Nineteen%20Eighty-Four>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 800;
-    view:y 180.
+    view:width 450;
+    view:x 1200;
+    view:y 270.
 
   <urn:name:Bookshop/p/04c647e16602> a view:Placement;
     rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Animal%20Farm> )>>;
@@ -29,19 +29,19 @@
 
   <urn:name:Bookshop/p/1d20bca980c1> a view:Placement;
     view:element <urn:name:George%20Orwell>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 1550;
-    view:y 380.
+    view:width 450;
+    view:x 2325;
+    view:y 570.
 
   <urn:name:Bookshop/p/1f6ef5ed9255> a view:Placement;
     view:element <urn:name:Tangamandapio>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 140;
-    view:y 580.
+    view:width 450;
+    view:x 210;
+    view:y 870.
 
   <urn:name:Bookshop/p/360b79389761> a view:Placement;
     rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland> )>>;
@@ -57,28 +57,28 @@
 
   <urn:name:Bookshop/p/80b8860c4b8e> a view:Placement;
     view:element <urn:name:Bookshop%20model>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 200;
-    view:x 650;
-    view:y -510.
+    view:width 420;
+    view:x 975;
+    view:y -765.
 
   <urn:name:Bookshop/p/96daa3b2b213> a view:Placement;
     view:color "4";
     view:element <urn:name:Bookshop/m/ylpc7r>;
-    view:height 140;
+    view:height 420;
     view:view <urn:name:Bookshop>;
-    view:width 280;
-    view:x 160;
-    view:y -480.
+    view:width 560;
+    view:x 240;
+    view:y -720.
 
   <urn:name:Bookshop/p/b53dac522e4e> a view:Placement;
     view:element <urn:name:Lewis%20Carroll>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 1520;
-    view:y -10.
+    view:width 450;
+    view:x 2280;
+    view:y -15.
 
   <urn:name:Bookshop/p/d4266577fdac> a view:Placement;
     rdf:reifies <<( <urn:name:Wonderland%20Books%20(fictional)> ex:stocks <urn:name:Nineteen%20Eighty-Four> )>>;
@@ -90,11 +90,11 @@
 
   <urn:name:Bookshop/p/e53bf753041c> a view:Placement;
     view:element <urn:name:Alice%E2%80%99s%20Adventures%20in%20Wonderland>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 820;
-    view:y -210.
+    view:width 450;
+    view:x 1230;
+    view:y -315.
 
   <urn:name:Bookshop/p/ea2df5ac1c56> a view:Placement;
     rdf:reifies <<( <urn:name:Nineteen%20Eighty-Four> ex:author <urn:name:George%20Orwell> )>>;
@@ -102,17 +102,17 @@
 
   <urn:name:Bookshop/p/ee17a6d31c68> a view:Placement;
     view:element <urn:name:Animal%20Farm>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 300;
-    view:x 800;
-    view:y 570.
+    view:width 450;
+    view:x 1200;
+    view:y 855.
 
   <urn:name:Bookshop/p/ff7f64fcb815> a view:Placement;
     view:element <urn:name:Wonderland%20Books%20(fictional)>;
-    view:height 200;
+    view:height 300;
     view:view <urn:name:Bookshop>;
-    view:width 340;
-    view:x 120;
-    view:y 180.
+    view:width 510;
+    view:x 180;
+    view:y 270.
 }

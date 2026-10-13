@@ -1319,11 +1319,12 @@ resizeHandles = 8
 
 -- 7.3 Preferences -------------------------------------------------------------------
 
--- | Person preferences, on all views: theme, Card text (8–72 px, default 22), Note text, Group text, edge style, layout spacing.
+-- | Person preferences, on all views: theme, Card text (8–72 px, default 40), Note text (default 40), Group text (default 47), edge style,
+-- layout spacing. The card geometry is drawn for 22 px: the card scale is the Card text size over 22, not over the default.
 -- Minimum content heights follow the card scale. Some widths and labels do not yet (open.md FONT1).
 -- Rightward shape-link cardinality goes below the line, labels above it.
 cardTextSize :: Maybe Int -> Int
-cardTextSize = maybe 22 (clampSize 8 72)
+cardTextSize = maybe 40 (clampSize 8 72)
 
 -- 7.4 Edge routing ------------------------------------------------------------------
 
@@ -1439,7 +1440,7 @@ law_pasteKeepsOldPositions old added = pastePositions old (old ++ added)
 -- | Apply Layout runs only on request. Layered uses ELK left-to-right. Force uses cola.js and overlap removal.
 -- Both replace the arrangement. Routing stays a rendering task, not ELK output. Layout clears edge sides and bends.
 -- After the new positions show, the view fits its content (padding 40, zoom at most 1). Zoom range: 0.001 to 20.
--- Spacing: 20–400 px, default 120. Layered uses twice that between columns.
+-- Spacing: 20–400 px, default 200. Layered uses twice that between columns.
 -- Frames move as blocks and keep their size. A card goes inside its smallest containing frame.
 -- Try reduced spacing inside a full frame. If the minimum spacing cannot fit, keep those cards in place.
 -- Outer layout treats an edge to a contained card as an edge to its frame.
@@ -1452,7 +1453,7 @@ law_pasteKeepsOldPositions old added = pastePositions old (old ++ added)
 -- Limit: Layered reserves no room for edge labels.
 data LayoutAlgorithm = Layered | Force deriving Eq
 layoutSpacing :: Maybe Double -> Double
-layoutSpacing = maybe 120 (max 20 . min 400)
+layoutSpacing = maybe 200 (max 20 . min 400)
 columnSpacing :: LayoutAlgorithm -> Double -> Double
 columnSpacing Layered s = 2 * s
 columnSpacing Force s = s

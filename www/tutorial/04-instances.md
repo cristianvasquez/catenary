@@ -18,6 +18,10 @@ The view opens as an empty canvas with the label **Books**, the base name of the
 
 The last step creates the author and the relation in one edit. The arrow between the two cards is the statement.
 
+::: tip The controls around a card
+Hover a card to show its controls. The arrows on the left and right sides **expand**: they place the neighbors of the card that the view does not show yet, incoming on the left, outgoing on the right. The **+** signs **create**: a new relation, and if you type a name, a new element at its end. The × removes the card from the view and leaves the model as it is.
+:::
+
 ![Two books and one author on the Books view](/images/scratch-instances.png)
 
 Each card shows the values of the instance. The status bar says that the model is valid: both books have a title, as the shape requires.

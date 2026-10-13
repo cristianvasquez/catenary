@@ -10,7 +10,9 @@ export const CARD_FONT_SIZE = 'catenary.cardFontSize';
 export const GROUP_FONT_SIZE = 'catenary.groupFontSize';
 export const NOTE_FONT_SIZE = 'catenary.noteFontSize';
 /** Defaults: the sizes in modeler.css at scale 1. */
-export const FONT_DEFAULTS: Record<string, number> = { [CARD_FONT_SIZE]: 22, [GROUP_FONT_SIZE]: 20, [NOTE_FONT_SIZE]: 16 };
+export const FONT_DEFAULTS: Record<string, number> = { [CARD_FONT_SIZE]: 40, [GROUP_FONT_SIZE]: 47, [NOTE_FONT_SIZE]: 40 };
+/** The card text size that the card geometry (heights, widths) is drawn for. The card scale is the size over this base. */
+export const CARD_FONT_BASE = 22;
 export const FONT_MIN = 8;
 export const FONT_MAX = 72;
 
@@ -51,9 +53,9 @@ export class FontPreferences implements FrontendApplicationContribution {
         return Number.isFinite(n) ? Math.min(FONT_MAX, Math.max(FONT_MIN, n)) : FONT_DEFAULTS[name];
     }
 
-    /** Card text scale: the "Card text" size / its default. The GLSP server gets it (`catenarySetCardScale`) for the card heights. */
+    /** Card text scale: the "Card text" size / CARD_FONT_BASE. The GLSP server gets it (`catenarySetCardScale`) for the card heights. */
     get cardScale(): number {
-        return this.get(CARD_FONT_SIZE) / FONT_DEFAULTS[CARD_FONT_SIZE];
+        return this.get(CARD_FONT_SIZE) / CARD_FONT_BASE;
     }
 
     /** User scope. `undefined` removes the setting: the default applies. */
@@ -68,7 +70,7 @@ export class FontPreferences implements FrontendApplicationContribution {
 
     protected apply(size: (name: string) => number = n => this.get(n)): void {
         const root = document.documentElement.style;
-        root.setProperty('--catenary-card-scale', String(size(CARD_FONT_SIZE) / FONT_DEFAULTS[CARD_FONT_SIZE]));
+        root.setProperty('--catenary-card-scale', String(size(CARD_FONT_SIZE) / CARD_FONT_BASE));
         root.setProperty('--catenary-group-font-size', `${size(GROUP_FONT_SIZE)}px`);
         root.setProperty('--catenary-note-font-size', `${size(NOTE_FONT_SIZE)}px`);
     }

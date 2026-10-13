@@ -180,7 +180,6 @@ export const DEFAULT_PREFIXES: Readonly<Record<string, string>> = {
     adms: 'http://www.w3.org/ns/adms#',
     dcat: 'http://www.w3.org/ns/dcat#',
     dct: NS.dct,
-    dpm: 'osg://vocab/data-product-draft#',
     dprod: 'https://ekgf.github.io/dprod/',
     foaf: 'http://xmlns.com/foaf/0.1/',
     locn: 'http://www.w3.org/ns/locn#',
