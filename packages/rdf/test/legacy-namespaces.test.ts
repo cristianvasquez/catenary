@@ -1,6 +1,6 @@
 // spec/manifest.hs §3.1 law_legacyNamespaceRead: a read of a file with a term in an old Catenary namespace yields the published
 // term; a write uses the published namespace only; a view keeps its graph IRI.
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -57,4 +57,30 @@ it('law_legacyNamespaceRead: old namespaces read as published terms, a save writ
             expect(written.some(q => q.subject.equals(view) && q.object.value === NS.view + 'View')).toBe(true);
         }
     }
+});
+
+it('a workspace file in an old namespace is a workspace file: a folder opens it, and a parent folder does not read it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'catenary-legacy-'));
+    dirs.push(dir);
+    cpSync(new URL('./fixtures/legacy', import.meta.url), join(dir, 'nested'), { recursive: true });
+    renameSync(join(dir, 'nested', 'workspace.trig'), join(dir, 'nested', 'legacy.trig'));
+    const open = async (target: string) => {
+        const store = new ModelStore();
+        store.watching = false;
+        stores.push(store);
+        expect(await store.open(target)).toEqual({ ok: true });
+        return store;
+    };
+    // The folder opens its only workspace file, whatever its name; its settings are read.
+    const nested = await open(join(dir, 'nested'));
+    expect((nested as unknown as { settings: { path: string; language?: string } }).settings.path).toBe(join(dir, 'nested', 'legacy.trig'));
+    expect((nested as unknown as { settings: { language?: string } }).settings.language).toBe('en');
+    // A parent workspace stops at the nested workspace: its files are not read, and a save does not write them.
+    writeFileSync(join(dir, 'workspace.trig'), `<urn:name:workspace> { <urn:name:workspace> a <${NS.ws}Workspace> . }\n`);
+    mkdirSync(join(dir, 'own'));
+    writeFileSync(join(dir, 'own', 'data.ttl'), '<urn:x:b> a <urn:x:Class> .\n');
+    const parent = await open(join(dir, 'workspace.trig'));
+    expect(parent.files.files.map(f => f.path)).toEqual([join(dir, 'own', 'data.ttl')]);
+    expect(parent.files.views).toEqual([]);
+    expect(parent.dirty).toBe(false);
 });

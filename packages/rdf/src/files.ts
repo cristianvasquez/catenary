@@ -2,7 +2,7 @@
 // Workspace file (TriG): the manifest graph only. Model files: every other RDF file of the folder of the workspace file and its
 // subfolders; a file that declares a view:View (any name; `*.view.trig` by default) is a view. Manifest paths are relative to the workspace file.
 
-import { Doc, NS, VALIDATION_MODES, ValidationMode } from '@catenary/model';
+import { Doc, LEGACY_NAMESPACES, NS, VALIDATION_MODES, ValidationMode } from '@catenary/model';
 import type { Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
@@ -92,7 +92,13 @@ export { VIEW_EXT, isViewFile } from '@catenary/model';
 export const defaultViewsFolder = (workspaceFile: string) => path.join(path.dirname(workspaceFile), 'views');
 
 /** A TriG file with the workspace namespace in its text: a workspace file (not a model file). */
-const isWorkspaceFile = async (file: string) => file.endsWith('.trig') && (await fs.readFile(file, 'utf8').catch(() => '')).includes(NS.ws);
+/** The workspace namespace and its legacy names (spec/manifest.hs §3.1 legacyNamespaces): a workspace file has one of them. */
+const WS_NAMESPACES = [NS.ws, ...Object.keys(LEGACY_NAMESPACES).filter(old => LEGACY_NAMESPACES[old] === NS.ws)];
+const isWorkspaceFile = async (file: string) => {
+    if (!file.endsWith('.trig')) return false;
+    const text = await fs.readFile(file, 'utf8').catch(() => '');
+    return WS_NAMESPACES.some(ns => text.includes(ns));
+};
 
 /** The name of the workspace file of a folder that has none: the folder opens with the default settings, and a settings change writes it. */
 export const WORKSPACE_FILE = 'workspace.trig';

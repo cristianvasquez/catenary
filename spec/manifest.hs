@@ -449,7 +449,7 @@ importFiles ps = runOp (ImportFiles ps)
 -- Graphs, from Loader.mount (loader.ts). The workspace file stays in workspace metadata, outside the read models.
 -- Preserve legacy Trellis IRIs because saved view placements use urn:trellis:list:*, and existing files use osg://vocab/trellis-* terms.
 -- Read a term in an old Catenary namespace as the term in the published namespace, because files of earlier versions use osg://vocab/*.
--- The alias applies to model files, view files and the workspace file (with its prefix table). A write uses the published namespace
+-- The alias applies to model files, view files and the workspace file (with its prefix table and its discovery, §2.2). A write uses the published namespace
 -- only. A file that Catenary writes is changed until its next write. A view keeps its graph IRI. TypeScript: LEGACY_NAMESPACES, terms.ts.
 catenaryVocab :: Iri
 catenaryVocab = "https://cristianvasquez.github.io/catenary/vocab/"
