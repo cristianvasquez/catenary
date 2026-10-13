@@ -71,7 +71,7 @@ E2E_LIST=1 pnpm e2e   # list the browser scenario names; starts nothing
 E2E_TEST='<exact name>' pnpm e2e   # run one browser scenario; an unknown name fails with exit code 1
 ```
 
-`pnpm e2e` (`scripts/e2e.cjs`) runs the browser scenarios of `scripts/e2e/`. `E2E_CONCURRENCY` sets the number of parallel scenarios (default 3). A failed scenario keeps its temporary folder (`/tmp/catenary-<name>-*`): workspace, configuration, `backend-browser.log`, `diagnostics.json` (phase, URL, backend exit code and signal, last CLI commands, browser errors), `failure.png` and `page.html`.
+`pnpm e2e` (`scripts/e2e.cjs`) runs the browser scenarios of `scripts/e2e/`. `E2E_CONCURRENCY` sets the number of parallel scenarios (default 3). A failed scenario that starts a backend keeps its temporary folder (`$TMPDIR/catenary-<name>-*`). The two rendering checks start no backend and keep no folder. The folder holds the workspace, the configuration, `backend-browser.log`, `diagnostics.json` (phase, URL, backend exit code and signal, last CLI commands, browser errors), `failure.png` and `page.html`.
 
 Canvas command `catenary.copyAsRdf` copies selected model RDF as readable Turtle without placement metadata.
 RPC queries `prepareRdfPaste(text, mediaType?)` and `copyAsRdf(viewId, ids)` parse and export clipboard RDF.
