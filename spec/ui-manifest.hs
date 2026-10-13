@@ -467,6 +467,19 @@ law_hiddenCanvasRefreshesOnce changes = updatesAtShow changes <= 1
 revealWaitsFor :: Int -> Int                       -- changes while hidden -> updates that the reveal waits for
 law_revealAfterShowUpdate :: Int -> Bool
 law_revealAfterShowUpdate changes = revealWaitsFor changes == updatesAtShow changes
+-- | The client never receives a model with a revision lower than or equal to one it has received. The backend keeps the highest
+-- revision sent to each client and drops an older update when it leaves the action queue. An initial model (a reload) starts again.
+-- Reason: a refresh built before an edit left the queue after the update of the edit and drew the old bounds (open.md MOVE1,
+-- view-session.ts RevisionGuardForwarder).
+receivedRevisions :: [Int] -> [Int]               -- revisions in the order they leave the queue -> revisions that the client receives
+receivedRevisions = go Nothing
+  where
+    go _ [] = []
+    go hi (r : rs)
+      | maybe False (r <=) hi = go hi rs
+      | otherwise = r : go (Just r) rs
+law_clientGetsNoOlderModel :: [Int] -> Bool
+law_clientGetsNoOlderModel rs = and (zipWith (<) received (drop 1 received)) where received = receivedRevisions rs
 -- | The selection after an edit (expand, add, uncollect, create) waits on the placements of the selected elements in the canvas, not on their ids (at most 2 s).
 -- Reason: the canvas index holds placement ids, so a wait on element ids always ended at its timeout (actions.ts executeAndSelect, view-editors.ts whenPlaced).
 selectionWaitsFor :: Element -> Element -> [Element]   -- a selected element, the view: the canvas items that the selection waits for

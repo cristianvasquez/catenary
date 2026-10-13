@@ -1,7 +1,7 @@
 // GLSP diagram module for views. The graph is generated from the shared store; see view-session.ts.
 
 import {
-    ActionHandlerConstructor, BindingTarget, CommandStack, DiagramConfiguration, DiagramModule, EdgeTypeHint, GEdge,
+    ActionHandlerConstructor, BindingTarget, ClientActionForwarder, CommandStack, DiagramConfiguration, DiagramModule, EdgeTypeHint, GEdge,
     GGraph, GLabel, GModelElementConstructor, GModelFactory, GNode, InstanceMultiBinding, ModelState,
     DefaultModelState, OperationHandlerConstructor, PaletteItem, ServerLayoutKind, ShapeTypeHint, SourceModelStorage, ToolPaletteItemProvider,
     TriggerNodeCreationAction, UndoRedoActionHandler
@@ -14,7 +14,7 @@ import {
     PasteHandler, RequestClipboardDataHandler, SetCardScaleHandler, SetShowHiddenHandler, SetVisibleHandler, StoreUndoRedoHandler
 } from './handlers';
 import { LayoutViewHandler } from './layout';
-import { StoreCommandStack, ViewGModelFactory, ViewModelStorage, ViewSession, ViewState } from './view-session';
+import { RevisionGuardForwarder, StoreCommandStack, ViewGModelFactory, ViewModelStorage, ViewSession, ViewState } from './view-session';
 
 @injectable()
 export class ViewDiagramConfiguration implements DiagramConfiguration {
@@ -130,6 +130,7 @@ export class ViewDiagramModule extends DiagramModule {
     protected bindGModelFactory(): BindingTarget<GModelFactory> { return ViewGModelFactory; }
     protected override bindCommandStack(): BindingTarget<CommandStack> { return StoreCommandStack; }
     protected override bindToolPaletteItemProvider(): BindingTarget<ToolPaletteItemProvider> { return ShapesPaletteProvider; }
+    protected override bindClientActionForwarder(): BindingTarget<ClientActionForwarder> { return RevisionGuardForwarder; }
 
     protected override configureActionHandlers(binding: InstanceMultiBinding<ActionHandlerConstructor>): void {
         super.configureActionHandlers(binding);
