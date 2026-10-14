@@ -1985,6 +1985,7 @@ resolveEmbed views iri = lookup iri views
 -- Run Last Markdown Export repeats the last successful export of the workspace (window storage, per workspace file): the same
 -- sources, destination and unchecked documents, without the dialog. A document added to a source folder since then is exported.
 -- Without an earlier export it shows a message and writes nothing. A failed export does not replace the last export.
+-- The record goes to the workspace where the export started, also when another workspace opens during the export.
 -- Reason: see the current views in the exported documents again with one command.
 data ExportRequest = ExportRequest { erSources :: [FilePath], erDestination :: FilePath, erExclude :: [FilePath] } deriving Eq
 lastExport :: Maybe ExportRequest -> ExportRequest -> Bool -> Maybe ExportRequest   -- before, this export, it succeeded

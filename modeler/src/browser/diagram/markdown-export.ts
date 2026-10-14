@@ -73,6 +73,8 @@ export class MarkdownExport {
 
     /** Check, render and write. A successful export becomes the last export of the workspace. */
     protected async run({ sources, destination: dest, exclude }: LastExport): Promise<MarkdownExportResult | MarkdownExportCheck> {
+        // The workspace at the start: another workspace can open while the export renders and writes.
+        const workspace = this.model.snapshot.file;
         const final = await this.model.service.checkMarkdownExport({ sources, destination: dest, exclude });
         if (!final.ok) {
             this.messages.error(checkMessage(final));
@@ -85,7 +87,7 @@ export class MarkdownExport {
             const changed = result.written.length + result.removed.length;
             this.messages.info(`Exported ${final.documents.length} document(s) and ${final.views.length} view(s) to ${final.destination ?? dest}: `
                 + (changed ? `${result.written.length} file(s) written, ${result.removed.length} removed.` : 'no file changed.'));
-            await this.rememberLast({ sources, destination: dest, exclude });
+            if (workspace) await this.rememberLast(workspace, { sources, destination: dest, exclude });
         }
         const notes = [...problemLines(result.problems), ...result.kept.map(k => `${k}: changed after the last export; kept.`)];
         if (result.ok && notes.length) this.messages.warn(`Export notes: ${listed(notes)}`);
@@ -114,9 +116,8 @@ export class MarkdownExport {
         return this.storage.getData<Record<string, LastExport>>(LAST_KEY, {});
     }
 
-    protected async rememberLast(request: LastExport): Promise<void> {
-        const workspace = this.model.snapshot.file;
-        if (workspace) await this.storage.setData(LAST_KEY, { ...await this.lastExports(), [workspace]: request });
+    protected async rememberLast(workspace: string, request: LastExport): Promise<void> {
+        await this.storage.setData(LAST_KEY, { ...await this.lastExports(), [workspace]: request });
     }
 
     protected async destinations(): Promise<Record<string, string>> {
