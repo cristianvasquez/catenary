@@ -6,7 +6,8 @@ import {
     KeyboardToolPalette, generateUuid, gridModule, configureActionHandler, IActionHandler, ViewerOptions,
     Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
     helperLineModule, initializeDiagramContainer, accessibilityModule, toolPaletteModule, createIcon, FocusTrackerTool, PaletteItem,
-    ChangeBoundsOperation, CompoundOperation, PasteOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction
+    ChangeBoundsOperation, CompoundOperation, PasteOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction,
+    GLSPSvgExporter
 } from '@eclipse-glsp/client';
 import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, CommandService, MessageService } from '@theia/core';
@@ -21,6 +22,7 @@ import { ModelFrontend } from '../model-client';
 import { NoteEditor } from '../notes/note-editor';
 import { editCanvasName } from './name-edit';
 import { ViewEditors } from './view-editors';
+import { MeasuringSvgExporter } from './text-measure';
 import { CardScaleStartup } from './card-scale';
 import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
@@ -110,6 +112,9 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     bind(PendingMembers).toSelf().inSingletonScope();
     configureActionHandler(context, PendingMemberAction.KIND, PendingMembers);
     configureCommand(context, ApplyPendingMembersCommand);
+    // The SVG export measures card and note text in the export canvas (text-measure.ts, used by the Markdown export).
+    bind(MeasuringSvgExporter).toSelf().inSingletonScope();
+    bindOrRebind(context, GLSPSvgExporter).toService(MeasuringSvgExporter);
 }, { featureId: Symbol('catenaryViewDiagram') });
 
 /**

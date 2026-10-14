@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 
-vi.mock('@eclipse-glsp/client', () => ({ RequestExportAction: {} }));
+vi.mock('@eclipse-glsp/client', () => ({ RequestExportAction: {}, GLSPSvgExporter: class {} }));
 vi.mock('../src/browser/diagram/markdown-export-dialog', () => ({ MarkdownExportDialog: class {} }));
 vi.mock('@theia/core/lib/browser', () => ({ ApplicationShell: class {}, StorageService: Symbol() }));
 vi.mock('@theia/filesystem/lib/browser', () => ({ FileDialogService: Symbol() }));
