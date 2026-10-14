@@ -476,12 +476,12 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             execute: (w?: Widget, level?: unknown) => {
                 const widget = viewWidget(w);
                 if (!widget) return;
-                const ids = SHOW_LEVELS.map(l => l.id), current = ids.indexOf(this.editors.showLevel.get(widget.id) ?? 'placed');
+                const ids = SHOW_LEVELS.map(l => l.id), current = ids.indexOf(this.editors.showLevel.get(widget) ?? 'placed');
                 const next = ids.find(id => id === level) ?? ids[(current + 1) % ids.length];
-                this.editors.showLevel.set(widget.id, next);
+                this.editors.showLevel.set(widget, next);
                 widget.actionDispatcher.dispatch({ kind: 'catenarySetShow', level: next } as never);
             },
-            isToggled: (w?: Widget) => (this.editors.showLevel.get(viewWidget(w)?.id ?? '') ?? 'placed') !== 'placed',
+            isToggled: (w?: Widget) => { const widget = viewWidget(w); return !!widget && (this.editors.showLevel.get(widget) ?? 'placed') !== 'placed'; },
             isVisible: onView
         });
         // Argument 2 (Appearance): the algorithm; without it, a pick.

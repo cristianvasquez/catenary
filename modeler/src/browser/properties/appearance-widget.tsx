@@ -104,7 +104,7 @@ export class AppearanceWidget extends ElementPanel {
         const label = this.labels.labels[viewId];
         const sel = this.elements.resolved;
         const hidden = this.dataOf(viewId, sel.view === viewId ? KINDS.flatMap(([k]) => sel[k] as string[]) : [])?.hidden ?? [];
-        const level = this.editors.showLevel.get(w.id) ?? 'placed';
+        const level = this.editors.showLevel.get(w) ?? 'placed';
         return <Section title={label ? `View · ${label}` : 'View'}>
             <Row label='Layout' inline>
                 <div className='catenary-inline'>

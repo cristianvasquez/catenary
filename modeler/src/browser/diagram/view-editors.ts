@@ -90,8 +90,8 @@ export class ViewEditors implements FrontendApplicationContribution {
     @inject(ViewLabels) protected readonly views: ViewLabels;
     @inject(FontPreferences) protected readonly fonts: FontPreferences;
 
-    /** Show level of each view editor (UI §7.2), by widget id. Absent: placed. Not stored. */
-    readonly showLevel = new Map<string, ShowLevel>();
+    /** Show level of each view editor (UI §7.2), by widget: a reopened editor (same id, new backend session) starts at Placed. Not stored. */
+    readonly showLevel = new WeakMap<GLSPDiagramWidget, ShowLevel>();
     /** Model point of the last right click on each view editor. */
     readonly menuAt = new WeakMap<GLSPDiagramWidget, { x: number; y: number }>();
     /** Client point of the pointer while it is on the canvas of a view editor (no entry when it is outside). */
