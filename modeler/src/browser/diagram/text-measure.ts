@@ -115,7 +115,9 @@ function clipRect(element: Element, fo: Element): { left: number; right: number;
  * the list and draws another one. Real family names first: a name that is only an alias draws the same pixels as its font.
  */
 const CANDIDATES = ['Liberation Sans', 'Arimo', 'Nimbus Sans', 'Noto Sans', 'DejaVu Sans', 'Cantarell', 'Ubuntu', 'Roboto', 'Inter', 'Open Sans',
-    'Fira Sans', 'Source Sans 3', 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial', 'Verdana', 'Tahoma'];
+    'Fira Sans', 'Source Sans 3', 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial', 'Verdana', 'Tahoma',
+    'Liberation Mono', 'Cousine', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Fira Mono', 'JetBrains Mono', 'Source Code Pro', 'Ubuntu Mono',
+    'Menlo', 'Consolas', 'Courier New'];
 const PROBE = 'Hamburgefonstiv 0123 dcat:inSeries EP_PLEN_DOC';
 const drawnFonts = new Map<string, string | undefined>();
 
@@ -134,8 +136,10 @@ export function drawnFont(list: string): string | undefined {
             return context.getImageData(0, 0, 1200, 60).data;
         };
         const target = pixels(list);
-        // A candidate that is not installed draws monospace, which differs from the list.
-        found = CANDIDATES.find(c => pixels(`"${c}", monospace`).every((v, i) => v === target[i]));
+        // A candidate that is not installed draws its fallback: it must draw the list with two different fallbacks, so that a list
+        // drawn in one of them (monospace) does not take a missing candidate.
+        const same = (font: string) => pixels(font).every((v, i) => v === target[i]);
+        found = CANDIDATES.find(c => same(`"${c}", monospace`) && same(`"${c}", serif`));
     }
     drawnFonts.set(list, found);
     return found;
