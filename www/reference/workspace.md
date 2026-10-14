@@ -11,7 +11,7 @@ The first start copies the bookshop example to `~/.local/share/catenary/workspac
 1. Select **File → Open Workspace**.
 2. Select a folder or a `workspace.trig` file.
 
-If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. **File → New Workspace** proposes `workspace.catenary.trig` as the file name. Catenary creates the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`) and `views/main.view.trig`.
+If the folder has no workspace file, Catenary uses default settings and asks once where new subjects go. **File → New Workspace** proposes `workspace.catenary.trig` as the file name. Catenary creates the proposed files (`<name>.shapes.ttl`, `<name>.skos.ttl`, `<name>.data.ttl`) and `views/main.view.trig`.
 
 In the desktop app, each workspace runs in its own process with its own window. **File → New Window** and a workspace opened in a new window start a new process. If the workspace is already open, its window comes to the front.
 

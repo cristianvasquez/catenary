@@ -22,14 +22,14 @@ export const PLACE_ROWS: { kind: PlaceKind; label: string; suffix: string; near:
 ];
 
 /**
- * The proposal for a workspace `<name>.trig`: `<name>.shapes.ttl`, `<name>.skos.ttl`, everything else near its kind. `present`: kinds
- * that model files of the folder contain already. Shapes or SKOS resources in the folder: near their kind (where they are).
+ * The proposal for a workspace `<name>.trig`: `<name>.shapes.ttl`, `<name>.skos.ttl`, `<name>.data.ttl`. `present`: kinds that model
+ * files of the folder contain already. A kind in the folder: near its kind (where it is).
  */
 export function proposedPlaces(name: string, present: FileKind[] = []): Places {
     return {
         shapes: present.includes('shapes') ? NEAR_KIND : `${name}.shapes.ttl`,
         concepts: present.includes('concepts') ? NEAR_KIND : `${name}.skos.ttl`,
-        instances: NEAR_KIND
+        instances: present.includes('instances') ? NEAR_KIND : `${name}.data.ttl`
     };
 }
 

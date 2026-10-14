@@ -228,10 +228,10 @@ openChoice opened candidates
 
 -- | Create: ask the placement, then write the workspace file, an empty file for each file of the placement,
 -- and views/main.view.trig with the view Main. Existing file content stays.
--- Proposed placement: <name>.shapes.ttl, <name>.skos.ttl, all other subjects near.
+-- Proposed placement: <name>.shapes.ttl, <name>.skos.ttl, <name>.data.ttl. Set Up Workspace on a folder: a kind that its files contain is near.
 proposedPlacement :: String -> Placement
 proposedPlacement name = Placement
-  { shapes = Just (File (name ++ ".shapes.ttl")), concepts = Just (File (name ++ ".skos.ttl")), instances = Just Near }
+  { shapes = Just (File (name ++ ".shapes.ttl")), concepts = Just (File (name ++ ".skos.ttl")), instances = Just (File (name ++ ".data.ttl")) }
 createdFiles :: Placement -> [FilePath]
 createdFiles p = "workspace.trig" : "views/main.view.trig" : [f | Just (File f) <- [shapes p, concepts p, instances p]]
 open :: FilePath -> IO CommandResult
