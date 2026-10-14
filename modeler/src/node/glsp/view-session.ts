@@ -22,12 +22,13 @@ const BOX_SIZES: Record<ViewBox['kind'], { width: number; height: number }> = {
     card: DEFAULT_SIZE, group: GROUP_SIZE, note: DEFAULT_NOTE_SIZE, reference: DEFAULT_VIEW_REFERENCE_SIZE, collection: DEFAULT_COLLECTION_SIZE
 };
 
-/** Session state: the view shown and the "show hidden edges" toggle. No dependencies on GLSP services (avoids DI cycles). */
+/** Session state: the view shown and the Show level (hidden edges, derived connectors). No dependencies on GLSP services (avoids DI cycles). */
 @injectable()
 export class ViewState {
     @inject(ModelStore) readonly store: ModelStore;
     viewId = '';
     showHidden = false;
+    showDerived = false;
     /** Card text scale of the client (`catenarySetCardScale`): minimum heights of cards with rows. */
     cardScale = 1;
     /** Read model of this view: the view, its instances and the relations between them. */
@@ -334,11 +335,11 @@ export class ViewGModelFactory implements GModelFactory {
         const { part } = this.session, view = part.views[this.session.viewId];
         const neighbors = tracer.span('refresh', 'hidden neighbors', () => view ? store.hiddenNeighborCounts(view) : new Map<string, { in: number; out: number }>());
         const notation = store.viewFigures(this.session.viewId);
-        const applicability = tracer.span('refresh', 'applicability', () => view ? store.viewApplicability(view) : []);
+        const applicability = tracer.span('refresh', 'applicability', () => view && this.session.showDerived ? store.viewApplicability(view) : []);
         const schema = tracer.span('refresh', 'schema', () => toSchema(this.session.part, store.meta, this.session.viewId, {
             showHidden: this.session.showHidden, cardScale: this.session.cardScale, violations: store.violations, schemeLabel: iri => schemes.get(iri) ?? iri.replace(/^.*[#/:]/, ''),
             hidden: { neighbors: id => neighbors.get(id), shapeSources: id => hiddenShapeSources(part.shapes, view, id).length },
-            notation, applicability
+            notation, applicability, showDerived: this.session.showDerived
         }));
         const root = tracer.span('refresh', 'graph model', () => this.serializer.createRoot(schema as never) as GModelRoot);
         this.modelState.updateRoot(root);

@@ -4,7 +4,7 @@
 // (RPC `appearance`, ADR 0007 step 5); the panel asks again when the selection or the model changes. The Preferences section at the
 // end sets user preferences (font sizes, edge style of all views). It is closed by default.
 
-import { CommandRegistry, CommandService } from '@theia/core';
+import { CommandService } from '@theia/core';
 import { AbstractViewContribution, codicon } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import React from '@theia/core/shared/react';
@@ -14,10 +14,10 @@ import { Selected } from '../selection-model';
 import { CARD_FONT_SIZE, FONT_DEFAULTS, FONT_MAX, FONT_MIN, FontPreferences, GROUP_FONT_SIZE, NOTE_FONT_SIZE } from '../diagram/font-preferences';
 import { EDGE_STYLE_DEFAULT, EdgePreferences } from '../diagram/edge-preferences';
 import { LayoutPreferences } from '../diagram/layout-preferences';
-import { LAYOUT_ALGORITHMS, LAYOUT_SPACING } from '../../common/protocol';
+import { LAYOUT_ALGORITHMS, LAYOUT_SPACING, SHOW_LEVELS } from '../../common/protocol';
 import { ViewEditors, ViewLabels, viewIdOf } from '../diagram/view-editors';
 /** Commands of commands.ts (not imported: commands.ts imports this module). */
-const TOGGLE_HIDDEN = 'catenary.toggleHidden', LAYOUT_VIEW = 'catenary.layoutView';
+const SET_SHOW = 'catenary.setShow', LAYOUT_VIEW = 'catenary.layoutView';
 import { EDGE_STYLES, EdgeStyle } from '../diagram/edge-route';
 
 export const APPEARANCE_ID = 'catenary-appearance';
@@ -57,7 +57,6 @@ export class AppearanceWidget extends ElementPanel {
     @inject(LayoutPreferences) protected readonly spacingPreference: LayoutPreferences;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(ViewLabels) protected readonly labels: ViewLabels;
-    @inject(CommandRegistry) protected readonly registry: CommandRegistry;
 
     /** The algorithm of Apply Layout in the View section (this window). */
     protected algorithm: string = LAYOUT_ALGORITHMS[0].id;
@@ -97,7 +96,7 @@ export class AppearanceWidget extends ElementPanel {
         return <>{this.viewSection()}{this.preferencesSection()}</>;
     }
 
-    /** The current view editor: Apply Layout with its spacing, and the hidden edges of the view (list, Show Hidden Edges of this editor). */
+    /** The current view editor: Apply Layout with its spacing, the Show level of this editor, and the hidden edges of the view (list). */
     protected viewSection(): React.ReactNode {
         const w = this.editors.current();
         if (!w) return undefined;
@@ -105,7 +104,7 @@ export class AppearanceWidget extends ElementPanel {
         const label = this.labels.labels[viewId];
         const sel = this.elements.resolved;
         const hidden = this.dataOf(viewId, sel.view === viewId ? KINDS.flatMap(([k]) => sel[k] as string[]) : [])?.hidden ?? [];
-        const shown = this.registry.isToggled(TOGGLE_HIDDEN, w);
+        const level = this.editors.showLevel.get(w.id) ?? 'placed';
         return <Section title={label ? `View · ${label}` : 'View'}>
             <Row label='Layout' inline>
                 <div className='catenary-inline'>
@@ -116,6 +115,10 @@ export class AppearanceWidget extends ElementPanel {
                 </div>
             </Row>
             {this.spacing()}
+            <Row label='Show' inline>
+                <Choice value={level} options={SHOW_LEVELS.map(l => ({ value: l.id, label: l.label, title: `${l.label}: ${l.description}. This editor only, not stored.` }))}
+                    onChange={async v => { await this.commands.executeCommand(SET_SHOW, w, v); this.update(); }} />
+            </Row>
             <Row label='Hidden' inline>
                 <div className='catenary-inline'>
                     {hidden.length
@@ -123,10 +126,6 @@ export class AppearanceWidget extends ElementPanel {
                             <span className={`codicon codicon-chevron-${this.hiddenOpen ? 'down' : 'right'}`} />{hidden.length} {hidden.length === 1 ? 'edge' : 'edges'}
                         </button>
                         : <span className='catenary-none'>none</span>}
-                    <label className='catenary-check' title='Show the hidden edges dashed in this editor. Not stored.'>
-                        <input type='checkbox' checked={shown} onChange={async () => { await this.commands.executeCommand(TOGGLE_HIDDEN, w); this.update(); }} />
-                        show dashed
-                    </label>
                 </div>
                 {this.hiddenOpen && hidden.length ? this.hiddenList(viewId, hidden) : undefined}
             </Row>

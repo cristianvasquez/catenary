@@ -20,7 +20,7 @@ import { ViewDiagramConfiguration } from '../src/node/glsp/diagram-module';
 import { RevisionGuardForwarder, StoreCommandStack, ViewGModelFactory, ViewSession, ViewState } from '../src/node/glsp/view-session';
 import { ChangeBoundsHandler, DeleteHandler, PasteHandler, SetVisibleAction, SetVisibleHandler, VisibleSetAction } from '../src/node/glsp/handlers';
 import { docOf } from '../../packages/rdf/test/helpers';
-import { PASTE_RESULT } from '../src/common/protocol';
+import { PASTE_RESULT, SHOW_LEVELS, showFlags } from '../src/common/protocol';
 
 /** Real store -> part query -> schema -> GLSP model -> update actions. Only the client transport is replaced. */
 async function client(store: ModelStore, viewId: string) {
@@ -634,5 +634,13 @@ describe('law_clientGetsNoOlderModel: the backend sends no model older than one 
         expect(c.updates()[0].newRoot.children!.find(e => key(e) === instance)).toMatchObject({ name: 'Renamed' });
         expect(c.received.filter(SetDirtyStateAction.is)).toHaveLength(2);   // the initial model and the refresh
         c.dispose();
+    });
+});
+
+describe('Show levels (UI §7.2)', () => {
+    it('adds hidden edges, then derived connectors; an unknown level is Placed (law_showLevelsAdd)', () => {
+        expect(SHOW_LEVELS.map(l => showFlags(l.id))).toEqual([
+            { showHidden: false, showDerived: false }, { showHidden: true, showDerived: false }, { showHidden: true, showDerived: true }]);
+        expect(showFlags(undefined)).toEqual({ showHidden: false, showDerived: false });
     });
 });

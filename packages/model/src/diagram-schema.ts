@@ -83,8 +83,10 @@ export interface GraphOptions {
     hidden?: { neighbors: (instance: string) => { in: number; out: number; targets?: number } | undefined; shapeSources: (shape: string) => number };
     /** The figures of the view (ADR 0014): the SHACL and value-set elements come from their join. Absent: none are drawn. */
     notation?: ViewFigures;
-    /** Checked instance-shape pairs for this view, supplied by the shared SHACL query. */
+    /** Checked instance-shape pairs for this view, supplied by the shared SHACL query. Drawn only with `showDerived`. */
     applicability?: readonly TargetMatch[];
+    /** Draw the derived connectors (UI §6.1): shape-to-shape targeting and node-level edges, instance-to-shape checks. Default false. */
+    showDerived?: boolean;
 }
 
 /** Count parallel edges in either direction. Call the returned allocator once per edge, in drawing order. */

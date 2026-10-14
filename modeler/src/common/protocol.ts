@@ -27,6 +27,17 @@ export const LAYOUT_ALGORITHMS = [
     { id: 'force', label: 'Force', description: 'force-directed (cola.js)' }
 ] as const;
 export type LayoutAlgorithm = typeof LAYOUT_ALGORITHMS[number]['id'];
+/** What a view editor draws (UI §7.2 Show): each level adds to the one before. Per editor, not stored. */
+export const SHOW_LEVELS = [
+    { id: 'placed', label: 'Placed', description: 'the placed elements only' },
+    { id: 'hidden', label: '+ Hidden', description: 'also the hidden edges, dashed' },
+    { id: 'derived', label: '+ Derived', description: 'also the derived connectors: SHACL targets, sh:node and the checks of shown instances' }
+] as const;
+export type ShowLevel = typeof SHOW_LEVELS[number]['id'];
+/** The drawing flags of a level; an unknown level is `placed`. */
+export function showFlags(level: unknown): { showHidden: boolean; showDerived: boolean } {
+    return { showHidden: level === 'hidden' || level === 'derived', showDerived: level === 'derived' };
+}
 /** Space between boxes (px) of Apply Layout: user preference `catenary.layoutSpacing`, sent with each layout request. */
 export const LAYOUT_SPACING = { default: 200, min: 20, max: 400 } as const;
 /** A spacing in range; else the default. */

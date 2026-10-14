@@ -196,7 +196,7 @@ export function notationElements(doc: Doc, vf: ViewFigures, opts: GraphOptions):
     });
     const alternativeLane = edgeLanes(alternatives.map(a => [a.source, a.target]));
     for (const a of alternatives) edges.push({ type: TYPES.ALTERNATIVE, id: a.id, sourceId: a.source, targetId: a.target, ...alternativeLane(a.source, a.target) });
-    const targeting = shapeConnections(
+    const targeting = !opts.showDerived ? [] : shapeConnections(
         Object.values(shapes.nodeShapes).map(s => ({ ...s, nodes: s.nodes?.map(iriId) })),
         Object.values(shapes.properties).map(p => ({
             id: p.id, owner: p.owner, predicate: p.path.kind === 'iri' ? p.path.iri : undefined,

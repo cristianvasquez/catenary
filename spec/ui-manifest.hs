@@ -1092,7 +1092,7 @@ noteEditorTextSize = 16
 -- Shape-to-shape connectors use the same predicate labels. This separates schema rules from data relations.
 -- Hover text gives the matched class, source shape, source node and property path when available.
 -- Keep generated explanation sentences and property-shape names out of edge labels.
--- Targeting edges are derived. They have arrowheads and no edit controls or persisted placements.
+-- Targeting edges are derived. They have arrowheads and no edit controls or persisted placements. They draw only at the Show level + Derived (§7.2).
 -- A logical constraint (sh:xone, sh:or, sh:and over property shapes) is a hub. Placed, it shows a hub with its member edges.
 -- Unplaced, it is a row group of its card: "xone", then one sub-row per member. Hub and members are placed and removed as one unit.
 -- Del on the hub, on a member line or on its private pill removes the unit. ⇥ on the row group places the hub and the boxes it needs.
@@ -1307,7 +1307,7 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 -- | Appearance edits color, size, display, edge sides and the route of an edge. Mixed values show empty. Each accepted change is one command.
 -- The panel has three sections. Each heading names its scope.
 -- Style (saved in the view): color swatches and a custom color, display, size, edge sides, Reset route (the bends, §7.4), edge visibility.
--- View (current view editor): Apply Layout with its algorithm and spacing, the hidden edges, Show Hidden Edges.
+-- View (current view editor): Apply Layout with its algorithm and spacing, Show, the hidden edges.
 -- Preferences (all views, not in the model): text sizes and edge style. The section is closed by default.
 -- Mixed values mark no option. A width or height below 40 shows a message and changes nothing.
 -- Stored colors: absent (default), none (transparent), presets 1–6, white, or a CSS color.
@@ -1318,6 +1318,15 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 -- Resize: eight handles on one selected box. Content sets the minimum heights of containers (§6.5).
 -- Frames have their own minimum size. A frame move updates its cards after release, without live feedback.
 data AppearanceSection = StyleSection | ViewSettingsSection | PreferencesSection deriving (Eq, Enum, Bounded)
+-- | Show (per view editor, not stored, default Placed): Placed draws the placed elements. + Hidden adds the hidden edges, dashed.
+-- + Derived adds the derived connectors (§6.1): shape-to-shape targeting and sh:node, the checks of shown instances.
+-- Each level adds to the one before. Apply Layout places the derived connectors only at + Derived.
+data ShowLevel = Placed | PlusHidden | PlusDerived deriving (Eq, Ord, Enum, Bounded)
+drawsHidden, drawsDerived :: ShowLevel -> Bool
+drawsHidden l = l >= PlusHidden
+drawsDerived l = l >= PlusDerived
+law_showLevelsAdd :: ShowLevel -> Bool
+law_showLevelsAdd l = not (drawsDerived l) || drawsHidden l
 mixed :: Eq a => [a] -> Maybe a                   -- the shown value: Nothing when the values differ
 mixed (x : xs) | all (== x) xs = Just x
 mixed _ = Nothing

@@ -13,7 +13,7 @@ import {
     LEAF_SUFFIX, TYPES, VIEW_CLIP_FORMAT, copyFromView, isViewClip, ownerOfLabel, isTakenOut, propertyNodeId
 } from '@catenary/model';
 import * as model from '@catenary/model';
-import { PASTE_RESULT, PasteResultAction } from '../../common/protocol';
+import { PASTE_RESULT, PasteResultAction, ShowLevel, showFlags } from '../../common/protocol';
 import { ViewSession } from './view-session';
 
 /** Select the created element. It has a default name: rename it in place (F2) or in the properties. */
@@ -279,22 +279,22 @@ export class SetCardScaleHandler implements ActionHandler {
     }
 }
 
-/** Client action: show or hide the edges that are hidden in this view. */
-export interface SetShowHiddenAction extends Action {
-    kind: typeof SetShowHiddenAction.KIND;
-    show: boolean;
+/** Client action: the Show level of this editor (placed, + hidden edges, + derived connectors). */
+export interface SetShowAction extends Action {
+    kind: typeof SetShowAction.KIND;
+    level: ShowLevel;
 }
-export namespace SetShowHiddenAction {
-    export const KIND = 'catenarySetShowHidden';
+export namespace SetShowAction {
+    export const KIND = 'catenarySetShow';
 }
 
 @injectable()
-export class SetShowHiddenHandler implements ActionHandler {
+export class SetShowHandler implements ActionHandler {
     @inject(ViewSession) protected readonly session: ViewSession;
-    readonly actionKinds = [SetShowHiddenAction.KIND];
+    readonly actionKinds = [SetShowAction.KIND];
 
     async execute(action: Action): Promise<Action[]> {
-        this.session.state.showHidden = (action as SetShowHiddenAction).show;
+        Object.assign(this.session.state, showFlags((action as SetShowAction).level));
         await this.session.refresh();
         return [];
     }

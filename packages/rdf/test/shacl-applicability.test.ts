@@ -39,9 +39,9 @@ describe('shared SHACL behavior in the application', () => {
         expect(store.execute({ kind: 'addToView', view: view.id, ids: [iriId('urn:Value')], at: { x: 500, y: 0 } }).ok).toBe(true);
         expect(store.hiddenNeighborCounts(store.reads.view(view.id)!).get(iriId('urn:b'))?.targets).toBe(1);
         const connections = store.viewApplicability(store.reads.view(view.id)!);
-        const schema = toSchema(store.viewDoc(view.id), store.meta, view.id, {
-            showHidden: false, violations: [], notation: store.viewFigures(view.id), applicability: connections
-        });
+        const options = { showHidden: false, violations: [], notation: store.viewFigures(view.id), applicability: connections };
+        expect(toSchema(store.viewDoc(view.id), store.meta, view.id, options).children!.some(e => e.type === TYPES.TARGETING)).toBe(false);
+        const schema = toSchema(store.viewDoc(view.id), store.meta, view.id, { ...options, showDerived: true });
         const edge = schema.children!.find(e => e.type === TYPES.TARGETING && e.name === 'sh:node')!;
         expect(edge).toBeDefined();
         expect(edge.sourceId).toBe(card.id);

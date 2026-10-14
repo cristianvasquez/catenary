@@ -19,7 +19,7 @@ export function toSchema(doc: Doc, meta: Classes, viewId: string, opts: GraphOpt
     const boxes = [...data.cards, ...shapes.cards, ...data.collections, ...shapes.overlays, ...references, ...notes];
     const arrows = arrowElements(view, new Set([...groups, ...boxes].map(b => b.id)));
     const placements = new Map(boxes.filter(b => typeof b.element === 'string').map(b => [b.element as string, b.id]));
-    const matches = (opts.applicability ?? []).flatMap(m => {
+    const matches = (opts.showDerived ? opts.applicability ?? [] : []).flatMap(m => {
         if (m.node.termType !== 'NamedNode') return [];
         const source = placements.get(iriId(m.node.value)), target = placements.get(iriId(m.shape));
         return source && target ? [{ m, source, target }] : [];

@@ -23,7 +23,7 @@ Classes with `rdfs:domain` and `rdfs:range` statements also supply fields, witho
 ## Appearance
 
 - **Style** of the selection: color, display, size, edge sides, route, visibility.
-- **View**: Apply Layout, spacing, hidden edges.
+- **View**: Apply Layout, spacing, Show, hidden edges. **Show** sets what this editor draws: **Placed** (the placed elements), **+ Hidden** (also the hidden edges, dashed), **+ Derived** (also the connectors that Catenary computes from SHACL targets and `sh:node`, and from the shapes that check a shown instance). You cannot select or delete a derived connector. The setting is not saved.
 - **Preferences**: text sizes, edge style.
 
 ## Links

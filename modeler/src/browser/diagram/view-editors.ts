@@ -5,7 +5,7 @@ import { GLSPDiagramManager, GLSPDiagramWidget, GLSPDiagramWidgetOptions, GLSPWi
 import { CommandRegistry, Emitter, MessageService, URI } from '@theia/core';
 import { ApplicationShell, FrontendApplicationContribution, StatusBar, StatusBarAlignment, WidgetOpenMode, WidgetOpenerOptions } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { CONTRIBUTION_ID, DIAGRAM_TYPE, VIEW_SCHEME, viewIdOfUri } from '../../common/protocol';
+import { CONTRIBUTION_ID, DIAGRAM_TYPE, ShowLevel, VIEW_SCHEME, viewIdOfUri } from '../../common/protocol';
 import { Occurrence, labelProblem, panelsUnchanged } from '@catenary/model';
 import { ModelFrontend } from '../model-client';
 import { SelectionModel } from '../selection-model';
@@ -90,6 +90,8 @@ export class ViewEditors implements FrontendApplicationContribution {
     @inject(ViewLabels) protected readonly views: ViewLabels;
     @inject(FontPreferences) protected readonly fonts: FontPreferences;
 
+    /** Show level of each view editor (UI §7.2), by widget id. Absent: placed. Not stored. */
+    readonly showLevel = new Map<string, ShowLevel>();
     /** Model point of the last right click on each view editor. */
     readonly menuAt = new WeakMap<GLSPDiagramWidget, { x: number; y: number }>();
     /** Client point of the pointer while it is on the canvas of a view editor (no entry when it is outside). */

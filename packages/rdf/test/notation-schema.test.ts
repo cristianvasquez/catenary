@@ -19,10 +19,10 @@ async function setup(shapes: string, data = '', cards: string[] = []) {
     cards.forEach((c, i) => run(g, meta, { kind: 'addToView', view, ids: [iriId(c)], at: { x: i * 600, y: 0 } }));
     return { g, view };
 }
-const schema = (g: ModelGraph, view: string): ElementSchema[] => toSchema(project(g).doc, meta, view, {
-    showHidden: false, violations: [], notation: viewFigures(storeIndex(g), readNotations(), idIri(view)!)
+const schema = (g: ModelGraph, view: string, showDerived = true): ElementSchema[] => toSchema(project(g).doc, meta, view, {
+    showHidden: false, showDerived, violations: [], notation: viewFigures(storeIndex(g), readNotations(), idIri(view)!)
 }).children!;
-const of = (g: ModelGraph, view: string, type: string) => schema(g, view).filter(e => e.type === type);
+const of = (g: ModelGraph, view: string, type: string, showDerived = true) => schema(g, view, showDerived).filter(e => e.type === type);
 const element = (g: ModelGraph, view: string, id: unknown) => elementOfId(project(g).doc.views[view], id as string);
 
 describe('SHACL elements from the notation engine', () => {
@@ -39,6 +39,7 @@ describe('SHACL elements from the notation engine', () => {
         const node = edges.find(e => e.name === 'sh:node')!;
         expect([element(g, view, node.sourceId), element(g, view, node.targetId)]).toEqual([iriId('urn:source'), iriId('urn:shared')]);
         expect(of(g, view, TYPES.SHAPE).find(c => c.element === iriId('urn:target'))!.subtitle).toBe('objects of p');
+        expect(of(g, view, TYPES.TARGETING, false)).toEqual([]);
     });
 
     it('labels an object-target connector from its property owner when no object-end shape exists', async () => {

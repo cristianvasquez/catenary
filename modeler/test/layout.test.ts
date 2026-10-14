@@ -28,7 +28,7 @@ it.each(LAYOUT_ALGORITHMS.map(a => a.id))('%s: lays out a view without overlap, 
         shapes: emptyShapes()
     };
     const before = structuredClone(doc);
-    const result = await layoutView(doc, 'v', false, algorithm);
+    const result = await layoutView(doc, 'v', { showHidden: false }, algorithm);
     const box = (id: string) => result.bounds.find(b => b.id === id)!;
     const original = [...nodes, group, note];
     expect(result.bounds.map(b => b.id).sort()).toEqual(original.map(b => b.id).sort());
@@ -51,7 +51,7 @@ it.each(LAYOUT_ALGORITHMS.map(a => a.id))('%s: 40 connected cards get no overlap
         views: { v: { id: 'v', uri: 'urn:v', label: 'View', boxes: nodes, edges: [], arrows: [] } },
         shapes: emptyShapes()
     };
-    const { bounds } = await layoutView(doc, 'v', false, algorithm);
+    const { bounds } = await layoutView(doc, 'v', { showHidden: false }, algorithm);
     const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     for (const [i, a] of bounds.entries()) for (const b of bounds.slice(i + 1)) expect(overlap(a, b), `${a.id} ${b.id}`).toBe(false);
 });
@@ -71,7 +71,7 @@ it.each(['layered', 'force'] as const)('%s: list boxes are laid out; private pil
     const privates = children.filter(c => c.type === TYPES.LEAF && c.private).map(c => c.id);
     expect(lists).toHaveLength(2);
     expect(privates).toHaveLength(2);
-    const { bounds } = await layoutView(store.viewDoc(viewId), viewId, false, algorithm, 120, 1, store.viewFigures(viewId));
+    const { bounds } = await layoutView(store.viewDoc(viewId), viewId, { showHidden: false }, algorithm, 120, 1, store.viewFigures(viewId));
     expect(bounds.map(b => b.id)).toEqual(expect.arrayContaining(lists));
     expect(bounds.map(b => b.id).filter(id => privates.includes(id))).toEqual([]);
     expect(store.execute({ kind: 'setLayout', view: viewId, bounds })).toMatchObject({ ok: true });
@@ -96,7 +96,7 @@ it('fixture: each algorithm in turn leaves no overlapping cards and keeps group 
     const membership = () => { const v = docOf(store).views[viewId]; return boxes(v, 'card').map(n => groupOf(v, n, n.id)?.id); };
     const before = membership();
     for (const algorithm of [...LAYOUT_ALGORITHMS.map(a => a.id), ...LAYOUT_ALGORITHMS.map(a => a.id)]) {
-        const { bounds } = await layoutView(store.viewDoc(viewId), viewId, false, algorithm);
+        const { bounds } = await layoutView(store.viewDoc(viewId), viewId, { showHidden: false }, algorithm);
         expect(store.execute({ kind: 'setLayout', view: viewId, bounds })).toMatchObject({ ok: true });
         const nodes = boxes(docOf(store).views[viewId], 'card');
         for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) expect(overlap(a, b), `${algorithm}: ${a.id} ${b.id}`).toBe(false);
@@ -119,7 +119,7 @@ it('force ends when cola leaves boxes that touch (1e-6 overlap)', async () => {
         views: { v: { id: 'v', uri: 'urn:v', label: 'View', boxes: nodes, edges: [], arrows: [] } },
         shapes: emptyShapes()
     };
-    const { bounds } = await layoutView(doc, 'v', false, 'force');
+    const { bounds } = await layoutView(doc, 'v', { showHidden: false }, 'force');
     expect(bounds).toHaveLength(12);
 });
 
@@ -132,7 +132,7 @@ it.each(LAYOUT_ALGORITHMS.flatMap(a => [40, 300].map(spacing => [a.id, spacing] 
         views: { v: { id: 'v', uri: 'urn:v', label: 'View', boxes: nodes, edges: [], arrows: [] } },
         shapes: emptyShapes()
     };
-    const { bounds } = await layoutView(doc, 'v', false, algorithm, spacing);
+    const { bounds } = await layoutView(doc, 'v', { showHidden: false }, algorithm, spacing);
     // Distance between two boxes: the larger of the x gap and the y gap (negative: they overlap on that axis). Rounding: 1 px.
     const gap = (a: Box, b: Box) => Math.max(Math.max(a.x, b.x) - Math.min(a.x + a.width, b.x + b.width), Math.max(a.y, b.y) - Math.min(a.y + a.height, b.y + b.height));
     for (const [i, a] of bounds.entries()) for (const b of bounds.slice(i + 1)) expect(gap(a, b), `${a.id} ${b.id}`).toBeGreaterThanOrEqual(spacing - 1);
@@ -155,7 +155,7 @@ it.each(LAYOUT_ALGORITHMS.flatMap(a => [1, 2].map(scale => [a.id, scale] as cons
     expect(await store.open(join(dir, 'workspace.trig'))).toMatchObject({ ok: true });
     const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     for (const view of Object.values(docOf(store).views)) {
-        const { bounds } = await layoutView(store.viewDoc(view.id), view.id, false, algorithm, 120, scale, store.viewFigures(view.id));
+        const { bounds } = await layoutView(store.viewDoc(view.id), view.id, { showHidden: false }, algorithm, 120, scale, store.viewFigures(view.id));
         expect(store.execute({ kind: 'setLayout', view: view.id, bounds })).toMatchObject({ ok: true });
         const nodes = drawn(store, view.id, scale);
         for (const [i, a] of nodes.entries()) for (const b of nodes.slice(i + 1)) expect(overlap(a, b), `${view.label}: ${a.id} ${b.id}`).toBe(false);
@@ -175,11 +175,11 @@ it.each(LAYOUT_ALGORITHMS.map(a => a.id))('%s: unlinked cards are packed wider t
         views: { v: { id: 'v', uri: 'urn:v', label: 'View', boxes: nodes, edges: [], arrows: [] } },
         shapes: emptyShapes()
     };
-    const { bounds } = await layoutView(doc, 'v', false, algorithm);
+    const { bounds } = await layoutView(doc, 'v', { showHidden: false }, algorithm);
     const width = Math.max(...bounds.map(b => b.x + b.width)) - Math.min(...bounds.map(b => b.x));
     const height = Math.max(...bounds.map(b => b.y + b.height)) - Math.min(...bounds.map(b => b.y));
     expect(width / height).toBeGreaterThanOrEqual(1);
-    const again = await layoutView(doc, 'v', false, algorithm);
+    const again = await layoutView(doc, 'v', { showHidden: false }, algorithm);
     expect(again.bounds).toEqual(bounds);
 });
 
@@ -198,7 +198,7 @@ it('layered: if ELK layered fails, ELK box places the cards (no overlap)', async
         views: { v: { id: 'v', uri: 'urn:v', label: 'View', boxes: nodes, edges: [], arrows: [] } },
         shapes: emptyShapes()
     };
-    const { bounds } = await layoutView(doc, 'v', false, 'layered');
+    const { bounds } = await layoutView(doc, 'v', { showHidden: false }, 'layered');
     expect(spy.mock.calls.some(([g]) => g.layoutOptions?.['elk.algorithm'] === 'box')).toBe(true);
     const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     expect(bounds).toHaveLength(4);
@@ -206,7 +206,7 @@ it('layered: if ELK layered fails, ELK box places the cards (no overlap)', async
 });
 
 
-it('uses targeting connectors for layout', async () => {
+it('uses targeting connectors for layout only at the Show level + Derived', async () => {
     const g = await load(`@prefix sh: <http://www.w3.org/ns/shacl#> .
         <${shapesGraphIri('/tmp/targeting.ttl')}> {
             <urn:source> a sh:NodeShape ; sh:property <urn:property> .
@@ -222,9 +222,12 @@ it('uses targeting connectors for layout', async () => {
     const proto = ELK.prototype as unknown as { layout: (graph: ElkNode) => Promise<ElkNode> };
     const spy = vi.spyOn(proto, 'layout');
     try {
-        const result = await layoutView(doc, view, false, 'layered', 120, 1, notation);
+        const result = await layoutView(doc, view, { showHidden: false, showDerived: true }, 'layered', 120, 1, notation);
         expect(result.bounds).toHaveLength(2);
         expect(spy.mock.calls.some(([graph]) => graph.children?.length === 2 && graph.edges?.length === 1)).toBe(true);
+        spy.mockClear();
+        await layoutView(doc, view, { showHidden: false }, 'layered', 120, 1, notation);
+        expect(spy.mock.calls.some(([graph]) => graph.edges?.length)).toBe(false);
     } finally {
         spy.mockRestore();
     }
