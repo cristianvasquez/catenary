@@ -19,6 +19,13 @@ import { ViewEditors, ViewLabels, viewIdOf } from '../diagram/view-editors';
 /** Commands of commands.ts (not imported: commands.ts imports this module). */
 const SET_SHOW = 'catenary.setShow', LAYOUT_VIEW = 'catenary.layoutView';
 import { EDGE_STYLES, EdgeStyle } from '../diagram/edge-route';
+import { VOCABULARY_COLOR_DEFAULT, VocabularyColor } from '../diagram/vocabulary-color';
+/** Vocabulary color of property paths (preference catenary.vocabularyColor). */
+const VOCABULARY_OPTIONS = [
+    { value: 'name', label: 'Name', title: 'The local name in the color of its vocabulary, the prefix gray' },
+    { value: 'prefix', label: 'Prefix', title: 'The prefix in the color of its vocabulary, the local name plain' },
+    { value: 'off', label: 'Off', title: 'No vocabulary color' }
+];
 
 export const APPEARANCE_ID = 'catenary-appearance';
 
@@ -145,10 +152,11 @@ export class AppearanceWidget extends ElementPanel {
     }
 
     protected preferencesSection(): React.ReactNode {
-        const style = this.edgeStyle.get();
+        const style = this.edgeStyle.get(), vocabulary = this.edgeStyle.vocabulary();
         const reset = () => {
             for (const name of [CARD_FONT_SIZE, GROUP_FONT_SIZE, NOTE_FONT_SIZE]) if (this.fonts.get(name) !== FONT_DEFAULTS[name]) void this.fonts.set(name, undefined);
             if (style !== EDGE_STYLE_DEFAULT) void this.edgeStyle.set(EDGE_STYLE_DEFAULT);
+            if (vocabulary !== VOCABULARY_COLOR_DEFAULT) void this.edgeStyle.setVocabulary(VOCABULARY_COLOR_DEFAULT);
         };
         return <Section title='Preferences' scope={ALL_VIEWS} open={this.preferencesOpen} onToggle={() => { this.preferencesOpen = !this.preferencesOpen; this.update(); }}>
             <div className='catenary-help catenary-subhead'>Text size (px, {FONT_MIN}–{FONT_MAX})</div>
@@ -159,6 +167,9 @@ export class AppearanceWidget extends ElementPanel {
                 <Choice value={style} options={EDGE_STYLES.map(v => ({ value: v, label: v, title: `${v}: ${EDGE_ICONS[v][1]}`, icon: EDGE_ICONS[v][0] }))}
                     onChange={v => this.edgeStyle.set(v as EdgeStyle)} />
                 <div className='catenary-help'>{style}: {EDGE_ICONS[style][1]}</div>
+            </Row>
+            <Row label='Vocabulary color' inline>
+                <Choice value={vocabulary} options={VOCABULARY_OPTIONS} onChange={v => this.edgeStyle.setVocabulary(v as VocabularyColor)} />
             </Row>
             <div className='catenary-buttons'><Button label='Reset to Defaults' onClick={reset} /></div>
         </Section>;

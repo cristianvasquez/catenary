@@ -24,7 +24,7 @@ Classes with `rdfs:domain` and `rdfs:range` statements also supply fields, witho
 
 - **Style** of the selection: color, display, size, edge sides, route, visibility.
 - **View**: Apply Layout, spacing, Show, hidden edges. **Show** sets what this editor draws: **Placed** (the placed elements), **+ Hidden** (also the hidden edges, dashed), **+ Derived** (also the connectors that Catenary computes from SHACL targets and `sh:node`, and from the shapes that check a shown instance). You cannot select or delete a derived connector. The setting is not saved.
-- **Preferences**: text sizes, edge style.
+- **Preferences**: text sizes, edge style, vocabulary color. **Vocabulary color** sets which part of a property path such as `dct:title` has the color of its vocabulary: **Name** (`title`, the default), **Prefix** (`dct:`) or **Off**.
 
 ## Links
 

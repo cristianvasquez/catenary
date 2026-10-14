@@ -4,6 +4,7 @@
 import { VNode } from 'snabbdom';
 import type { Side } from '@catenary/model';
 import { ARROW_PATHS, colorVars, s, vars } from './card-chrome';
+import { vocabularyParts } from './vocabulary-color';
 import { Cubic, EdgeStyle, NORMAL, Pt, along, curveAt, curvePath, curveSegments, facingPoint, linePath, port, routeSides } from './edge-route';
 
 export { facingPoint, nearestSide } from './edge-route';
@@ -128,7 +129,7 @@ export function renderEdge(p: EdgeProps): VNode {
     }, [s('title', {}, ['Drag to bend the edge; double-click to remove the bend'])]));
     const label = p.parts
         ? s('text', { class: { 'edge-label': true, parts: true }, attrs: { x: at.x, y: at.y - fontSize * 0.7 }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } },
-            p.parts.map(x => s('tspan', { class: { muted: !x.color }, style: x.color ? { fill: x.color } : {} }, [x.text])))
+            vocabularyParts(p.parts).map(x => s('tspan', { class: { muted: x.muted }, style: x.color ? { fill: x.color } : {} }, [x.text])))
         : s('text', { class: { 'edge-label': true }, attrs: { x: mid.x, y: mid.y }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } }, [p.hidden ? `${p.name} (hidden)` : p.name]);
     const cardW = Math.max(26, 8 + (p.card?.length ?? 0) * 8) * k, cardH = 18 * k;
     // Below the line near the target end.

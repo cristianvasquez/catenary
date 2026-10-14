@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 vi.mock('@eclipse-glsp/client', () => ({ SetViewportAction: {}, isViewport: () => false }));
 vi.mock('../src/browser/diagram/view-editors', () => ({ ViewEditors: class {} }));
 
-import { EDGE_STYLE, EDGE_STYLE_DEFAULT, edgePreferences, edgeStyle, EdgePreferences } from '../src/browser/diagram/edge-preferences';
+import { EDGE_STYLE, EDGE_STYLE_DEFAULT, VOCABULARY_COLOR, edgePreferences, edgeStyle, EdgePreferences } from '../src/browser/diagram/edge-preferences';
 import { EDGE_STYLES } from '../src/browser/diagram/edge-route';
 
 it('offers curved and direct only, with curved as the initial, schema and missing-preference default (UI §7.4 defaultEdgeStyle)', () => {
@@ -24,5 +24,15 @@ it('preserves an explicit direct choice and falls back to curved for a choice th
     for (const old of ['orthogonal', 'polyline', 'invalid']) {
         Object.assign(preferences, { preferences: { get: () => old } });
         expect(preferences.get()).toBe('curved');
+    }
+});
+
+it('offers name, prefix and off for the vocabulary color, with name as the default; an unknown value is name', () => {
+    expect(edgePreferences.schema!.properties![VOCABULARY_COLOR].enum).toEqual(['name', 'prefix', 'off']);
+    expect(edgePreferences.schema!.properties![VOCABULARY_COLOR].default).toBe('name');
+    const preferences = new EdgePreferences();
+    for (const [stored, read] of [['prefix', 'prefix'], ['off', 'off'], ['local', 'name']]) {
+        Object.assign(preferences, { preferences: { get: () => stored } });
+        expect(preferences.vocabulary()).toBe(read);
     }
 });

@@ -3,6 +3,7 @@
 
 import { VNode, VNodeData, h } from 'snabbdom';
 import type { AlternativeRow } from '@catenary/model';
+import { vocabularyParts } from './vocabulary-color';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -324,7 +325,7 @@ export interface RowProps {
 }
 
 /**
- * A row of a shape card, as a member of a collection: path (prefix muted, local name colored; double-click edits it), value (click: pick
+ * A row of a shape card, as a member of a collection: path (vocabulary color: vocabulary-color.ts; double-click edits it), value (click: pick
  * another), cardinality (`data-card`: click cycles it), and ⇥ (show as an edge; or drag the row out of the card).
  */
 export function renderShapeRow(p: RowProps): VNode {
@@ -334,7 +335,7 @@ export function renderShapeRow(p: RowProps): VNode {
         h('span', { class: { 'row-out': true }, attrs: { title: 'Show the constraint as a hub with its member lines' } }, [arrowButton('out')])
     ]);
     return h('div', { class: { 'shape-row': true, 'row-group-member': p.group === 'member', relation: p.relation, selected: p.selected, invalid: p.violations > 0 }, attrs: { 'data-member': p.id } }, [
-        h('span', { class: { 'row-path': true }, attrs: { title: 'Path. Double-click or F2: edit' } }, p.parts.map(x => h('span', { style: x.color ? { color: x.color } : {}, class: { muted: !x.color } }, x.text))),
+        h('span', { class: { 'row-path': true }, attrs: { title: 'Path. Double-click or F2: edit' } }, vocabularyParts(p.parts).map(x => h('span', { style: x.color ? { color: x.color } : {}, class: { muted: x.muted } }, x.text))),
         h('span', { class: { 'row-range': true, [`leaf-${p.style}`]: true }, attrs: { title: 'Value. Click: change' } }, p.range),
         h('span', { class: { 'row-card': true }, attrs: { 'data-card': '1', title: 'Cardinality: click for the next one (0..* → 0..1 → 1 → 1..*)' } }, p.card),
         h('span', { class: { 'row-out': true }, attrs: { title: 'Show as an edge (or drag the row out of the card)' } }, [arrowButton('out')])

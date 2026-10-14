@@ -1308,7 +1308,10 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 -- The panel has three sections. Each heading names its scope.
 -- Style (saved in the view): color swatches and a custom color, display, size, edge sides, Reset route (the bends, §7.4), edge visibility.
 -- View (current view editor): Apply Layout with its algorithm and spacing, Show, the hidden edges.
--- Preferences (all views, not in the model): text sizes and edge style. The section is closed by default.
+-- Preferences (all views, not in the model): text sizes, edge style and vocabulary color. The section is closed by default.
+-- Vocabulary color of a property path (rows, property edges): each namespace has a color. Name (default): the local name in the color,
+-- the prefix gray. Prefix: the prefix in the color, the local name plain. Off: no color. Operators stay gray. An IRI without a prefix
+-- keeps its color, except with Off.
 -- Mixed values mark no option. A width or height below 40 shows a message and changes nothing.
 -- Stored colors: absent (default), none (transparent), presets 1–6, white, or a CSS color.
 -- Instance and node-shape cards: detailed or simple. Simple keeps the box and shows class and name only.
@@ -1322,6 +1325,14 @@ data AppearanceSection = StyleSection | ViewSettingsSection | PreferencesSection
 -- + Derived adds the derived connectors (§6.1): shape-to-shape targeting and sh:node, the checks of shown instances.
 -- Each level adds to the one before. Apply Layout places the derived connectors only at + Derived.
 data ShowLevel = Placed | PlusHidden | PlusDerived deriving (Eq, Ord, Enum, Bounded)
+data VocabularyColor = OnName | OnPrefix | NoVocabularyColor deriving (Eq, Enum, Bounded)
+-- | Which part of prefix:local has the namespace color: (prefix, local name).
+coloredParts :: VocabularyColor -> (Bool, Bool)
+coloredParts OnName = (False, True)
+coloredParts OnPrefix = (True, False)
+coloredParts NoVocabularyColor = (False, False)
+law_oneColoredPart :: VocabularyColor -> Bool
+law_oneColoredPart m = not (uncurry (&&) (coloredParts m))
 drawsHidden, drawsDerived :: ShowLevel -> Bool
 drawsHidden l = l >= PlusHidden
 drawsDerived l = l >= PlusDerived
