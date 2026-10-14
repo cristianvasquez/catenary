@@ -4,7 +4,7 @@
 import { VNode } from 'snabbdom';
 import type { Side } from '@catenary/model';
 import { ARROW_PATHS, colorVars, s, vars } from './card-chrome';
-import { vocabularyParts } from './vocabulary-color';
+import { Part, vocabularyParts } from './vocabulary-color';
 import { Cubic, EdgeStyle, NORMAL, Pt, along, curveAt, curvePath, curveSegments, facingPoint, linePath, port, routeSides } from './edge-route';
 
 export { facingPoint, nearestSide } from './edge-route';
@@ -30,7 +30,9 @@ export interface EdgeProps {
     hover: boolean;
     hidden: boolean;
     /** Shapes views: the label in parts (prefix muted, local name colored), the cardinality badge, and the logic handle when selected. */
-    parts?: { text: string; color?: string }[];
+    parts?: Part[];
+    /** Relation and bundle edges: the name in parts (vocabulary color), drawn at the place of `name`. */
+    nameParts?: Part[];
     card?: string;
     invalid?: boolean;
     logicHandle?: boolean;
@@ -130,7 +132,10 @@ export function renderEdge(p: EdgeProps): VNode {
     const label = p.parts
         ? s('text', { class: { 'edge-label': true, parts: true }, attrs: { x: at.x, y: at.y - fontSize * 0.7 }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } },
             vocabularyParts(p.parts).map(x => s('tspan', { class: { muted: x.muted }, style: x.color ? { fill: x.color } : {} }, [x.text])))
-        : s('text', { class: { 'edge-label': true }, attrs: { x: mid.x, y: mid.y }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } }, [p.hidden ? `${p.name} (hidden)` : p.name]);
+        : s('text', { class: { 'edge-label': true }, attrs: { x: mid.x, y: mid.y }, style: { fontSize: `${fontSize}px`, strokeWidth: `${fontSize * 0.4}px` } }, p.nameParts
+            ? [...vocabularyParts(p.nameParts), ...(p.hidden ? [{ text: ' (hidden)', muted: true }] : [])]
+                .map(x => s('tspan', { class: { muted: x.muted }, style: 'color' in x && x.color ? { fill: x.color } : {} }, [x.text]))
+            : [p.hidden ? `${p.name} (hidden)` : p.name]);
     const cardW = Math.max(26, 8 + (p.card?.length ?? 0) * 8) * k, cardH = 18 * k;
     // Below the line near the target end.
     const cardAt = { x: tail.x, y: tail.y + 13 * k };

@@ -17,6 +17,7 @@ import {
 import { Pt, edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrome';
 import { FanEdge, fanOut } from './edge-route';
 import { edgeStyle } from './edge-preferences';
+import type { Part } from './vocabulary-color';
 
 export { COLOR_NAMES, COLOR_ORDER, PRESETS } from './card-chrome';
 
@@ -97,6 +98,8 @@ export class GroupNode extends GNode {
 export class RelationEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [selectFeature, deletableFeature, hoverFeedbackFeature, fadeFeature];
     name = '';
+    /** The name in label parts (predicateParts): vocabulary color. */
+    parts: Part[] = [];
     fromSide: Side | '' = '';
     toSide: Side | '' = '';
     /** Bends of the route (UI §7.4). */
@@ -119,6 +122,7 @@ export class ArrowEdge extends GEdge {
 export class BundleEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [fadeFeature];
     name = '';
+    parts: Part[] = [];
     count = 1;
     lane = 0;
     lanes = 1;
@@ -172,7 +176,7 @@ export class OneOfNode extends ContainerNode {
 export class PropertyEdge extends GEdge {
     static override readonly DEFAULT_FEATURES = [selectFeature, deletableFeature, hoverFeedbackFeature, fadeFeature];
     name = '';
-    parts: { text: string; color?: string }[] = [];
+    parts: Part[] = [];
     card = '';
     violations = 0;
     canPutBack = false;
@@ -575,7 +579,8 @@ export class BundleEdgeView implements IView {
         if (!source || !target) return svg('g', null);
         const vnode = renderEdge({
             source: source.bounds, target: target.bounds, fromSide: '', toSide: '', lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge), zoom: zoomOf(edge), style: edgeStyle(),
-            name: edge.count > 1 ? `${edge.name} ×${edge.count}` : edge.name, color: '', selected: false, hover: false, hidden: false
+            name: edge.count > 1 ? `${edge.name} ×${edge.count}` : edge.name, color: '', selected: false, hover: false, hidden: false,
+            nameParts: edge.parts.length ? [...edge.parts, ...(edge.count > 1 ? [{ text: ` ×${edge.count}` }] : [])] : undefined
         });
         vnode.data!.class = { ...vnode.data!.class, 'catenary-bundle': true };
         return vnode;
@@ -592,7 +597,7 @@ export class RelationEdgeView implements IView {
         return renderEdge({
             source: source.bounds, target: target.bounds, fromSide: edge.fromSide, toSide: edge.toSide, vertices: edge.vertices, lane: edge.lane, lanes: edge.lanes, offsets: offsetsOf(edge),
             self: source === target, style: edgeStyle(),
-            zoom: zoomOf(edge), name: edge.name, color: edge.color, selected: edge.selected, hover: edge.hoverFeedback, hidden: edge.hidden
+            zoom: zoomOf(edge), name: edge.name, nameParts: edge.parts.length ? edge.parts : undefined, color: edge.color, selected: edge.selected, hover: edge.hoverFeedback, hidden: edge.hidden
         });
     }
 }

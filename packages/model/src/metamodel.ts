@@ -3,7 +3,7 @@
 
 import type { FieldRule, LinkRule, PaletteClass } from '@catenary/contracts';
 import { NS, TermJSON, localName } from './terms';
-import { compactParts, shortIri } from './shapes-doc';
+import { LabelPart, compactParts, iriParts, shortIri } from './shapes-doc';
 
 export interface FieldDef {
     path: string;
@@ -210,6 +210,11 @@ export function outgoingRelations(meta: Classes, from: string[]): RelationDef[] 
 }
 
 /** Label for a predicate: configured prefix and local name, else sh:name or its short IRI (including decoded urn:name labels). */
+/** Label parts of a relation predicate (iriParts): the drawn texts joined give predicateName. urn:name: is a prefix that is not drawn. */
+export function predicateParts(meta: Classes, predicate: string): LabelPart[] {
+    return compactParts(predicate) && !predicate.startsWith('urn:name:') ? iriParts(predicate) : iriParts(predicate, predicateName(meta, predicate));
+}
+
 export function predicateName(meta: Classes, predicate: string): string {
     const compact = compactParts(predicate);
     if (compact) return `${compact.prefix}:${compact.local}`;

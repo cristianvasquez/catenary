@@ -3,7 +3,7 @@
 
 import { VNode, VNodeData, h } from 'snabbdom';
 import type { AlternativeRow } from '@catenary/model';
-import { vocabularyParts } from './vocabulary-color';
+import { Part, vocabularyParts } from './vocabulary-color';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -313,7 +313,7 @@ export function renderShapeCard(p: ShapeCardProps, rows: VNode[], handles: VNode
 export interface RowProps {
     /** The property shape id, or the constraint id of a row group head (`data-member`, as a member row). */
     id: string;
-    parts: { text: string; color?: string }[];
+    parts: Part[];
     range: string;
     style: string;
     card: string;
@@ -330,7 +330,7 @@ export interface RowProps {
  */
 export function renderShapeRow(p: RowProps): VNode {
     if (p.group === 'head') return h('div', { class: { 'shape-row': true, 'row-group-head': true, selected: p.selected }, attrs: { 'data-member': p.id } }, [
-        h('span', { class: { 'row-group-name': true }, attrs: { title: 'Logical constraint: its members follow' } }, p.parts.map(x => x.text).join('')),
+        h('span', { class: { 'row-group-name': true }, attrs: { title: 'Logical constraint: its members follow' } }, p.parts.filter(x => !x.hidden).map(x => x.text).join('')),
         h('span', {}, ''), h('span', {}, ''),
         h('span', { class: { 'row-out': true }, attrs: { title: 'Show the constraint as a hub with its member lines' } }, [arrowButton('out')])
     ]);

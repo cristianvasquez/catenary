@@ -5,7 +5,7 @@ import type { TargetMatch } from '@catenary/shacl/common';
 // bundle = `<id of its first relation>_bundle`.
 
 import { Doc, View, boxes, cardOf, edgeLayout, elementOfId, relationsInView } from './doc';
-import { Classes, predicateName, primaryClass } from './metamodel';
+import { Classes, predicateName, predicateParts, primaryClass } from './metamodel';
 import { localName } from './terms';
 import type { Violation } from './validation';
 import { type ViewFigures, partIsRow } from './notation-join';
@@ -170,13 +170,13 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
             const layout = edgeLayout(view, r.id);
             return {
                 type: TYPES.RELATION, id: layout?.id ?? r.id, element: r.id, sourceId: box(r.subject), targetId: box(r.object),
-                name: predicateName(meta, r.predicate),
+                name: predicateName(meta, r.predicate), parts: predicateParts(meta, r.predicate),
                 fromSide: layout?.fromSide ?? '', toSide: layout?.toSide ?? '', vertices: layout?.vertices ?? [], color: layout?.color ?? '',
                 hidden: layout?.hidden === true, ...lane(box(r.subject), box(r.object))
             };
         }),
         ...[...bundles.values()].map(b => ({
-            type: TYPES.BUNDLE, id: b.id, sourceId: b.source, targetId: b.target, name: predicateName(meta, b.predicate), count: b.count,
+            type: TYPES.BUNDLE, id: b.id, sourceId: b.source, targetId: b.target, name: predicateName(meta, b.predicate), parts: predicateParts(meta, b.predicate), count: b.count,
             ...lane(b.source, b.target)
         }))
     ];

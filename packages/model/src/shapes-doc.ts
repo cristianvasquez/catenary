@@ -563,24 +563,52 @@ export function verbalizeShape(shapes: ShapesModel, s: NodeShape, schemeLabel: (
     return lines;
 }
 
-/** Color of a namespace for edge labels: a stable pick from a small palette. */
+/** Color of a namespace for edge labels: a stable pick from a small palette. All urn:name IRIs share the namespace "urn:name:". */
 export function namespaceColor(iri: string): string {
     const c = compactParts(iri);
-    const ns = c ? PREFIXES[c.prefix] : iri.replace(/[^#/]*$/, '');
+    const ns = iri.startsWith('urn:name:') ? 'urn:name:' : c ? PREFIXES[c.prefix] : iri.replace(/[^#/]*$/, '');
     let h = 0;
     for (let i = 0; i < ns.length; i++) h = (h * 31 + ns.charCodeAt(i)) >>> 0;
     return NS_COLORS[h % NS_COLORS.length];
 }
 const NS_COLORS = ['#5ad3c4', '#e070c8', '#e0a050', '#7aa7ff', '#9bd46a', '#f07a7a'];
 
-/** Label parts of a path: prefixes and operators muted, local names in the color of their namespace. */
-export function pathParts(p: PathJSON): { text: string; color?: string }[] {
-    const parts: { text: string; color?: string }[] = [];
-    for (const token of formatPath(p).split(/([()|/^])/).filter(Boolean)) {
-        const iri = expandIri(token);
-        const c = iri ? compactParts(iri) : undefined;
-        if (c) parts.push({ text: c.prefix + ':' }, { text: c.local, color: namespaceColor(iri!) });
-        else parts.push({ text: token, color: iri ? namespaceColor(iri) : undefined });
-    }
+/** A part of a label. `prefix`: the prefix of the next part (a local name). `hidden`: not drawn (the prefix urn:name:). */
+export interface LabelPart { text: string; color?: string; prefix?: boolean; hidden?: boolean }
+
+/** The prefix of canonical-md names. It is a prefix that is not drawn: `<urn:name:reads>` shows "reads". */
+export const NAME_PREFIX = 'urn:name:';
+
+/**
+ * Label parts of an IRI: the prefix part, then the local name in the color of the namespace. `local`: the text of the local name, when
+ * the label is not the local name of the IRI (sh:name). An IRI without a prefix: one part in the color of its namespace.
+ */
+export function iriParts(iri: string, local?: string): LabelPart[] {
+    const color = namespaceColor(iri);
+    if (iri.startsWith(NAME_PREFIX)) return [{ text: NAME_PREFIX, prefix: true, hidden: true }, { text: local ?? compactIri(iri), color }];
+    const c = compactParts(iri);
+    if (c) return [{ text: c.prefix + ':', prefix: true }, { text: local ?? c.local, color }];
+    return [{ text: local ?? compactIri(iri), color }];
+}
+
+/**
+ * Label parts of a path: the parts of each IRI (iriParts), and the operators. The drawn texts joined give formatPath. Built from the path,
+ * not from its text: a name can contain an operator character.
+ */
+export function pathParts(p: PathJSON): LabelPart[] {
+    const parts: LabelPart[] = [];
+    const add = (x: PathJSON, parent?: 'sequence' | 'alternative' | 'inverse') => {
+        const needs = (x.kind === 'alternative' && !!parent && parent !== 'alternative') || (x.kind === 'sequence' && parent === 'inverse');
+        if (needs) parts.push({ text: '(' });
+        switch (x.kind) {
+            case 'iri': parts.push(...iriParts(x.iri)); break;
+            case 'inverse': parts.push({ text: '^' }); add(x.path, 'inverse'); break;
+            case 'sequence': x.items.forEach((y, i) => { if (i) parts.push({ text: '/' }); add(y, 'sequence'); }); break;
+            case 'alternative': x.items.forEach((y, i) => { if (i) parts.push({ text: '|' }); add(y, 'alternative'); }); break;
+            case 'unsupported': parts.push({ text: x.text }); break;
+        }
+        if (needs) parts.push({ text: ')' });
+    };
+    add(p);
     return parts;
 }

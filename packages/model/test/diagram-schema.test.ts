@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, TYPES, Violation, toSchema, emptyShapes } from '../src';
+import { Doc, LabelPart, TYPES, Violation, namespaceColor, toSchema, emptyShapes } from '../src';
 
 function document(): Doc {
     const instances = Object.fromEntries(['a', 'b', 'outside'].map(id => [id, {
@@ -81,8 +81,20 @@ describe('diagram read model', () => {
         const children = render(doc, true);
         expect(children.filter(e => e.type === TYPES.CARD).map(e => e.id)).toEqual(['c']);
         expect(children.filter(e => e.type === TYPES.RELATION)).toEqual([]);
-        expect(children.filter(e => e.type === TYPES.BUNDLE)).toMatchObject([{ id: 'ac_bundle', sourceId: 'col', targetId: 'c', count: 2, lanes: 1 }]);
+        expect(children.filter(e => e.type === TYPES.BUNDLE)).toMatchObject([{ id: 'ac_bundle', sourceId: 'col', targetId: 'c', count: 2, lanes: 1, parts: [{ text: 'rel', color: namespaceColor('urn:rel') }] }]);
         expect(children.find(e => e.type === TYPES.COLLECTION)).toMatchObject({ id: 'col', members: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }] });
+    });
+
+    it('a relation label has parts: prefix and local name, urn:name: a hidden prefix; the drawn parts join to the name (UI §7.2)', () => {
+        const DCT = 'http://purl.org/dc/terms/';
+        const doc = document();
+        doc.relations.ab.predicate = DCT + 'hasPart';
+        doc.relations.ba = { id: 'ba', subject: 'b', predicate: 'urn:name:reads', object: 'a' };
+        doc.views.v.edges = [];
+        const edges = render(doc).filter(e => e.type === TYPES.RELATION) as unknown as { id: string; name: string; parts: LabelPart[] }[];
+        expect(edges.find(e => e.id === 'ab')!.parts).toEqual([{ text: 'dct:', prefix: true }, { text: 'hasPart', color: namespaceColor(DCT + 'hasPart') }]);
+        expect(edges.find(e => e.id === 'ba')!.parts).toEqual([{ text: 'urn:name:', prefix: true, hidden: true }, { text: 'reads', color: namespaceColor('urn:name:reads') }]);
+        for (const e of edges) expect(e.parts.filter(x => !x.hidden).map(x => x.text).join('')).toBe(e.name);
     });
 
     it('does not leave cards or edges behind when their view is deleted', () => {

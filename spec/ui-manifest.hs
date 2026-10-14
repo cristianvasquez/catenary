@@ -1309,9 +1309,12 @@ law_noElementGeometry e = not (isPlacement e) ==> isNothing (geometryOf e)
 -- Style (saved in the view): color swatches and a custom color, display, size, edge sides, Reset route (the bends, §7.4), edge visibility.
 -- View (current view editor): Apply Layout with its algorithm and spacing, Show, the hidden edges.
 -- Preferences (all views, not in the model): text sizes, edge style and vocabulary color. The section is closed by default.
--- Vocabulary color of a property path (rows, property edges): each namespace has a color. Name (default): the local name in the color,
--- the prefix gray. Prefix: the prefix in the color, the local name plain. Off: no color. Operators stay gray. An IRI without a prefix
--- keeps its color, except with Off.
+-- Vocabulary color of a label that names IRIs: property paths (rows, property edges) and predicates (relation and bundle edges).
+-- Each IRI is a prefix and a local name, and each namespace has a color. Name (default): the local name in the color, the prefix gray.
+-- Prefix: the prefix in the color, the local name plain. Off: no color. Operators and the count of a bundle stay gray.
+-- urn:name: is a prefix that is not drawn: <urn:name:reads> shows "reads". Name colors "reads"; Prefix and Off draw it plain.
+-- An IRI without a prefix is one part in its color, except with Off. A label from sh:name replaces the local name text.
+-- The parts come from the IRIs, not from the label text: a name can contain an operator character such as "/".
 -- Mixed values mark no option. A width or height below 40 shows a message and changes nothing.
 -- Stored colors: absent (default), none (transparent), presets 1–6, white, or a CSS color.
 -- Instance and node-shape cards: detailed or simple. Simple keeps the box and shows class and name only.

@@ -3,7 +3,7 @@
 
 import { View, byLabel, inView } from './doc';
 import { TYPES, memberListHeight } from './diagram-schema';
-import { NodeShape, PropertyShape, Range, ShapesModel, SimpleRange, alternativesOf, rangeKey, rangeText, valueSetOf } from './shapes-doc';
+import { LabelPart, NodeShape, PropertyShape, Range, ShapesModel, SimpleRange, alternativesOf, rangeKey, rangeText, valueSetOf } from './shapes-doc';
 import { iriId } from './ids';
 import { localName } from './terms';
 
@@ -31,7 +31,7 @@ export function leafStyle(r: Range): LeafStyle {
 export interface ShapeRow {
     type: typeof TYPES.ROW;
     id: string;
-    parts: { text: string; color?: string }[];
+    parts: LabelPart[];
     range: string;
     style: LeafStyle;
     card: string;

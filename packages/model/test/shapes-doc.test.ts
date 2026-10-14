@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { NodeShape, Range, classIri, emptyShapes, iriText, parseIri, rangeOfShape } from '../src';
+import { NodeShape, PathJSON, Range, classIri, emptyShapes, formatPath, iriText, namespaceColor, parseIri, pathParts, rangeOfShape } from '../src';
 
 it.each<[string, Range | undefined]>([
     ['classShape', { kind: 'class', class: 'urn:Class' }],
@@ -52,4 +52,22 @@ it('a typed class name resolves to the known class with that name; an IRI stays;
     expect(classIri('Unknown', known)).toEqual({ iri: 'urn:name:Unknown' });
     expect(classIri('Item', known)).toEqual({ error: expect.stringContaining('More than one class is named "Item"') });
     expect(classIri('  ', known)).toBeUndefined();
+});
+
+it('pathParts: urn:name: is a hidden prefix; a name with an operator character stays one part; the drawn parts join to formatPath (UI §7.2)', () => {
+    const DCT = 'http://purl.org/dc/terms/';
+    const iri = (i: string): PathJSON => ({ kind: 'iri', iri: i });
+    const name = iri('urn:name:responsible%20for'), slash = iri('urn:name:in%2Fout');
+    expect(pathParts(name)).toEqual([{ text: 'urn:name:', prefix: true, hidden: true }, { text: 'responsible for', color: namespaceColor('urn:name:x') }]);
+    const drawn = (p: PathJSON) => pathParts(p).filter(x => !x.hidden).map(x => x.text);
+    expect(drawn(slash)).toEqual([formatPath(slash)]);
+    const paths: PathJSON[] = [
+        { kind: 'sequence', items: [iri(DCT + 'type'), name, iri('urn:p')] },
+        { kind: 'inverse', path: { kind: 'sequence', items: [name, slash] } },
+        { kind: 'alternative', items: [{ kind: 'alternative', items: [name, iri(DCT + 'type')] }, { kind: 'sequence', items: [{ kind: 'alternative', items: [name, slash] }, iri(DCT + 'type')] }] }
+    ];
+    for (const p of paths) expect(drawn(p).join('')).toBe(formatPath(p));
+    expect(pathParts(paths[0]).map(x => [x.text, !!x.color, !!x.prefix])).toEqual([
+        ['dct:', false, true], ['type', true, false], ['/', false, false], ['urn:name:', false, true], ['responsible for', true, false], ['/', false, false], ['<urn:p>', true, false]
+    ]);
 });
