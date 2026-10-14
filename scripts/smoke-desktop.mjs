@@ -69,6 +69,10 @@ function copyTree(from, to) {
 mkdirSync(run);
 if (!launcher) {
     copyTree(join(root, 'examples/bookshop'), ws);
+    // The edits below check that each write is committed: auto-commit is off by default (ws:autoCommit, spec/manifest.hs §10.3).
+    const manifest = join(ws, 'workspace.trig');
+    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('ws:defaultFile "data.ttl";', 'ws:autoCommit true;\n    ws:defaultFile "data.ttl";'));
+    if (!readFileSync(manifest, 'utf8').includes('ws:autoCommit true')) throw new Error(`no ws:defaultFile line in ${manifest}`);
     // The line ends of the copy, whatever the checkout gave (core.autocrlf on Windows): LF, or CRLF with --crlf.
     for (const f of readdirSync(ws, { recursive: true }).map(f => join(ws, f)).filter(f => /\.(ttl|trig)$/.test(f))) {
         writeFileSync(f, readFileSync(f, 'utf8').replace(/\r?\n/g, crlf ? '\r\n' : '\n'));
