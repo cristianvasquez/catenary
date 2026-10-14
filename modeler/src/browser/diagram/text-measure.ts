@@ -108,3 +108,42 @@ function clipRect(element: Element, fo: Element): { left: number; right: number;
     }
     return box;
 }
+
+/**
+ * Fonts that a viewer finds by their name. The window draws a font list ("Helvetica Neue", Helvetica, Arial, sans-serif) with a font that
+ * it finds through its own aliases (fontconfig: Arial → Liberation Sans); a viewer without these aliases (resvg, Zed) finds no font of
+ * the list and draws another one. Real family names first: a name that is only an alias draws the same pixels as its font.
+ */
+const CANDIDATES = ['Liberation Sans', 'Arimo', 'Nimbus Sans', 'Noto Sans', 'DejaVu Sans', 'Cantarell', 'Ubuntu', 'Roboto', 'Inter', 'Open Sans',
+    'Fira Sans', 'Source Sans 3', 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial', 'Verdana', 'Tahoma'];
+const PROBE = 'Hamburgefonstiv 0123 dcat:inSeries EP_PLEN_DOC';
+const drawnFonts = new Map<string, string | undefined>();
+
+/** The installed font that the window draws for a font list: the candidate that draws the same pixels. Undefined: none of them. */
+export function drawnFont(list: string): string | undefined {
+    if (drawnFonts.has(list)) return drawnFonts.get(list);
+    const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    let found: string | undefined;
+    if (context) {
+        context.canvas.width = 1200;
+        context.canvas.height = 60;
+        const pixels = (font: string) => {
+            context.clearRect(0, 0, 1200, 60);
+            context.font = `40px ${font}`;
+            context.fillText(PROBE, 0, 45);
+            return context.getImageData(0, 0, 1200, 60).data;
+        };
+        const target = pixels(list);
+        // A candidate that is not installed draws monospace, which differs from the list.
+        found = CANDIDATES.find(c => pixels(`"${c}", monospace`).every((v, i) => v === target[i]));
+    }
+    drawnFonts.set(list, found);
+    return found;
+}
+
+/** The font list with the font that the window draws in front (drawnFont), so that every viewer finds that font by its name. */
+export function withDrawnFont(list: string): string {
+    const font = drawnFont(list);
+    const first = list.split(',')[0].trim().replace(/^["']|["']$/g, '');
+    return font && font !== first ? `"${font}", ${list}` : list;
+}

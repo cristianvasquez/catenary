@@ -15,7 +15,7 @@ import type { ExportProblem, UnresolvedEmbed } from '@catenary/model';
 import { MarkdownExportCheck, MarkdownExportResult } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
 import { MarkdownExportDialog } from './markdown-export-dialog';
-import { EDIT_CONTROLS, MeasuringSvgExporter, TextLine, foreignObjectKey } from './text-measure';
+import { EDIT_CONTROLS, MeasuringSvgExporter, TextLine, foreignObjectKey, withDrawnFont } from './text-measure';
 import { ViewEditors } from './view-editors';
 import { ViewDiagramWidget } from './view-widget';
 
@@ -149,7 +149,7 @@ export class MarkdownExport {
                 await this.shell.revealWidget(widget.id);
                 if (widget instanceof ViewDiagramWidget) await widget.whenShowUpdated();
                 const result = await widget.actionDispatcher.request(RequestExportAction.create('svg'));
-                svgs[iri] = forDocument(result.data, widget.diContainer.get(MeasuringSvgExporter).lines);
+                svgs[iri] = forDocument(result.data, widget.diContainer.get(MeasuringSvgExporter).lines, withDrawnFont);
             }
             return svgs;
         } finally {
@@ -187,7 +187,7 @@ const MARGIN = 8;
  * are removed. Each foreignObject (card and note contents, HTML) becomes SVG text at the positions measured in the export canvas (text-measure.ts), so
  * that viewers without HTML in SVG (librsvg, imv) draw the same lines.
  */
-export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Map()): string {
+export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Map(), fonts: (list: string) => string = list => list): string {
     const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
     const root = doc.documentElement;
     const bounds = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
@@ -207,6 +207,13 @@ export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Ma
         const style = e.style;
         for (const p of [...style]) if (p.startsWith('--') || (e === root && CANVAS_PROPERTY.test(p))) style.removeProperty(p);
         if (!style.length) e.removeAttribute('style');
+    }
+    // Each font list names the font that the canvas draws first (text-measure.ts withDrawnFont).
+    for (const e of [root, ...root.querySelectorAll<SVGElement>('*')]) {
+        const family = e.style?.fontFamily;
+        if (family) e.style.fontFamily = fonts(family);
+        const attr = e.getAttribute('font-family');
+        if (attr) e.setAttribute('font-family', fonts(attr));
     }
     root.querySelectorAll<SVGElement>('*').forEach(e => {
         for (const attr of ['fill', 'stroke', 'color']) {
