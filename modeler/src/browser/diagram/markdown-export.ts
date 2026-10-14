@@ -143,8 +143,11 @@ export class MarkdownExport {
                     opened.push(widget);
                 }
                 await widget.actionDispatcher.onceModelInitialized();
+                await this.shell.revealWidget(widget.id);
+                await settled(widget.node);
                 const result = await widget.actionDispatcher.request(RequestExportAction.create('svg'));
-                svgs[iri] = forDocument(result.data);
+                const live = widget.node.querySelector<SVGSVGElement>('svg.sprotty-graph');
+                svgs[iri] = forDocument(result.data, live ? measureText(live) : new Map());
             }
             return svgs;
         } finally {
@@ -176,20 +179,31 @@ const EDIT_CONTROLS = '.shape-add-row, .member-add, .member-take-out, .member-re
 /** Properties of the canvas element (its size in the window, its box), not of the diagram. */
 const CANVAS_PROPERTY = /^(width|height|(min-|max-)?(block|inline)-size|(min|max)-(width|height)|flex|perspective-origin|transform-origin|cursor|border|user-select|position|inset|top|left|right|bottom)/;
 
+/** The view box from getBBox does not contain the stroke width: a margin keeps the frame borders and titles. */
+const MARGIN = 8;
+
 /**
  * The export copies computed styles: the root also gets the size of the canvas (block-size, width, height) and every CSS
  * custom property of the window (about 100 KB). Computed values do not use custom properties, so they are removed on all
  * elements. The size goes to the width and height attributes, so that the page CSS can scale the figure down. Edit controls
- * are removed.
+ * are removed. Each foreignObject (card and note contents, HTML) becomes SVG text at the positions measured on the canvas (measureText), so
+ * that viewers without HTML in SVG (librsvg, imv) draw the same lines.
  */
-export function forDocument(svg: string): string {
+export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Map()): string {
     const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
     const root = doc.documentElement;
-    const box = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
-    if (!(root instanceof SVGSVGElement) || box?.length !== 4) return svg;
+    const bounds = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+    if (!(root instanceof SVGSVGElement) || bounds?.length !== 4) return svg;
+    const [x, y, w, h] = bounds;
+    const box = [x - MARGIN, y - MARGIN, w + 2 * MARGIN, h + 2 * MARGIN];
+    root.setAttribute('viewBox', box.join(' '));
     root.querySelectorAll(EDIT_CONTROLS).forEach(e => e.remove());
     addBackground(root, box);
-    replaceForeignObjects(root);
+    for (const fo of [...root.querySelectorAll('foreignObject')]) {
+        const g = doc.createElementNS(SVG_NS, 'g');
+        for (const line of lines.get(foreignObjectKey(fo)) ?? []) g.appendChild(textElement(doc, line));
+        fo.replaceWith(g);
+    }
     for (const e of [root, ...root.querySelectorAll<SVGElement | HTMLElement>('[style]')]) {
         normalizeStyle(e);
         const style = e.style;
@@ -207,56 +221,146 @@ export function forDocument(svg: string): string {
     return new XMLSerializer().serializeToString(root);
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * A view editor that opens draws its cards and sets its zoom after the model is initialized. Wait until the canvas does not change for
+ * 300 ms (at most 5 s), so that the export and the text measurement read the same final canvas.
+ */
+async function settled(node: HTMLElement): Promise<void> {
+    const state = () => {
+        const svg = node.querySelector('svg.sprotty-graph');
+        return `${svg?.querySelectorAll('foreignObject').length}|${svg?.querySelector('g')?.getAttribute('transform')}|${svg?.getBoundingClientRect().width}`;
+    };
+    const end = Date.now() + 5000;
+    let last = state(), since = Date.now();
+    while (Date.now() < end && Date.now() - since < 300) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const now = state();
+        if (now !== last) [last, since] = [now, Date.now()];
+    }
+    await document.fonts.ready;
+}
+
+/** One line of one text style, in the coordinates of its foreignObject: x of the start, y of the baseline, width on the canvas. */
+export interface TextLine {
+    text: string; x: number; y: number; width: number;
+    fill: string; fontFamily: string; fontSize: number; fontWeight: string; fontStyle: string;
+}
+
+/** The same foreignObject in the canvas and in its export: the nearest ancestor with an id, and the index under it. */
+function foreignObjectKey(fo: Element): string {
+    const owner = fo.parentElement?.closest('[id]');
+    return `${owner?.id ?? ''}#${owner ? [...owner.querySelectorAll<Element>('foreignObject')].indexOf(fo) : 0}`;
+}
+
+/**
+ * The text lines of each foreignObject of the canvas. Each character is measured (Range); characters of one text node with the same top are
+ * one line. Characters outside a clipping ancestor (overflow, line clamp) are not drawn. The baseline comes from the font ascent.
+ */
+export function measureText(svg: SVGSVGElement): Map<string, TextLine[]> {
+    const result = new Map<string, TextLine[]>();
+    const doc = svg.ownerDocument;
+    const context = doc.createElement('canvas').getContext('2d');
+    for (const fo of svg.querySelectorAll<SVGForeignObjectElement>('foreignObject')) {
+        const toLocal = fo.getScreenCTM()?.inverse();
+        if (!toLocal) continue;
+        const lines: TextLine[] = [];
+        const walker = doc.createTreeWalker(fo, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+            const parent = node.parentElement;
+            if (!parent || !node.data.trim()) continue;
+            const style = getComputedStyle(parent);
+            if (style.visibility === 'hidden') continue;
+            const clip = clipRect(parent, fo);
+            const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+            let ascent = parseFloat(style.fontSize) * 0.8, descent = parseFloat(style.fontSize) * 0.2;
+            if (context) {
+                context.font = font;
+                const m = context.measureText('Hg');
+                if (m.fontBoundingBoxAscent) [ascent, descent] = [m.fontBoundingBoxAscent, m.fontBoundingBoxDescent];
+            }
+            const upper = style.textTransform === 'uppercase';
+            const range = doc.createRange();
+            let line: { text: string; left: number; right: number; top: number; bottom: number } | undefined;
+            const flush = () => {
+                if (!line?.text.trim()) return;
+                const scale = (line.bottom - line.top) / (ascent + descent) || 1;
+                const start = new DOMPoint(line.left, line.top + ascent * scale).matrixTransform(toLocal);
+                const end = new DOMPoint(line.right, line.top + ascent * scale).matrixTransform(toLocal);
+                lines.push({
+                    text: line.text.replace(/\s+$/, ''), x: start.x, y: start.y, width: end.x - start.x, fill: style.color,
+                    fontFamily: style.fontFamily, fontSize: parseFloat(style.fontSize),
+                    fontWeight: style.fontWeight, fontStyle: style.fontStyle
+                });
+            };
+            for (let i = 0; i < node.data.length; i++) {
+                range.setStart(node, i);
+                range.setEnd(node, i + 1);
+                const r = range.getBoundingClientRect();
+                if (!r.width && !r.height) continue;
+                const visible = r.left + r.width / 2 >= clip.left && r.left + r.width / 2 <= clip.right && r.top + r.height / 2 >= clip.top && r.top + r.height / 2 <= clip.bottom;
+                if (!visible) continue;
+                const ch = upper ? node.data[i].toUpperCase() : node.data[i];
+                if (line && Math.abs(r.top - line.top) < r.height / 2) {
+                    line.text += /\s/.test(ch) ? ' ' : ch;
+                    if (!/\s/.test(ch)) line.right = r.right;
+                } else {
+                    flush();
+                    line = /\s/.test(ch) ? undefined : { text: ch, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+                }
+            }
+            flush();
+        }
+        result.set(foreignObjectKey(fo), lines);
+    }
+    return result;
+}
+
+/** The visible box of an element: the box of the foreignObject cut by each ancestor that clips its overflow. */
+function clipRect(element: Element, fo: Element): { left: number; right: number; top: number; bottom: number } {
+    const f = fo.getBoundingClientRect();
+    const box = { left: f.left, right: f.right, top: f.top, bottom: f.bottom };
+    for (let e: Element | null = element; e && e !== fo; e = e.parentElement) {
+        const style = getComputedStyle(e);
+        if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+        const r = e.getBoundingClientRect();
+        box.left = Math.max(box.left, r.left); box.right = Math.min(box.right, r.right);
+        box.top = Math.max(box.top, r.top); box.bottom = Math.min(box.bottom, r.bottom);
+    }
+    return box;
+}
+
+/** A text line as SVG. textLength keeps the measured width when a viewer uses another font. */
+function textElement(doc: Document, line: TextLine): SVGTextElement {
+    const t = doc.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    const round = (n: number) => String(Math.round(n * 100) / 100);
+    t.setAttribute('x', round(line.x));
+    t.setAttribute('y', round(line.y));
+    t.setAttribute('fill', normalizeColor(line.fill));
+    t.setAttribute('font-family', line.fontFamily);
+    t.setAttribute('font-size', round(line.fontSize));
+    if (line.fontWeight !== '400') t.setAttribute('font-weight', line.fontWeight);
+    if (line.fontStyle !== 'normal') t.setAttribute('font-style', line.fontStyle);
+    if (line.width > 0) {
+        t.setAttribute('textLength', round(line.width));
+        t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+    }
+    t.setAttribute('xml:space', 'preserve');
+    t.textContent = line.text;
+    return t;
+}
+
 function addBackground(root: SVGSVGElement, box: number[]): void {
     const background = root.style.backgroundColor;
     if (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)') return;
-    const rect = root.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    const rect = root.ownerDocument.createElementNS(SVG_NS, 'rect');
     rect.setAttribute('x', String(box[0]));
     rect.setAttribute('y', String(box[1]));
     rect.setAttribute('width', String(box[2]));
     rect.setAttribute('height', String(box[3]));
     rect.setAttribute('fill', normalizeColor(background));
     root.insertBefore(rect, root.firstChild);
-}
-
-function replaceForeignObjects(root: SVGSVGElement): void {
-    for (const fo of [...root.querySelectorAll<SVGForeignObjectElement>('foreignObject')]) {
-        const text = foreignObjectText(fo);
-        if (text) fo.replaceWith(text);
-    }
-}
-
-function foreignObjectText(fo: SVGForeignObjectElement): SVGGElement | undefined {
-    const doc = fo.ownerDocument;
-    const g = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
-    const x = numberAttr(fo, 'x') + 14;
-    let y = numberAttr(fo, 'y') + 24;
-    const body = fo.firstElementChild as HTMLElement | undefined;
-    const parts = body ? [...body.children] as HTMLElement[] : [];
-    const items = parts.length ? parts : [body].filter((e): e is HTMLElement => !!e);
-    for (const item of items) {
-        const value = (item.textContent ?? '').trim();
-        if (!value) continue;
-        const size = parseFloat(item.style.fontSize || '') || (item.classList.contains('card-name') ? 22 : 14);
-        const lineHeight = parseFloat(item.style.lineHeight || '') || size * 1.2;
-        const t = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x', String(x));
-        t.setAttribute('y', String(y));
-        t.setAttribute('fill', normalizeColor(item.style.color || body?.style.color || 'rgb(204, 204, 204)'));
-        t.setAttribute('font-size', String(size));
-        t.setAttribute('font-family', 'Helvetica Neue, Helvetica, Arial, sans-serif');
-        if (item.style.fontWeight) t.setAttribute('font-weight', item.style.fontWeight);
-        if (item.style.textTransform === 'uppercase') t.textContent = value.toUpperCase();
-        else t.textContent = value;
-        g.appendChild(t);
-        y += lineHeight + (item.classList.contains('card-name') ? 10 : 4);
-    }
-    return g.childNodes.length ? g : undefined;
-}
-
-function numberAttr(e: Element, name: string): number {
-    const n = Number(e.getAttribute(name) ?? 0);
-    return Number.isFinite(n) ? n : 0;
 }
 
 function normalizeStyle(e: SVGElement | HTMLElement): void {

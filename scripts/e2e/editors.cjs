@@ -781,13 +781,14 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
     const svg = fs.readFileSync(path.join(out, link), 'utf8');
     assert.match(svg, /^<svg[^>]*\swidth="\d+"[^>]*>/);
     assert.ok(svg.includes('<g'), 'the SVG has the diagram');
-    assert.ok(!svg.includes('<foreignObject'), 'the exported SVG uses native SVG text, not browser-only HTML');
+    assert.ok(!svg.includes('<foreignObject'), 'the exported SVG uses SVG text, not HTML that only browsers draw');
     assert.ok(!svg.includes('color(srgb'), 'the exported SVG uses portable colors');
     assert.match(svg, /<rect[^>]*\sfill="rgb\(30, 30, 30\)"/, 'the exported SVG has an explicit background');
     for (const control of ['catenary-halo', 'sprotty-resize-handle', 'catenary-resize-handle', 'shape-add-row', 'selected']) {
       assert.ok(!new RegExp(`class="[^"]*\\b${control}\\b`).test(svg), `no ${control} in the SVG`);
     }
   }
+  assert.ok(links.some(([, link]) => /<text[^>]*\stextLength="[\d.]+"[^>]*>[^<]+<\/text>/.test(fs.readFileSync(path.join(out, link), 'utf8'))), 'card text is measured SVG text');
   assert.deepEqual(fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]), before, 'the source documents do not change');
 
   // A view IRI that names no view: an error with the file, the line and the IRI; nothing is written.
