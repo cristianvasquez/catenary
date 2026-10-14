@@ -3,7 +3,7 @@
 
 import type { FieldRule, LinkRule, PaletteClass } from '@catenary/contracts';
 import { NS, TermJSON, localName } from './terms';
-import { LabelPart, compactParts, iriParts, shortIri } from './shapes-doc';
+import { LabelPart, NAME_PREFIX, compactParts, iriParts, shortIri } from './shapes-doc';
 
 export interface FieldDef {
     path: string;
@@ -209,14 +209,17 @@ export function outgoingRelations(meta: Classes, from: string[]): RelationDef[] 
     return result;
 }
 
-/** Label for a predicate: configured prefix and local name, else sh:name or its short IRI (including decoded urn:name labels). */
 /** Label parts of a relation predicate (iriParts): the drawn texts joined give predicateName. urn:name: is a prefix that is not drawn. */
 export function predicateParts(meta: Classes, predicate: string): LabelPart[] {
-    return compactParts(predicate) && !predicate.startsWith('urn:name:') ? iriParts(predicate) : iriParts(predicate, predicateName(meta, predicate));
+    return compactParts(predicate) && !predicate.startsWith(NAME_PREFIX) ? iriParts(predicate) : iriParts(predicate, predicateName(meta, predicate));
 }
 
+/**
+ * Label for a predicate: configured prefix and local name, else sh:name or its short IRI (including decoded urn:name labels). urn:name: is
+ * never shown, also when the workspace configures a prefix for it.
+ */
 export function predicateName(meta: Classes, predicate: string): string {
-    const compact = compactParts(predicate);
+    const compact = predicate.startsWith(NAME_PREFIX) ? undefined : compactParts(predicate);
     if (compact) return `${compact.prefix}:${compact.local}`;
     for (const c of meta.classes) {
         const hit = c.relations.find(r => r.path === predicate) ?? c.fields.find(f => f.path === predicate);

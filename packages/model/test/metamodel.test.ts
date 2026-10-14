@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANY_RESOURCE, mergeContributions, permittedRelations, predicateName, primaryClass, pluginRanges, type Classes, type PluginContributions } from '../src/metamodel';
-import { formatPath, shortIri } from '../src/shapes-doc';
+import { DEFAULT_PREFIXES, formatPath, setPrefixes, shortIri } from '../src/shapes-doc';
+import { predicateParts } from '../src/metamodel';
 import { NS, localName } from '../src/terms';
 
 describe('predicate labels', () => {
@@ -14,6 +15,17 @@ describe('predicate labels', () => {
         expect(predicateName(meta, predicate)).toBe('related item');
         meta.classes[0].relations[0].name = 'Custom relation';
         expect(predicateName(meta, predicate)).toBe('Custom relation');
+    });
+
+    it('a prefix configured for urn:name: is not shown: the relation label is the name, as for property paths (roborev 183)', () => {
+        setPrefixes({ ...DEFAULT_PREFIXES, n: 'urn:name:' });
+        try {
+            expect(predicateName({ classes: [] }, 'urn:name:reads')).toBe('reads');
+            expect(predicateName({ classes: [] }, 'urn:name:reads')).toBe(formatPath({ kind: 'iri', iri: 'urn:name:reads' }));
+            expect(predicateParts({ classes: [] }, 'urn:name:reads').filter(p => !p.hidden).map(p => p.text).join('')).toBe('reads');
+        } finally {
+            setPrefixes(DEFAULT_PREFIXES);
+        }
     });
 
     it('uses the same prefixed path for instance relations and shape links, even with sh:name', () => {
