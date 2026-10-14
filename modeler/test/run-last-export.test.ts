@@ -14,10 +14,12 @@ import { MarkdownExport } from '../src/browser/diagram/markdown-export';
 function fixture(workspace: string) {
     const data: Record<string, unknown> = {};
     const exports: { destination: string; finish: (ok: boolean) => void }[] = [];
+    // Checks wait for `check.release()` only while `check.held` is true.
+    const check = { held: false, waiting: [] as (() => void)[], release() { this.held = false; this.waiting.splice(0).forEach(r => r()); } };
     const model = {
         snapshot: { file: workspace },
         service: {
-            checkMarkdownExport: async (r: { destination: string }) => ({ ok: true, root: '/src', documents: ['a.md'], views: [], destination: r.destination, unresolved: [] }),
+            checkMarkdownExport: async (r: { destination: string }) => (check.held && await new Promise<void>(r => check.waiting.push(r)), { ok: true, root: '/src', documents: ['a.md'], views: [], destination: r.destination, unresolved: [] }),
             exportMarkdown: (r: { destination: string }) => new Promise(resolve => exports.push({
                 destination: r.destination,
                 finish: ok => resolve({ ok, error: ok ? undefined : 'failed', written: [], removed: [], kept: [], problems: [], conflicts: [] })
@@ -28,7 +30,7 @@ function fixture(workspace: string) {
     const messages = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const exporter = Object.assign(new MarkdownExport(), { model, storage, messages, shell: { currentWidget: undefined } });
     const last = () => data['catenary.markdownExport.last'] as Record<string, { destination: string }> | undefined;
-    return { exporter, model, exports, last, messages };
+    return { exporter, model, exports, last, messages, check };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -40,6 +42,18 @@ it('the last export is recorded under the workspace where the export started, al
     exports[0].finish(true);
     await running;
     expect(last()).toEqual({ '/a/workspace.trig': { sources: ['/src'], destination: '/out-a', exclude: [] } });
+});
+
+it('a workspace that opens during the first check keeps its own last export', async () => {
+    const { exporter, model, exports, last, check } = fixture('/a/workspace.trig');
+    check.held = true;
+    const running = exporter.exportSelection(['/src'], '/out-a');
+    model.snapshot.file = '/b/workspace.trig';
+    check.release();
+    await settle();
+    exports[0].finish(true);
+    await running;
+    expect(Object.keys(last() ?? {})).toEqual(['/a/workspace.trig']);
 });
 
 it('law_failedExportKeepsLast: a failed export does not replace the last export; Run Last repeats the last one', async () => {

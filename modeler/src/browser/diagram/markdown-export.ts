@@ -44,6 +44,8 @@ export class MarkdownExport {
      * result, undefined when the dialog was canceled.
      */
     async exportSelection(sources: string[], destination?: string): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
+        // The workspace at the start: another workspace can open during the check, the dialog, the render or the writes.
+        const workspace = this.model.snapshot.file;
         // Unresolved embeds do not stop here: the dialog lists them, and the user can uncheck their documents. The final check decides.
         const check = await this.model.service.checkMarkdownExport({ sources });
         if (!check.root || !check.documents.length) {
@@ -58,23 +60,22 @@ export class MarkdownExport {
             dest = answer.destination;
             exclude = answer.exclude;
         }
-        return this.run({ sources, destination: dest, exclude });
+        return this.run(workspace, { sources, destination: dest, exclude });
     }
 
     /** Repeat the last successful export of this workspace: no dialog. Undefined when there is none. */
     async runLast(): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
-        const last = (await this.lastExports())[this.model.snapshot.file ?? ''];
+        const workspace = this.model.snapshot.file;
+        const last = workspace ? (await this.lastExports())[workspace] : undefined;
         if (!last) {
             this.messages.info('No earlier Markdown export in this workspace. Use Export Markdown… first.');
             return undefined;
         }
-        return this.run(last);
+        return this.run(workspace, last);
     }
 
-    /** Check, render and write. A successful export becomes the last export of the workspace. */
-    protected async run({ sources, destination: dest, exclude }: LastExport): Promise<MarkdownExportResult | MarkdownExportCheck> {
-        // The workspace at the start: another workspace can open while the export renders and writes.
-        const workspace = this.model.snapshot.file;
+    /** Check, render and write. A successful export becomes the last export of `workspace`, the workspace where the command started. */
+    protected async run(workspace: string | undefined, { sources, destination: dest, exclude }: LastExport): Promise<MarkdownExportResult | MarkdownExportCheck> {
         const final = await this.model.service.checkMarkdownExport({ sources, destination: dest, exclude });
         if (!final.ok) {
             this.messages.error(checkMessage(final));
