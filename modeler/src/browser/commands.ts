@@ -48,6 +48,8 @@ export namespace OpenModelCommands {
     export const OPEN_BESIDE = cmd('catenary.openBeside', 'Open beside…', 'codicon codicon-split-horizontal');
     export const SAVE = cmd('catenary.save', 'Save Workspace');
     export const EXPORT_MARKDOWN = cmd('catenary.exportMarkdown', 'Export Markdown…');
+    /** Repeat the last successful Markdown export of the workspace, without the dialog (UI §9.2). */
+    export const RUN_LAST_EXPORT = cmd('catenary.runLastMarkdownExport', 'Run Last Markdown Export');
     export const INSERT_VIEW = cmd('catenary.insertView', 'Insert View…');
     export const WORKSPACE_SETTINGS = cmd('catenary.openWorkspaceSettings', 'Workspace Settings');
     /** RDF files from outside the workspace: read-only Turtle copies in imported/ (spec/manifest.hs §2.6). Arguments: the paths. */
@@ -377,6 +379,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             },
             isEnabled: (arg?: unknown) => !!sourcesArg(arg), isVisible: (arg?: unknown) => !!sourcesArg(arg)
         });
+        registry.registerCommand(OpenModelCommands.RUN_LAST_EXPORT, { execute: () => this.markdownExport.runLast(), isEnabled: open });
         // Argument (CLI, scripts): the IRI of the view. Without it: a view picker.
         registry.registerCommand(OpenModelCommands.INSERT_VIEW, {
             execute: (iri?: unknown) => this.insertView.insert(typeof iri === 'string' ? iri : undefined),

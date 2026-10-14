@@ -1982,6 +1982,15 @@ resolveEmbed views iri = lookup iri views
 -- The SVG is the view editor export at exportZoom, without selection, halos, handles or edit controls. One SVG per view serves all embeds.
 -- The export changes no source document, model file or view.
 -- Not in this version: export sets or pages, Related sections, canvas references as navigation, embeds of other elements.
+-- Run Last Markdown Export repeats the last successful export of the workspace (window storage, per workspace file): the same
+-- sources, destination and unchecked documents, without the dialog. A document added to a source folder since then is exported.
+-- Without an earlier export it shows a message and writes nothing. A failed export does not replace the last export.
+-- Reason: see the current views in the exported documents again with one command.
+data ExportRequest = ExportRequest { erSources :: [FilePath], erDestination :: FilePath, erExclude :: [FilePath] } deriving Eq
+lastExport :: Maybe ExportRequest -> ExportRequest -> Bool -> Maybe ExportRequest   -- before, this export, it succeeded
+lastExport before request ok = if ok then Just request else before
+law_failedExportKeepsLast :: Maybe ExportRequest -> ExportRequest -> Bool
+law_failedExportKeepsLast before request = lastExport before request False == before
 exportRoot :: [FilePath] -> FilePath                -- the real paths of the sources (not empty)
 exportRoot = foldr1 commonFolder . map sourceFolder
   where sourceFolder p = if isFolder p then p else parentFolder p

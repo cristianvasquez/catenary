@@ -19,6 +19,10 @@ import { ViewEditors } from './view-editors';
 
 /** Storage key of the last destination of each source root (root path → destination path). */
 const DESTINATIONS_KEY = 'catenary.markdownExport.destinations';
+/** Storage key of the last successful export of each workspace (workspace file → request). */
+const LAST_KEY = 'catenary.markdownExport.last';
+/** The request of an export: sources, destination and unchecked documents. Run Last Markdown Export repeats it. */
+export interface LastExport { sources: string[]; destination: string; exclude: string[] }
 /** At most this number of items in a message; the rest is a count. */
 const LISTED = 5;
 
@@ -54,6 +58,21 @@ export class MarkdownExport {
             dest = answer.destination;
             exclude = answer.exclude;
         }
+        return this.run({ sources, destination: dest, exclude });
+    }
+
+    /** Repeat the last successful export of this workspace: no dialog. Undefined when there is none. */
+    async runLast(): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
+        const last = (await this.lastExports())[this.model.snapshot.file ?? ''];
+        if (!last) {
+            this.messages.info('No earlier Markdown export in this workspace. Use Export Markdown… first.');
+            return undefined;
+        }
+        return this.run(last);
+    }
+
+    /** Check, render and write. A successful export becomes the last export of the workspace. */
+    protected async run({ sources, destination: dest, exclude }: LastExport): Promise<MarkdownExportResult | MarkdownExportCheck> {
         const final = await this.model.service.checkMarkdownExport({ sources, destination: dest, exclude });
         if (!final.ok) {
             this.messages.error(checkMessage(final));
@@ -66,6 +85,7 @@ export class MarkdownExport {
             const changed = result.written.length + result.removed.length;
             this.messages.info(`Exported ${final.documents.length} document(s) and ${final.views.length} view(s) to ${final.destination ?? dest}: `
                 + (changed ? `${result.written.length} file(s) written, ${result.removed.length} removed.` : 'no file changed.'));
+            await this.rememberLast({ sources, destination: dest, exclude });
         }
         const notes = [...problemLines(result.problems), ...result.kept.map(k => `${k}: changed after the last export; kept.`)];
         if (result.ok && notes.length) this.messages.warn(`Export notes: ${listed(notes)}`);
@@ -88,6 +108,15 @@ export class MarkdownExport {
             if (stat?.isDirectory) return stat;
             if (at.path.isRoot) return undefined;
         }
+    }
+
+    protected async lastExports(): Promise<Record<string, LastExport>> {
+        return this.storage.getData<Record<string, LastExport>>(LAST_KEY, {});
+    }
+
+    protected async rememberLast(request: LastExport): Promise<void> {
+        const workspace = this.model.snapshot.file;
+        if (workspace) await this.storage.setData(LAST_KEY, { ...await this.lastExports(), [workspace]: request });
     }
 
     protected async destinations(): Promise<Record<string, string>> {

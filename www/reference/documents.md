@@ -41,3 +41,12 @@ The export stops and writes nothing when:
 - the export would overwrite a file that an earlier export did not write, or a file that changed after that export.
 
 Catenary records the files that it writes in `_resources/.catenary-export.json`. A later export updates these files and removes the ones that it no longer writes. It does not change other files of the destination.
+
+## Run the last export again
+
+**Run Last Markdown Export** repeats the last successful export of the workspace. It uses the same files, folders, destination and unchecked documents, and it shows no dialog. Use it to update the exported documents after you change a view.
+
+1. Open the command palette.
+2. Select **Run Last Markdown Export**.
+
+A document that you added to an exported folder is also exported. Without an earlier export, the command shows a message and writes nothing.

@@ -754,6 +754,13 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   await exportEnds();
   assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the checked document is exported');
   assert.equal(fs.existsSync(path.join(outDialog, 'Data model.md')), false, 'an unchecked document is not exported');
+  // Run Last Markdown Export repeats it without a dialog: same destination, the unchecked document stays out.
+  fs.rmSync(path.join(outDialog, 'Architecture.md'));
+  run = cliRaw('--timeout', '60000', 'run', 'catenary.runLastMarkdownExport');
+  assert.equal(run.status, 'done', JSON.stringify(run));
+  assert.equal(run.result.ok, true, JSON.stringify(run.result));
+  assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the last export writes again');
+  assert.equal(fs.existsSync(path.join(outDialog, 'Data model.md')), false, 'the last export keeps the unchecked document out');
 
   // A label change does not break an embed: the export resolves by IRI.
   assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: second.id, label: 'Renamed view' })).result.ok, true);
