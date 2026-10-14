@@ -1,6 +1,6 @@
 // Markdown export (spec/ui-manifest.hs §9): the documents of a selection of files and folders, with each view embed as an SVG file in _resources/. The backend
 // reads the sources, checks the view references and the destination, and writes (modeler/src/node/markdown-export.ts). This class shows
-// the confirmation dialog (markdown-export-dialog.tsx) and renders each embedded view once with its view editor (GLSP SVG export: zoom 1, no selection), so the file
+// the confirmation dialog (markdown-export-dialog.tsx) and renders each embedded view once with its view editor (GLSP SVG export: geometry at zoom 1, no selection; sizes that are constant on screen at the canvas zoom, export-zoom.ts), so the file
 // shows what the canvas shows. Views that are not open open for the export and close after it.
 
 import { RequestExportAction } from '@eclipse-glsp/client';

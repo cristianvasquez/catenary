@@ -803,6 +803,21 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.ok(links.some(([, link]) => /<text[^>]*\stextLength="[\d.]+"[^>]*>[^<]+<\/text>/.test(fs.readFileSync(path.join(out, link), 'utf8'))), 'card text is measured SVG text');
   assert.deepEqual(fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]), before, 'the source documents do not change');
 
+  // Sizes that are constant on screen use the canvas zoom of the view, the geometry zoom 1 (§9.2 law_exportSizesUseCanvasZoom, kata rerz).
+  const contextId = Object.keys(labels).find(id => labels[id] === 'Product context');
+  const canvasLabel = cli('eval', `const w = await ctx.editors.open(${JSON.stringify(contextId)}, 'reveal'); await w.actionDispatcher.onceModelInitialized();
+    const root = w.editorContext.modelRoot;
+    await w.actionDispatcher.dispatch({ kind: 'viewport', elementId: root.id, newViewport: { scroll: root.scroll, zoom: 0.4 }, animate: false });
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const l = w.node.querySelector('svg.sprotty-graph .edge-label');
+    return { zoom: w.editorContext.modelRoot.zoom, size: l ? parseFloat(getComputedStyle(l).fontSize) : null }`);
+  assert.deepEqual(canvasLabel, { zoom: 0.4, size: 27.5 }, 'the canvas label at zoom 0.4 is max(18, 11 / 0.4)');
+  run = cliRaw('--timeout', '60000', 'run', 'catenary.exportMarkdown', JSON.stringify(docs), JSON.stringify(out));
+  assert.equal(run.result.ok, true, JSON.stringify(run.result));
+  const labelSizes = [...fs.readFileSync(path.join(out, links[0][1]), 'utf8').matchAll(/<text[^>]*class="edge-label[^"]*"[^>]*style="font-size: ([\d.]+)px; stroke-width: ([\d.]+)px/g)].map(m => [Number(m[1]), Number(m[2])]);
+  assert.ok(labelSizes.length > 0, 'the view has edge labels');
+  assert.deepEqual([...new Set(labelSizes.map(String))], ['27.5,11'], 'the SVG label and its halo have the canvas sizes at zoom 0.4');
+
   // A view IRI that names no view: an error with the file, the line and the IRI; nothing is written.
   fs.writeFileSync(path.join(docs, 'Broken.md'), 'Text\n\n![](urn:name:No%20such%20view)\n');
   run = cliRaw('--timeout', '60000', 'run', 'catenary.exportMarkdown', JSON.stringify(docs), JSON.stringify(out));

@@ -1983,6 +1983,9 @@ resolveEmbed views iri = lookup iri views
 -- Each document goes to its path relative to the root. Each embed becomes a relative image link to _resources/<svgName>.
 -- The text outside embeds and changed links does not change. Image text: the embed text, else the view label.
 -- The SVG is the view editor export at exportZoom, without selection, halos, handles or edit controls. One SVG per view serves all embeds.
+-- The geometry (boxes, routes, positions) is at exportZoom. Sizes that are constant on screen (edge labels, halo strokes, badges,
+-- operator text, arrows, end rings, lane pitch, port offsets) use the canvas zoom of the view: the zoom of its live canvas when the
+-- export starts (an editor that the export opens: its zoom after it opens). Reason: the SVG has the proportions that the user sees.
 -- The export changes no source document, model file or view.
 -- Not in this version: export sets or pages, Related sections, canvas references as navigation, embeds of other elements.
 -- Run Last Markdown Export repeats the last successful export of the workspace (window storage, per workspace file): the same
@@ -2009,6 +2012,12 @@ law_excludedNotWritten :: [FilePath] -> [FilePath] -> FilePath -> Bool   -- an u
 law_excludedNotWritten listed excluded d = d `elem` excluded ==> d `notElem` exportedDocuments listed excluded
 exportZoom :: Double
 exportZoom = 1
+sizeZoom :: Double -> Double                         -- the canvas zoom of the view: the zoom of sizes that are constant on screen
+sizeZoom canvasZoom = if canvasZoom > 0 then canvasZoom else 1
+edgeLabelSize :: Double -> Double                    -- model units, at a zoom (edge-chrome.ts: 18 model units, at least 11 screen px)
+edgeLabelSize z = max 18 (11 / z)
+law_exportSizesUseCanvasZoom :: Double -> Bool       -- the label in the SVG has the size of the label on the canvas
+law_exportSizesUseCanvasZoom z = z > 0 ==> edgeLabelSize (sizeZoom z) == edgeLabelSize z
 svgName :: Iri -> FilePath                           -- the last name of the IRI and a hash of the whole IRI: a label does not change it
 svgName iri = slug (lastName iri) ++ "-" ++ take 12 (sha256Hex iri) ++ ".svg"
 slug, lastName, sha256Hex :: String -> String

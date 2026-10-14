@@ -27,6 +27,6 @@ The IRI identifies the view. The text in brackets is only a caption, so a new vi
 
 ![The Export Markdown dialog](/images/scratch-export.png)
 
-The export writes `notes.md` to the destination, with the embed replaced by an image link to `_resources/Books.svg`. The SVG shows the view at zoom 100 %, without selection or edit controls. A later export of the same files updates them.
+The export writes `notes.md` to the destination, with the embed replaced by an image link to `_resources/Books.svg`. The SVG shows the view at zoom 100 %, without selection or edit controls. Edge labels, badges and arrows have the size relative to the cards that the canvas shows at its zoom. A later export of the same files updates them.
 
 You now have a document with a diagram that you can share, and a folder of RDF files that holds the model behind it. The [reference](/reference/workspace) describes each part of the screen in detail.

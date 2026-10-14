@@ -7,7 +7,7 @@ import {
     Action, CursorCSS, EnableToolsAction, GModelElement, KeyListener, MarqueeMouseListener, MarqueeMouseTool, MarqueeTool, cursorFeedbackAction,
     helperLineModule, initializeDiagramContainer, accessibilityModule, toolPaletteModule, createIcon, FocusTrackerTool, PaletteItem,
     ChangeBoundsOperation, CompoundOperation, PasteOperation, configureCommand, createDiagramOptionsModule, IDiagramOptions, FitToScreenAction,
-    GLSPSvgExporter
+    GLSPSvgExporter, RequestExportCommand
 } from '@eclipse-glsp/client';
 import { GLSPDiagramConfiguration, TheiaGLSPSelectionForwarder } from '@eclipse-glsp/theia-integration';
 import { CommandRegistry, CommandService, MessageService } from '@theia/core';
@@ -23,6 +23,7 @@ import { NoteEditor } from '../notes/note-editor';
 import { editCanvasName } from './name-edit';
 import { ViewEditors } from './view-editors';
 import { MeasuringSvgExporter } from './text-measure';
+import { CanvasZoomExportCommand } from './export-zoom';
 import { CardScaleStartup } from './card-scale';
 import { FontPreferences } from './font-preferences';
 import { ApplyPendingBoundsCommand, PendingBounds } from './pending-bounds';
@@ -115,6 +116,9 @@ export const viewDiagramModule = new FeatureModule((bind, unbind, isBound, rebin
     // The SVG export measures card and note text in the export canvas (text-measure.ts, used by the Markdown export).
     bind(MeasuringSvgExporter).toSelf().inSingletonScope();
     bindOrRebind(context, GLSPSvgExporter).toService(MeasuringSvgExporter);
+    // Sizes that are constant on screen use the zoom of the live canvas in the export (export-zoom.ts). The command registration of GLSP
+    // resolves RequestExportCommand.
+    bindOrRebind(context, RequestExportCommand).to(CanvasZoomExportCommand);
 }, { featureId: Symbol('catenaryViewDiagram') });
 
 /**

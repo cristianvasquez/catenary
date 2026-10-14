@@ -16,6 +16,7 @@ import {
 } from './card-chrome';
 import { Pt, edgeGeometry, logicCenter, renderEdge, renderLogic } from './edge-chrome';
 import { FanEdge, fanOut } from './edge-route';
+import { ZoomedRoot, sizeZoom } from './export-zoom';
 import { edgeStyle } from './edge-preferences';
 import type { Part } from './vocabulary-color';
 
@@ -453,10 +454,9 @@ function renderChildren(node: Readonly<GNode>, context: RenderingContext, handle
         .map(c => context.renderElement(c)).filter((v): v is VNode => !!v);
 }
 
-/** Zoom of the diagram of an element, for handles with a constant size on screen. */
+/** Zoom of the diagram of an element, for sizes that are constant on screen. In the export: the zoom of the live canvas (export-zoom.ts). */
 function zoomOf(el: Readonly<GModelElement>): number {
-    const zoom = (el.root as unknown as { zoom?: number }).zoom;
-    return zoom && zoom > 0 ? zoom : 1;
+    return sizeZoom(el.root as unknown as ZoomedRoot);
 }
 
 /** Resize handle: see resizeHandle in card-chrome.ts. The size on screen is the same at every zoom (GLSP draws 5 model units). */
