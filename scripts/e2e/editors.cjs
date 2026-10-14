@@ -762,6 +762,15 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   assert.ok(fs.readFileSync(path.join(outDialog, 'Architecture.md'), 'utf8').includes('](_resources/'), 'the last export writes again');
   assert.equal(fs.existsSync(path.join(outDialog, 'Data model.md')), false, 'the last export keeps the unchecked document out');
 
+  // A view behind another tab gets the changes of that time when it shows (law_hiddenCanvasRefreshesOnce): the export shows it first (roborev 186).
+  const placed = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Item', label: 'Before hide', view: second.id, at: { x: 100, y: 100 } })).result;
+  assert.equal(placed.ok, true, JSON.stringify(placed));
+  cli('eval', `await ctx.editors.open(${JSON.stringify(second.id)}, 'reveal'); return true`);
+  await page.locator('svg.sprotty-graph:visible g.card', { hasText: 'Before hide' }).waitFor();
+  await navNode(page, 'Architecture.md').first().dblclick();
+  await page.locator('svg.sprotty-graph:visible').waitFor({ state: 'hidden' });
+  assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: placed.id, label: 'Renamed while hidden' })).result.ok, true);
+
   // A label change does not break an embed: the export resolves by IRI.
   assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: second.id, label: 'Renamed view' })).result.ok, true);
   const out = path.join(dir, 'out');
@@ -789,6 +798,8 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
       assert.ok(!new RegExp(`class="[^"]*\\b${control}\\b`).test(svg), `no ${control} in the SVG`);
     }
   }
+  const secondSvg = fs.readFileSync(path.join(out, links[1][1]), 'utf8');
+  assert.ok(secondSvg.includes('>Renamed while hidden</text>') && !secondSvg.includes('Before hide'), 'a hidden view exports its current content');
   assert.ok(links.some(([, link]) => /<text[^>]*\stextLength="[\d.]+"[^>]*>[^<]+<\/text>/.test(fs.readFileSync(path.join(out, link), 'utf8'))), 'card text is measured SVG text');
   assert.deepEqual(fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]), before, 'the source documents do not change');
 

@@ -17,6 +17,7 @@ import { ModelFrontend } from '../model-client';
 import { MarkdownExportDialog } from './markdown-export-dialog';
 import { EDIT_CONTROLS, MeasuringSvgExporter, TextLine, foreignObjectKey } from './text-measure';
 import { ViewEditors } from './view-editors';
+import { ViewDiagramWidget } from './view-widget';
 
 /** Storage key of the last destination of each source root (root path → destination path). */
 const DESTINATIONS_KEY = 'catenary.markdownExport.destinations';
@@ -144,6 +145,9 @@ export class MarkdownExport {
                     opened.push(widget);
                 }
                 await widget.actionDispatcher.onceModelInitialized();
+                // A view behind another tab gets the changes of that time when it shows (law_hiddenCanvasRefreshesOnce): show it and wait.
+                await this.shell.revealWidget(widget.id);
+                if (widget instanceof ViewDiagramWidget) await widget.whenShowUpdated();
                 const result = await widget.actionDispatcher.request(RequestExportAction.create('svg'));
                 svgs[iri] = forDocument(result.data, widget.diContainer.get(MeasuringSvgExporter).lines);
             }

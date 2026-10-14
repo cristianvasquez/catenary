@@ -7,6 +7,7 @@ vi.mock('@theia/filesystem/lib/browser', () => ({ FileDialogService: Symbol() })
 vi.mock('@theia/filesystem/lib/browser/file-service', () => ({ FileService: class {} }));
 vi.mock('../src/browser/model-client', () => ({ ModelFrontend: class {} }));
 vi.mock('../src/browser/diagram/view-editors', () => ({ ViewEditors: class {} }));
+vi.mock('../src/browser/diagram/view-widget', () => ({ ViewDiagramWidget: class {} }));
 
 import { MarkdownExport } from '../src/browser/diagram/markdown-export';
 
