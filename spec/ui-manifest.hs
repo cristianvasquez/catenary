@@ -160,7 +160,9 @@ figureOf v e = case [s | s <- concat (notationsOf v), targets s e, conformsToWhe
 -- Rows follow sh:order, then text rows, then parts. A row whose end is a list box shows the box inline:
 -- "xsd:date | xsd:gYear", "{Civil, Religious}". At most three parts, else two parts and "+N".
 -- Without a hub placement, a hub is a row group of its owner: its title, then one sub-row per member.
--- Instance cards gather the property shapes of the model shapes that target the focus: one row per value.
+-- Instance cards gather the property shapes of the model shapes that target the focus: one row per (path, value) over all
+-- gathered property shapes, also when several property shapes have the same path. The row name is the first sh:name of that path
+-- in gather order, else the local name. The other sh:name values of the path are the row tooltip ("Also named: …").
 -- A property shape without a value gives no row. The members of a logical constraint are a row group.
 -- A gathered row with the path of the title is omitted.
 -- An entity-group member is a part of the group (nt:linkEnd). It has no own placement while it is in the group.
@@ -184,9 +186,12 @@ listInline False ms = "{" ++ joinWith ", " ms ++ "}"
 joinWith :: String -> [String] -> String
 joinWith _ [] = ""
 joinWith sep (x : xs) = x ++ concatMap (sep ++) xs
--- | One row per value of each gathered property shape. No value: no row. The row with the path of the title goes.
-gatheredRows :: [(Iri, [String])] -> Maybe Iri -> [(Iri, String)]   -- (path, values), the title path
-gatheredRows props titlePath = [(p, v) | (p, vs) <- props, Just p /= titlePath, v <- vs]
+-- | One row per (path, value) over all gathered property shapes. No value: no row. The row with the path of the title goes.
+gatheredRows :: [(Iri, [String])] -> Maybe Iri -> [(Iri, String)]   -- (path, values) of each property shape, the title path
+gatheredRows props titlePath = nub [(p, v) | (p, vs) <- props, Just p /= titlePath, v <- vs]
+-- | A statement (focus, path, value) is one row, also when several property shapes have its path.
+law_gatheredRowPerStatement :: [(Iri, [String])] -> Maybe Iri -> Bool
+law_gatheredRowPerStatement props titlePath = rows == nub rows where rows = gatheredRows props titlePath
 law_groupMemberNotOwn :: Element -> Element -> Bool   -- entity group placement, member
 law_groupMemberNotOwn g m = (markClass (elementOf g) == Just EntityGroup && Part g m `elem` parts g) ==> null (shownOwn m (viewOf g))
 

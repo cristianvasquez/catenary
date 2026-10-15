@@ -63,6 +63,8 @@ export interface Row {
     sub?: Row[];
     connector?: Connector;
     gathered?: NTerm;
+    /** A gathered row: the other sh:name values of its path (law_gatheredRowPerStatement). */
+    names?: string[];
 }
 
 export interface Figure {
@@ -445,10 +447,12 @@ function scopedFigures(D: TripleIndex, shapes: FigureShape[], scope: readonly NT
 const unplacedOf = (t: NTerm | undefined): 'AsRow' | 'Hidden' => t?.value === NT('Hidden') ? 'Hidden' : 'AsRow';
 
 /**
- * nt:gatherWith nt:ModelShapes: the node shapes that target the focus. One row per value of a property shape: a property shape
- * without a value gives no row. The row title is sh:name of the property shape, else the local name of the predicate (as the app). The members of a logical
- * constraint (sh:xone, sh:or, sh:and) with sh:path are a row group, as in rule 7. A property shape with the path of the title role
- * gives no row: the title shows it. An IRI value is also a connector. Its row shows while the connector is not drawn (join).
+ * nt:gatherWith nt:ModelShapes: the node shapes that target the focus. One row per statement (focus, path, value) over all gathered
+ * property shapes (law_gatheredRowPerStatement): the first property shape in gather order with the path gives the row. A property
+ * shape without a value gives no row. The row title is the first sh:name of a property shape with that path, else the local name of
+ * the predicate (as the app). The other sh:name values of that path are `names`. The members of a logical constraint (sh:xone, sh:or,
+ * sh:and) with sh:path are a row group, as in rule 7. A property shape with the path of the title role gives no row: the title shows
+ * it. An IRI value is also a connector, one per statement. Its row shows while the connector is not drawn (join).
  */
 function gather(D: TripleIndex, f: Figure, warnings: string[], titlePaths: string[]): void {
     const classes = uniq(D.objects(f.focus, RDF('type')).flatMap(t => evalPath(D, { star: { p: NS.rdfs + 'subClassOf' } }, t)));
@@ -456,7 +460,21 @@ function gather(D: TripleIndex, f: Figure, warnings: string[], titlePaths: strin
         ...classes.flatMap(c => D.subjects(SH('targetClass'), c)),
         ...classes.filter(c => D.has(c, RDF('type'), iri(SH('NodeShape'))))      // implicit class target
     ]);
-    const seen = new Set<string>();
+    // Rows in the order of the app: sh:order, then the row title.
+    const nameOf = (ps: NTerm) => { const path = D.one(ps, SH('path')); return D.one(ps, SH('name'))?.value ?? (path ? localName(path.value) : ''); };
+    const orderOf = (ps: NTerm) => Number(D.one(ps, SH('order'))?.value ?? Infinity);
+    const byOrder = (a: NTerm, b: NTerm) => orderOf(a) - orderOf(b) || nameOf(a).localeCompare(nameOf(b));
+    const ownOf = (s: NTerm) => [...D.objects(s, SH('property'))].sort(byOrder);
+    const groupsOf = (s: NTerm) => ['xone', 'or', 'and'].flatMap(op => D.objects(s, SH(op)).map(l => ({ op, members: D.list(l).filter(m => D.one(m, SH('path'))) })));
+    // The sh:name values of each path, in gather order: the first is the row title, the others are `names`.
+    const namesOf = new Map<string, string[]>();
+    for (const ps of shapes.flatMap(s => [...ownOf(s), ...groupsOf(s).flatMap(g => g.members)])) {
+        const path = D.one(ps, SH('path')), name = D.one(ps, SH('name'))?.value;
+        if (path?.termType !== 'NamedNode' || name === undefined) continue;
+        const names = namesOf.get(path.value) ?? [];
+        if (!names.includes(name)) namesOf.set(path.value, [...names, name]);
+    }
+    const seen = new Set<string>(), statements = new Set<string>();
     const rowsOf = (ps: NTerm): Row[] => {
         if (seen.has(nkey(ps))) return [];
         seen.add(nkey(ps));
@@ -466,9 +484,13 @@ function gather(D: TripleIndex, f: Figure, warnings: string[], titlePaths: strin
             return [];
         }
         if (titlePaths.includes(path.value)) return [];
-        const values = D.objects(f.focus, path.value), name = D.one(ps, SH('name'))?.value ?? localName(path.value);
+        const [name = localName(path.value), ...names] = namesOf.get(path.value) ?? [];
+        const values = D.objects(f.focus, path.value).filter(v => {
+            const k = nkey(triple(f.focus, path.value, v));
+            return !statements.has(k) && !!statements.add(k);
+        });
         return values.map(v => {
-            const row: Row = { order: 0, rank: 0, text: `${name}: ${label(D, v)}`, gathered: ps };
+            const row: Row = { order: 0, rank: 0, text: `${name}: ${label(D, v)}`, gathered: ps, ...(names.length ? { names } : {}) };
             if (v.termType === 'NamedNode') {
                 row.connector = { statement: triple(f.focus, path.value, v), gathered: ps, unplaced: unplacedOf(f.fs.unplaced), text: row.text };
                 f.connectors.push(row.connector);
@@ -476,15 +498,8 @@ function gather(D: TripleIndex, f: Figure, warnings: string[], titlePaths: strin
             return row;
         });
     };
-    // Rows in the order of the app: sh:order, then the row title.
-    const nameOf = (ps: NTerm) => { const path = D.one(ps, SH('path')); return D.one(ps, SH('name'))?.value ?? (path ? localName(path.value) : ''); };
-    const orderOf = (ps: NTerm) => Number(D.one(ps, SH('order'))?.value ?? Infinity);
-    const byOrder = (a: NTerm, b: NTerm) => orderOf(a) - orderOf(b) || nameOf(a).localeCompare(nameOf(b));
     for (const s of shapes) {
-        for (const ps of [...D.objects(s, SH('property'))].sort(byOrder)) f.rows.push(...rowsOf(ps));
-        for (const op of ['xone', 'or', 'and']) for (const l of D.objects(s, SH(op))) {
-            const members = D.list(l).filter(m => D.one(m, SH('path')));
-            if (members.length) f.rows.push({ order: 0, rank: 0, text: op, sub: members.flatMap(rowsOf) });
-        }
+        for (const ps of ownOf(s)) f.rows.push(...rowsOf(ps));
+        for (const { op, members } of groupsOf(s)) if (members.length) f.rows.push({ order: 0, rank: 0, text: op, sub: members.flatMap(rowsOf) });
     }
 }

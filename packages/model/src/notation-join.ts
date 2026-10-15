@@ -84,7 +84,7 @@ export function joinState(figs: Figure[], placed: ReadonlyMap<string, unknown>) 
 // --- the join ---------------------------------------------------------------------------------------
 
 /** A row of a box. `connector`: the row stands for a link that is not drawn as a line. */
-export interface JoinRow { text: string; part?: Figure; connector?: Connector; sub?: JoinRow[] }
+export interface JoinRow { text: string; part?: Figure; connector?: Connector; sub?: JoinRow[]; names?: string[] }
 export interface JoinBox { figure: Figure; simple: boolean; rows: JoinRow[] }
 export interface JoinLine { figure: Figure; start: Figure; end?: Figure; endText: string; byHub?: Figure }
 /** A link drawn as a line: its ends are the shown figures (an entity group for a member, nt:linkEnd). */
@@ -122,8 +122,8 @@ export function join(d: Derivation, placed: Placements): Join {
         const simple = Boolean(placed.get(nkey(f.placedAs))?.simple);
         const rows: JoinRow[] = simple ? [] : [
             ...f.rows.filter(visible).map(r => ({
-                text: r.text, part: r.part, connector: r.connector,
-                ...(r.sub ? { sub: r.sub.filter(visible).map(s => ({ text: s.text, part: s.part, connector: s.connector })) } : {})
+                text: r.text, part: r.part, connector: r.connector, ...(r.names ? { names: r.names } : {}),
+                ...(r.sub ? { sub: r.sub.filter(visible).map(s => ({ text: s.text, part: s.part, connector: s.connector, ...(s.names ? { names: s.names } : {}) })) } : {})
             })),
             ...f.connectors.filter(c => !c.gathered && !lineOf(c)).map(c => ({ text: c.text, connector: c }))
         ];

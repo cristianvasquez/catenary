@@ -270,6 +270,33 @@ describe('rows', () => {
     });
 });
 
+describe('gathered rows (law_gatheredRowPerStatement)', () => {
+    /** The gathered rows of ex:x (class ex:C) in the people view: text and other names, and the connectors of ex:x. */
+    async function card(shapes: string, values = 'ex:v') {
+        const { derivation } = await withTurtle(`ex:x a ex:C ; ex:p ${values} . ${shapes}`, 'people');
+        const f = derivation.figures.find(f => f.focus.value === EX + 'x')!;
+        return { rows: f.rows.filter(r => r.gathered).map(r => [r.text, ...(r.names ?? [])].join(' | ')), connectors: f.connectors.map(c => nkey(c.statement)) };
+    }
+    const shape = (n: string, name?: string) => `ex:${n} a sh:NodeShape ; sh:targetClass ex:C ; sh:property [ sh:path ex:p ${name ? `; sh:name "${name}"` : ''} ] .`;
+    it('law_gatheredRowPerStatement: two node shapes with the path give one row', async () => {
+        expect((await card(shape('S1') + shape('S2'))).rows).toEqual(['p: v']);
+    });
+    it('law_gatheredRowPerStatement: the sh:name wins over the local name, in either order of the shapes', async () => {
+        expect((await card(shape('S1', 'a') + shape('S2'))).rows).toEqual(['a: v']);
+        expect((await card(shape('S1') + shape('S2', 'a'))).rows).toEqual(['a: v']);
+    });
+    it('law_gatheredRowPerStatement: two names give one row with the other name', async () => {
+        const { rows } = await card(shape('S1', 'a') + shape('S2', 'b'));
+        expect(rows).toHaveLength(1);
+        expect(['a: v | b', 'b: v | a']).toContain(rows[0]);
+    });
+    it('law_gatheredRowPerStatement: two values give two rows and one connector per IRI value', async () => {
+        const { rows, connectors } = await card(shape('S1', 'a') + shape('S2', 'b'), 'ex:v , ex:w');
+        expect(rows).toHaveLength(2);
+        expect(connectors.sort()).toEqual([triple(ex('x'), EX + 'p', ex('v')), triple(ex('x'), EX + 'p', ex('w'))].map(nkey).sort());
+    });
+});
+
 describe('helper shapes (G-C)', () => {
     it('a scheme helper with sh:in, sh:minCount and two schemes has no card; the line ends at the first scheme', async () => {
         const r = await withTurtle(`ex:Marriage sh:property ex:Marriage-place . ex:Marriage-place sh:path ex:place ; sh:node ex:InPlaces .

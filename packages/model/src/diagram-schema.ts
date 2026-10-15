@@ -122,16 +122,22 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
         const inst = doc.instances[n.element];
         const cls = primaryClass(meta, inst.types);
         const lines: string[] = [];
+        // The tooltip of each line (same index): the other sh:name values of a gathered row (law_gatheredRowPerStatement).
+        const lineTitles: string[] = [];
+        const also = (names?: string[]) => names?.length ? `Also named: ${names.join(', ')}` : '';
         const rows = engineRows.get(inst.uri);
         if (rows) {
-            for (const r of rows.filter(r => !r.text.startsWith('rdf:type: '))) lines.push(r.text, ...(r.sub ?? []).map(s => `  ${s.text}`));
+            for (const r of rows.filter(r => !r.text.startsWith('rdf:type: '))) {
+                lines.push(r.text, ...(r.sub ?? []).map(s => `  ${s.text}`));
+                lineTitles.push(also(r.names), ...(r.sub ?? []).map(s => also(s.names)));
+            }
         } else {
             const shownPaths = new Set<string>();
             for (const f of cls?.fields ?? []) {
                 if (shownPaths.has(f.path)) continue;
                 shownPaths.add(f.path);
                 const values = inst.fields[f.path];
-                if (values?.length) lines.push(`${f.name}: ${values.map(v => v.termType === 'NamedNode' ? localName(v.value) : v.value).join(', ')}`);
+                if (values?.length) { lines.push(`${f.name}: ${values.map(v => v.termType === 'NamedNode' ? localName(v.value) : v.value).join(', ')}`); lineTitles.push(''); }
             }
         }
         return {
@@ -140,7 +146,7 @@ export function dataElements(doc: Doc, meta: Classes, view: View, opts: GraphOpt
             name: inst.label,
             className: className(inst.types),
             classColor: cls?.color ?? '', color: n.color ?? '', display: n.display ?? 'detailed',
-            lines, violations: count.get(inst.id) ?? 0, known: !!cls,
+            lines, lineTitles, violations: count.get(inst.id) ?? 0, known: !!cls,
             hiddenIn: opts.hidden?.neighbors(inst.id)?.in ?? 0, hiddenOut: opts.hidden?.neighbors(inst.id)?.out ?? 0,
             hiddenTargets: opts.hidden?.neighbors(inst.id)?.targets ?? 0
         };

@@ -36,6 +36,7 @@ export class CardNode extends GNode {
     classColor = '';
     color = '';
     lines: string[] = [];
+    lineTitles: string[] = [];
     violations = 0;
     known = true;
     display = 'detailed';
@@ -393,7 +394,7 @@ export class CardView extends ShapeView {
     render(node: Readonly<CardNode>, context: RenderingContext): VNode | undefined {
         if (!this.isVisible(node, context)) return undefined;
         return renderCard({
-            width: node.size.width, height: node.size.height, zoom: zoomOf(node), className: node.className, name: node.name, lines: node.lines,
+            width: node.size.width, height: node.size.height, zoom: zoomOf(node), className: node.className, name: node.name, lines: node.lines, lineTitles: node.lineTitles,
             color: node.color, classColor: node.classColor, selected: node.selected, hover: node.hoverFeedback,
             violations: node.violations, known: node.known, display: node.display
         }, renderChildren(node, context, true));

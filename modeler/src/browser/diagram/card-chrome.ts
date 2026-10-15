@@ -50,6 +50,8 @@ export interface CardProps {
     className: string;
     name: string;
     lines: string[];
+    /** The tooltip of each line (same index), '' for none. */
+    lineTitles?: string[];
     color: string;
     classColor: string;
     selected: boolean;
@@ -167,7 +169,7 @@ export function renderCard(p: CardProps, handles: VNode[]): VNode {
     const content = h('div', { class: { 'card-body': true, simple } }, [
         h('div', { class: { 'card-class': true } }, p.className),
         h('div', { class: { 'card-name': true } }, p.name),
-        ...(simple ? [] : p.lines.map(l => h('div', { class: { 'card-line': true } }, l)))
+        ...(simple ? [] : p.lines.map((l, i) => h('div', { class: { 'card-line': true }, ...(p.lineTitles?.[i] ? { attrs: { title: p.lineTitles[i] } } : {}) }, l)))
     ]);
     const badge = p.violations > 0
         ? [s('g', { class: { badge: true } }, [

@@ -31,7 +31,7 @@ Use the palette above the canvas. From left to right: **Shape** (the large tile)
 
 ## Cards and lines
 
-A card is the box of an instance, a node shape or a value set. A line is a relation between two cards. A relation to an element that the view does not show is a row of the card.
+A card is the box of an instance, a node shape or a value set. A line is a relation between two cards. A relation to an element that the view does not show is a row of the card. An instance card shows each value once, also when several shapes describe the property. When the shapes give different names, the tooltip of the row shows the other names.
 
 - Hover a card to show its halo: **Open in**, **Remove**, **More actions**, expand incoming and outgoing neighbors, and **+** to create an incoming or outgoing relation.
 - **+** opens the list of predicates that the shapes allow. Select an existing element as the end, or type a name to create one.
