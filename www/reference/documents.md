@@ -31,7 +31,7 @@ To insert a view:
 4. Clear the checkbox of each document that you do not want to export.
 5. Select **Export**.
 
-The root is the deepest folder that contains the selection. The export keeps the folder structure under the root. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection or edit controls. Edge labels, badges and arrows have the size relative to the cards that the canvas shows at its zoom. Linked images and attachments are copied: a file under the root goes to the same path, a file outside the root goes to `_resources/`.
+The root is the deepest folder that contains the selection. The export keeps the folder structure under the root. Each view gives one SVG file, also when several documents embed it. The SVG shows the view at zoom 100 %, without selection or edit controls. It has no validation results: no violation badges and no red or dashed borders. Edge labels, badges and arrows have the size relative to the cards that the canvas shows at its zoom. Linked images and attachments are copied: a file under the root goes to the same path, a file outside the root goes to `_resources/`.
 
 The export stops and writes nothing when:
 

@@ -2013,6 +2013,8 @@ resolveEmbed views iri = lookup iri views
 -- Each document goes to its path relative to the root. Each embed becomes a relative image link to _resources/<svgName>.
 -- The text outside embeds and changed links does not change. Image text: the embed text, else the view label.
 -- The SVG is the view editor export at exportZoom, without selection, halos, handles or edit controls. One SVG per view serves all embeds.
+-- The SVG has no validation results and no unknown-class mark: no violation badge, and an element with class invalid or unknown draws as
+-- without that class (no red or dashed border, no wavy underline, no red edge). Reason: the export is documentation, and the modeler decides its look.
 -- The geometry (boxes, routes, positions) is at exportZoom. Sizes that are constant on screen (edge labels, halo strokes, badges,
 -- operator text, arrows, end rings, lane pitch, port offsets) use the canvas zoom of the view: the zoom of its live canvas when the
 -- export starts (an editor that the export opens: its zoom after it opens). Reason: the SVG has the proportions that the user sees.
@@ -2048,6 +2050,13 @@ edgeLabelSize :: Double -> Double                    -- model units, at a zoom (
 edgeLabelSize z = max 18 (11 / z)
 law_exportSizesUseCanvasZoom :: Double -> Bool       -- the label in the SVG has the size of the label on the canvas
 law_exportSizesUseCanvasZoom z = z > 0 ==> edgeLabelSize (sizeZoom z) == edgeLabelSize z
+data ExportMark = ViolationBadge | InvalidMark | UnknownClassMark | DrawnMark deriving Eq   -- DrawnMark: any other mark of the canvas
+validationMark :: ExportMark -> Bool
+validationMark m = m `elem` [ViolationBadge, InvalidMark, UnknownClassMark]
+exportMarks :: [ExportMark] -> [ExportMark]          -- the marks of the SVG of a canvas with these marks
+exportMarks = filter (not . validationMark)
+law_exportShowsNoValidation :: [ExportMark] -> Bool   -- no validation mark in the SVG; the other marks stay
+law_exportShowsNoValidation ms = not (any validationMark (exportMarks ms)) && length (exportMarks ms) == length (filter (== DrawnMark) ms)
 svgName :: Iri -> FilePath                           -- the last name of the IRI and a hash of the whole IRI: a label does not change it
 svgName iri = slug (lastName iri) ++ "-" ++ take 12 (sha256Hex iri) ++ ".svg"
 slug, lastName, sha256Hex :: String -> String

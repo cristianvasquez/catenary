@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 vi.mock('@eclipse-glsp/client', () => ({ GLSPSvgExporter: class {} }));
 
-import { drawnFont, withDrawnFont } from '../src/browser/diagram/text-measure';
+import { drawnFont, hideValidationClasses, withDrawnFont } from '../src/browser/diagram/text-measure';
 
 /**
  * A window with the installed fonts `installed`: a font list draws its first installed family; a generic family draws its system font.
@@ -40,4 +40,26 @@ it('roborev 188: a list drawn in the monospace fallback does not take a candidat
     windowWith([], { monospace: 'Mono fallback', serif: 'Serif fallback', 'sans-serif': 'Sans fallback' });
     expect(drawnFont('Consolas, monospace')).toBeUndefined();
     expect(withDrawnFont('Consolas, monospace')).toBe('Consolas, monospace');
+});
+
+/** An element with classes; querySelectorAll takes a list of class selectors. */
+function element(classes: string) {
+    const set = new Set(classes.split(' '));
+    return { classList: { contains: (c: string) => set.has(c), remove: (c: string) => set.delete(c), add: (c: string) => set.add(c) }, classes: () => [...set].join(' ') };
+}
+
+it('law_exportShowsNoValidation: the export canvas has no validation classes during the style copy, and gets them back after it', () => {
+    const card = element('catenary-card invalid unknown'), shape = element('catenary-card shape-card invalid'), row = element('shape-row invalid');
+    const edge = element('catenary-edge property invalid'), plain = element('catenary-card colored');
+    const all = [card, shape, row, edge, plain];
+    const svg = {
+        querySelectorAll: (selector: string) => {
+            const names = selector.split(',').map(s => s.trim().replace(/^\./, ''));
+            return all.filter(e => names.some(n => e.classList.contains(n)));
+        }
+    } as unknown as Element;
+    const restore = hideValidationClasses(svg);
+    expect(all.map(e => e.classes())).toEqual(['catenary-card', 'catenary-card shape-card', 'shape-row', 'catenary-edge property', 'catenary-card colored']);
+    restore();
+    expect(all.map(e => e.classes())).toEqual(['catenary-card invalid unknown', 'catenary-card shape-card invalid', 'shape-row invalid', 'catenary-edge property invalid', 'catenary-card colored']);
 });

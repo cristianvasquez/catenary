@@ -1,7 +1,7 @@
 // Markdown export (spec/ui-manifest.hs §9): the documents of a selection of files and folders, with each view embed as an SVG file in _resources/. The backend
 // reads the sources, checks the view references and the destination, and writes (modeler/src/node/markdown-export.ts). This class shows
 // the confirmation dialog (markdown-export-dialog.tsx) and renders each embedded view once with its view editor (GLSP SVG export: geometry at zoom 1, no selection; sizes that are constant on screen at the canvas zoom, export-zoom.ts), so the file
-// shows what the canvas shows. Views that are not open open for the export and close after it.
+// shows what the canvas shows, without validation results (law_exportShowsNoValidation). Views that are not open open for the export and close after it.
 
 import { RequestExportAction } from '@eclipse-glsp/client';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
@@ -15,7 +15,7 @@ import type { ExportProblem, UnresolvedEmbed } from '@catenary/model';
 import { MarkdownExportCheck, MarkdownExportResult } from '../../common/protocol';
 import { ModelFrontend } from '../model-client';
 import { MarkdownExportDialog } from './markdown-export-dialog';
-import { EDIT_CONTROLS, MeasuringSvgExporter, TextLine, foreignObjectKey, withDrawnFont } from './text-measure';
+import { EDIT_CONTROLS, MeasuringSvgExporter, TextLine, VALIDATION_BADGES, foreignObjectKey, withDrawnFont } from './text-measure';
 import { ViewEditors } from './view-editors';
 import { ViewDiagramWidget } from './view-widget';
 
@@ -184,7 +184,7 @@ const MARGIN = 8;
  * The export copies computed styles: the root also gets the size of the canvas (block-size, width, height) and every CSS
  * custom property of the window (about 100 KB). Computed values do not use custom properties, so they are removed on all
  * elements. The size goes to the width and height attributes, so that the page CSS can scale the figure down. Edit controls
- * are removed. Each foreignObject (card and note contents, HTML) becomes SVG text at the positions measured in the export canvas (text-measure.ts), so
+ * and violation badges are removed (the validation classes are removed before the style copy, MeasuringSvgExporter.createSvg). Each foreignObject (card and note contents, HTML) becomes SVG text at the positions measured in the export canvas (text-measure.ts), so
  * that viewers without HTML in SVG (librsvg, imv) draw the same lines.
  */
 export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Map(), fonts: (list: string) => string = list => list): string {
@@ -195,7 +195,7 @@ export function forDocument(svg: string, lines: Map<string, TextLine[]> = new Ma
     const [x, y, w, h] = bounds;
     const box = [x - MARGIN, y - MARGIN, w + 2 * MARGIN, h + 2 * MARGIN];
     root.setAttribute('viewBox', box.join(' '));
-    root.querySelectorAll(EDIT_CONTROLS).forEach(e => e.remove());
+    root.querySelectorAll(`${EDIT_CONTROLS}, ${VALIDATION_BADGES}`).forEach(e => e.remove());
     addBackground(root, box);
     for (const fo of [...root.querySelectorAll('foreignObject')]) {
         const g = doc.createElementNS(SVG_NS, 'g');

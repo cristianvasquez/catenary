@@ -788,8 +788,20 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   // A view behind another tab gets the changes of that time when it shows (law_hiddenCanvasRefreshesOnce): the export shows it first (roborev 186).
   const placed = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Item', label: 'Before hide', view: second.id, at: { x: 100, y: 100 } })).result;
   assert.equal(placed.ok, true, JSON.stringify(placed));
+  // An instance with violations (a Data Product without its required values): the canvas shows its badge and red border (§9.2 law_exportShowsNoValidation).
+  const unfinished = cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'https://ekgf.github.io/dprod/DataProduct', label: 'Unfinished product', view: second.id, at: { x: 500, y: 100 } })).result;
+  assert.equal(unfinished.ok, true, JSON.stringify(unfinished));
   cli('eval', `await ctx.editors.open(${JSON.stringify(second.id)}, 'reveal'); return true`);
   await page.locator('svg.sprotty-graph:visible g.card', { hasText: 'Before hide' }).waitFor();
+  await page.locator('svg.sprotty-graph:visible g.catenary-card.invalid', { hasText: 'Unfinished product' }).locator('g.badge').waitFor();
+  assert.equal(await page.locator('svg.sprotty-graph:visible g.catenary-card.unknown', { hasText: 'Before hide' }).count(), 1, 'the canvas marks the card without a known class');
+  const danger = await page.evaluate(() => {
+    const e = document.body.appendChild(document.createElement('span'));
+    e.style.color = 'var(--catenary-danger)';
+    const color = getComputedStyle(e).color;
+    e.remove();
+    return color;
+  });
   await navNode(page, 'Architecture.md').first().dblclick();
   await page.locator('svg.sprotty-graph:visible').waitFor({ state: 'hidden' });
   assert.equal(cli('exec', JSON.stringify({ kind: 'rename', id: placed.id, label: 'Renamed while hidden' })).result.ok, true);
@@ -823,6 +835,11 @@ test('browser: Insert View writes the view IRI at the cursor; Export Markdown of
   }
   const secondSvg = fs.readFileSync(path.join(out, links[1][1]), 'utf8');
   assert.ok(secondSvg.includes('>Renamed while hidden</text>') && !secondSvg.includes('Before hide'), 'a hidden view exports its current content');
+  // No validation results in the SVG: no badge, no invalid or unknown class, no stroke in the danger color (law_exportShowsNoValidation).
+  assert.ok(secondSvg.includes('>Unfinished product</text>'), 'the SVG has the instance with violations');
+  for (const mark of ['badge', 'invalid', 'unknown']) assert.ok(!new RegExp(`class="[^"]*\\b${mark}\\b`).test(secondSvg), `no ${mark} in the SVG`);
+  assert.ok(!secondSvg.includes(danger), `no ${danger} (danger color) in the SVG`);
+  assert.ok(cli('eval', `return ctx.editors.find(${JSON.stringify(second.id)}).node.querySelectorAll('.catenary-card.invalid').length`) > 0, 'the canvas keeps its marks after the export');
   assert.ok(links.some(([, link]) => /<text[^>]*\stextLength="[\d.]+"[^>]*>[^<]+<\/text>/.test(fs.readFileSync(path.join(out, link), 'utf8'))), 'card text is measured SVG text');
   assert.deepEqual(fs.readdirSync(docs).map(f => [f, fs.readFileSync(path.join(docs, f), 'utf8')]), before, 'the source documents do not change');
 
