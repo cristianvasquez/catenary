@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 vi.mock('@eclipse-glsp/client', () => ({ RequestExportAction: {}, GLSPSvgExporter: class {} }));
 vi.mock('../src/browser/diagram/markdown-export-dialog', () => ({ MarkdownExportDialog: class {} }));
-vi.mock('@theia/core/lib/browser', () => ({ ApplicationShell: class {}, StorageService: Symbol() }));
+vi.mock('@theia/core/lib/browser', () => ({ ApplicationShell: class {}, ConfirmDialog: class {}, StorageService: Symbol() }));
 vi.mock('@theia/filesystem/lib/browser', () => ({ FileDialogService: Symbol() }));
 vi.mock('@theia/filesystem/lib/browser/file-service', () => ({ FileService: class {} }));
 vi.mock('../src/browser/model-client', () => ({ ModelFrontend: class {} }));
@@ -23,7 +23,7 @@ function fixture(workspace: string) {
             checkMarkdownExport: async (r: { destination: string }) => (check.held && await new Promise<void>(r => check.waiting.push(r)), { ok: true, root: '/src', documents: ['a.md'], views: [], destination: r.destination, unresolved: [] }),
             exportMarkdown: (r: { destination: string }) => new Promise(resolve => exports.push({
                 destination: r.destination,
-                finish: ok => resolve({ ok, error: ok ? undefined : 'failed', written: [], removed: [], kept: [], problems: [], conflicts: [] })
+                finish: ok => resolve({ ok, error: ok ? undefined : 'failed', written: [], removed: [], kept: [], problems: [], conflicts: [], overwritable: [] })
             }))
         }
     };

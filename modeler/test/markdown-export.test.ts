@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -115,14 +116,23 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         expect(existsSync(path.join(out, '.hidden'))).toBe(false);
     });
 
-    it('law_unownedNeverOverwritten: never overwrites a file that an export did not write; writes nothing then', async () => {
+    it('law_overwriteOnlyConfirmed: a file that an export did not write is overwritten only with overwrite; else nothing is written', async () => {
         const src = tree({ 'a.md': 'new', 'b.md': 'b' });
         const out = tree({ 'a.md': 'mine', 'notes.txt': 'unrelated' });
         const r = await writeMarkdownExport(await prepared(src, out), svgs);
         expect(r.ok).toBe(false);
-        expect(r.conflicts).toEqual(['a.md: the file exists and an export did not write it.']);
+        expect(r.error).toBe('1 destination file exists and would be overwritten. Nothing was exported.');
+        expect(r.overwritable).toEqual(['a.md']);
+        expect(r.conflicts).toEqual([]);
         expect(listing(out)).toEqual(['a.md', 'notes.txt']);
         expect(read(out, 'a.md')).toBe('mine');
+
+        const w = await writeMarkdownExport(await prepared(src, out), svgs, true);
+        expect(w.ok).toBe(true);
+        expect(w.written.sort()).toEqual(['a.md', 'b.md']);
+        expect(read(out, 'a.md')).toBe('new');
+        expect(read(out, 'notes.txt')).toBe('unrelated');
+        expect(JSON.parse(read(out, OWNERSHIP_FILE)).files).toHaveProperty('a.md');
     });
 
     it('exports again after a change: updates its files, removes its old files, keeps unrelated and changed files', async () => {
@@ -148,15 +158,22 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         expect(again.unchanged.sort()).toEqual(['a.md', svgPath('urn:name:Model')].sort());
     });
 
-    it('a changed copy of an earlier export is not overwritten', async () => {
+    it('a changed copy of an earlier export is overwritten only with overwrite', async () => {
         const src = tree({ 'a.md': 'one' });
         const out = tree({});
         expect((await writeMarkdownExport(await prepared(src, out), svgs)).ok).toBe(true);
         writeFileSync(path.join(out, 'a.md'), 'edited');
         writeFileSync(path.join(src, 'a.md'), 'two');
         const r = await writeMarkdownExport(await prepared(src, out), svgs);
-        expect(r.conflicts).toEqual(['a.md: the file changed after the last export.']);
+        expect(r.ok).toBe(false);
+        expect(r.overwritable).toEqual(['a.md']);
+        expect(r.conflicts).toEqual([]);
         expect(read(out, 'a.md')).toBe('edited');
+
+        const w = await writeMarkdownExport(await prepared(src, out), svgs, true);
+        expect(w.ok).toBe(true);
+        expect(read(out, 'a.md')).toBe('two');
+        expect(JSON.parse(read(out, OWNERSHIP_FILE)).files['a.md']).toBe(createHash('sha256').update('two').digest('hex'));
     });
 
     it('does not write through a link in the destination', async () => {
@@ -167,6 +184,13 @@ describe('Markdown export: files (spec/ui-manifest.hs §9)', () => {
         const r = await writeMarkdownExport(await prepared(src, out), svgs);
         expect(r.conflicts).toEqual(['sub/a.md: a folder on the path leads out of the destination folder.']);
         expect(listing(elsewhere)).toEqual([]);
+        // A conflict is not an overwrite: overwrite does not write it, and the export writes nothing.
+        const w = await writeMarkdownExport(await prepared(src, out), svgs, true);
+        expect(w.ok).toBe(false);
+        expect(w.conflicts).toEqual(['sub/a.md: a folder on the path leads out of the destination folder.']);
+        expect(w.written).toEqual([]);
+        expect(listing(elsewhere)).toEqual([]);
+        expect(existsSync(path.join(out, OWNERSHIP_FILE))).toBe(false);
     });
 
     it('ignores recorded paths that leave the destination', async () => {

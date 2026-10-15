@@ -52,13 +52,13 @@ export class ModelServiceImpl implements ModelService, Disposable {
     async checkMarkdownExport(request: MarkdownExportRequest): Promise<MarkdownExportCheck> {
         return tracer.span('rpc', 'checkMarkdownExport', async () => checkOf(await prepareMarkdownExport(request, this.views())));
     }
-    async exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>): Promise<MarkdownExportResult> {
+    async exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>, overwrite?: boolean): Promise<MarkdownExportResult> {
         return tracer.span('rpc', 'exportMarkdown', async () => {
-            const failed = (error: string): MarkdownExportResult => ({ ok: false, error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: [] });
+            const failed = (error: string): MarkdownExportResult => ({ ok: false, error, written: [], unchanged: [], removed: [], kept: [], conflicts: [], overwritable: [], problems: [] });
             if (typeof request?.destination !== 'string') return failed('The export has no destination folder.');
             const prepared = await prepareMarkdownExport(request, this.views());
             if ('error' in prepared) return failed(prepared.error);
-            return writeMarkdownExport(prepared, svgs);
+            return writeMarkdownExport(prepared, svgs, overwrite === true);
         });
     }
     async dismissMigration(id: string): Promise<void> { tracer.span('rpc', 'dismissMigration', () => this.store.dismissMigration(id)); }

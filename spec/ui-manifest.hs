@@ -2009,8 +2009,9 @@ resolveEmbed views iri = lookup iri views
 -- The dialog opens when the check gives a root and one or more documents, also with unresolved embeds. It lists them.
 -- A check without a root or without documents shows its error and stops. The export runs only when the checked documents
 -- have no unresolved embed: the check after Export uses the unchecked documents as exclude.
--- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"'. The first argument is a JSON string or a list of
+-- CLI: catenary run catenary.exportMarkdown '"/abs/source"' '"/abs/destination"' [true]. The first argument is a JSON string or a list of
 -- strings, for example '["/abs/a.md","/abs/folder"]'. With both arguments there is no dialog, and all documents are exported.
+-- The third argument true confirms the overwrite of existing files that the export does not own (§9.3). Without it, they stop the export.
 -- Without arguments it uses the navigator selection and shows the dialog.
 -- The export reads and checks everything, renders each embedded view once, and then writes. A check error writes nothing.
 -- Check errors: a source that does not exist, an unresolved embed (with its file, line and IRI), a destination that is the root
@@ -2083,20 +2084,24 @@ linkChanges _ = False
 
 -- | _resources/.catenary-export.json records each file that an export wrote, with the SHA-256 of its content.
 -- An export writes a file that does not exist, a file with the output content, or a recorded file without later changes.
--- Any other file at an output path is a conflict, and the export writes nothing. Two outputs at one path are a conflict.
--- A record file that Catenary did not write (no generator "Catenary") is a conflict. A link, a folder or a folder link out of the
--- destination at an output path is also a conflict. Reason: never overwrite a file that the export does not own.
+-- Any other file at an output path is an overwrite. The export writes it only after a confirmation, and records it.
+-- Without the confirmation, the export lists the overwrites and writes nothing. The UI asks with the dialog "Overwrite Files?"
+-- (Overwrite, Cancel), and Overwrite writes again with the same SVGs. The CLI asks no question: the third argument true confirms (§9.2).
+-- Reason: an export shows a result, so an existing file asks a question and does not block it.
+-- Conflicts stop the export, also with a confirmation: two outputs at one path, a record file that Catenary did not write (no
+-- generator "Catenary"), a path that is not allowed, and a link, a folder or a folder link out of the destination at an output path.
+-- The export checks the conflicts before the overwrites.
 -- A recorded file that the export no longer writes is removed when it did not change. Else it is kept, reported and no longer recorded.
 -- The export does not write or remove other files. Each write goes to a temporary file and then a rename.
 -- A failed write stops the export. The result names the failed file and the files written before it. The record keeps them.
 type Hash = String
-mayWrite :: Maybe Hash -> Hash -> Maybe Hash -> Bool   -- recorded hash, output hash, current hash (Nothing: no file)
-mayWrite _ _ Nothing = True
-mayWrite recorded out (Just now) = now == out || recorded == Just now
+mayWrite :: Bool -> Maybe Hash -> Hash -> Maybe Hash -> Bool   -- confirmed, recorded hash, output hash, current hash (Nothing: no file)
+mayWrite _ _ _ Nothing = True
+mayWrite confirmed recorded out (Just now) = confirmed || now == out || recorded == Just now
 mayRemove :: Hash -> Hash -> Bool                      -- recorded hash, current hash
 mayRemove recorded now = recorded == now
-law_unownedNeverOverwritten :: Hash -> Hash -> Bool
-law_unownedNeverOverwritten out now = mayWrite Nothing out (Just now) == (now == out)
+law_overwriteOnlyConfirmed :: Bool -> Hash -> Hash -> Bool   -- an unowned file with other content is written iff confirmed
+law_overwriteOnlyConfirmed confirmed out now = now == out || mayWrite confirmed Nothing out (Just now) == confirmed
 
 -- 10. Settings ---------------------------------------------------------------
 

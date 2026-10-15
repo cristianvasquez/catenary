@@ -38,7 +38,9 @@ The export stops and writes nothing when:
 - an embed of a checked document names a view that does not exist;
 - a selected file or folder does not exist;
 - the destination is the root or a folder in it;
-- the export would overwrite a file that an earlier export did not write, or a file that changed after that export.
+- a link or a folder is at the path of an output file.
+
+When the export would overwrite a file that an earlier export did not write, or a file that changed after that export, Catenary asks. Select **Overwrite** to write these files. Select **Cancel** to export nothing.
 
 Catenary records the files that it writes in `_resources/.catenary-export.json`. A later export updates these files and removes the ones that it no longer writes. It does not change other files of the destination.
 

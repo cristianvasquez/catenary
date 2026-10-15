@@ -386,9 +386,9 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             return sources.length ? sources : undefined;
         };
         registry.registerCommand(OpenModelCommands.EXPORT_MARKDOWN, {
-            execute: (arg?: unknown, destination?: unknown) => {
+            execute: (arg?: unknown, destination?: unknown, overwrite?: unknown) => {
                 const sources = sourcesArg(arg);
-                if (sources) return this.markdownExport.exportSelection(sources, typeof destination === 'string' ? destination : undefined);
+                if (sources) return this.markdownExport.exportSelection(sources, typeof destination === 'string' ? destination : undefined, overwrite === true);
             },
             isEnabled: (arg?: unknown) => !!sourcesArg(arg), isVisible: (arg?: unknown) => !!sourcesArg(arg)
         });

@@ -6,7 +6,7 @@
 import { RequestExportAction } from '@eclipse-glsp/client';
 import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { MessageService, URI } from '@theia/core';
-import { ApplicationShell, StorageService } from '@theia/core/lib/browser';
+import { ApplicationShell, ConfirmDialog, StorageService } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FileDialogService } from '@theia/filesystem/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -41,11 +41,12 @@ export class MarkdownExport {
     /**
      * Export the Markdown documents of the sources (files, and folders with their subfolders) under their common folder (the root).
      * Without `destination`: the confirmation dialog (destination, documents with checkboxes); the export writes the checked documents.
-     * With `destination` (CLI): no dialog, all documents. Unresolved view references in the exported documents stop the export
+     * With `destination` (CLI): no dialog, all documents, and no question before an overwrite: the export overwrites the existing files
+     * that it does not own only with `overwrite`, else it stops. Unresolved view references in the exported documents stop the export
      * before it writes. A check without a root or without documents stops before the dialog. Returns the
      * result, undefined when the dialog was canceled.
      */
-    async exportSelection(sources: string[], destination?: string): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
+    async exportSelection(sources: string[], destination?: string, overwrite = false): Promise<MarkdownExportResult | MarkdownExportCheck | undefined> {
         // The workspace at the start: another workspace can open during the check, the dialog, the render or the writes.
         const workspace = this.model.snapshot.file;
         // Unresolved embeds do not stop here: the dialog lists them, and the user can uncheck their documents. The final check decides.
@@ -54,15 +55,10 @@ export class MarkdownExport {
             this.messages.error(check.root && !check.error ? 'The selection has no Markdown documents.' : checkMessage(check));
             return check;
         }
-        let dest = destination;
-        let exclude: string[] = [];
-        if (dest === undefined) {
-            const answer = await new MarkdownExportDialog(check, (await this.destinations())[check.root], current => this.askDestination(check.root, current)).open();
-            if (!answer) return undefined;
-            dest = answer.destination;
-            exclude = answer.exclude;
-        }
-        return this.run(workspace, { sources, destination: dest, exclude });
+        if (destination !== undefined) return this.run(workspace, { sources, destination, exclude: [] }, overwrite);
+        const answer = await new MarkdownExportDialog(check, (await this.destinations())[check.root], current => this.askDestination(check.root, current)).open();
+        if (!answer) return undefined;
+        return this.run(workspace, { sources, destination: answer.destination, exclude: answer.exclude }, 'ask');
     }
 
     /** Repeat the last successful export of this workspace: no dialog. Undefined when there is none. */
@@ -73,18 +69,31 @@ export class MarkdownExport {
             this.messages.info('No earlier Markdown export in this workspace. Use Export Markdown… first.');
             return undefined;
         }
-        return this.run(workspace, last);
+        return this.run(workspace, last, 'ask');
     }
 
-    /** Check, render and write. A successful export becomes the last export of `workspace`, the workspace where the command started. */
-    protected async run(workspace: string | undefined, { sources, destination: dest, exclude }: LastExport): Promise<MarkdownExportResult | MarkdownExportCheck> {
+    /**
+     * Check, render and write. A successful export becomes the last export of `workspace`, the workspace where the command started.
+     * Existing files that the export does not own: `'ask'` shows a dialog and writes again with the same SVGs on Overwrite; a boolean
+     * (CLI) overwrites them or stops without a question.
+     */
+    protected async run(workspace: string | undefined, { sources, destination: dest, exclude }: LastExport, overwrite: boolean | 'ask'): Promise<MarkdownExportResult | MarkdownExportCheck> {
         const final = await this.model.service.checkMarkdownExport({ sources, destination: dest, exclude });
         if (!final.ok) {
             this.messages.error(checkMessage(final));
             return final;
         }
         await this.remember(final.root, dest);
-        const result = await this.model.service.exportMarkdown({ sources, destination: dest, exclude }, await this.render(final.views));
+        const request = { sources, destination: dest, exclude };
+        const svgs = await this.render(final.views);
+        let result = await this.model.service.exportMarkdown(request, svgs, overwrite === true);
+        if (overwrite === 'ask' && onlyOverwritable(result)) {
+            if (!await this.askOverwrite(final.destination ?? dest, result.overwritable)) {
+                this.messages.info('Nothing was exported.');
+                return result;
+            }
+            result = await this.model.service.exportMarkdown(request, svgs, true);
+        }
         if (!result.ok) this.messages.error(resultMessage(result));
         else {
             const changed = result.written.length + result.removed.length;
@@ -95,6 +104,16 @@ export class MarkdownExport {
         const notes = [...problemLines(result.problems), ...result.kept.map(k => `${k}: changed after the last export; kept.`)];
         if (result.ok && notes.length) this.messages.warn(`Export notes: ${listed(notes)}`);
         return result;
+    }
+
+    /** Ask to overwrite the existing files (relative to `destination`) that the export does not own. */
+    protected async askOverwrite(destination: string, files: string[]): Promise<boolean> {
+        const n = files.length;
+        return !!await new ConfirmDialog({
+            title: 'Overwrite Files?',
+            msg: `${n} existing file${n === 1 ? '' : 's'} in ${destination} would be overwritten: ${listed(files)}. Overwrite ${n === 1 ? 'it' : 'them'}?`,
+            ok: 'Overwrite', cancel: 'Cancel'
+        }).open();
     }
 
     /** The folder dialog. It starts at `current`, else at the last destination of the root, else at the parent of the root. */
@@ -168,9 +187,12 @@ export function checkMessage(check: MarkdownExportCheck): string {
     return check.unresolved.length ? `${check.error} ${listed(unresolvedLines(check.unresolved))}` : check.error ?? 'The export failed.';
 }
 
-/** The message of a failed export: the error, the conflicts or unresolved references, and the files written before a failure. */
+/** True when the export failed only because existing files that it does not own would be overwritten: a confirmation can repeat it. */
+export const onlyOverwritable = (result: MarkdownExportResult) => !result.ok && result.overwritable.length > 0 && !result.conflicts.length && !result.failed && !result.unresolved?.length;
+
+/** The message of a failed export: the error, the conflicts, the files to overwrite or unresolved references, and the files written before a failure. */
 export function resultMessage(result: MarkdownExportResult): string {
-    const items = [...unresolvedLines(result.unresolved ?? []), ...result.conflicts, ...(result.failed ? result.written.map(w => `written: ${w}`) : [])];
+    const items = [...unresolvedLines(result.unresolved ?? []), ...result.conflicts, ...(result.ok ? [] : result.overwritable), ...(result.failed ? result.written.map(w => `written: ${w}`) : [])];
     return items.length ? `${result.error} ${listed(items)}` : result.error ?? 'The export failed.';
 }
 

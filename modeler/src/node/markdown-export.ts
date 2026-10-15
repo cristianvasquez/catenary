@@ -3,8 +3,8 @@
 // SVG files come from the view editors of the frontend (modeler/src/browser/diagram/markdown-export.ts).
 //
 // Ownership: _resources/.catenary-export.json records each file that an export wrote, with a SHA-256 of its content. An export writes
-// a file only when it does not exist, has the same content, or is a recorded file without later changes. Otherwise it stops before it
-// writes anything. It removes a recorded file that it no longer writes only when the file did not change after the last export.
+// a file without a question when it does not exist, has the same content, or is a recorded file without later changes. It overwrites
+// another existing file only with `overwrite` (the user confirmed). Otherwise it stops before it writes anything. It removes a recorded file that it no longer writes only when the file did not change after the last export.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -200,12 +200,12 @@ async function writeAtomic(file: string, data: Buffer): Promise<void> {
 
 /**
  * Write the planned export with the SVG of each view (`svgs`: view IRI → SVG text). Stops before the first write when an embed names
- * no view, an SVG or a copied file is missing, or a destination file belongs to someone else. A write failure stops the export: the
- * result names the files written before it.
+ * no view, an SVG or a copied file is missing, or a hard conflict exists (`conflicts`). An existing file that the export does not own
+ * (`overwritable`) stops it too, unless `overwrite` is true. A write failure stops the export: the result names the files written before it.
  */
-export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record<string, string>): Promise<MarkdownExportResult> {
+export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record<string, string>, overwrite = false): Promise<MarkdownExportResult> {
     const { plan, destination: dest } = prepared;
-    const result: MarkdownExportResult = { ok: false, written: [], unchanged: [], removed: [], kept: [], conflicts: [], problems: plan.problems };
+    const result: MarkdownExportResult = { ok: false, written: [], unchanged: [], removed: [], kept: [], conflicts: [], overwritable: [], problems: plan.problems };
     if (dest === undefined) return { ...result, error: 'The export has no destination folder.' };
     if (plan.unresolved.length) return { ...result, error: unresolvedMessage(plan), unresolved: plan.unresolved };
 
@@ -249,11 +249,16 @@ export async function writeMarkdownExport(prepared: PreparedExport, svgs: Record
         const now = sha256(await fs.readFile(file));
         if (now === sha256(data)) result.unchanged.push(rel);
         else if (owned[rel] === now) pending.push([rel, data]);
-        else conflict(rel, owned[rel] ? 'the file changed after the last export.' : 'the file exists and an export did not write it.');
+        else result.overwritable.push(rel); // The file changed after the last export, or an export did not write it.
     }
     if (result.conflicts.length) {
         return { ...result, error: `${result.conflicts.length} destination file${result.conflicts.length === 1 ? '' : 's'} would be overwritten. Nothing was exported.` };
     }
+    if (result.overwritable.length && !overwrite) {
+        const n = result.overwritable.length;
+        return { ...result, error: `${n} destination file${n === 1 ? '' : 's'} exist${n === 1 ? 's' : ''} and would be overwritten. Nothing was exported.` };
+    }
+    for (const rel of result.overwritable) pending.push([rel, output.get(rel)!]);
 
     // Recorded files that this export does not write: removed when unchanged, else kept and no longer recorded.
     const stale: string[] = [];

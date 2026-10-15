@@ -130,6 +130,7 @@ pnpm -s catenary --port 3917 answer --pick Dataset
 pnpm -s catenary --port 3917 answer --cancel
 pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/docs"' '"/tmp/catenary-out"'
 pnpm -s catenary --port 3917 run catenary.exportMarkdown '["/tmp/catenary-test/docs/a.md","/tmp/catenary-test/notes"]' '"/tmp/catenary-out"'
+pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/docs"' '"/tmp/catenary-out"' true   # overwrites existing files that the export did not write
 pnpm -s catenary --port 3917 run catenary.runLastMarkdownExport
 pnpm -s catenary --port 3917 open-view '<view-id>' --fit
 pnpm -s catenary --workspace /tmp/catenary-test status

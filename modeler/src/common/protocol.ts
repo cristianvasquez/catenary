@@ -116,8 +116,16 @@ export interface MarkdownExportResult {
     removed: string[];
     /** Files of an earlier export that this export does not write, kept because they changed after that export. */
     kept: string[];
-    /** Files that the export would overwrite and does not own: the export wrote nothing. */
+    /**
+     * Paths that the export cannot write, with the reason: two outputs at one path, a record file that is not of Catenary, a path that
+     * is not allowed or leads out of the destination, a link or a folder at the path. The export wrote nothing, also with `overwrite`.
+     */
     conflicts: string[];
+    /**
+     * Existing files that the export does not own (an export did not write them, or they changed after the last export). Without
+     * `overwrite`, the export wrote nothing. With `overwrite`, it wrote them and records them as its files.
+     */
+    overwritable: string[];
     /** The write that failed; the files in `written` were written before it. */
     failed?: { path: string; error: string };
     unresolved?: UnresolvedEmbed[];
@@ -153,8 +161,11 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
      * does not check one. Writes nothing.
      */
     checkMarkdownExport(request: MarkdownExportRequest): Promise<MarkdownExportCheck>;
-    /** Export the Markdown documents of the request to its destination with the SVG of each embedded view (view IRI → SVG text). */
-    exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>): Promise<MarkdownExportResult>;
+    /**
+     * Export the Markdown documents of the request to its destination with the SVG of each embedded view (view IRI → SVG text). With
+     * `overwrite` (the user confirmed), it overwrites the existing files that it does not own (`overwritable`); never the `conflicts`.
+     */
+    exportMarkdown(request: MarkdownExportRequest & { destination: string }, svgs: Record<string, string>, overwrite?: boolean): Promise<MarkdownExportResult>;
     /** Remove an entry of the patch queue without applying it. */
     dismissMigration(id: string): Promise<void>;
     /** Write what is not written yet (after a failed write) and commit it. */
