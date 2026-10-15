@@ -307,8 +307,12 @@ export class ModelStore {
         return unknown.length ? { error: `No element with the id or IRI ${unknown.map(x => JSON.stringify(x)).join(', ')}.` } : { args: out };
     }
 
-    /** The IRI of an element id or a property shape id; undefined for other ids (a relation has no IRI). */
+    /**
+     * The IRI of an element id or a property shape id; undefined for other ids (a relation has no IRI). A value with ":" is an IRI
+     * already (addConcept gives the IRI of the concept).
+     */
     iriOf(id: string): string | undefined {
+        if (id.includes(':')) return id;
         return idIri(id) ?? this.shapesIndex().model.properties[id]?.uri;
     }
 

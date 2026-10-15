@@ -64,6 +64,16 @@ describe('IRIs where commands take ids', () => {
         expect(store.reads.shapes().properties[p.id]).toBeUndefined();
     });
 
+    it('addConcept with the IRI of the value set gives the IRI of the concept', () => {
+        const set = store.execute({ kind: 'createValueSet', valueSet: 'scheme', label: 'Colors' });
+        if (!set.ok || !set.iri) throw new Error(JSON.stringify(set));
+        const r = store.execute({ kind: 'addConcept', set: set.iri, label: 'Red' });
+        expect(r.ok).toBe(true);
+        expect(r.ok && r.iri).toBeTruthy();
+        expect(r.ok && r.iri).toBe(r.ok && r.id);
+        expect(store.reads.shapes().valueSets[set.id!].members.map(m => m.uri)).toEqual([r.ok && r.iri]);
+    });
+
     it('an unknown IRI fails, and the error names the IRI', () => {
         const r = store.execute({ kind: 'rename', id: 'urn:name:Nothing%20here', label: 'X' });
         expect(r.ok).toBe(false);
