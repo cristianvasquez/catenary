@@ -8,8 +8,9 @@ import { cliProtocol } from './cli-protocol.json';
 
 /**
  * Version of the CLI protocol (manifest §12, law_cliRefusesOlderBackend). The backend gives it in the discovery file and in status as
- * cliProtocol; scripts/catenary.mjs reads the same JSON file. Increase it when the CLI sends something an older backend ignores.
- * 2: exec checks the command shape. A backend without the value has protocol 1.
+ * cliProtocol; scripts/catenary.mjs reads the same JSON file. Increase it once per release of CLI changes that an older backend
+ * would ignore, not once per change. 2: round 1 of kata 3cg2 (exec shape check, IRIs as IDs, search filter, batch, layout).
+ * A backend without the value has protocol 1.
  */
 export const CLI_PROTOCOL: number = cliProtocol;
 export const CLI_HTTP_PATH = '/catenary/cli';

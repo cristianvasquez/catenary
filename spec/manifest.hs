@@ -1977,15 +1977,29 @@ needsWindow m = m `notElem` [Status, Model, Rpc, Exec]
 -- | Backend choice: --port, else CATENARY_PORT, else the only running backend, else the one backend whose workspace contains
 -- the current directory or is inside it. Otherwise the CLI fails and lists ports and workspaces. Files of dead PIDs are removed.
 -- --window selects a window, else the last connection.
-data RunningBackend = RunningBackend { backendPort :: Int, backendWorkspace :: FilePath }
+-- --workspace PATH (a folder or a .trig file) selects the one backend whose loaded model file (status → model.file) is PATH or
+-- is inside PATH. It ignores CATENARY_PORT. Reason: the discovery workspace is the start argument, wrong after File > Open.
+-- No match or several matches: exit 2 with each backend, its port and its loaded file. --port with --workspace: exit 2.
+-- The CLI does not retry after a lost connection (ECONNRESET). The next CLI call selects the backend again.
+data RunningBackend = RunningBackend { backendPort :: Int, backendWorkspace :: FilePath, loadedFile :: Maybe FilePath }
 contains :: FilePath -> FilePath -> Bool             -- a folder contains a path, or is it
-contains folder p = folder == p || (folder ++ "/") `isPrefixOf` p
-chooseBackend :: Maybe Int -> Maybe Int -> FilePath -> [RunningBackend] -> Maybe Int   -- --port, CATENARY_PORT, cwd, live backends
-chooseBackend flag env cwd running = flag <|> env <|> only running <|> only (filter near running)
-  where
-    only [b] = Just (backendPort b)
-    only _ = Nothing
-    near b = contains (backendWorkspace b) cwd || contains cwd (backendWorkspace b)
+contains folder p = folder == p || withSlash folder `isPrefixOf` p   -- the root "/" contains "/tmp"
+  where withSlash f = if "/" `isSuffixOf` f then f else f ++ "/"
+loads :: FilePath -> RunningBackend -> Bool          -- the loaded model file is PATH or is inside the folder PATH
+loads ws b = maybe False (contains ws) (loadedFile b)
+onlyPort :: [RunningBackend] -> Maybe Int
+onlyPort [b] = Just (backendPort b)
+onlyPort _ = Nothing
+chooseBackend :: Maybe Int -> Maybe FilePath -> Maybe Int -> FilePath -> [RunningBackend] -> Maybe Int
+  -- --port, --workspace, CATENARY_PORT, cwd, live backends. Nothing: exit 2.
+chooseBackend (Just _) (Just _) _ _ _ = Nothing
+chooseBackend _ (Just ws) _ _ running = onlyPort (filter (loads ws) running)
+chooseBackend flag Nothing env cwd running = flag <|> env <|> onlyPort running <|> onlyPort (filter near running)
+  where near b = contains (backendWorkspace b) cwd || contains cwd (backendWorkspace b)
+law_workspaceSelectsOne :: Maybe Int -> Maybe Int -> FilePath -> FilePath -> [RunningBackend] -> Bool
+law_workspaceSelectsOne flag env ws cwd running = chooseBackend flag (Just ws) env cwd running == case (flag, filter (loads ws) running) of
+  (Nothing, [b]) -> Just (backendPort b)
+  _ -> Nothing
 
 -- | Output is JSON. Exit codes: 0 done, 1 failed, 2 usage or connection error, 3 waiting or timeout.
 -- run and answer wait for completion, a prompt or the timeout (default 10 s). answer --cancel cancels a prompt.

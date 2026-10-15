@@ -112,7 +112,7 @@ A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A pull reque
 
 ### Command-line interface
 
-`pnpm -s catenary` controls a running backend. Use `--help` for syntax and `rpc` for the available methods. Each backend writes `$XDG_RUNTIME_DIR/catenary/<pid>.json` (port, token, workspace). The CLI selects the backend from `--port`, then `CATENARY_PORT`, then the only running backend, then the backend of the workspace that contains the current directory. Otherwise it fails and lists the running backends. The [data contract](spec/manifest.hs) defines authentication and exit codes.
+`pnpm -s catenary` controls a running backend. Use `--help` for syntax and `rpc` for the available methods. Each backend writes `$XDG_RUNTIME_DIR/catenary/<pid>.json` (port, token, workspace). The CLI selects the backend from `--port`, then `CATENARY_PORT`, then the only running backend, then the backend of the workspace that contains the current directory. Otherwise it fails and lists the running backends. `--workspace PATH` selects the backend whose loaded model file is PATH (a `.trig` file) or is inside PATH (a folder). The CLI asks each backend for its `status` to find the loaded file, because the discovery file keeps the start folder also after File > Open. With no match or several matches, the CLI exits with code 2 and lists each backend with its port and loaded file. `--port` with `--workspace` also gives exit code 2. The CLI does not retry after a lost connection. After a backend restart on a new port, the next call with `--workspace` finds the new port. The [data contract](spec/manifest.hs) defines authentication and exit codes.
 
 The CLI refuses a backend with an older CLI protocol (`cliProtocol` in the discovery file and in `status`) for each command except `status` and `instances`: restart the backend.
 
@@ -132,6 +132,7 @@ pnpm -s catenary --port 3917 run catenary.exportMarkdown '"/tmp/catenary-test/do
 pnpm -s catenary --port 3917 run catenary.exportMarkdown '["/tmp/catenary-test/docs/a.md","/tmp/catenary-test/notes"]' '"/tmp/catenary-out"'
 pnpm -s catenary --port 3917 run catenary.runLastMarkdownExport
 pnpm -s catenary --port 3917 open-view '<view-id>' --fit
+pnpm -s catenary --workspace /tmp/catenary-test status
 ```
 
 `open-view <view-id>` opens and activates a view in the connected window (command `catenary.openView`) and prints `currentView`. It exits 0 only when `currentView` is the requested view. An unknown view gives exit 1 and the message "The requested view is not in the current workspace."
