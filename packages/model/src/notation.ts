@@ -469,10 +469,11 @@ function gather(D: TripleIndex, f: Figure, warnings: string[], titlePaths: strin
     // The sh:name values of each path, in gather order: the first is the row title, the others are `names`.
     const namesOf = new Map<string, string[]>();
     for (const ps of shapes.flatMap(s => [...ownOf(s), ...groupsOf(s).flatMap(g => g.members)])) {
-        const path = D.one(ps, SH('path')), name = D.one(ps, SH('name'))?.value;
-        if (path?.termType !== 'NamedNode' || name === undefined) continue;
+        const path = D.one(ps, SH('path'));
+        if (path?.termType !== 'NamedNode') continue;
         const names = namesOf.get(path.value) ?? [];
-        if (!names.includes(name)) namesOf.set(path.value, [...names, name]);
+        for (const { value } of D.objects(ps, SH('name'))) if (!names.includes(value)) names.push(value);
+        if (names.length) namesOf.set(path.value, names);
     }
     const seen = new Set<string>(), statements = new Set<string>();
     const rowsOf = (ps: NTerm): Row[] => {

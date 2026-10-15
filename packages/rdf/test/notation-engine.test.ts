@@ -290,6 +290,11 @@ describe('gathered rows (law_gatheredRowPerStatement)', () => {
         expect(rows).toHaveLength(1);
         expect(['a: v | b', 'b: v | a']).toContain(rows[0]);
     });
+    it('law_gatheredRowPerStatement: a property shape with two sh:name values keeps the other name', async () => {
+        const { rows } = await card(shape('S1', 'a" , "c') + shape('S2'));
+        expect(rows).toHaveLength(1);
+        expect(['a: v | c', 'c: v | a']).toContain(rows[0]);
+    });
     it('law_gatheredRowPerStatement: two values give two rows and one connector per IRI value', async () => {
         const { rows, connectors } = await card(shape('S1', 'a') + shape('S2', 'b'), 'ex:v , ex:w');
         expect(rows).toHaveLength(2);
