@@ -78,3 +78,63 @@ it('law_failedExportKeepsLast: a failed export does not replace the last export;
     exports[2].finish(true);
     await again;
 });
+
+/** A MarkdownExport whose first export fails only on `overwritable` files, with the answer `confirm` to the dialog. */
+function overwriteFixture(confirm: boolean) {
+    const data: Record<string, unknown> = {};
+    const calls: { svgs: Record<string, string>; overwrite?: boolean }[] = [];
+    const svgs = { 'urn:v': '<svg/>' };
+    const model = {
+        snapshot: { file: '/a/workspace.trig' },
+        service: {
+            checkMarkdownExport: async (r: { destination: string }) => ({ ok: true, root: '/src', documents: ['a.md'], views: [{ iri: 'urn:v', id: 'v', label: 'V' }], destination: r.destination, unresolved: [] }),
+            exportMarkdown: async (_r: unknown, s: Record<string, string>, overwrite?: boolean) => {
+                calls.push({ svgs: s, overwrite });
+                return overwrite
+                    ? { ok: true, written: ['a.md'], unchanged: [], removed: [], kept: [], problems: [], conflicts: [], overwritable: ['a.md'] }
+                    : { ok: false, error: '1 destination file exists and would be overwritten. Nothing was exported.', written: [], unchanged: [], removed: [], kept: [], problems: [], conflicts: [], overwritable: ['a.md'] };
+            }
+        }
+    };
+    const storage = { getData: async (k: string, d: unknown) => data[k] ?? d, setData: async (k: string, v: unknown) => { data[k] = v; } };
+    const messages = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const exporter = Object.assign(new MarkdownExport(), { model, storage, messages, shell: { currentWidget: undefined } });
+    const render = vi.fn(async () => svgs);
+    const askOverwrite = vi.fn(async () => confirm);
+    Object.assign(exporter, { render, askOverwrite });
+    data['catenary.markdownExport.last'] = { '/a/workspace.trig': { sources: ['/src'], destination: '/out', exclude: [] } };
+    const last = () => data['catenary.markdownExport.last'];
+    return { exporter, calls, svgs, render, askOverwrite, messages, last };
+}
+
+it('Run Last asks before it overwrites; Overwrite exports again with overwrite and the same SVGs, without a second render', async () => {
+    const { exporter, calls, svgs, render, askOverwrite } = overwriteFixture(true);
+    const result = await exporter.runLast();
+    expect(askOverwrite).toHaveBeenCalledWith('/out', ['a.md']);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(calls.map(c => c.overwrite)).toEqual([false, true]);
+    expect(calls[1].svgs).toBe(svgs);
+    expect(result).toMatchObject({ ok: true });
+});
+
+it('Cancel in the overwrite dialog exports nothing and keeps the last export', async () => {
+    const { exporter, calls, messages, last } = overwriteFixture(false);
+    const before = JSON.stringify(last());
+    const result = await exporter.runLast();
+    expect(calls.map(c => c.overwrite)).toEqual([false]);
+    expect(messages.info).toHaveBeenCalledWith('Nothing was exported.');
+    expect(messages.error).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: false, overwritable: ['a.md'] });
+    expect(JSON.stringify(last())).toBe(before);
+});
+
+it('the CLI export with a destination does not ask: it refuses without true and overwrites with true', async () => {
+    const refused = overwriteFixture(true);
+    expect(await refused.exporter.exportSelection(['/src'], '/out')).toMatchObject({ ok: false });
+    expect(refused.askOverwrite).not.toHaveBeenCalled();
+    expect(refused.messages.error).toHaveBeenCalledWith('1 destination file exists and would be overwritten. Nothing was exported. a.md');
+    const confirmed = overwriteFixture(false);
+    expect(await confirmed.exporter.exportSelection(['/src'], '/out', true)).toMatchObject({ ok: true });
+    expect(confirmed.askOverwrite).not.toHaveBeenCalled();
+    expect(confirmed.calls.map(c => c.overwrite)).toEqual([true]);
+});
