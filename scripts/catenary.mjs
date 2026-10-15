@@ -3,7 +3,7 @@
 // Protocol: modeler/src/common/cli-protocol.ts. The backend writes $XDG_RUNTIME_DIR/catenary/<pid>.json (port, token) at start.
 import { readdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const USAGE = `Usage: catenary [--port N | --workspace PATH] [--window N] [--timeout MS] <command> [arguments]
 
@@ -96,7 +96,8 @@ async function loadedFile(instance) {
 }
 
 const realpath = p => { try { return realpathSync(p); } catch { return resolve(p); } };
-const inside = (a, b) => a === b || a.startsWith(b + sep);
+/** Path a is folder b or is inside it. path.relative also handles a root folder ("/", "C:\\"). */
+const inside = (a, b) => { const r = relative(b, a); return r === '' || (r !== '..' && !r.startsWith('..' + sep) && !isAbsolute(r)); };
 
 /** --workspace: the one backend whose loaded model file is PATH or is inside the folder PATH. Manifest §12 law_workspaceSelectsOne. */
 async function pickByWorkspace(all, path) {

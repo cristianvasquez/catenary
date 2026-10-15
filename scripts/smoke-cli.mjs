@@ -127,6 +127,8 @@ try {
     check('--workspace folder, one backend loaded it: that backend', r.code === 0 && r.out?.pid === c.pid, r);
     r = cliIn('shared', '--workspace', join(ws, 'workspace.trig'), 'status');
     check('--workspace .trig file, one backend loaded it: that backend', r.code === 0 && r.out?.pid === c.pid, r);
+    r = cliIn('shared', '--workspace', '/', 'status');
+    check('--workspace of the root folder, one backend loaded a file below it: that backend', r.code === 0 && r.out?.pid === c.pid, r);
     r = cliIn('shared', '--workspace', run, 'status');
     check('--workspace of another folder: exit 2', r.code === 2 && lists(r, c.port, d.port), r);
     r = cliIn('shared', '--port', String(c.port), '--workspace', ws, 'status');

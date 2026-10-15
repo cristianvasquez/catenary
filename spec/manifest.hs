@@ -1979,11 +1979,12 @@ needsWindow m = m `notElem` [Status, Model, Rpc, Exec]
 -- --window selects a window, else the last connection.
 -- --workspace PATH (a folder or a .trig file) selects the one backend whose loaded model file (status → model.file) is PATH or
 -- is inside PATH. It ignores CATENARY_PORT. Reason: the discovery workspace is the start argument, wrong after File > Open.
--- No match, several matches, or --port with --workspace: exit 2 with each backend, its port and its loaded file.
+-- No match or several matches: exit 2 with each backend, its port and its loaded file. --port with --workspace: exit 2.
 -- The CLI does not retry after a lost connection (ECONNRESET). The next CLI call selects the backend again.
 data RunningBackend = RunningBackend { backendPort :: Int, backendWorkspace :: FilePath, loadedFile :: Maybe FilePath }
 contains :: FilePath -> FilePath -> Bool             -- a folder contains a path, or is it
-contains folder p = folder == p || (folder ++ "/") `isPrefixOf` p
+contains folder p = folder == p || withSlash folder `isPrefixOf` p   -- the root "/" contains "/tmp"
+  where withSlash f = if "/" `isSuffixOf` f then f else f ++ "/"
 loads :: FilePath -> RunningBackend -> Bool          -- the loaded model file is PATH or is inside the folder PATH
 loads ws b = maybe False (contains ws) (loadedFile b)
 onlyPort :: [RunningBackend] -> Maybe Int
