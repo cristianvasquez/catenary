@@ -776,6 +776,14 @@ nodeShapeTargetClass known name mint = fromMaybe (mint name) (lookup name known)
 -- A Turtle file gives the position from its syntax tree. Other formats give the line of a text search. An unknown position opens the file.
 -- Model reveals the row; several rows give a pick of paths. Canvas selects and centers the placement.
 -- Double-click or Enter on an element row of the Model explorer runs Open in….
+-- A click on the predicate of the Relation panel runs Open in… for the predicate IRI (Node p). Its files are the files of the
+-- statements with p as subject, else with p as object. A predicate that occurs only in predicate position has no file.
+-- Reason: a workspace that declares the predicate opens at its declaration. An undeclared vocabulary gives the disabled reason.
+predicateFiles :: [(Statement, FilePath)] -> Iri -> [FilePath]
+predicateFiles qs p = nub (if null asSubject then [f | ((_, _, o), f) <- qs, o == Node p] else asSubject)
+  where asSubject = [f | ((s, _, _), f) <- qs, s == Node p]
+law_predicateOnlyHasNoFile :: [(Statement, FilePath)] -> Iri -> Bool
+law_predicateOnlyHasNoFile qs p = all (\((s, _, o), _) -> s /= Node p && o /= Node p) qs ==> null (predicateFiles qs p)
 data OpenTarget = SourceAt FilePath (Maybe (Int, Int)) | ModelOf FilePath | CanvasOf Id deriving Eq
 data Here = HereSource FilePath | HereModel FilePath | HereCanvas Id | Elsewhere deriving Eq
 openTarget :: Maybe Element -> Pane -> [Element] -> Maybe Element   -- the view of the canvas, pane, selected items

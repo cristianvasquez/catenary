@@ -14,7 +14,7 @@ Properties shows a form for the selected element. The fields come from all appli
 - **Locked**: the locked files that hold statements of the instance. Locked values show as plain text.
 - The action toolbar has **Open in**, **Rename** and a **More actions** menu with the actions of the element.
 
-For a view, Properties edits its label and its Markdown **Notes**. Click the external-link icon of Notes to edit them in the text editor beside the diagram. For a node shape, Properties edits the target class, the targets by predicate (**Target subjects of**, **Target objects of**, one predicate per line), the node constraints and the description. For a property shape, it edits the path, the range, the cardinality, the name and the description.
+For a view, Properties edits its label and its Markdown **Notes**. Click the external-link icon of Notes to edit them in the text editor beside the diagram. For a node shape, Properties edits the target class, the targets by predicate (**Target subjects of**, **Target objects of**, one predicate per line), the node constraints and the description. For a property shape, it edits the path, the range, the cardinality, the name and the description. For a relation, a click on the predicate runs **Open in** for the predicate IRI.
 
 ## RDFS domain and range
 

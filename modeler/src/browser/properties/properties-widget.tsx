@@ -17,7 +17,7 @@ import {
     ACTIONS, Description, ElementProperties, ElementRow, InstanceProperties, baseName, LOGICAL_OPERATORS, LogicalOperator, NodeShapePatch, ShapesModel, View,
     ViewElementPatch, boxes, cardinalityText, compactIri, describeProperties, describeQuads, descriptionCommand, descriptionKey, formatPath, inside,
     parseCardinality, parsePath, permittedRelations, predicateName, primaryClass, rangeText, verbalizeConstraint, verbalizeProperty, verbalizeShape, alternativesOf,
-    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged, RDF_TYPE, isVocabularyType
+    rangeKey, valueSetOf, Range, SimpleRange, NS, lockedKey, SnapshotChange, panelsUnchanged, RDF_TYPE, isVocabularyType, iriId
 } from '@catenary/model';
 import { ViewEditors } from '../diagram/view-editors';
 import { ViewNotesEditors, ViewNotesField } from '../notes/view-notes';
@@ -404,7 +404,8 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
             {this.head('Relation', predicateName(meta, r.predicate))}
             <Section title='Triple'>
                 <Row label='From' inline><Link label={s.label} onClick={() => this.editors.show(s.id)} /></Row>
-                <Row label='Predicate' inline><code className='catenary-iri' title={r.predicate}>{compactIri(r.predicate)}</code></Row>
+                <Row label='Predicate' inline><Link label={compactIri(r.predicate)} title={r.predicate}
+                    onClick={() => void this.commands.executeCommand('catenary.openIn', { ids: [iriId(r.predicate)] })} /></Row>
                 <Row label='To' inline><Link label={o.label} onClick={() => this.editors.show(o.id)} /></Row>
                 {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> No shape or RDFS rule declares this relation for these classes.</div>}
             </Section>

@@ -110,6 +110,21 @@ describe('Action model (spec/ui-manifest.hs §4)', () => {
         expect(state({ ids: [iriId('urn:x:thing')] }, id)).toBeUndefined();
     });
 
+    it('the predicate of a relation (Relation panel): Open in… at its declaration; no file when it occurs only as predicate (law_predicateOnlyHasNoFile)', async () => {
+        const vocab = `<urn:x:declared> a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ;
+    <http://www.w3.org/2000/01/rdf-schema#domain> <urn:x:Lonely> .\n`;
+        const used = `<urn:x:a> a <urn:x:Lonely> ; <urn:x:declared> <urn:x:b> ; <urn:x:undeclared> <urn:x:b> .\n<urn:x:b> a <urn:x:Lonely> .\n`;
+        const ws = tempWorkspace({ 'vocab.ttl': vocab, 'used.ttl': used }, 'catenary-predicate-').dir;
+        const s = await openStore(writeWorkspace(ws));
+        const declared = iriId('urn:x:declared'), undeclared = iriId('urn:x:undeclared');
+        expect(s.reads.selectionActions({ ids: [declared] }).actions.find(a => a.id === 'catenary.openIn')).toEqual({ id: 'catenary.openIn', enabled: true });
+        const source = (await s.reads.openTargets(declared)).filter(t => t.presentation === 'Source');
+        expect(source).toEqual([{ presentation: 'Source', path: join(ws, 'vocab.ttl'), line: 1, column: 1 }]);
+        expect(s.reads.selectionActions({ ids: [undeclared] }).actions.find(a => a.id === 'catenary.openIn'))
+            .toEqual({ id: 'catenary.openIn', enabled: false, reason: 'No file and no view has the element.' });
+        expect(await s.reads.openTargets(undeclared)).toEqual([]);
+    });
+
     it('an IRI with two kinds gets the actions of both', () => {
         const doc = docOf(store);
         const both = Object.keys(doc.shapes.nodeShapes).find(id => doc.instances[id]);
