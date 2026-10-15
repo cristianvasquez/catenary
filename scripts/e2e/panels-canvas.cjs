@@ -383,12 +383,17 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   await app.waitUntil('one undo restores the bend where it was', bendState, s => s.vertices === saved);
 }));
 
-test('browser: law_disabledGestureShowsReason: a click on a predicate that no file declares, and F12, show the reason each time', { timeout: 60000 }, t => withApp(t, 'disabled-gesture', {
+test('browser: law_disabledGestureShowsReason: a click on a predicate that no file declares, and F12, show the reason each time; law_gatheredRowPerStatement: a card line with other names has a tooltip and drags the card', { timeout: 60000 }, t => withApp(t, 'disabled-gesture', {
   fixture: workspace => {
     fs.writeFileSync(path.join(workspace, 'workspace.trig'), `@prefix ws: <https://cristianvasquez.github.io/catenary/vocab/workspace#> .
     <urn:name:workspace> { <urn:name:workspace> a ws:Workspace; ws:placeInstances "data.ttl" . }`);
     fs.writeFileSync(path.join(workspace, 'data.ttl'), `<urn:x:a> a <urn:x:Thing> ; <http://www.w3.org/2000/01/rdf-schema#label> "A" ; <urn:x:undeclared> <urn:x:b> .
-<urn:x:b> a <urn:x:Thing> ; <http://www.w3.org/2000/01/rdf-schema#label> "B" .\n`);
+<urn:x:b> a <urn:x:Thing> ; <http://www.w3.org/2000/01/rdf-schema#label> "B" .
+<urn:x:a> <urn:x:p> "v" .\n`);
+    // Two node shapes with the path urn:x:p and different names: one card line "first: v" with the tooltip of the other name.
+    fs.writeFileSync(path.join(workspace, 'shapes.ttl'), `@prefix sh: <http://www.w3.org/ns/shacl#> .
+<urn:x:S1> a sh:NodeShape ; sh:targetClass <urn:x:Thing> ; sh:property [ sh:path <urn:x:p> ; sh:name "first" ] .
+<urn:x:S2> a sh:NodeShape ; sh:targetClass <urn:x:Thing> ; sh:property [ sh:path <urn:x:p> ; sh:name "second" ] .\n`);
   },
   ready: '#theia-main-content-panel'
 }, async ({ page, cli, workspace, errors, waitUntil }) => {
@@ -425,5 +430,23 @@ test('browser: law_disabledGestureShowsReason: a click on a predicate that no fi
   since = lastSeq();
   await page.keyboard.press('F12');
   await shown(since);
+  // law_gatheredRowPerStatement: one card line for the statement, its tooltip names the other sh:name, and the line takes the hover.
+  await page.locator('.theia-preload').waitFor({ state: 'detached' });
+  const lines = page.locator('svg.sprotty-graph:visible .catenary-card .card-line');
+  await waitUntil('the card of A shows one line for urn:x:p', () => lines.allTextContents(), texts => texts.filter(s => s === 'first: v').length === 1);
+  assert.deepEqual((await lines.allTextContents()).filter(s => s.endsWith(': v')), ['first: v']);
+  const titled = page.locator('svg.sprotty-graph:visible .catenary-card .card-line[title]');
+  assert.equal(await titled.count(), 1);
+  assert.equal(await titled.getAttribute('title'), 'Also named: second');
+  const center = async () => { const b = await titled.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const at = await center();
+  assert.equal(await page.evaluate(({ x, y }) => { const e = document.elementFromPoint(x, y); return e?.classList.contains('card-line') ? e.getAttribute('title') : e?.outerHTML.slice(0, 120); }, at),
+    'Also named: second', 'the titled line is the hit target at its center');
+  // A drag that starts on the titled line moves the card.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 80, at.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await waitUntil('the card moved with the drag from its titled line', center, c => Math.abs(c.x - at.x - 80) < 4 && Math.abs(c.y - at.y - 60) < 4);
   assert.deepEqual(errors, []);
 }));

@@ -495,6 +495,8 @@ body.catenary-grabbing, body.catenary-grabbing * { cursor: grabbing !important; 
 .catenary-embedded-input { min-height: 20px; }
 /* The card content has no pointer events (card-fo); the name slots take the double-click of canvas.ts (rename). */
 .catenary-card .card-name, .shape-card .shape-name, .valueset-card .vs-name, .catenary-one-of .vs-name, .shape-card .shape-class { pointer-events: auto; cursor: text; }
+/* A card line with other names (law_gatheredRowPerStatement) takes the hover of its tooltip. */
+.catenary-card .card-line[title] { pointer-events: auto; }
 
 /* Workspace settings view (workspace-settings.tsx): one column in the main area. */
 .catenary-settings { max-width: 760px; margin: 0 auto; padding-top: 8px; }

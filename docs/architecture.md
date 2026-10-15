@@ -247,7 +247,7 @@ Laws: a test that checks a manifest law cites the law name (`law_<name>`) in its
 | `modeler/test/after-revision.test.ts` | `law_revealAfterShowUpdate` |
 | `modeler/test/action-service.test.ts` | `law_selectionReadsLastOnly`, `law_gestureNoQuietWait`, `law_disabledGestureShowsReason` |
 | `packages/model/test/actions.test.ts` | `law_disabledGestureShowsReason` (`gestureStep`) |
-| `scripts/e2e/panels-canvas.cjs`, `scripts/e2e/editors.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations), `law_disabledGestureShowsReason` (predicate click, F12) |
+| `scripts/e2e/panels-canvas.cjs`, `scripts/e2e/editors.cjs` | `law_oneSelectionPerWindow` and `law_highlightKeys` (two canvases side by side), `law_hiddenCanvasRefreshesOnce` (panel reads), `law_revealAfterShowUpdate` and `law_gestureNoQuietWait` (file presentations), `law_disabledGestureShowsReason` (predicate click, F12), `law_gatheredRowPerStatement` (card line tooltip, hit target, drag) |
 
 Read budget: `packages/rdf/test/scale-fixtures.ts` generates the scale fixtures: a view of 600 cards, a view of 300 placed instances and an explorer file of 600 subjects. Each open writes a new temporary workspace, so a test that edits owns its fixture. The functional tests assert no elapsed time. `read-budget.test.ts` checks that each panel read of 600 elements and each step of a content change is one tracer span, and that the kept reads equal the reads of a new store after each edit, undo and redo. `selection-scale.test.ts` and `explorer.test.ts` bound the SPARQL queries and store reads.
 
