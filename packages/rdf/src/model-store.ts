@@ -10,18 +10,18 @@ import { applicabilityOf } from './queries';
 
 import {
     ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, MigrationChange, ModelSnapshot, PREFIXES, SnapshotChange,
-    ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, cardOf, idIri, prefixesProblem, setPrefixes
+    MODEL_QUERIES, ModelQueries, QUERY_ID_PARAMS, TripleRef, ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, canonicalId, cardOf, idIri, isTripleRef, prefixesProblem, setPrefixes
 } from '@catenary/model';
 import * as path from 'path';
 import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, oxigraphMemoryBytes, portableRelative } from 'rdf-files';
 import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
-import { commandShapeError, executeCommand } from './commands';
+import { commandShapeError, executeCommand, mapCommandIds } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
 import { ChangeScope, Classified, REPORT_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
 import { GraphChange, ModelGraph, Patch } from './graph';
 import { History } from 'rdf-core';
-import { elementId, elementTerm } from './ids';
+import { elementId, elementTerm, relationTriple } from './ids';
 import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
 import { movedIds } from './moved-ids';
@@ -35,7 +35,7 @@ import { Settings, createWorkspace } from './settings';
 import { withCount } from './shape-ops';
 import { Metamodel, buildVocabulary, emptyMetamodel, shapesTriples, vocabularyQuads } from './shapes';
 import { ShapesIndex, shapesIndexOf } from './shapes-read';
-import { rdf } from './terms';
+import { rdf, termKey } from './terms';
 import { TracedStore, tracer } from './trace';
 import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
@@ -265,6 +265,57 @@ export class ModelStore {
         return shapesIndexOf(this.graph);
     }
 
+    /**
+     * The id of an id, an IRI or a triple {s, p, o} (canonicalId, manifest §1.3). The IRI of a property shape gives its p- id.
+     * Other values stay the same.
+     */
+    resolveId(x: string | TripleRef): string {
+        const id = canonicalId(x);
+        if (typeof x !== 'string' || id === x) return id;
+        return this.shapesIndex().byTerm.get(termKey(rdf.namedNode(x))) ?? id;
+    }
+
+    /**
+     * False for a well-formed id (n-, r-, p-, c-) of a term that the model does not have. True for other values: the reads decide
+     * (a figure id, an explorer key).
+     */
+    knownId(id: string): boolean {
+        const idx = this.shapesIndex();
+        if (id.startsWith('p-')) return idx.property.has(id);
+        if (id.startsWith('c-')) return idx.constraint.has(id);
+        const r = relationTriple(id);
+        if (r) return this.graph.match(r.s, r.p, r.o).length > 0;
+        const t = elementTerm(id);
+        if (!t) return true;
+        return this.graph.match(t).length > 0 || this.graph.match(null, null, t).length > 0 || this.graph.match(null, null, null, t).length > 0;
+    }
+
+    /**
+     * The arguments of a read query (MODEL_QUERIES) with each id parameter resolved (resolveId). An error names each value that
+     * resolves to an unknown id (knownId). Other parameters stay the same.
+     */
+    resolveQueryArgs(method: keyof ModelQueries, args: unknown[]): { args: unknown[] } | { error: string } {
+        const unknown: unknown[] = [];
+        const id = (x: unknown) => {
+            if (typeof x !== 'string' && !isTripleRef(x)) return x;
+            const resolved = this.resolveId(x);
+            if (!this.knownId(resolved)) unknown.push(x);
+            return resolved;
+        };
+        const names = MODEL_QUERIES[method];
+        const out = args.map((a, i) => !QUERY_ID_PARAMS.has(names[i]) ? a : Array.isArray(a) ? a.map(id) : id(a));
+        return unknown.length ? { error: `No element with the id or IRI ${unknown.map(x => JSON.stringify(x)).join(', ')}.` } : { args: out };
+    }
+
+    /**
+     * The IRI of an element id or a property shape id; undefined for other ids (a relation has no IRI). A value with ":" is an IRI
+     * already (addConcept gives the IRI of the concept).
+     */
+    iriOf(id: string): string | undefined {
+        if (id.includes(':')) return id;
+        return idIri(id) ?? this.shapesIndex().model.properties[id]?.uri;
+    }
+
     /** A read model of the elements and views that one request needs (scoped-doc.ts). */
     protected scoped(scope: DocScope): Doc {
         return tracer.span('refresh', 'scoped read', () => {
@@ -469,6 +520,21 @@ export class ModelStore {
     protected executeNow(command: EditCommand): CommandResult {
         const ws = this.settings;
         if (!ws) return { ok: false, error: 'No model is open.' };
+        // An IRI or a triple {s, p, o} where the command takes an id (manifest §12). An error names the value that the caller gave.
+        const given = new Map<string, string>();
+        command = mapCommandIds(command, x => {
+            if (typeof x !== 'string' && !isTripleRef(x)) return x;
+            const id = this.resolveId(x);
+            if (id !== x) given.set(id, typeof x === 'string' ? x : JSON.stringify(x));
+            return id;
+        });
+        const r = this.executeResolved(command, ws);
+        if (!r.ok) return given.size ? { ...r, error: [...given].reduce((e, [id, x]) => e.split(id).join(x), r.error) } : r;
+        const iri = r.id === undefined ? undefined : this.iriOf(r.id);
+        return { ...r, ...(iri ? { iri } : {}), ...(r.ids ? { iris: r.ids.map(id => this.iriOf(id) ?? null) } : {}) };
+    }
+
+    protected executeResolved(command: EditCommand, ws: Settings): CommandResult {
         if (command.kind === 'addFileReference') {
             // The file reference keeps the path relative to its view file (the folder can move).
             const f = ws.viewFile(elementTerm(command.view)?.value ?? '');

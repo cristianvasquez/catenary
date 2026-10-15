@@ -143,3 +143,6 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
 
 /** The interface of `T` over RPC: each method returns a promise. */
 export type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
+
+/** The parameters of MODEL_QUERIES that hold an id or a list of ids. The CLI also accepts an IRI or a triple {s, p, o} there (manifest §12). */
+export const QUERY_ID_PARAMS: ReadonlySet<string> = new Set(['id', 'ids', 'instanceId', 'viewId', 'view', 'source', 'target', 'from', 'collection']);

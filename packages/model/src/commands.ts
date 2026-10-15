@@ -214,9 +214,12 @@ export interface ViewClip {
 export const VIEW_CLIP_FORMAT = 'application/x-catenary-view-clip';
 export type ClipMode = 'copy' | 'cut';
 
-/** Result of a command. `id` is the id of a created element, if any; `ids` the ids of all of them (paste). */
-/** `protected`: the command changes these protected files (absolute paths), so it is refused (manifest ws:protect). */
-export type CommandResult = { ok: true; id?: string; ids?: string[] } | { ok: false; error: string; imported?: string[] };
+/**
+ * Result of a command. `id` is the id of a created element, if any; `ids` the ids of all of them (paste). `iri`: the IRI of `id`;
+ * `iris`: the IRI of each of `ids`, null for an id without one (a relation). `imported`: the command changes these imported files
+ * (absolute paths), so it is refused (manifest ws:imported).
+ */
+export type CommandResult = { ok: true; id?: string; ids?: string[]; iri?: string; iris?: (string | null)[] } | { ok: false; error: string; imported?: string[] };
 
 /** The answer of an import: the paths of the copies, in the order of the sources, and the prefixes that it added to the workspace. */
 export type ImportResult = { ok: true; files: string[]; prefixes: string[] } | { ok: false; error: string };

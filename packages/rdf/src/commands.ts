@@ -36,11 +36,19 @@ function instanceId(g: ModelGraph, iri: string): string | undefined {
  * selection on a canvas holds placements; the operations act on elements, and find the placement of an element in a view.
  */
 function elementIds(g: ModelGraph, c: EditCommand): EditCommand {
-    const id = (x: unknown) => typeof x === 'string' ? ops.elementIdOf(g, x) : x;
+    return mapCommandIds(c, x => typeof x === 'string' ? ops.elementIdOf(g, x) : x);
+}
+
+/** The fields of an EditCommand that hold one id, and the fields that hold a list of ids. Fields that hold IRIs are not here. */
+const ID_FIELDS = ['id', 'relation', 'subject', 'object', 'from', 'to', 'view', 'shape', 'set', 'target'];
+const ID_LIST_FIELDS = ['ids', 'around'];
+
+/** The command with `f` applied to each id field, each item of the id lists, and the id of each bound. */
+export function mapCommandIds(c: EditCommand, f: (x: unknown) => unknown): EditCommand {
     const out: Record<string, unknown> = { ...c };
-    for (const k of ['id', 'relation', 'subject', 'object', 'from', 'to']) if (k in out) out[k] = id(out[k]);
-    if (Array.isArray(out.ids)) out.ids = (out.ids as unknown[]).map(id);
-    if (Array.isArray(out.bounds)) out.bounds = (out.bounds as { id: string }[]).map(b => ({ ...b, id: id(b.id) as string }));
+    for (const k of ID_FIELDS) if (k in out && out[k] !== undefined) out[k] = f(out[k]);
+    for (const k of ID_LIST_FIELDS) if (Array.isArray(out[k])) out[k] = (out[k] as unknown[]).map(f);
+    if (Array.isArray(out.bounds)) out.bounds = (out.bounds as { id: unknown }[]).map(b => ({ ...b, id: f(b.id) }));
     return out as EditCommand;
 }
 

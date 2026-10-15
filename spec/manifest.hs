@@ -177,6 +177,16 @@ law_elementIdInjective a b = (elementId a == elementId b) == (a == b)
 -- | IDs are safe as DOM IDs and in URI paths. "-" separates the parts of a relation ID: escapeId never writes it.
 law_idAlphabet :: Iri -> Bool
 law_idAlphabet i = all (\c -> isAsciiLower c || isAsciiUpper c || isDigit c || c == '_') (escapeId i)
+-- | The CLI accepts an IRI where it takes an ID, and a relation as its triple (§12). IDs use only [A-Za-z0-9_-] and an IRI has ":",
+-- so a value with ":" is an IRI. A CURIE is not expanded: it is an IRI. Code: canonicalId in packages/model/src/ids.ts.
+data IdRef = IdText String | TripleRef Iri Iri Iri
+canonicalId :: IdRef -> Id
+canonicalId (TripleRef s p o) = relationId s p o
+canonicalId (IdText x) = if ':' `elem` x then elementId x else x
+law_iriIdDisjoint :: Iri -> Iri -> Iri -> Bool
+law_iriIdDisjoint s p o = all (':' `notElem`) [elementId s, relationId s p o]
+law_canonicalIdIdempotent :: IdRef -> Bool
+law_canonicalIdIdempotent r = canonicalId (IdText (canonicalId r)) == canonicalId r
 
 -- 2. Workspace and files -----------------------------------------------------
 
@@ -1974,6 +1984,15 @@ data CliMethod = Status | Model | Rpc | Exec | Commands | Run | Prompt | Answer 
 needsWindow :: CliMethod -> Bool
 needsWindow m = m `notElem` [Status, Model, Rpc, Exec]
 
+-- | exec, and rpc reads by the parameter names of MODEL_QUERIES, take an IRI or {"s":IRI,"p":IRI,"o":IRI} where they take an ID
+-- (canonicalId, §1.3). The IRI of a property shape gives its p- ID. Code: ModelStore.resolveId, ModelStore.resolveQueryArgs.
+-- An unknown ID or IRI: a read gives result null, an error that names the value, and exit 1. An edit fails, and its error names the value.
+-- An ok CommandResult gives iri next to id, and iris next to ids (null for an ID without an IRI, such as a relation).
+resolveArg :: Backend -> IdRef -> Id                -- ModelStore.resolveId
+isPropertyShapeIri :: Backend -> Iri -> Bool
+law_iriArgumentIsId :: Backend -> Iri -> Bool
+law_iriArgumentIsId b i = ':' `elem` i && not (isPropertyShapeIri b i) ==> resolveArg b (IdText i) == elementId i
+
 -- | Backend choice: --port, else CATENARY_PORT, else the only running backend, else the one backend whose workspace contains
 -- the current directory or is inside it. Otherwise the CLI fails and lists ports and workspaces. Files of dead PIDs are removed.
 -- --window selects a window, else the last connection.
@@ -2082,6 +2101,8 @@ textPatch = manifestOnly
 cliOutcomeBefore = manifestOnly
 editCommandKinds = manifestOnly
 executeError = manifestOnly
+resolveArg = manifestOnly
+isPropertyShapeIri = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

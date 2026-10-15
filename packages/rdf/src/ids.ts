@@ -8,7 +8,7 @@
 // in URI paths, and never contain "_" followed by a non-hex character (so the suffix "_label" is unambiguous).
 // A change of IRI gives a new id.
 
-import { escapeId, idIri, iriId, unescapeId } from '@catenary/model';
+import { escapeId, idIri, iriId, relationIdOf, unescapeId } from '@catenary/model';
 import type { NamedNode } from '@rdfjs/types';
 import { rdf } from './terms';
 
@@ -24,7 +24,7 @@ export function elementId(t: NamedNode): string {
 
 /** Id of a relation (s, p, o). */
 export function relationId(s: NamedNode, p: NamedNode, o: NamedNode): string {
-    return `r-${escape(s.value)}-${escape(p.value)}-${escape(o.value)}`;
+    return relationIdOf(s.value, p.value, o.value);
 }
 
 /** Term of an element id. Undefined for a relation id or a malformed id. */

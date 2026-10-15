@@ -139,6 +139,14 @@ pnpm -s catenary --workspace /tmp/catenary-test status
 
 `status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window. A headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
+`exec` and the reads of `rpc` take an IRI where they take an ID, and a relation as `{"s":IRI,"p":IRI,"o":IRI}`. A value with `:` is an IRI. A CURIE is not expanded. The IRI of a property shape gives its `p-` ID. An unknown ID or IRI on a read gives `result: null`, an `error` that names the value, and exit 1. A command result gives `iri` next to `id`, and `iris` next to `ids`.
+
+```sh
+pnpm -s catenary --port 3917 rpc properties '"urn:name:Query%20service"'
+pnpm -s catenary --port 3917 exec '{"kind":"addToView","view":"urn:name:Product%20context","ids":["urn:name:Query%20service"],"at":{"x":0,"y":0}}'
+pnpm -s catenary --port 3917 exec '{"kind":"delete","ids":[{"s":"urn:name:A","p":"http://www.w3.org/ns/dcat#distribution","o":"urn:name:B"}]}'
+```
+
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
 
 `rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See the Trace section of [the site](www/reference/properties.md) for the five Trace metrics.

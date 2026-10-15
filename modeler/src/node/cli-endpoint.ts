@@ -162,6 +162,12 @@ export class CliEndpoint implements BackendApplicationContribution {
         if (!method) return methods;
         if (!methods[method]) throw new Error(`unknown ModelService method "${method}"; methods: ${Object.keys(methods).join(', ')}`);
         const before = modelSummary(this.store.snapshot());
+        if (method in MODEL_QUERIES) {
+            // A read: an IRI or a triple where it takes an id (manifest §12). An unknown id or IRI gives an error, not an empty result.
+            const r = this.store.resolveQueryArgs(method as keyof typeof MODEL_QUERIES, args);
+            if ('error' in r) return { result: null, error: r.error, model: before, changed: false };
+            args = r.args;
+        }
         const fn = (this.service as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method];
         const result = await fn.apply(this.service, args);
         const after = modelSummary(this.store.snapshot());
