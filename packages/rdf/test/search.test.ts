@@ -1,7 +1,7 @@
 // Find Element (search.ts): the things of the store, their kinds, labels and views, on the fixtures.
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { NS, SearchHit, iriId, viewsShowing } from '@catenary/model';
+import { NS, SearchHit, idIri, iriId, viewsShowing } from '@catenary/model';
 import { ModelStore } from '../src/model-store';
 import { DATA, SHAPES, writeWorkspace, docOf, openStore, tempWorkspace } from './helpers';
 
@@ -14,6 +14,7 @@ const MORE = `@prefix skos: <${NS.skos}> . @prefix rdfs: <${NS.rdfs}> .
 <urn:x:two> <https://ekgf.github.io/dprod/outputDataset> <urn:x:set> .
 <urn:x:Na%C3%AFve%20name> a <urn:x:Robot> .
 <urn:x:declared> a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> ; rdfs:label "Declared property" .
+<urn:x:set> <urn:x:part> [ rdfs:label "Anonymous part" ] .
 `;
 
 let dir: string, store: ModelStore;
@@ -68,5 +69,33 @@ describe('search: the things', () => {
         const doc = docOf(store);
         for (const h of store.reads.search()) expect(h.views, h.iri).toEqual(viewsShowing(doc, h.owner ?? h.id).map(v => v.id));
         expect(store.reads.search().some(h => h.views.length)).toBe(true);
+    });
+});
+
+describe('search: the filter (spec/manifest.hs §11.1)', () => {
+    it('no argument: the same result as before, with the skolem subjects', () => {
+        const all = store.reads.search();
+        expect(all.some(h => h.iri.startsWith('urn:skolem:') && h.label === 'Anonymous part')).toBe(true);
+        expect(store.reads.search(undefined)).toEqual(all);
+    });
+
+    it('text, kind, type, view, limit and skolem select a subset in the same order (law_searchFilterSubset)', () => {
+        const all = store.reads.search();
+        const iris = (hits: SearchHit[]) => hits.map(h => h.iri);
+        expect(iris(store.reads.search({ text: 'ROBOT' }))).toEqual(['urn:x:Na%C3%AFve%20name', 'urn:x:set', 'urn:x:two']);
+        expect(iris(store.reads.search({ type: 'urn:x:Robot', kind: 'instance' }))).toEqual(['urn:x:Na%C3%AFve%20name', 'urn:x:two']);
+        expect(store.reads.search({ kind: 'valueSet' }).map(h => h.label)).toEqual(['Scheme']);
+        expect(store.reads.search({ limit: 2 })).toEqual(all.filter(h => !h.iri.startsWith('urn:skolem:')).slice(0, 2));
+        expect(store.reads.search({}).some(h => h.iri.startsWith('urn:skolem:'))).toBe(false);
+        expect(store.reads.search({ skolem: true })).toEqual(all);
+        const shown = all.find(h => h.views.length)!, view = shown.views[0];
+        const byView = store.reads.search({ view });
+        expect(byView.map(h => h.iri)).toContain(shown.iri);
+        expect(byView.every(h => h.views.includes(view))).toBe(true);
+        expect(store.reads.search({ view: idIri(view)! })).toEqual(byView);
+    });
+
+    it('an unknown key fails with the valid keys (law_searchUnknownKeyFails)', () => {
+        expect(() => store.reads.search({ text: 'MEPS', name: 'x' } as never)).toThrow('search: unknown filter key "name"; valid keys: text, kind, type, view, limit, skolem');
     });
 });

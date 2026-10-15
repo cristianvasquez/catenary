@@ -2,9 +2,9 @@
 
 import {
     ActionTarget, AppearanceData, Choices, DeletePlan, Doc, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow, FileContent, GestureInfo,
-    MetamodelInfo, ModelQueries, PREFIXES, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchHit, Selected, SelectionActions,
+    MetamodelInfo, ModelQueries, PREFIXES, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchFilter, SearchHit, Selected, SelectionActions,
     SelectionLinks, ShapesModel, Showing, View, ViewGesture, appearanceData, deletePlan, elementOfId, elementRows, emptySelected, knownPredicates, neighborChoices, newLabel,
-    occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
+    filterHits, occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
 import { absolutePath, pathKey } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
@@ -128,9 +128,10 @@ export class PanelReads implements ModelQueries {
         return reportProblems(this.graph, this.metamodel, t => idx.byTerm.get(termKey(t)));
     }
 
-    search(): SearchHit[] {
-        if (!this.file) return [];
-        return search({ g: this.graph, shapes: this.shapesIndex() });
+    /** No filter: all things, as before. A filter: filterHits (spec/manifest.hs §11.1); it also checks the keys without a model. */
+    search(filter?: SearchFilter): SearchHit[] {
+        const hits = this.file ? search({ g: this.graph, shapes: this.shapesIndex() }) : [];
+        return filter === undefined ? hits : filterHits(hits, filter);
     }
 
     viewLabels(): Record<string, string> {

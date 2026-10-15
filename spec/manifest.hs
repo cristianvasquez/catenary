@@ -1804,6 +1804,42 @@ law_queriesRead b q = let b' = snd (runQuery b q) in storeQuads b' == storeQuads
 data SourceLine = SourceLine { sourceFile :: FilePath, sourceLine :: Maybe Int }
 law_sourceLinePositive :: SourceLine -> Bool
 law_sourceLinePositive s = maybe True (>= 1) (sourceLine s)
+-- | search takes an optional filter object (packages/model/src/search.ts filterHits). No filter: all things, as before.
+-- Keys: text (a case-insensitive substring of the label, the IRI or a type), kind, type (a class IRI in the types),
+-- view (a view id or view IRI that shows the hit), limit (the maximum number of hits) and skolem.
+-- A filter excludes urn:skolem: subjects unless skolem is true. The result stays a list, in the order of search.
+-- An unknown key fails, and the error names each valid key. Reason: an ignored key gives a wrong answer without an error.
+data SearchHit = SearchHit { hitIri :: Iri, hitLabel :: String, hitKind :: String, hitTypes :: [Iri], hitViews :: [Id] }
+data SearchFilter = SearchFilter
+  { sfText :: Maybe String, sfKind :: Maybe String, sfType :: Maybe Iri, sfView :: Maybe String, sfLimit :: Maybe Int, sfSkolem :: Bool }
+searchFilterKeys :: [String]
+searchFilterKeys = ["text", "kind", "type", "view", "limit", "skolem"]
+filterHits :: SearchFilter -> [SearchHit] -> [SearchHit]
+filterHits f = maybe id take (sfLimit f) . filter keep
+  where
+    keep h = (sfSkolem f || not ("urn:skolem:" `isPrefixOf` hitIri h))
+      && maybe True (\t -> any (infixOf (lower t) . lower) (hitLabel h : hitIri h : hitTypes h)) (sfText f)
+      && maybe True (== hitKind h) (sfKind f)
+      && maybe True (`elem` hitTypes h) (sfType f)
+      && maybe True (\v -> v `elem` hitViews h || elementId v `elem` hitViews h) (sfView f)
+infixOf :: String -> String -> Bool   -- the first text is a part of the second
+infixOf n hay = any (n `isPrefixOf`) (suffixes hay)
+  where
+    suffixes [] = [[]]
+    suffixes xs@(_ : rest) = xs : suffixes rest
+-- | The keys of a filter object: Nothing when each key is valid, else the error.
+searchFilterError :: [String] -> Maybe String
+searchFilterError ks = case filter (`notElem` searchFilterKeys) ks of
+  [] -> Nothing
+  bad -> Just ("search: unknown filter key " ++ unwords bad ++ "; valid keys: " ++ unwords searchFilterKeys)
+law_searchFilterSubset :: SearchFilter -> [SearchHit] -> Bool
+law_searchFilterSubset f hs = subsequenceOf (map hitIri (filterHits f hs)) (map hitIri hs)
+  where
+    subsequenceOf [] _ = True
+    subsequenceOf _ [] = False
+    subsequenceOf (x : xs) (y : ys) = if x == y then subsequenceOf xs ys else subsequenceOf (x : xs) ys
+law_searchUnknownKeyFails :: [String] -> Bool
+law_searchUnknownKeyFails ks = any (`notElem` searchFilterKeys) ks ==> maybe False (\e -> all (`infixOf` e) searchFilterKeys) (searchFilterError ks)
 
 -- 11.2 Snapshots ---------------------------------------------------------------------------
 

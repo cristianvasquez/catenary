@@ -149,6 +149,8 @@ pnpm -s catenary --port 3917 exec '{"kind":"delete","ids":[{"s":"urn:name:A","p"
 
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
 
+`rpc search '{"text":"robot","kind":"instance","limit":10}'` returns a list of hits. The filter keys are `text` (a case-insensitive part of the label, IRI or a type), `kind`, `type` (a class IRI), `view` (a view ID or IRI), `limit` and `skolem`. A filter excludes `urn:skolem:` subjects unless `skolem` is true. An unknown key fails with exit 1. Without a filter, `rpc search` returns all things.
+
 `rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See the Trace section of [the site](www/reference/properties.md) for the five Trace metrics.
 
 `rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Canvas refresh spans and snapshot spans are listed in the Trace section of [the site](www/reference/properties.md). `rpc stopTracing 0` returns the final batch before stopping the CLI connection. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.

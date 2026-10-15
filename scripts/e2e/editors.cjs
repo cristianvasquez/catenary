@@ -426,6 +426,12 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   for (const label of ['Picked first', 'Picked second']) {
     assert.equal(cli('exec', JSON.stringify({ kind: 'createInstance', classIri: 'urn:test:Picked', label })).result.ok, true);
   }
+  // CLI search filter (spec/manifest.hs §11.1): a filter selects the hits; an unknown key fails with exit 1 (law_searchUnknownKeyFails).
+  assert.deepEqual(cli('rpc', 'search', JSON.stringify({ type: 'urn:test:Picked', limit: 1 })).result.map(h => h.label), ['Picked first']);
+  const unknownKey = spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'rpc', 'search', '{"name":"Picked"}'],
+    { encoding: 'utf8', timeout: 15000 });
+  assert.equal(unknownKey.status, 1, unknownKey.stdout + unknownKey.stderr);
+  assert.equal(JSON.parse(unknownKey.stderr).error, 'search: unknown filter key "name"; valid keys: text, kind, type, view, limit, skolem');
   cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
   const canvas = page.locator('svg.sprotty-graph:visible');
   await canvas.waitFor();
