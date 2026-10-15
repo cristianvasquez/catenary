@@ -1,8 +1,9 @@
-// Browser scenarios of the editors: source language, file presentations, file explorer, notes, targets, Links, Find, view URL,
+// Browser scenarios of the editors: source language, file presentations, file explorer, notes, targets, Links, Find, view URL, open-view,
 // layout, Properties and Markdown.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { test, root, withFixtureApp, navigator, navNode } = require('./harness.cjs');
 const { iriId } = require('../../packages/model/lib/ids.js');
 
@@ -508,6 +509,28 @@ test('browser: view URL overrides restored tabs and rejects unknown views', { ti
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
   await page.getByText('The requested view is not in the current workspace.', { exact: true }).first().waitFor();
   assert.equal(cli('status').model.views, 2, 'an invalid link creates no view');
+}));
+
+test('browser: CLI open-view opens a view in the running window and rejects unknown views', { timeout: 45000 }, t => withFixtureApp(t, 'open-view', async app => {
+  const { cli, url, errors } = app;
+  delayReplies(cli);
+  // law_openViewChecksAsUrl. The CLI process itself: the exit status and the output of each case (catenaryCli throws on exit 1).
+  const openView = (...args) => spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(url).port, 'open-view', ...args],
+    { encoding: 'utf8', timeout: 15000 });
+  const created = cli('exec', JSON.stringify({ kind: 'createView', label: 'Agent view' }));
+  assert.equal(created.result.ok, true);
+  const view = created.result.id;
+  assert.notEqual(cli('ui').currentView, view);
+  const opened = openView(view, '--fit');
+  assert.equal(opened.status, 0, opened.stdout + opened.stderr);
+  assert.equal(JSON.parse(opened.stdout).currentView, view);
+  assert.equal(cli('ui').currentView, view);
+  const unknown = openView('nope');
+  assert.equal(unknown.status, 1, unknown.stdout + unknown.stderr);
+  const result = JSON.parse(unknown.stdout);
+  assert.equal(result.error, 'The requested view is not in the current workspace.');
+  assert.equal(result.currentView, view, 'an unknown id keeps the current view');
+  assert.deepEqual(errors, []);
 }));
 
 test('browser: Apply Layout fits the viewport to the new layout; no zoom-out limit', { timeout: 45000 }, t => withFixtureApp(t, 'layout-fit', async app => {

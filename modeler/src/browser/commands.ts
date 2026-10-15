@@ -93,10 +93,15 @@ export namespace ModelCommands {
     /** Display of the selected cards and of the cards inside the selected groups: checked when all are detailed. */
     export const DETAILS = cmd('catenary.display.details', 'Show Details');
     /** Color of the selected view elements: '' (default), "none" and the presets "1".."6", "white". Icon: a box with the color (modeler.css). */
+    /** Open a view by id in this window (CLI open-view). No label: not in the command palette. Unknown id: the message of the URL ?view=. */
+    export const OPEN_VIEW: Command = { id: 'catenary.openView' };
     export const COLORS: [string, Command][] = [['', cmd('catenary.color.default', 'Color: Default', 'catenary-swatch')],
         ...COLOR_ORDER.map(k => [k, COLOR_NAMES[k]] as const).map(([k, name]) =>
             [k, cmd(`catenary.color.${k}`, `Color: ${name[0].toUpperCase()}${name.slice(1)}`, `catenary-swatch catenary-swatch-${k}`)] as [string, Command])];
 }
+
+/** The message of an unknown view id (URL ?view=, catenary.openView). */
+const UNKNOWN_VIEW_MESSAGE = 'The requested view is not in the current workspace.';
 
 export const MODEL_MENU = [...MAIN_MENU_BAR, '5_model'];
 const MODEL_MENU_CREATE = [...MODEL_MENU, '3_create'];
@@ -304,15 +309,23 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         await this.model.start();
         const views = await this.model.viewsSorted();
         const requestedView = new URLSearchParams(window.location.search).get('view');
-        if (requestedView !== null) {
-            if (views.some(view => view.id === requestedView)) {
-                await this.editors.open(requestedView);
-                return;
-            }
-            void this.messages.error('The requested view is not in the current workspace.');
-        }
+        if (requestedView !== null && await this.openRequestedView(requestedView, views)) return;
         const first = views[0];
         if (first && !this.editors.all().length) await this.editors.open(first.id);
+    }
+
+    /**
+     * Open and activate a view of the current workspace by id: the URL ?view= and the command catenary.openView (CLI open-view).
+     * An unknown id shows a message and gives false. It does not reject.
+     */
+    protected async openRequestedView(viewId: string, views?: { id: string }[]): Promise<boolean> {
+        views ??= await this.model.viewsSorted();
+        if (!views.some(view => view.id === viewId)) {
+            void this.messages.error(UNKNOWN_VIEW_MESSAGE);
+            return false;
+        }
+        await this.editors.open(viewId, 'activate');
+        return true;
     }
 
     /**
@@ -424,6 +437,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
             execute: () => a.findElement(),
             isEnabled: open
         });
+        registry.registerCommand(ModelCommands.OPEN_VIEW, { execute: (viewId?: unknown) => this.openRequestedView(String(viewId ?? '')) });
         registry.registerCommand(ModelCommands.NEW_VIEW, { execute: () => a.newView(), isEnabled: open });
         registry.registerCommand(ModelCommands.NEW_VIEW_IN_FOLDER, {
             execute: () => {

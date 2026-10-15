@@ -22,6 +22,8 @@ Frontend (needs an open window):
   answer [text] [--pick LABEL | --index N | --button LABEL | --cancel]
                                  answer the open prompt, then wait as run does
   ui                             active widget, open views, selection, open prompt
+  open-view <view-id> [--fit]    open and activate a view in the window (command catenary.openView), then report ui.currentView;
+                                 exit 0 only when it is the view; --fit: fit the view to the screen after the open
   messages [--since SEQ]         notifications (last 200)
   eval '<js>'                    evaluate in the window; expression or statements with return; ctx: container, get(symbol),
                                  commands, model, selection, editors, shell
@@ -107,6 +109,23 @@ async function call(instance, method, params, window) {
     return body;
 }
 
+/**
+ * open-view: run catenary.openView in the window, with --fit also glsp.diagram:fit, then read ui.currentView. Exit 0 only when the
+ * current view is the requested one. Else exit 1 with the error message of the window, if any.
+ */
+async function openView(instance, viewId, opts, timeout) {
+    const run = await call(instance, 'run', { id: 'catenary.openView', args: [viewId], timeout }, opts.window);
+    const fit = opts.fit && run.status === 'done' && run.result === true
+        ? await call(instance, 'run', { id: 'glsp.diagram:fit', args: [], timeout }, opts.window) : undefined;
+    const { currentView = null } = await call(instance, 'ui', {}, opts.window);
+    const messages = [...run.messages ?? [], ...fit?.messages ?? []];
+    const ok = currentView === viewId && (!fit || fit.status === 'done');
+    const error = ok ? undefined
+        : run.error ?? messages.find(m => m.type === 'error')?.text ?? fit?.error
+            ?? (currentView === viewId ? `fit: ${fit.status}` : `the current view is ${currentView ?? 'none'}, not ${viewId}`);
+    return { result: { status: ok ? 'done' : 'error', view: viewId, currentView, error, messages }, code: ok ? 0 : 1 };
+}
+
 /** Exit status of a result: 1 for a failed command, 3 for a command that waits or still runs. */
 function exitCode(result) {
     if (result && typeof result === 'object') {
@@ -145,6 +164,11 @@ async function main() {
             method = 'answer';
             params = { text: rest[0], pick: opts.pick, index: opts.index === undefined ? undefined : Number(opts.index), button: opts.button, cancel: !!opts.cancel, timeout };
             break;
+        case 'open-view': {
+            if (!rest[0]) fail('open-view needs a view id; see "catenary model views --keys"');
+            const { result, code } = await openView(pickInstance(opts), rest[0], opts, timeout);
+            return finish(JSON.stringify(result, null, 2) + '\n', code);
+        }
         case 'messages': method = 'messages'; params = { since: opts.since === undefined ? undefined : Number(opts.since) }; break;
         case 'eval':
             if (!rest[0]) fail('eval needs code');

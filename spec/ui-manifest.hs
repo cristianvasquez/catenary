@@ -439,6 +439,12 @@ law_reopenKeepsDocuments d s = documents (openDocument d (openDocument d s)) == 
 startupDocument :: Maybe Id -> [Id] -> Maybe Document -> Maybe Document   -- ?view, views of the workspace, restored active tab
 startupDocument (Just v) views restored = if v `elem` views then Just (OpenView (Node v)) else restored
 startupDocument Nothing _ restored = restored
+-- The command catenary.openView <view-id> (CLI open-view) opens and activates a view in a running window. It uses the check
+-- and the message of ?view=. It does not reload the page or restore the tabs. Reason: an agent shows a view in the user's window.
+openViewCommand :: Id -> [Id] -> Maybe Document -> Maybe Document   -- view id, views of the workspace, current document
+openViewCommand v = startupDocument (Just v)
+law_openViewChecksAsUrl :: Id -> [Id] -> Maybe Document -> Bool
+law_openViewChecksAsUrl v views current = openViewCommand v views current == startupDocument (Just v) views current
 
 -- | Canvas updates (manifest §11.3, the tiers of a change). The canvas of a view keeps the read model of its view (the part) between changes. A layout-only change of the
 -- view (position, size, style of its placements) goes into the kept part: no view read. A new validation report: the counts come
