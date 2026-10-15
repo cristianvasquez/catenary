@@ -33,28 +33,38 @@ export function matchBefore(g: ModelGraph, patch: readonly Change[]): (s?: Term 
     };
 }
 
+/** The ids that are in `before` and not in `after` (gone), and the reverse (added). */
+function difference(before: Iterable<string>, after: Iterable<string>): { gone: string[]; added: string[] } {
+    const old = new Set(before), now = new Set(after);
+    return { gone: [...old].filter(id => !now.has(id)), added: [...now].filter(id => !old.has(id)) };
+}
+
+/** The views that `patch` (already applied to `g`) removed and added. One of each: a change of the view IRI (movedIds). */
+export function viewsChanged(g: ModelGraph, patch: readonly Change[]): { gone: string[]; added: string[] } {
+    const was = matchBefore(g, patch), now = g.match.bind(g) as typeof was;
+    const graphs = new Map<string, NamedNode>();
+    for (const { quad: q } of patch) if (q.graph.termType === 'NamedNode' && !g.isDataGraph(q.graph) && !g.isShapesGraph(q.graph)) graphs.set(q.graph.value, q.graph);
+    const isViewIn = (match: typeof was) => (t: NamedNode) => !t.equals(g.union) && match(null, P.type, V.View, t).length > 0;
+    return difference([...graphs.values()].filter(isViewIn(was)).map(elementId), [...graphs.values()].filter(isViewIn(now)).map(elementId));
+}
+
 /** Old id -> new id of the elements whose IRI `patch` changed. `shapes`: the shapes index before and after the patch. */
 export function movedIds(g: ModelGraph, patch: readonly Change[], shapes?: { before: ShapesIndex; after: ShapesIndex }): Record<string, string> {
     const was = matchBefore(g, patch);
     const moved: Record<string, string> = {};
-    const compare = (before: Iterable<string>, after: Iterable<string>) => {
-        const old = new Set(before), now = new Set(after);
-        const gone = [...old].filter(id => !now.has(id)), added = [...now].filter(id => !old.has(id));
-        if (gone.length === 1 && added.length === 1) moved[gone[0]] = added[0];
-    };
+    const record = ({ gone, added }: { gone: string[]; added: string[] }) => { if (gone.length === 1 && added.length === 1) moved[gone[0]] = added[0]; };
+    const compare = (before: Iterable<string>, after: Iterable<string>) => record(difference(before, after));
     const isInstanceIn = (match: typeof was) => (t: NamedNode) => t.value !== UNION_GRAPH && !t.equals(g.union) && (
         match(t, P.type, null, g.union).length > 0 || match(t, P.label, null, g.union).length > 0
         || [...SKOS_TYPES.flatMap(type => match(t, P.type, type)), ...SKOS_MEMBERSHIP.flatMap(p => match(t, p))].some(q => g.isShapesGraph(q.graph)));
-    const isViewIn = (match: typeof was) => (t: NamedNode) => !t.equals(g.union) && match(null, P.type, V.View, t).length > 0;
 
-    const subjects = new Map<string, NamedNode>(), graphs = new Map<string, NamedNode>();
+    const subjects = new Map<string, NamedNode>();
     for (const { quad: q } of patch) {
         if (q.subject.termType === 'NamedNode' && (g.isDataGraph(q.graph) || g.isShapesGraph(q.graph))) subjects.set(q.subject.value, q.subject);
-        else if (q.graph.termType === 'NamedNode' && !g.isDataGraph(q.graph) && !g.isShapesGraph(q.graph)) graphs.set(q.graph.value, q.graph);
     }
     const now = g.match.bind(g) as typeof was;
     const ids = (terms: Iterable<NamedNode>, test: (t: NamedNode) => boolean) => [...terms].filter(test).map(elementId);
-    compare(ids(graphs.values(), isViewIn(was)), ids(graphs.values(), isViewIn(now)));
+    record(viewsChanged(g, patch));
     compare(ids(subjects.values(), isInstanceIn(was)), ids(subjects.values(), isInstanceIn(now)));
     if (shapes) for (const k of ['nodeShapes', 'properties', 'constraints', 'valueSets'] as const) {
         compare(Object.keys(shapes.before.model[k]), Object.keys(shapes.after.model[k]));

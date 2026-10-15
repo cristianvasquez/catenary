@@ -2,7 +2,7 @@
 // The backend owns the document (one model, many views; see ModelStore for the files). The frontend and the GLSP diagram
 // sessions only send edit commands and receive snapshots.
 
-import type { CommandResult, EditCommand, ExportProblem, ImportResult, ModelQueries, ModelSnapshot, Remote, TraceBatch, UnresolvedEmbed, ValidationMode } from '@catenary/model';
+import type { BatchResult, CommandResult, EditCommand, ExportProblem, ImportResult, ModelQueries, ModelSnapshot, Remote, TraceBatch, UnresolvedEmbed, ValidationMode } from '@catenary/model';
 import type { RpcServer } from '@theia/core/lib/common/messaging/proxy-factory';
 
 export const MODEL_SERVICE_PATH = '/services/catenary';
@@ -163,6 +163,8 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     undo(): Promise<CommandResult>;
     redo(): Promise<CommandResult>;
     execute(command: EditCommand): Promise<CommandResult>;
+    /** Run commands as one transaction and one undo step; a failure changes nothing (manifest §5.2). */
+    executeBatch(commands: EditCommand[]): Promise<BatchResult>;
     /**
      * Start (true) or stop (false) the trace for this connection (the Trace panel). The backend records while one connection or more
      * has it on. A closed connection stops its trace.

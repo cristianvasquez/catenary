@@ -18,6 +18,9 @@ Backend (works without a browser window):
   model [dot.path] [--keys]      the model snapshot, or a part: views, counts, violations, meta, files
   rpc [method [json-arg...]]     call a ModelService method; without a method: list methods and parameters
   exec '<EditCommand JSON>'      rpc execute; the command kinds: packages/model/src/commands.ts
+  exec '[<EditCommand>, ...]'    rpc executeBatch: one transaction, one undo step, one commit; a failure changes nothing.
+                                 "$N" in a command is the result id of command N (0-based)
+  exec -                         the same batch, from NDJSON on stdin (one command per line)
   undo | redo | save             rpc shortcuts
   layout <view> [--mode layered|force]
                                  lay out a view (ID or IRI) as Apply Layout does: one setLayout command, one undo step
@@ -151,12 +154,26 @@ async function backendFor(opts, command) {
     return instance;
 }
 
-/** The argument of exec: one JSON object. Else exit 2. */
+/** The argument of exec: one JSON object, or a JSON array (a batch). Else exit 2. */
 function execArgument(text) {
     let value;
     try { value = JSON.parse(text); } catch { /* not JSON */ }
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('exec takes one JSON object with a string kind');
+    if (value === null || typeof value !== 'object') fail('exec takes one JSON object with a string kind, or a JSON array of them');
     return value;
+}
+
+/** The commands of `exec -`: NDJSON on stdin, one JSON object per line (empty lines are skipped). Else exit 2. */
+function execStdin() {
+    const lines = readFileSync(0, 'utf8').split(/\r?\n/);
+    const commands = [];
+    lines.forEach((line, i) => {
+        if (!line.trim()) return;
+        let value;
+        try { value = JSON.parse(line); } catch { fail(`exec -: line ${i + 1} is not JSON`); }
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) fail(`exec -: line ${i + 1} is not a JSON object`);
+        commands.push(value);
+    });
+    return commands;
 }
 
 async function call(instance, method, params, window) {
@@ -220,7 +237,11 @@ async function main() {
         case 'rpc': method = 'rpc'; params = { method: rest[0], args: rest.slice(1).map(jsonArg) }; break;
         case 'exec':
             if (!rest[0]) fail('exec needs an EditCommand as JSON, e.g. \'{"kind":"createView","label":"V"}\'');
-            method = 'rpc'; params = { method: 'execute', args: [execArgument(rest[0])] }; break;
+            {
+                const value = rest[0] === '-' ? execStdin() : execArgument(rest[0]);
+                method = 'rpc'; params = { method: Array.isArray(value) ? 'executeBatch' : 'execute', args: [value] };
+            }
+            break;
         case 'undo': case 'redo': case 'save': method = 'rpc'; params = { method: command, args: [] }; break;
         case 'layout':
             if (!rest[0]) fail('layout needs a view id or IRI; see "catenary model views --keys"');

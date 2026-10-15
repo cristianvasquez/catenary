@@ -221,6 +221,12 @@ export type ClipMode = 'copy' | 'cut';
  */
 export type CommandResult = { ok: true; id?: string; ids?: string[]; iri?: string; iris?: (string | null)[] } | { ok: false; error: string; imported?: string[] };
 
+/**
+ * The answer of a batch (ModelStore.executeBatch): one result per command, in order. A failure changes nothing; `index` is the
+ * 0-based index of the command that failed (absent when the batch as a whole is refused).
+ */
+export type BatchResult = { ok: true; results: Extract<CommandResult, { ok: true }>[] } | { ok: false; error: string; index?: number; imported?: string[] };
+
 /** The answer of an import: the paths of the copies, in the order of the sources, and the prefixes that it added to the workspace. */
 export type ImportResult = { ok: true; files: string[]; prefixes: string[] } | { ok: false; error: string };
 

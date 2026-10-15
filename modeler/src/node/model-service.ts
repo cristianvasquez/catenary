@@ -2,7 +2,7 @@
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { CommandResult, EditCommand, ExportView, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote, TraceBatch, idIri } from '@catenary/model';
+import { BatchResult, CommandResult, EditCommand, ExportView, ImportResult, MODEL_QUERIES, ModelQueries, ModelSnapshot, Remote, TraceBatch, idIri } from '@catenary/model';
 import { MarkdownExportCheck, MarkdownExportRequest, MarkdownExportResult, ModelClient, ModelService, WorkspaceSettings } from '../common/protocol';
 import { checkOf, prepareMarkdownExport, writeMarkdownExport } from './markdown-export';
 import { ModelStore, tracer } from '@catenary/rdf';
@@ -66,6 +66,7 @@ export class ModelServiceImpl implements ModelService, Disposable {
     async undo(): Promise<CommandResult> { return tracer.span('rpc', 'undo', () => this.store.undo()); }
     async redo(): Promise<CommandResult> { return tracer.span('rpc', 'redo', () => this.store.redo()); }
     async execute(command: EditCommand): Promise<CommandResult> { return tracer.span('rpc', 'execute', () => this.store.execute(command)); }
+    async executeBatch(commands: EditCommand[]): Promise<BatchResult> { return tracer.span('rpc', 'executeBatch', () => this.store.executeBatch(commands)); }
 
     async setTracing(on: boolean): Promise<void> {
         if (on === this.tracing) return;

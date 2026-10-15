@@ -5,11 +5,12 @@ import { applicabilityOf } from './queries';
 // the files on disk and the dataset read from them (settings.ts, loader.ts, reconciler.ts, placement.ts, saver.ts), undo and the patch queue (history.ts), validation
 // (validation-runner.ts), the read models of the panels, built for each request (ADR 0012: no Doc of the whole dataset), and the
 // reads that it keeps across changes and brings up to date from each patch (change.ts, manifest §11.3).
-// All edits go through `execute` (one EditCommand = one transaction = one patch = one undo step). File operations run one at a time.
+// All edits go through `execute` (one EditCommand = one transaction = one patch = one undo step) or `executeBatch` (several commands,
+// one transaction). File operations run one at a time.
 // Each change is written at once (ADR 0003). A shape edit that changes what the data must say adds a migration to the patch queue.
 
 import {
-    ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, MigrationChange, ModelSnapshot, PREFIXES, SnapshotChange,
+    BatchResult, ChangeReason, CommandResult, Derivation, Doc, EditCommand, ImportResult, MetamodelInfo, MigrationChange, ModelSnapshot, PREFIXES, SnapshotChange,
     MODEL_QUERIES, ModelQueries, QUERY_ID_PARAMS, TripleRef, ValidationMode, View, ViewFigures, Violation, WorkspaceFiles, canonicalId, cardOf, idIri, isTripleRef, prefixesProblem, setPrefixes
 } from '@catenary/model';
 import * as path from 'path';
@@ -24,7 +25,7 @@ import { History } from 'rdf-core';
 import { elementId, elementTerm, relationTriple } from './ids';
 import { importFiles } from './import';
 import { Loader, openWorkspace, readImportSources, resolveOpenTarget } from './loader';
-import { movedIds } from './moved-ids';
+import { movedIds, viewsChanged } from './moved-ids';
 import { viewFiguresOf } from './notations';
 import { gone } from './ops';
 import { filesOfSubjects, placeChanges, transfer } from './placement';
@@ -94,6 +95,56 @@ function importedFailure(folder: string, files: string[]): CommandResult {
         ok: false, imported: files,
         error: `${names.join(', ')} ${one ? 'is a locked file' : 'are locked files'}: the change is not made. To change ${one ? 'it' : 'them'}, unlock ${one ? 'it' : 'them'} in the file navigator.`
     };
+}
+
+/** The ok result of an executed command: its id, or its ids. */
+function resultOf(r: { ok: true } | { ok: true; value: unknown }): Extract<CommandResult, { ok: true }> {
+    const v = 'value' in r ? r.value : undefined;
+    if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
+    return { ok: true, id: typeof v === 'string' ? v : undefined };
+}
+
+/** Kinds that cannot run in a batch: a move between files and a migration need their own undo step with its files or queue entry. */
+const NOT_IN_BATCH = new Set<EditCommand['kind']>(['moveElementsToFile', 'migrateData']);
+
+/**
+ * Why a batch is refused before it runs (manifest §5.2), or undefined. A move between files and a migration run alone. A batch with
+ * a new view that names its file or folder creates no other view: the settings hold one file and one folder for the new views.
+ */
+export function batchRefusal(commands: EditCommand[]): string | undefined {
+    const alone = commands.findIndex(c => NOT_IN_BATCH.has(c.kind));
+    if (alone >= 0) return `Command ${alone}: ${commands[alone].kind} cannot run in a batch. Run it as one exec.`;
+    const views = commands.filter(c => c.kind === 'createView' || c.kind === 'duplicateView');
+    if (views.length > 1 && views.some(c => c.file || (c.kind === 'createView' && c.folder))) {
+        return 'A batch that creates more than one view cannot give a view a file or a folder. Create that view in its own exec.';
+    }
+    return undefined;
+}
+
+const REF = /^\$(\d+)$/;
+
+/**
+ * The command with each string "$N" (anywhere in it) replaced by the result id of command N (law_batchRefsResolve). N must be an
+ * earlier command with an id.
+ */
+export function resolveRefs(command: EditCommand, index: number, results: { id?: string }[]): { command: EditCommand } | { error: string } {
+    let error: string | undefined;
+    const walk = (x: unknown): unknown => {
+        if (typeof x === 'string') {
+            const m = REF.exec(x);
+            if (!m) return x;
+            const n = Number(m[1]);
+            if (n >= index) { error ??= `${x} refers to command ${n}, which does not come before command ${index}.`; return x; }
+            const id = results[n]?.id;
+            if (id === undefined) { error ??= `${x} refers to command ${n}, which gives no id.`; return x; }
+            return id;
+        }
+        if (Array.isArray(x)) return x.map(walk);
+        if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v)]));
+        return x;
+    };
+    const out = walk(command) as EditCommand;
+    return error ? { error } : { command: out };
 }
 
 /** File operations, one at a time, with a count of the operations queued so far: `ModelStore.dispose` drains the queue. */
@@ -517,10 +568,33 @@ export class ModelStore {
         return tracer.span('command', command.kind, () => this.executeNow(command));
     }
 
+    /**
+     * Run commands as one transaction: one patch, one undo step, one write (manifest §5.2 law_batchOneStep). A command that fails rolls
+     * back all of them (law_batchRejectionRollsBack); the result gives its index. A string field "$N" takes the result id of command N
+     * (law_batchRefsResolve).
+     */
+    executeBatch(commands: EditCommand[]): BatchResult {
+        this.assertLive();
+        if (!Array.isArray(commands)) return { ok: false, error: 'A batch is a JSON array of edit commands.' };
+        for (const [index, c] of commands.entries()) {
+            const shapeError = commandShapeError(c);
+            if (shapeError) return { ok: false, index, error: `Command ${index}: ${shapeError}` };
+        }
+        const refused = batchRefusal(commands);
+        if (refused) return { ok: false, error: refused };
+        return tracer.span('command', 'batch', () => this.executeBatchNow(commands));
+    }
+
     protected executeNow(command: EditCommand): CommandResult {
         const ws = this.settings;
         if (!ws) return { ok: false, error: 'No model is open.' };
-        // An IRI or a triple {s, p, o} where the command takes an id (manifest §12). An error names the value that the caller gave.
+        const { command: resolved, given } = this.resolveCommand(command);
+        const r = this.executeResolved(resolved, ws);
+        return r.ok ? this.withIris(r) : this.namingGiven(r, given);
+    }
+
+    /** An IRI or a triple {s, p, o} where the command takes an id (manifest §12). `given`: id -> the value that the caller gave. */
+    protected resolveCommand(command: EditCommand): { command: EditCommand; given: Map<string, string> } {
         const given = new Map<string, string>();
         command = mapCommandIds(command, x => {
             if (typeof x !== 'string' && !isTripleRef(x)) return x;
@@ -528,42 +602,62 @@ export class ModelStore {
             if (id !== x) given.set(id, typeof x === 'string' ? x : JSON.stringify(x));
             return id;
         });
-        const r = this.executeResolved(command, ws);
-        if (!r.ok) return given.size ? { ...r, error: [...given].reduce((e, [id, x]) => e.split(id).join(x), r.error) } : r;
+        return { command, given };
+    }
+
+    /** An error names the value that the caller gave, not the id that it resolved to. */
+    protected namingGiven<R extends { ok: false; error: string }>(r: R, given: Map<string, string>): R {
+        return given.size ? { ...r, error: [...given].reduce((e, [id, x]) => e.split(id).join(x), r.error) } : r;
+    }
+
+    /** An ok result with `iri` next to `id` and `iris` next to `ids`. */
+    protected withIris(r: Extract<CommandResult, { ok: true }>): Extract<CommandResult, { ok: true }> {
         const iri = r.id === undefined ? undefined : this.iriOf(r.id);
         return { ...r, ...(iri ? { iri } : {}), ...(r.ids ? { iris: r.ids.map(id => this.iriOf(id) ?? null) } : {}) };
     }
 
-    protected executeResolved(command: EditCommand, ws: Settings): CommandResult {
+    /**
+     * What a command needs before its transaction: the path of a file reference relative to its view file, the folder or the file of a
+     * new view, the known files of a move. Sets `newViewFolder` and `newViewFile` of the settings.
+     */
+    protected prepare(command: EditCommand, ws: Settings): { command: EditCommand } | { failure: Extract<CommandResult, { ok: false }> } {
+        const failure = (error: string) => ({ failure: { ok: false as const, error } });
         if (command.kind === 'addFileReference') {
             // The file reference keeps the path relative to its view file (the folder can move).
             const f = ws.viewFile(elementTerm(command.view)?.value ?? '');
-            if (!f) return gone('view', command.view);
+            if (!f) return { failure: gone('view', command.view) as Extract<CommandResult, { ok: false }> };
             command = { ...command, file: portableRelative(path.dirname(f.path), path.resolve(this.folder, command.file)) };
         }
         if (command.kind === 'createView' && command.folder) {
             const folder = path.resolve(this.folder, command.folder);
-            if (folder !== this.folder && !isInside(this.folder, folder)) return { ok: false, error: `The folder ${command.folder} is not in the workspace folder.` };
+            if (folder !== this.folder && !isInside(this.folder, folder)) return failure(`The folder ${command.folder} is not in the workspace folder.`);
             ws.newViewFolder = folder;
         }
         if (command.kind === 'createView' && command.folder && ws.isImported(path.join(ws.newViewFolder!, 'view.view.trig'))) {
             ws.newViewFolder = undefined;
-            return { ok: false, error: `The folder ${command.folder} is for imported files.` };
+            return failure(`The folder ${command.folder} is for imported files.`);
         }
         if ((command.kind === 'createView' || command.kind === 'duplicateView') && command.file) {
             const file = path.resolve(this.folder, command.file);
             const problem = ws.newViewFileProblem(file) ?? (ws.isImported(file) ? `${command.file} is a locked file.` : undefined);
-            if (problem) { ws.newViewFolder = undefined; return { ok: false, error: problem }; }
+            if (problem) { ws.newViewFolder = undefined; return failure(problem); }
             ws.newViewFile = file;
         }
         if (command.kind === 'moveElementsToFile') {
             command = { ...command, source: ws.knownFile(path.resolve(this.folder, command.source)) ?? command.source,
                 destination: ws.knownFile(path.resolve(this.folder, command.destination)) ?? command.destination };
             const imported = [command.source, command.destination].filter(f => ws.isImported(f));
-            if (imported.length) return importedFailure(this.folder, imported);
+            if (imported.length) return { failure: importedFailure(this.folder, imported) as Extract<CommandResult, { ok: false }> };
             const problem = ws.transferProblem([command.source, command.destination]);
-            if (problem) return { ok: false, error: problem };
+            if (problem) return failure(problem);
         }
+        return { command };
+    }
+
+    protected executeResolved(command: EditCommand, ws: Settings): CommandResult {
+        const prepared = this.prepare(command, ws);
+        if ('failure' in prepared) return prepared.failure;
+        command = prepared.command;
         const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
         // Imported files (manifest ws:imported): a command that changes their statements fails as a whole (no partial change).
         const { result: r, patch } = this.graph.transact((g): ReturnType<typeof executeCommand> | CommandResult => {
@@ -575,23 +669,75 @@ export class ModelStore {
             return files.length ? importedFailure(this.folder, files) : r;
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
+        this.commitEdit(patch, [command.kind], shapesBefore, revision, command.kind === 'migrateData' ? command.migration.id : undefined,
+            command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
+        return resultOf(r);
+    }
+
+    /** After a committed edit transaction: the commit notes, the file tracking, the undo step and the change event. */
+    protected commitEdit(patch: Patch, kinds: string[], shapesBefore: ShapesIndex, revision: unknown, migration?: string, transferFiles: string[] = []): void {
+        const ws = this.settings!;
         if (patch.length) {
-            this.writer.commitNotes.push(command.kind);
+            this.writer.commitNotes.push(...kinds);
             this.track(patch);
         }
-        this.history.record(patch, command.kind === 'migrateData' ? command.migration.id : undefined, this.graph.proposed,
-            command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
+        this.history.record(patch, migration, this.graph.proposed, transferFiles);
         this.graph.proposed = [];
         if (patch.length) {
             this.contentChanged(patch, this.graph.keys.shapes !== revision ? shapesBefore : undefined);
             this.changed('edit', patch);
         }
         ws.newViewFolder = ws.newViewFile = undefined;
-        const v = 'value' in r ? r.value : undefined;
-        if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
-        return { ok: true, id: typeof v === 'string' ? v : undefined };
     }
 
+    protected executeBatchNow(commands: EditCommand[]): BatchResult {
+        const ws = this.settings;
+        if (!ws) return { ok: false, error: 'No model is open.' };
+        const shapesBefore = this.shapesIndex(), revision = this.graph.keys.shapes;
+        const results: Extract<CommandResult, { ok: true }>[] = [];
+        // The views that this batch creates: a file reference to one of them has no view file yet.
+        const created = new Set<string>();
+        let failedAt: number | undefined, rebuilt = false;
+        const { result, patch } = this.graph.transact((g): CommandResult => {
+            for (const [index, item] of commands.entries()) {
+                failedAt = index;
+                const referred = resolveRefs(item, index, results);
+                if ('error' in referred) return { ok: false, error: referred.error };
+                const { command, given } = this.resolveCommand(referred.command);
+                if (command.kind === 'addFileReference' && created.has(command.view)) {
+                    return { ok: false, error: 'A file reference cannot go to a view that the same batch creates. Add it in a second exec.' };
+                }
+                const prepared = this.prepare(command, ws);
+                if ('failure' in prepared) return this.namingGiven(prepared.failure, given);
+                const shapes = g.keys.shapes, start = g.changes().length;
+                const r = executeCommand(g, this.metamodel, prepared.command);
+                if (!r.ok) return this.namingGiven(r, given);
+                // A view keeps its file only when the patch removes one view and adds one (movedIds), at the edit, the undo and the redo.
+                const views = viewsChanged(g, g.changes().slice(start));
+                if (commands.length > 1 && views.gone.length === 1 && views.added.length === 1) {
+                    return { ok: false, error: 'This command changes the IRI of a view. Run a view IRI change as a single exec.' };
+                }
+                // The next command reads the metamodel of the shapes so far (a relation that a new shape permits).
+                if (g.keys.shapes !== shapes) { this.rebuildMetamodel(); rebuilt = true; }
+                const one = resultOf(r);
+                if ((command.kind === 'createView' || command.kind === 'duplicateView') && one.id) created.add(one.id);
+                results.push(one);
+            }
+            failedAt = undefined;
+            placeChanges(g, ws);
+            const files = ws.importedChanges(g.changes());
+            return files.length ? importedFailure(this.folder, files) : { ok: true };
+        });
+        if (!result.ok) {
+            ws.newViewFolder = ws.newViewFile = undefined;
+            // The metamodel of the shapes before the batch.
+            if (rebuilt) this.rebuildMetamodel();
+            const kind = failedAt === undefined ? undefined : commands[failedAt].kind;
+            return failedAt === undefined ? result : { ...result, index: failedAt, error: `Command ${failedAt} (${kind}): ${result.error}` };
+        }
+        this.commitEdit(patch, commands.map(c => c.kind), shapesBefore, revision);
+        return { ok: true, results: results.map(r => this.withIris(r)) };
+    }
 
     undo(): CommandResult { this.assertLive(); return tracer.span('command', 'undo', () => this.replay('undo')); }
     redo(): CommandResult { this.assertLive(); return tracer.span('command', 'redo', () => this.replay('redo')); }

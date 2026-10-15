@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { test, root, withFixtureApp, navigator, navNode } = require('./harness.cjs');
+const { test, root, withApp, withFixtureApp, copyFixtures, navigator, navNode } = require('./harness.cjs');
 const { iriId } = require('../../packages/model/lib/ids.js');
 
 const failed = Symbol('failed');
@@ -488,6 +488,60 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   await waitUntil('Ctrl+Enter on a view of the view selects its reference', () => cli('ui').selection.ids?.includes(references()[0].id));
   assert.equal(references().length, 1, 'a view reference is added once');
   assert.equal(await picker.isVisible(), true);
+}));
+
+test('browser: CLI exec batch: ten edits with IRIs are one undo step and one commit; an invalid command changes nothing (manifest §5.2)', { timeout: 60000 }, t => withApp(t, 'exec-batch', {
+  // A repository before the backend opens the workspace: the open finds it.
+  fixture: workspace => {
+    copyFixtures(workspace);
+    for (const args of [['init', '-q'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.org'], ['add', '-A'], ['commit', '-q', '-m', 'start']]) {
+      assert.equal(spawnSync('git', args, { cwd: workspace }).status, 0, args.join(' '));
+    }
+  }
+}, async app => {
+  const { cli, workspace } = app;
+  const waitUntil = strictWait(app);
+  const git = (...args) => spawnSync('git', args, { cwd: workspace, encoding: 'utf8' }).stdout.trim();
+  assert.equal(cli('rpc', 'setSettings', JSON.stringify({ autoCommit: true })).result.ok, true);
+  await waitUntil('the settings are written and committed', () => ({ dirty: cli('status').model.dirty, porcelain: git('status', '--porcelain') }),
+    s => !s.dirty && s.porcelain === '');
+  const commits = () => Number(git('rev-list', '--count', 'HEAD'));
+  const labels = () => cli('rpc', 'search').result.map(h => h.label);
+  const view = 'urn:name:Product%20context', dataset = 'http://www.w3.org/ns/dcat#Dataset';
+  const edits = [
+    { kind: 'createInstance', classIri: dataset, label: 'Batch one' },
+    { kind: 'createInstance', classIri: dataset, label: 'Batch two' },
+    { kind: 'addToView', view, ids: ['$0', '$1'], at: { x: 0, y: 0 } },
+    { kind: 'setBounds', view, bounds: [{ id: '$0', x: 100, y: 100 }] },
+    { kind: 'setBounds', view, bounds: [{ id: '$1', x: 400, y: 100 }] },
+    { kind: 'createRelation', subject: '$0', predicate: 'osg://vocab/data-product-draft#exposedThrough', object: 'urn:name:Query%20service' },
+    { kind: 'rename', id: '$1', label: 'Batch two renamed' },
+    { kind: 'createNote', view, text: 'Batch note', at: { x: 0, y: 400 } },
+    { kind: 'createInstance', classIri: dataset, label: 'Batch three' },
+    { kind: 'addToView', view, ids: ['$8'], at: { x: 700, y: 100 } }
+  ];
+  const exec = input => spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'exec', '-'],
+    { input, encoding: 'utf8', timeout: 15000 });
+  // law_batchRejectionRollsBack: an unknown IRI in command 7. Exit 1, the index, and no change.
+  const before = { labels: labels(), commits: commits(), revision: cli('status').model.revision };
+  const invalid = [...edits];
+  invalid.splice(7, 0, { kind: 'rename', id: 'urn:name:Nothing%20here', label: 'X' });
+  const refused = exec(invalid.map(c => JSON.stringify(c)).join('\n'));
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.equal(JSON.parse(refused.stdout).result.index, 7);
+  assert.deepEqual(labels(), before.labels);
+  assert.equal(cli('status').model.revision, before.revision);
+  // law_batchOneStep: ten edits from NDJSON are one commit and one undo step.
+  const done = exec(edits.map(c => JSON.stringify(c)).join('\n'));
+  assert.equal(done.status, 0, done.stdout + done.stderr);
+  assert.equal(JSON.parse(done.stdout).result.results[0].iri, 'urn:name:Batch%20one');
+  await waitUntil('the batch is written and committed', () => ({ dirty: cli('status').model.dirty, porcelain: git('status', '--porcelain'), commits: commits() }),
+    s => !s.dirty && s.porcelain === '' && s.commits > before.commits);
+  assert.equal(commits(), before.commits + 1);
+  assert.match(git('log', '-1', '--format=%s'), /^Catenary: createInstance, addToView, setBounds, createRelation, rename/);
+  for (const label of ['Batch one', 'Batch two renamed', 'Batch three']) assert.ok(labels().includes(label), label);
+  cli('undo');
+  assert.deepEqual(labels(), before.labels);
 }));
 
 test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async app => {

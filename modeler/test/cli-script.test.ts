@@ -36,9 +36,26 @@ describe('CLI script (manifest §12)', () => {
         expect(cli({ cliProtocol: CLI_PROTOCOL }, 'model').error).toMatch(/^cannot reach backend on port 1/);
     });
 
-    it('exec takes one JSON object: an array, a string or no JSON exits 2 before a request', () => {
-        for (const arg of ['[{"kind":"createView","label":"V"}]', '"createView"', 'null', '{kind:']) {
-            expect(cli({ cliProtocol: CLI_PROTOCOL }, 'exec', arg), arg).toEqual({ status: 2, error: 'exec takes one JSON object with a string kind' });
+    it('exec takes a JSON object or a JSON array: a string, null or no JSON exits 2 before a request', () => {
+        for (const arg of ['"createView"', 'null', '{kind:']) {
+            expect(cli({ cliProtocol: CLI_PROTOCOL }, 'exec', arg), arg).toEqual({ status: 2, error: 'exec takes one JSON object with a string kind, or a JSON array of them' });
         }
+        // An array passes the check: the request follows (nothing listens on port 1).
+        expect(cli({ cliProtocol: CLI_PROTOCOL }, 'exec', '[{"kind":"createView","label":"V"}]').error).toMatch(/^cannot reach backend on port 1/);
+    });
+
+    it('exec - reads NDJSON from stdin: a line that is not a JSON object exits 2 before a request', () => {
+        const stdin = (input: string) => {
+            const run = mkdtempSync(path.join(tmpdir(), 'catenary-cli-test-'));
+            dirs.push(run);
+            mkdirSync(path.join(run, 'catenary'));
+            writeFileSync(path.join(run, 'catenary', `${process.pid}.json`),
+                JSON.stringify({ pid: process.pid, host: '127.0.0.1', port: 1, token: 't', cwd: run, argv: [], cliProtocol: CLI_PROTOCOL }));
+            const r = spawnSync(process.execPath, [script, '--port', '1', 'exec', '-'], { input, env: { ...process.env, XDG_RUNTIME_DIR: run }, encoding: 'utf8' });
+            return { status: r.status, error: (JSON.parse(r.stderr) as { error: string }).error };
+        };
+        expect(stdin('{"kind":"createView","label":"V"}\nnot json\n')).toEqual({ status: 2, error: 'exec -: line 2 is not JSON' });
+        expect(stdin('{"kind":"createView","label":"V"}\n\n[1]\n')).toEqual({ status: 2, error: 'exec -: line 3 is not a JSON object' });
+        expect(stdin('{"kind":"createView","label":"V"}\n\n{"kind":"createView","label":"W"}\n').error).toMatch(/^cannot reach backend on port 1/);
     });
 });
