@@ -121,7 +121,7 @@ describe('executeBatch (manifest §5.2)', () => {
         expect(existsSync(ws.path('a.view.trig'))).toBe(true);
     });
 
-    it('a view keeps its file: a batch that changes a view IRI cannot create, delete or change the IRI of another view', async () => {
+    it('a view IRI change runs only as the single command of a batch; alone it keeps the view file at the edit, undo and redo', async () => {
         const viewFiles = () => store.files.views.map(v => v.path.slice(ws.dir.length + 1)).sort();
         const created = store.execute({ kind: 'createView', label: 'Plan' });
         if (!created.ok || !created.id) throw new Error(JSON.stringify(created));
@@ -129,19 +129,30 @@ describe('executeBatch (manifest §5.2)', () => {
         await store.idle();
         const files = viewFiles();
         expect(files).toEqual(['views/plan.view.trig', 'views/product-context.view.trig']);
-        const two = store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'setUri', id: plan, uri: 'urn:name:plan2' }]);
-        expect(two).toMatchObject({ ok: false, index: 0 });
-        expect(!two.ok && two.error).toContain('changes the IRI of a view');
-        expect(store.executeBatch([{ kind: 'createView', label: 'New' }, { kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }])).toMatchObject({ ok: false, index: 1 });
-        expect(store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'delete', ids: [plan] }])).toMatchObject({ ok: false, index: 0 });
-        // One view IRI change with other edits: the view keeps its file at the edit, the undo and the redo.
-        ok(store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'createNote', view: 'urn:name:moved', text: 'n', at: { x: 0, y: 0 } }]));
+        const text = () => files.map(f => ws.read(f));
+        const before = { quads: quads(), text: text() };
+        // A -> X, then B -> A: refused at command 0; nothing changes.
+        const swap = store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'setUri', id: plan, uri: VIEW }]);
+        expect(swap).toMatchObject({ ok: false, index: 0 });
+        expect(!swap.ok && swap.error).toBe('Command 0 (setUri): This command changes the IRI of a view. Run a view IRI change as a single exec.');
+        expect(store.executeBatch([{ kind: 'createNote', view: VIEW, text: 'n', at: { x: 0, y: 0 } }, { kind: 'setUri', id: plan, uri: 'urn:name:p2' }]))
+            .toMatchObject({ ok: false, index: 1 });
+        expect(quads()).toBe(before.quads);
+        expect(store.canUndo).toBe(true);   // the createView step only
+        await store.idle();
+        expect(viewFiles()).toEqual(files);
+        expect(text()).toEqual(before.text);
+        // Alone in a batch: the view keeps its file at the edit, the undo and the redo.
+        ok(store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }]));
         await store.idle();
         expect(viewFiles()).toEqual(files);
         expect(ws.read('views/product-context.view.trig')).toContain('urn:name:moved');
         ok(store.undo());
         await store.idle();
         expect(viewFiles()).toEqual(files);
+        expect(ws.read('views/product-context.view.trig')).not.toContain('urn:name:moved');
+        expect(ws.read('views/product-context.view.trig')).toContain('<urn:name:Product%20context> {');
+        expect(ws.read('views/plan.view.trig')).toContain('<urn:name:Plan> {');
         ok(store.redo());
         await store.idle();
         expect(viewFiles()).toEqual(files);

@@ -906,8 +906,8 @@ law_batchRejectionRollsBack b cs =
 -- After a command that changes the shapes, the next command reads the new metamodel. A rollback rebuilds the metamodel again.
 -- Refused: moveElementsToFile and migrateData (their undo step keeps files or a queue entry), more than one new view when one
 -- names its file or folder (the settings hold one of each), and addFileReference to a view of the same batch (no view file yet).
--- A batch with a command that changes a view IRI cannot create, delete or change the IRI of another view: the view keeps its file
--- only when the patch removes one view and adds one (movedIds), at the edit, the undo and the redo.
+-- A command that changes a view IRI runs only as the single command of a batch: a view keeps its file only when the patch removes
+-- one view and adds one (movedIds), at the edit, the undo and the redo.
 data BatchArg = ArgText String | ArgRef Int
 resolveRefs :: Int -> [Maybe Id] -> [BatchArg] -> Maybe [String]   -- the index of the command, the result IDs before it
 resolveRefs i ids = mapM one

@@ -697,7 +697,7 @@ export class ModelStore {
         const results: Extract<CommandResult, { ok: true }>[] = [];
         // The views that this batch creates: a file reference to one of them has no view file yet.
         const created = new Set<string>();
-        let failedAt: number | undefined, renamesView: number | undefined, rebuilt = false;
+        let failedAt: number | undefined, rebuilt = false;
         const { result, patch } = this.graph.transact((g): CommandResult => {
             for (const [index, item] of commands.entries()) {
                 failedAt = index;
@@ -712,21 +712,16 @@ export class ModelStore {
                 const shapes = g.keys.shapes, start = g.changes().length;
                 const r = executeCommand(g, this.metamodel, prepared.command);
                 if (!r.ok) return this.namingGiven(r, given);
+                // A view keeps its file only when the patch removes one view and adds one (movedIds), at the edit, the undo and the redo.
                 const views = viewsChanged(g, g.changes().slice(start));
-                if (views.gone.length === 1 && views.added.length === 1) renamesView ??= index;
+                if (commands.length > 1 && views.gone.length === 1 && views.added.length === 1) {
+                    return { ok: false, error: 'This command changes the IRI of a view. Run a view IRI change as a single exec.' };
+                }
                 // The next command reads the metamodel of the shapes so far (a relation that a new shape permits).
                 if (g.keys.shapes !== shapes) { this.rebuildMetamodel(); rebuilt = true; }
                 const one = resultOf(r);
                 if ((command.kind === 'createView' || command.kind === 'duplicateView') && one.id) created.add(one.id);
                 results.push(one);
-            }
-            // A view keeps its file when one view goes and one comes in the whole patch (movedIds), also at undo and redo.
-            if (renamesView !== undefined) {
-                const views = viewsChanged(g, g.changes());
-                if (views.gone.length !== 1 || views.added.length !== 1) {
-                    failedAt = renamesView;
-                    return { ok: false, error: 'This command changes the IRI of a view. A batch with it cannot create, delete or change the IRI of another view. Run it in its own exec.' };
-                }
             }
             failedAt = undefined;
             placeChanges(g, ws);
