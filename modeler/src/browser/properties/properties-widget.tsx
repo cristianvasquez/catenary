@@ -404,12 +404,21 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
             {this.head('Relation', predicateName(meta, r.predicate))}
             <Section title='Triple'>
                 <Row label='From' inline><Link label={s.label} onClick={() => this.editors.show(s.id)} /></Row>
-                <Row label='Predicate' inline><Link label={compactIri(r.predicate)} title={r.predicate}
-                    onClick={() => void this.commands.executeCommand('catenary.openIn', { ids: [iriId(r.predicate)] })} /></Row>
+                <Row label='Predicate' inline><Link label={compactIri(r.predicate)} title={r.predicate} onClick={() => this.openPredicate(r.predicate)} /></Row>
                 <Row label='To' inline><Link label={o.label} onClick={() => this.editors.show(o.id)} /></Row>
                 {permitted ? undefined : <div className='catenary-problem'><span className='codicon codicon-warning' /> No shape or RDFS rule declares this relation for these classes.</div>}
             </Section>
         </>;
+    }
+
+    /**
+     * Open in… for the predicate IRI (ui-manifest §4.7). The command registry does not run a disabled command, so a cached disabled
+     * answer shows its reason here.
+     */
+    protected openPredicate(predicate: string): void {
+        const id = 'catenary.openIn', target = this.actionService.targetOf({ ids: [iriId(predicate)] });
+        if (this.actionService.enabled(id, target)) return void this.commands.executeCommand(id, target);
+        this.actions.info(this.actionService.state(id, target)?.reason ?? 'Open in… does not apply to the predicate.');
     }
 
     // ------------------------------------------------------------ group
