@@ -1,5 +1,5 @@
 // Browser scenarios of the editors: source language, file presentations, file explorer, notes, targets, Links, Find, view URL, open-view,
-// layout, Properties and Markdown.
+// layout, CLI layout, Properties and Markdown.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -572,6 +572,33 @@ test('browser: Apply Layout fits the viewport to the new layout; no zoom-out lim
     console.log(`layout fit: ${algorithm} → ${after.inside}/${after.cards} cards in the viewport, zoom ${after.zoom.toFixed(3)}`);
     await away();
   }
+}));
+
+test('browser: law_cliLayoutOneStep: CLI layout by view IRI leaves no overlapping cards; one undo restores the bounds', { timeout: 45000 }, t => withFixtureApp(t, 'cli-layout', async app => {
+  const { cli, url, errors } = app;
+  const layout = (...args) => spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(url).port, 'layout', ...args],
+    { encoding: 'utf8', timeout: 15000 });
+  const iri = 'urn:name:Product%20context', view = iriId(iri);
+  const cards = () => cli('rpc', 'view', JSON.stringify(view)).result.boxes.filter(b => b.kind === 'card').map(({ id, x, y, width, height }) => ({ id, x, y, width, height }));
+  const overlaps = list => list.flatMap((a, i) => list.slice(i + 1).filter(b => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).map(b => `${a.id} ${b.id}`));
+  const before = cards();
+  assert.ok(before.length > 1, 'the view has cards');
+  for (const mode of ['force', 'layered']) {
+    const r = layout(iri, '--mode', mode);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.result.ok, true);
+    assert.equal(out.changed, true);
+    assert.deepEqual(overlaps(cards()), [], `${mode}: no two cards overlap`);
+    assert.equal(cli('rpc', 'undo').result.ok, true);
+    assert.deepEqual(cards(), before, `${mode}: one undo restores the old bounds`);
+  }
+  const unknown = layout('urn:name:noView');
+  assert.equal(unknown.status, 1, unknown.stdout + unknown.stderr);
+  assert.equal(JSON.parse(unknown.stdout).error, 'No view with the id or IRI "urn:name:noView".');
+  const badMode = layout(iri, '--mode', 'grid');
+  assert.equal(badMode.status, 2, badMode.stdout + badMode.stderr);
+  assert.deepEqual(errors, []);
 }));
 
 test('browser: Properties keeps its content during a model change; the SHACL form is replaced when the new one is ready', { timeout: 90000 }, t => withFixtureApp(t, 'properties-stable', async app => {

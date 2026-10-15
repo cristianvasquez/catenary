@@ -19,6 +19,8 @@ Backend (works without a browser window):
   rpc [method [json-arg...]]     call a ModelService method; without a method: list methods and parameters
   exec '<EditCommand JSON>'      rpc execute; the command kinds: packages/model/src/commands.ts
   undo | redo | save             rpc shortcuts
+  layout <view> [--mode layered|force]
+                                 lay out a view (ID or IRI) as Apply Layout does: one setLayout command, one undo step
 
 Frontend (needs an open window):
   commands [filter] [--all]      Theia commands: id, label, enabled, keys (--all: also disabled ones)
@@ -51,7 +53,7 @@ function finish(text, code) {
 function parseArgs(argv) {
     const opts = {};
     const pos = [];
-    const valued = new Set(['port', 'workspace', 'window', 'timeout', 'pick', 'index', 'button', 'since']);
+    const valued = new Set(['port', 'workspace', 'window', 'timeout', 'pick', 'index', 'button', 'since', 'mode']);
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '-h' || a === '--help') opts.help = true;
@@ -220,6 +222,10 @@ async function main() {
             if (!rest[0]) fail('exec needs an EditCommand as JSON, e.g. \'{"kind":"createView","label":"V"}\'');
             method = 'rpc'; params = { method: 'execute', args: [execArgument(rest[0])] }; break;
         case 'undo': case 'redo': case 'save': method = 'rpc'; params = { method: command, args: [] }; break;
+        case 'layout':
+            if (!rest[0]) fail('layout needs a view id or IRI; see "catenary model views --keys"');
+            if (opts.mode !== undefined && !['layered', 'force'].includes(opts.mode)) fail(`layout: --mode is layered or force, not "${opts.mode}"`);
+            method = 'layout'; params = { view: rest[0], mode: opts.mode ?? 'layered' }; break;
         case 'commands': method = 'commands'; params = { filter: rest[0], all: !!opts.all }; break;
         case 'run':
             if (!rest[0]) fail('run needs a command id; see "catenary commands"');

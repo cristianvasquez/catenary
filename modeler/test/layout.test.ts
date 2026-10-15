@@ -6,7 +6,7 @@ import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 import { LAYOUT_ALGORITHMS } from '../src/common/protocol';
 import { Box, Doc, TYPES, groupOf, inside, emptyShapes, iriId, boxes, toSchema } from '@catenary/model';
 import { ModelStore } from '@catenary/rdf';
-import { layoutView } from '../src/node/glsp/layout';
+import { cliLayoutCommand, layoutView } from '../src/node/glsp/layout';
 import { docOf, load, run } from '../../packages/rdf/test/helpers';
 import { project } from '../../packages/rdf/test/project-full';
 import { shapesGraphIri } from '../../packages/rdf/src/graph';
@@ -231,4 +231,36 @@ it('uses targeting connectors for layout only at the Show level + Derived', asyn
     } finally {
         spy.mockRestore();
     }
+});
+
+// CLI layout (manifest §12): a view IRI or ID, the layout of Apply Layout, one setLayout command. law_cliLayoutOneStep: no two cards
+// overlap after the command, and one undo restores the old bounds.
+it.each(LAYOUT_ALGORITHMS.map(a => a.id))('%s: law_cliLayoutOneStep: CLI layout by view IRI, no overlap, one undo restores the bounds', async mode => {
+    const dir = mkdtempSync(join(tmpdir(), 'catenary-layout-'));
+    cpSync('packages/rdf/test/fixtures', dir, { recursive: true });
+    const store = new ModelStore();
+    expect(await store.open(join(dir, 'workspace.trig'))).toMatchObject({ ok: true });
+    const viewId = Object.keys(docOf(store).views)[0];
+    const cards = () => boxes(docOf(store).views[viewId], 'card').map(({ id, x, y, width, height }) => ({ id, x, y, width, height }));
+    const before = cards();
+    const r = await cliLayoutCommand(store, idIri(viewId), mode);
+    if (!('command' in r) || !r.command) throw new Error(JSON.stringify(r));
+    expect(r.command.view).toBe(viewId);
+    expect(store.execute(r.command)).toMatchObject({ ok: true });
+    const after = cards();
+    expect(after).not.toEqual(before);
+    const overlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    for (const [i, a] of after.entries()) for (const b of after.slice(i + 1)) expect(overlap(a, b), `${a.id} ${b.id}`).toBe(false);
+    expect(store.undo()).toMatchObject({ ok: true });
+    expect(cards()).toEqual(before);
+    await store.idle();
+    await store.dispose();
+    rmSync(dir, { recursive: true, force: true });
+});
+
+it('CLI layout refuses an unknown view and an unknown mode, and names the value', async () => {
+    const store = new ModelStore();
+    expect(await cliLayoutCommand(store, 'urn:test:noView')).toEqual({ error: 'No view with the id or IRI "urn:test:noView".' });
+    expect(await cliLayoutCommand(store, 'v', 'grid')).toEqual({ error: 'Unknown layout mode "grid". Modes: layered, force.' });
+    await store.dispose();
 });

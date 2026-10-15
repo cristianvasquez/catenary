@@ -2014,11 +2014,30 @@ tokenFileMode = 0o600
 cliPath :: String
 cliPath = "/catenary/cli"
 
--- | Backend methods: status, model, rpc, exec (exec calls RPC execute with an EditCommand).
+-- | Backend methods: status, model, rpc, exec (exec calls RPC execute with an EditCommand), layout.
 -- Window methods: commands, run, prompt, answer, ui, messages, eval. They need a connected window.
-data CliMethod = Status | Model | Rpc | Exec | Commands | Run | Prompt | Answer | Ui | Messages | Eval deriving (Eq, Enum, Bounded)
+data CliMethod = Status | Model | Rpc | Exec | Layout | Commands | Run | Prompt | Answer | Ui | Messages | Eval deriving (Eq, Enum, Bounded)
 needsWindow :: CliMethod -> Bool
-needsWindow m = m `notElem` [Status, Model, Rpc, Exec]
+needsWindow m = m `notElem` [Status, Model, Rpc, Exec, Layout]
+
+-- | layout <view> [--mode layered|force] lays out a view with the layout of Apply Layout (UI §7) and its defaults without an editor:
+-- Show level Placed, the default spacing, card scale 1. The view is an ID or an IRI (resolveArg). The default mode is layered.
+-- The backend executes one SetLayout command. Reason: an agent gets the GUI layout as one undo step, without coordinates.
+-- An unknown view or mode: result null, an error that names the value, exit 1. The CLI exits 2 for a mode other than layered or force.
+-- Code: cliLayoutCommand in modeler/src/node/glsp/layout.ts, CliEndpoint.layout.
+data LayoutMode = LayeredMode | ForceMode deriving (Eq, Enum, Bounded)
+layoutCommand :: Backend -> Id -> LayoutMode -> EditCommand   -- SetLayout with the bounds of the layout
+cardRects :: Backend -> Id -> [Rect]                           -- the stored boxes of the cards of a view
+overlaps :: Rect -> Rect -> Bool
+cliLayout :: Backend -> IdRef -> LayoutMode -> (CommandResult, Backend)
+cliLayout b v m = step b (Execute (layoutCommand b (resolveArg b v) m))
+law_cliLayoutOneStep :: Backend -> IdRef -> LayoutMode -> Bool
+law_cliLayoutOneStep b v m =
+  let (r, b') = cliLayout b v m
+      cards = cardRects b' (resolveArg b v)
+  in not (failed r) ==>
+       (and [not (overlaps x y) | (i, x) <- zip [0 :: Int ..] cards, (j, y) <- zip [0 ..] cards, i < j]
+        && (null (lastPatch b') || sameSet (storeQuads (snd (step b' Undo))) (storeQuads b)))
 
 -- | exec, and rpc reads by the parameter names of MODEL_QUERIES, take an IRI or {"s":IRI,"p":IRI,"o":IRI} where they take an ID
 -- (canonicalId, §1.3). The IRI of a property shape gives its p- ID. Code: ModelStore.resolveId, ModelStore.resolveQueryArgs.
@@ -2139,6 +2158,9 @@ editCommandKinds = manifestOnly
 executeError = manifestOnly
 resolveArg = manifestOnly
 isPropertyShapeIri = manifestOnly
+layoutCommand = manifestOnly
+cardRects = manifestOnly
+overlaps = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

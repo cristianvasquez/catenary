@@ -13,6 +13,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { MODEL_QUERIES } from '@catenary/model';
 import { ModelStore } from '@catenary/rdf';
 import { CLI_HTTP_PATH, CLI_PROTOCOL, CliBridgeClient, CliRequest, FRONTEND_METHODS, modelSummary } from '../common/cli-protocol';
+import { cliLayoutCommand } from './glsp/layout';
 import { ModelServiceImpl } from './model-service';
 
 export function discoveryDir(): string {
@@ -146,9 +147,10 @@ export class CliEndpoint implements BackendApplicationContribution {
                 return params.keys && value && typeof value === 'object' ? Object.keys(value) : value;
             }
             case 'rpc': return this.rpc(params.method as string | undefined, (params.args as unknown[] | undefined) ?? []);
+            case 'layout': return this.layout(params.view, params.mode ?? 'layered');
         }
         if (!(FRONTEND_METHODS as readonly string[]).includes(method)) {
-            throw new Error(`unknown method "${method}"; backend: status, model, rpc; frontend: ${FRONTEND_METHODS.join(', ')}`);
+            throw new Error(`unknown method "${method}"; backend: status, model, rpc, layout; frontend: ${FRONTEND_METHODS.join(', ')}`);
         }
         const windows = this.windows.list;
         const w = window === undefined ? windows[windows.length - 1] : windows[window];
@@ -170,6 +172,16 @@ export class CliEndpoint implements BackendApplicationContribution {
         }
         const fn = (this.service as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method];
         const result = await fn.apply(this.service, args);
+        const after = modelSummary(this.store.snapshot());
+        return { result, model: after, changed: after.revision !== before.revision || after.dirty !== before.dirty };
+    }
+
+    /** Lay out a view with the layout of Apply Layout, then execute one setLayout command: one undo step (manifest §12, law_cliLayoutOneStep). */
+    protected async layout(view: unknown, mode: unknown): Promise<unknown> {
+        const before = modelSummary(this.store.snapshot());
+        const r = await cliLayoutCommand(this.store, view, mode);
+        if ('error' in r) return { result: null, error: r.error, model: before, changed: false };
+        const result = r.command ? await this.service.execute(r.command) : { ok: true };
         const after = modelSummary(this.store.snapshot());
         return { result, model: after, changed: after.revision !== before.revision || after.dirty !== before.dirty };
     }

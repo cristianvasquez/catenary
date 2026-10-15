@@ -19,7 +19,8 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import ELK, { ElkNode } from 'elkjs/lib/elk.bundled.js';
 import * as cola from 'webcola';
 import { Box, Doc, ElementSchema, GraphOptions, LEAF_SUFFIX, Rect, TYPES, ViewFigures, collectionOf, groupOf, boxes, toSchema } from '@catenary/model';
-import { LAYOUT_SPACING, LayoutAlgorithm, layoutSpacing } from '../../common/protocol';
+import type { ModelStore } from '@catenary/rdf';
+import { LAYOUT_ALGORITHMS, LAYOUT_SPACING, LayoutAlgorithm, layoutSpacing } from '../../common/protocol';
 import { ViewSession } from './view-session';
 
 const elk = new ELK();
@@ -306,6 +307,21 @@ export async function layoutView(part: Doc, viewId: string, shown: Pick<GraphOpt
     await layout(undefined, Math.min(...items.map(i => i.ext.x)), Math.min(...items.map(i => i.ext.y)));
     // The drawn extent of a laid-out item at its new place (cards with rows are drawn taller than their stored box).
     return { bounds: [...out.values()] };
+}
+
+/**
+ * The setLayout command of the CLI method layout (manifest §12, law_cliLayoutOneStep). Defaults of Apply Layout without an editor: Show
+ * level Placed (no hidden edges, no derived connectors), the default spacing and card scale 1. `view`: a view ID or IRI (resolveId).
+ * Undefined command: the view has no boxes.
+ */
+export async function cliLayoutCommand(store: ModelStore, view: unknown, mode: unknown = 'layered'): Promise<{ command?: { kind: 'setLayout'; view: string; bounds: Layout['bounds'] } } | { error: string }> {
+    if (!LAYOUT_ALGORITHMS.some(a => a.id === mode)) return { error: `Unknown layout mode ${JSON.stringify(mode)}. Modes: ${LAYOUT_ALGORITHMS.map(a => a.id).join(', ')}.` };
+    const viewId = typeof view === 'string' ? store.resolveId(view) : undefined;
+    const part = viewId ? store.viewDoc(viewId) : undefined;
+    if (!viewId || !part?.views[viewId]) return { error: `No view with the id or IRI ${JSON.stringify(view)}.` };
+    const { bounds } = await layoutView(part, viewId, { showHidden: false, showDerived: false }, mode as LayoutAlgorithm, LAYOUT_SPACING.default, 1,
+        store.viewFigures(viewId));
+    return bounds.length ? { command: { kind: 'setLayout', view: viewId, bounds } } : {};
 }
 
 /** Client action: lay out the view once. One setLayout command (one undo step), then a fit of the view to the new content. */

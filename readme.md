@@ -137,7 +137,7 @@ pnpm -s catenary --workspace /tmp/catenary-test status
 
 `open-view <view-id>` opens and activates a view in the connected window (command `catenary.openView`) and prints `currentView`. It exits 0 only when `currentView` is the requested view. An unknown view gives exit 1 and the message "The requested view is not in the current workspace."
 
-`status`, `model`, `rpc` and `exec` need no browser window. The other commands need a connected window. A headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
+`status`, `model`, `rpc`, `exec` and `layout` need no browser window. The other commands need a connected window. A headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
 `exec` and the reads of `rpc` take an IRI where they take an ID, and a relation as `{"s":IRI,"p":IRI,"o":IRI}`. A value with `:` is an IRI. A CURIE is not expanded. The IRI of a property shape gives its `p-` ID. An unknown ID or IRI on a read gives `result: null`, an `error` that names the value, and exit 1. A command result gives `iri` next to `id`, and `iris` next to `ids`.
 
@@ -145,6 +145,12 @@ pnpm -s catenary --workspace /tmp/catenary-test status
 pnpm -s catenary --port 3917 rpc properties '"urn:name:Query%20service"'
 pnpm -s catenary --port 3917 exec '{"kind":"addToView","view":"urn:name:Product%20context","ids":["urn:name:Query%20service"],"at":{"x":0,"y":0}}'
 pnpm -s catenary --port 3917 exec '{"kind":"delete","ids":[{"s":"urn:name:A","p":"http://www.w3.org/ns/dcat#distribution","o":"urn:name:B"}]}'
+```
+
+`layout <view> [--mode layered|force]` lays out a view with the layout of Apply Layout. The view is an ID or an IRI. The default mode is `layered`. The backend uses the defaults of Apply Layout: the Show level Placed, the default spacing (200 px) and card scale 1. The result is one `setLayout` command, so one `undo` restores the old bounds. An unknown view gives exit 1. A mode other than `layered` or `force` gives exit 2.
+
+```sh
+pnpm -s catenary --port 3917 layout 'urn:name:Product%20context' --mode force
 ```
 
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
