@@ -121,6 +121,33 @@ describe('executeBatch (manifest §5.2)', () => {
         expect(existsSync(ws.path('a.view.trig'))).toBe(true);
     });
 
+    it('a view keeps its file: a batch that changes a view IRI cannot create, delete or change the IRI of another view', async () => {
+        const viewFiles = () => store.files.views.map(v => v.path.slice(ws.dir.length + 1)).sort();
+        const created = store.execute({ kind: 'createView', label: 'Plan' });
+        if (!created.ok || !created.id) throw new Error(JSON.stringify(created));
+        const plan = created.id;
+        await store.idle();
+        const files = viewFiles();
+        expect(files).toEqual(['views/plan.view.trig', 'views/product-context.view.trig']);
+        const two = store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'setUri', id: plan, uri: 'urn:name:plan2' }]);
+        expect(two).toMatchObject({ ok: false, index: 0 });
+        expect(!two.ok && two.error).toContain('changes the IRI of a view');
+        expect(store.executeBatch([{ kind: 'createView', label: 'New' }, { kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }])).toMatchObject({ ok: false, index: 1 });
+        expect(store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'delete', ids: [plan] }])).toMatchObject({ ok: false, index: 0 });
+        // One view IRI change with other edits: the view keeps its file at the edit, the undo and the redo.
+        ok(store.executeBatch([{ kind: 'setUri', id: VIEW, uri: 'urn:name:moved' }, { kind: 'createNote', view: 'urn:name:moved', text: 'n', at: { x: 0, y: 0 } }]));
+        await store.idle();
+        expect(viewFiles()).toEqual(files);
+        expect(ws.read('views/product-context.view.trig')).toContain('urn:name:moved');
+        ok(store.undo());
+        await store.idle();
+        expect(viewFiles()).toEqual(files);
+        ok(store.redo());
+        await store.idle();
+        expect(viewFiles()).toEqual(files);
+        expect(ws.read('views/product-context.view.trig')).toContain('urn:name:moved');
+    });
+
     it('an empty batch changes nothing', () => {
         expect(store.executeBatch([])).toEqual({ ok: true, results: [] });
         expect(store.canUndo).toBe(false);
