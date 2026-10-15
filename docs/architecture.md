@@ -226,7 +226,7 @@ Vitest loads the TypeScript source, not `lib/`: `vitest.aliases.mts` maps each w
 | `packages/rdf/test/perf` | Elapsed time against `readBudgetMs` (`pnpm test:perf` only) |
 | `modeler/test` | Store-to-GLSP updates, frontend actions, selection, layout |
 | `scripts/e2e.cjs`, `scripts/e2e/` | Browser wiring of gestures and rendering only |
-| `scripts/smoke-cli.mjs` | CLI and RPC contract of the browser backend: authentication, edits on disk, undo, read back |
+| `scripts/smoke-cli.mjs` | CLI and RPC contract of the browser backend: authentication, edits on disk, undo, read back, `--workspace` selection |
 | `scripts/smoke-desktop.mjs` | The desktop app or a package: paths, writes, Git, watcher, plugins, native modules |
 
 Path rules take the platform as a parameter (`path.win32` or `path.posix`), so the tests check the Windows rules on Linux. The Windows workflow runs the same tests on Windows.

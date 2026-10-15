@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Command-line interface of a running Catenary backend, for agents and scripts. Output: JSON on stdout.
 // Protocol: modeler/src/common/cli-protocol.ts. The backend writes $XDG_RUNTIME_DIR/catenary/<pid>.json (port, token) at start.
-import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
-const USAGE = `Usage: catenary [--port N] [--window N] [--timeout MS] <command> [arguments]
+const USAGE = `Usage: catenary [--port N | --workspace PATH] [--window N] [--timeout MS] <command> [arguments]
+
+--workspace PATH: use the backend whose loaded model file is PATH (a .trig file) or is inside PATH (a folder).
 
 Backend (works without a browser window):
   instances                      running backends (discovery files)
@@ -46,7 +48,7 @@ function finish(text, code) {
 function parseArgs(argv) {
     const opts = {};
     const pos = [];
-    const valued = new Set(['port', 'window', 'timeout', 'pick', 'index', 'button', 'since']);
+    const valued = new Set(['port', 'workspace', 'window', 'timeout', 'pick', 'index', 'button', 'since']);
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '-h' || a === '--help') opts.help = true;
@@ -76,8 +78,46 @@ function instances() {
     });
 }
 
-function pickInstance(opts) {
+/** The model file that a backend has loaded (status → model.file), or the error of the status request. */
+async function loadedFile(instance) {
+    try {
+        const res = await fetch(`http://${instance.host}:${instance.port}/catenary/cli`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${instance.token}` },
+            body: JSON.stringify({ method: 'status' }),
+            signal: AbortSignal.timeout(5000)
+        });
+        const body = await res.json();
+        if (!res.ok) return { error: body.error ?? `HTTP ${res.status}` };
+        return { file: body.model?.file };
+    } catch (e) {
+        return { error: e.cause?.message ?? e.message };
+    }
+}
+
+const realpath = p => { try { return realpathSync(p); } catch { return resolve(p); } };
+const inside = (a, b) => a === b || a.startsWith(b + sep);
+
+/** --workspace: the one backend whose loaded model file is PATH or is inside the folder PATH. Manifest §12 law_workspaceSelectsOne. */
+async function pickByWorkspace(all, path) {
+    const target = realpath(resolve(path));
+    let stat;
+    try { stat = statSync(target); } catch { fail(`--workspace ${path}: no such file or folder`); }
+    if (!stat.isDirectory() && !target.endsWith('.trig')) fail(`--workspace ${path}: give a folder or a .trig file`);
+    const loaded = await Promise.all(all.map(loadedFile));
+    const matches = all.filter((_, n) => loaded[n].file && inside(realpath(loaded[n].file), target));
+    if (matches.length === 1) return matches[0];
+    const list = all.map((i, n) => `${i.port} (${loaded[n].file ?? (loaded[n].error ? `error: ${loaded[n].error}` : 'no model loaded')})`).join(', ');
+    fail(`${matches.length ? `${matches.length} backends` : 'no backend'} loaded ${target}; running: ${list || 'none'}`);
+}
+
+async function pickInstance(opts) {
     const all = instances();
+    if ('workspace' in opts) {
+        if ('port' in opts) fail('give --port or --workspace, not both');
+        if (!opts.workspace) fail('--workspace needs a path');
+        return pickByWorkspace(all, opts.workspace);
+    }
     const port = opts.port ?? process.env.CATENARY_PORT;
     if (port) {
         const found = all.find(i => String(i.port) === String(port));
@@ -87,7 +127,6 @@ function pickInstance(opts) {
     if (!all.length) fail('no running backend found; start one with "pnpm start" or "pnpm desktop"');
     if (all.length === 1) return all[0];
     const cwd = process.cwd();
-    const inside = (a, b) => a === b || a.startsWith(b + sep);
     const matches = all.filter(i => i.workspace && (inside(cwd, i.workspace) || inside(i.workspace, cwd)));
     if (matches.length === 1) return matches[0];
     fail(`${all.length} backends run; choose one with --port: ${all.map(i => `${i.port} (${i.workspace ?? i.cwd})`).join(', ')}`);
@@ -166,7 +205,7 @@ async function main() {
             break;
         case 'open-view': {
             if (!rest[0]) fail('open-view needs a view id; see "catenary model views --keys"');
-            const { result, code } = await openView(pickInstance(opts), rest[0], opts, timeout);
+            const { result, code } = await openView(await pickInstance(opts), rest[0], opts, timeout);
             return finish(JSON.stringify(result, null, 2) + '\n', code);
         }
         case 'messages': method = 'messages'; params = { since: opts.since === undefined ? undefined : Number(opts.since) }; break;
@@ -175,7 +214,7 @@ async function main() {
             method = 'eval'; params = { code: rest.join(' ') }; break;
         default: fail(`unknown command "${command}"; see "catenary --help"`);
     }
-    const result = await call(pickInstance(opts), method, params, opts.window);
+    const result = await call(await pickInstance(opts), method, params, opts.window);
     finish(JSON.stringify(result, null, 2) + '\n', exitCode(result));
 }
 
