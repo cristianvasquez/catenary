@@ -129,7 +129,7 @@ async function openView(instance, viewId, opts, timeout) {
 /** Exit status of a result: 1 for a failed command, 3 for a command that waits or still runs. */
 function exitCode(result) {
     if (result && typeof result === 'object') {
-        if (result.status === 'error') return 1;
+        if (result.status === 'error' || result.error !== undefined) return 1;
         if (result.status === 'waiting' || result.status === 'timeout') return 3;
         if (result.result && typeof result.result === 'object' && result.result.ok === false) return 1;
     }
