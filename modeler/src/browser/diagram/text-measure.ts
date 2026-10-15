@@ -2,12 +2,33 @@
 // The export canvas (the hidden canvas of GLSP, with all elements, also those outside the visible area) is measured before it is copied,
 // so that markdown-export.ts can write each line as SVG text at the same place.
 
-import { ExportSvgAction, GLSPSvgExporter, GModelRoot, RequestAction } from '@eclipse-glsp/client';
+import { Action, ExportSvgAction, ExportSvgOptions, GLSPSvgExporter, GModelRoot, RequestAction } from '@eclipse-glsp/client';
 import { injectable } from '@theia/core/shared/inversify';
 
 /** Edit controls: buttons, handles, "+ attribute". A document does not show them. */
 export const EDIT_CONTROLS = '.shape-add-row, .member-add, .member-take-out, .member-remove, .row-out, .row-in, '
     + '.catenary-halo, .catenary-resize-handle, .sprotty-resize-handle, .logic-handle, .edge-end';
+
+/** Validation marks that the export removes (§9.2 law_exportShowsNoValidation): the violation badge of a card. */
+export const VALIDATION_BADGES = '.catenary-card > .badge';
+/** Classes of validation results (`invalid`) and of an instance without a known class (`unknown`). The export draws an element as without them. */
+export const VALIDATION_CLASSES = ['invalid', 'unknown'];
+
+/**
+ * Remove the validation classes from the elements of `svg`. The result puts them back. The export calls it on the export canvas
+ * around the style copy: the copy inlines computed styles, so a class removed after it keeps its red or dashed stroke.
+ */
+export function hideValidationClasses(svg: Element): () => void {
+    const removed: [Element, string][] = [];
+    for (const e of svg.querySelectorAll(VALIDATION_CLASSES.map(c => `.${c}`).join(', '))) {
+        for (const c of VALIDATION_CLASSES) {
+            if (!e.classList.contains(c)) continue;
+            e.classList.remove(c);
+            removed.push([e, c]);
+        }
+    }
+    return () => { for (const [e, c] of removed) e.classList.add(c); };
+}
 
 /** The SVG exporter of a view editor; it keeps the text lines of its last export. */
 @injectable()
@@ -17,6 +38,16 @@ export class MeasuringSvgExporter extends GLSPSvgExporter {
     protected override prepareSvgElement(svg: SVGSVGElement, root: GModelRoot, request?: RequestAction<ExportSvgAction>): SVGSVGElement {
         this.lines = measureText(svg);
         return super.prepareSvgElement(svg, root, request);
+    }
+
+    /** The sprotty SvgExporter copies the computed styles here (copyStyles). Without the validation classes during the copy, nothing on the canvas changes after it. */
+    protected override createSvg(svg: SVGSVGElement, root: GModelRoot, options?: ExportSvgOptions, cause?: Action): string {
+        const restore = hideValidationClasses(svg);
+        try {
+            return super.createSvg(svg, root, options, cause);
+        } finally {
+            restore();
+        }
     }
 }
 
