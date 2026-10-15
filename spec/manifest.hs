@@ -882,6 +882,40 @@ law_settingsNoUndo b op = notUndoable op ==> undoStack (historyOf (snd (step b o
     notUndoable Save = True
     notUndoable _ = False
 
+-- | A batch (ModelStore.executeBatch; CLI exec with a JSON array, or exec - with NDJSON) runs its commands in order in one store
+-- transaction: one patch, one undo step, one write. A command that fails rolls back the whole batch. The result gives its 0-based index.
+-- Reason: an agent edit of many commands is one undo step and one commit, and a failure leaves no partial change.
+data BatchResult = BatchDone [CommandResult] | BatchFailed Int Error
+stepBatch :: Backend -> [EditCommand] -> (BatchResult, Backend)
+batchFailed :: BatchResult -> Bool
+batchFailed (BatchFailed _ _) = True
+batchFailed (BatchDone _) = False
+law_batchOneStep :: Backend -> [EditCommand] -> Bool
+law_batchOneStep b cs =
+  let (r, b') = stepBatch b cs
+      h = historyOf b
+      h' = historyOf b'
+  in (not (batchFailed r) && not (null (lastPatch b'))) ==>
+       (map stepPatch (take 1 (undoStack h')) == [lastPatch b'] && null (redoStack h')
+         && length (undoStack h') == min historyLimit (length (undoStack h) + 1))
+law_batchRejectionRollsBack :: Backend -> [EditCommand] -> Bool
+law_batchRejectionRollsBack b cs =
+  let (r, b') = stepBatch b cs in batchFailed r ==> (storeQuads b' == storeQuads b && historyOf b' == historyOf b)
+-- | A string field "$N" (anywhere in a command) takes the result ID of command N. N must be an earlier command that gives an ID,
+-- else the batch fails. The references resolve before the IRIs (§12). Code: resolveRefs in packages/rdf/src/model-store.ts.
+-- After a command that changes the shapes, the next command reads the new metamodel. A rollback rebuilds the metamodel again.
+-- Refused: moveElementsToFile and migrateData (their undo step keeps files or a queue entry), more than one new view when one
+-- names its file or folder (the settings hold one of each), and addFileReference to a view of the same batch (no view file yet).
+data BatchArg = ArgText String | ArgRef Int
+resolveRefs :: Int -> [Maybe Id] -> [BatchArg] -> Maybe [String]   -- the index of the command, the result IDs before it
+resolveRefs i ids = mapM one
+  where
+    one (ArgText x) = Just x
+    one (ArgRef n) = if n >= 0 && n < i && n < length ids then ids !! n else Nothing
+law_batchRefsResolve :: Int -> [Maybe Id] -> Int -> Bool
+law_batchRefsResolve i ids n =
+  isJust (resolveRefs i ids [ArgRef n]) == (n >= 0 && n < i && n < length ids && isJust (ids !! n))
+
 -- 5.3 History ---------------------------------------------------------------------------
 
 -- | The history model (packages/rdf-core/src/history.ts). The head of a stack is its top.
@@ -1724,6 +1758,8 @@ mayOverwrite disk known = disk == known
 -- Turning ws:autoCommit on checks again for a repository (a git init after the open).
 -- Reason: a commit changes the history of the user; the author turns it on. A folder without a repository has nothing to commit to.
 -- A batch can hold several command kinds. There is no promise of one commit per EditCommand.
+-- One write run gives one commit for all changes queued before it runs (Writer.queueWrite). An exec batch (§5.2) does not wait
+-- between its commands: it is one write run and one commit.
 data FileState = FileState { written :: Bool, outsideChanges :: Bool, gitIgnored :: Bool }
 data GitState = GitState { inRepository :: Bool, autoCommitOn :: Bool }
 commitPaths :: GitState -> [(FilePath, FileState)] -> [FilePath]   -- the files of one write batch
@@ -2014,7 +2050,8 @@ tokenFileMode = 0o600
 cliPath :: String
 cliPath = "/catenary/cli"
 
--- | Backend methods: status, model, rpc, exec (exec calls RPC execute with an EditCommand).
+-- | Backend methods: status, model, rpc, exec (exec calls RPC execute with an EditCommand). exec with a JSON array, or exec - with
+-- NDJSON on stdin (one command per line), calls RPC executeBatch (§5.2). A failed batch exits 1.
 -- Window methods: commands, run, prompt, answer, ui, messages, eval. They need a connected window.
 data CliMethod = Status | Model | Rpc | Exec | Commands | Run | Prompt | Answer | Ui | Messages | Eval deriving (Eq, Enum, Bounded)
 needsWindow :: CliMethod -> Bool
@@ -2078,7 +2115,7 @@ law_cliRefusesOlderBackend :: CliMethod -> Maybe Int -> Bool
 law_cliRefusesOlderBackend m v =
   (cliOutcomeBefore m v == Just UsageOrConnection) == (m /= Status && backendProtocol v < cliProtocol)
 
--- | The exec argument and the RPC execute argument. The CLI exits 2 for a value that is not a JSON object, before a request.
+-- | The exec argument and the RPC execute argument. The CLI exits 2 for a value that is not a JSON object or array, before a request.
 -- The backend refuses a value without a string kind, and an unknown kind with the list of known kinds. The restart hint applies
 -- only to an unknown kind: a frontend newer than the backend sends it.
 data ExecArgument = NotAnObject | NoStringKind | KindName String deriving Eq
@@ -2138,6 +2175,7 @@ cliOutcomeBefore = manifestOnly
 editCommandKinds = manifestOnly
 executeError = manifestOnly
 resolveArg = manifestOnly
+stepBatch = manifestOnly
 isPropertyShapeIri = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly

@@ -147,6 +147,13 @@ pnpm -s catenary --port 3917 exec '{"kind":"addToView","view":"urn:name:Product%
 pnpm -s catenary --port 3917 exec '{"kind":"delete","ids":[{"s":"urn:name:A","p":"http://www.w3.org/ns/dcat#distribution","o":"urn:name:B"}]}'
 ```
 
+`exec` with a JSON array runs a batch: one transaction, one undo step, one write and, with `ws:autoCommit`, one Git commit. `exec -` reads the same batch as NDJSON from stdin, one command per line. A string `"$N"` in a command is the result ID of command N (0-based, an earlier command). If one command fails, nothing changes: the result gives `index` and `error`, and the exit status is 1. A batch cannot contain `moveElementsToFile` or `migrateData`, more than one new view when one of them has `file` or `folder`, or `addFileReference` to a view of the same batch.
+
+```sh
+pnpm -s catenary --port 3917 exec '[{"kind":"createInstance","classIri":"http://www.w3.org/ns/dcat#Dataset","label":"Sales"},{"kind":"addToView","view":"urn:name:Product%20context","ids":["$0"],"at":{"x":0,"y":0}}]'
+printf '%s\n' '{"kind":"createView","label":"Plan"}' '{"kind":"createNote","view":"$0","text":"Draft","at":{"x":0,"y":0}}' | pnpm -s catenary --port 3917 exec -
+```
+
 `rpc view <view-id> <ids>` reads selected placements and their dependencies. Omit `ids` to read the full view. Both arguments are JSON.
 
 `rpc search '{"text":"robot","kind":"instance","limit":10}'` returns a list of hits. The filter keys are `text` (a case-insensitive part of the label, IRI or a type), `kind`, `type` (a class IRI), `view` (a view ID or IRI), `limit` and `skolem`. A filter excludes `urn:skolem:` subjects unless `skolem` is true. An unknown key fails with exit 1. Without a filter, `rpc search` returns all things.
