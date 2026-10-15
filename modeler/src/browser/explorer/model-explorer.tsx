@@ -425,14 +425,14 @@ export class ModelExplorerWidget extends TreeWidget implements SaveableSource {
     /** Double-click or Enter on a leaf row of an element: Open in… (a folder row expands). */
     protected override handleDblClickEvent(node: TreeNode | undefined, event: React.MouseEvent<HTMLElement>): void {
         if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) {
-            void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
+            void this.actionService.gesture(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
             event.stopPropagation();
         } else super.handleDblClickEvent(node, event);
     }
 
     protected override handleEnter(event: KeyboardEvent): void {
         const node = this.model.getFocusedNode();
-        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) void this.commands.executeCommand(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
+        if (CatenaryNode.isElement(node) && !CatenaryNode.isFolder(node)) void this.actionService.gesture(OPEN_IN, { ids: [CatenaryNode.elementId(node)] });
         else super.handleEnter(event);
     }
 

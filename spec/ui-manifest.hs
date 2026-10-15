@@ -622,6 +622,22 @@ commandEnabled :: Maybe Bool -> Bool               -- the answer for the action 
 commandEnabled = fromMaybe True
 law_gestureNoQuietWait :: Bool
 law_gestureNoQuietWait = commandEnabled Nothing
+-- | A gesture (a click, a double-click, Enter, F12) on an action uses the cached answer for its target. No answer: run. Enabled: run.
+-- Disabled: show its reason, or a fallback text when the reason is empty. Not in the answer: show that the action does not apply.
+-- Reason: Theia does not run a disabled command and skips its key, so the gesture did nothing (gestureStep, ActionService.gesture).
+data ActionAnswer = ActionAnswer { answerEnabled :: Bool, answerReason :: String }
+data GestureStep = RunAction | ShowMessage String deriving Eq
+noReason :: String
+noReason = "The action cannot run now."
+gestureStep :: Maybe (Maybe ActionAnswer) -> GestureStep   -- no answer yet; the answer has no state of the action; its state
+gestureStep Nothing = RunAction
+gestureStep (Just Nothing) = ShowMessage "does not apply to the selection."
+gestureStep (Just (Just s))
+  | answerEnabled s = RunAction
+  | null (answerReason s) = ShowMessage noReason
+  | otherwise = ShowMessage (answerReason s)
+law_disabledGestureShowsReason :: String -> Bool
+law_disabledGestureShowsReason r = gestureStep (Just (Just (ActionAnswer False r))) == ShowMessage (if null r then noReason else r)
 law_oneCommandPerAction :: Action -> [Element] -> Bool
 law_oneCommandPerAction a xs = applicable a xs ==> length (commandsOf a xs) <= 1
 

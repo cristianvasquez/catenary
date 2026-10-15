@@ -379,6 +379,7 @@ export class LinksContribution extends AbstractViewContribution<LinksWidget>
     @inject(SelectionModel) protected readonly elements: SelectionModel;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
     @inject(CommandService) protected readonly commands: CommandService;
+    @inject(ActionService) protected readonly actionService: ActionService;
 
     constructor() {
         super({
@@ -409,7 +410,7 @@ export class LinksContribution extends AbstractViewContribution<LinksWidget>
         });
         // The keys run the shared actions on the focused row (its target), as the context menu does.
         const onRow = (id: string) => ({
-            execute: () => { const t = this.tryGetWidget()?.focusedTarget(); if (t) return this.commands.executeCommand(id, t); },
+            execute: () => { const t = this.tryGetWidget()?.focusedTarget(); if (t) return this.actionService.gesture(id, t); },
             isEnabled: () => !!this.tryGetWidget()?.focusedTarget()?.ids.length
         });
         registry.registerCommand(LinksCommands.RENAME_ROW, onRow('catenary.rename'));

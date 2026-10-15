@@ -3,7 +3,7 @@
 // its violations. A double-click or Enter also shows it in a view. The rows of an instance have the context menu of the actions
 // (action-commands.ts) and drag to a view, as the rows of the Model Explorer. Status bar: model file, dirty, violations.
 
-import { CommandService, MenuPath, URI } from '@theia/core';
+import { MenuPath, URI } from '@theia/core';
 import {
     ContextMenuRenderer, FrontendApplicationContribution, LabelProviderContribution, OpenHandler, OpenerOptions, StatusBar, StatusBarAlignment,
     TreeNode, TreeProps, codicon
@@ -183,7 +183,7 @@ export class ElementLabelProvider implements LabelProviderContribution {
 export class ElementOpenHandler implements OpenHandler {
     readonly id = 'catenary-element-opener';
     readonly label = 'Show model element';
-    @inject(CommandService) protected readonly commands: CommandService;
+    @inject(ActionService) protected readonly actions: ActionService;
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(PropertyViewContribution) protected readonly properties: PropertyViewContribution;
 
@@ -202,7 +202,7 @@ export class ElementOpenHandler implements OpenHandler {
             this.selection.set({ ids: [id] });
             await this.properties.openView({ activate: false, reveal: true });
         } else {
-            await this.commands.executeCommand('catenary.openIn', { ids: [id] });
+            await this.actions.gesture('catenary.openIn', { ids: [id] });
         }
         return undefined;
     }

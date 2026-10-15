@@ -8,7 +8,7 @@ import { ApplicationShell, KeybindingContribution, KeybindingRegistry } from '@t
 import { EditorWidget } from '@theia/editor/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { GLSPDiagramWidget, TheiaGLSPContextMenu } from '@eclipse-glsp/theia-integration';
-import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, OpenTarget, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, itemsOfKind } from '@catenary/model';
+import { ACTIONS, ActionTarget, DELETABLE, ItemFacts, OpenTarget, LogicalOperator, MARKS, VIEW_ITEMS, baseName, boxes, colorApplies, gestureStep, itemsOfKind } from '@catenary/model';
 import { ActionService, viewAsItem } from './action-service';
 import { ModelActions } from './actions';
 import { ModelCommands, CatenaryFileOpenHandler } from './commands';
@@ -39,6 +39,12 @@ const GO_TO: [string, string][] = [['catenary.nextOccurrence', 'Next View'], ['c
 /** Actions with a global keybinding: the menu shows the key in its key column, the label does not repeat it. */
 const KEY_COLUMN = ['catenary.nextOccurrence', 'catenary.previousOccurrence', 'catenary.openIn'];
 
+/**
+ * The key F12 when Open in… is disabled: Theia skips a key binding whose command is disabled, and the menu greys out a disabled
+ * command. This hidden command (no label: not in the command palette) is always enabled and shows the reason (ActionService.gesture).
+ */
+const OPEN_IN_KEY = 'catenary.openIn.key';
+
 /** Context menus that show the actions, the prefix of their groups, and their "Go to" submenu. The canvas keeps the GLSP group names. */
 const MENUS: [MenuPath, string, MenuPath][] = [
     [TheiaGLSPContextMenu.CONTEXT_MENU, 'catenary_', [...TheiaGLSPContextMenu.CONTEXT_MENU, 'navigate']],
@@ -67,6 +73,7 @@ export class ActionContribution implements CommandContribution, MenuContribution
                 isEnabled: (arg?: unknown) => this.service.enabled(a.id, target(arg))
             });
         }
+        registry.registerCommand({ id: OPEN_IN_KEY }, { execute: () => this.service.gesture('catenary.openIn') });
         this.registerDetails(registry);
         for (const [color, command] of ModelCommands.COLORS) {
             registry.registerCommand(command, {
@@ -106,10 +113,9 @@ export class ActionContribution implements CommandContribution, MenuContribution
     /** Run an action on a target. The facts of the target come with the answer of the backend. */
     protected async run(id: string, t: ActionTarget): Promise<void> {
         const { actions: states, items } = await this.service.fetch(t);
-        const state = states.find(s => s.id === id);
         // A gesture can run before the answer arrives (ActionService.enabled): an action that does not apply says so, not nothing.
-        if (!state) return this.messages.info(`${ACTIONS.find(a => a.id === id)?.label ?? id} does not apply to the selection.`) as unknown as void;
-        if (!state.enabled) return this.messages.info(state.reason ?? 'The action cannot run now.') as unknown as void;
+        const step = gestureStep(id, states);
+        if (!step.run) return void this.messages.info(step.message);
         const one = items[0];
         const view = t.view;
         const a = this.actions;
@@ -227,6 +233,9 @@ export class ActionContribution implements CommandContribution, MenuContribution
     }
 
     registerKeybindings(keybindings: KeybindingRegistry): void {
+        // Theia takes the first enabled binding of a key, the last registered first: Open in… when it is enabled (the menu shows its
+        // key), else OPEN_IN_KEY.
+        keybindings.registerKeybinding({ command: OPEN_IN_KEY, keybinding: 'f12', when: '!editorTextFocus' });
         keybindings.registerKeybinding({ command: 'catenary.openIn', keybinding: 'f12', when: '!editorTextFocus' });
     }
 }

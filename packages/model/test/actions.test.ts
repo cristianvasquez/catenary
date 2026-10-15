@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Doc, ElementKind, ItemFacts, displayCards, emptyShapes } from '../src';
+import { Doc, ElementKind, ItemFacts, NO_REASON, displayCards, emptyShapes, gestureStep } from '../src';
 
 const doc = (): Doc => {
     const instances = Object.fromEntries(['a', 'b', 'c'].map(id => [id, { id, uri: `urn:${id}`, label: id, types: [], fields: {} }]));
@@ -40,5 +40,22 @@ describe('displayCards (Show Details)', () => {
     it('no view or no placed card: none', () => {
         expect(displayCards(doc(), undefined, [item('a', 'instance')])).toEqual([]);
         expect(displayCards(doc(), 'v', [{ ...item('a', 'instance'), placed: false }])).toEqual([]);
+    });
+});
+
+describe('gestureStep (law_disabledGestureShowsReason)', () => {
+    const id = 'catenary.openIn';
+    it('no answer yet: run', () => expect(gestureStep(id, undefined)).toEqual({ run: true }));
+    it('enabled: run', () => expect(gestureStep(id, [{ id, enabled: true }])).toEqual({ run: true }));
+    it('disabled: its reason', () => {
+        const reason = 'No file and no view has the element.';
+        expect(gestureStep(id, [{ id, enabled: false, reason }])).toEqual({ run: false, message: reason });
+    });
+    it('disabled with an empty reason: the fallback text', () => {
+        expect(gestureStep(id, [{ id, enabled: false }])).toEqual({ run: false, message: NO_REASON });
+        expect(gestureStep(id, [{ id, enabled: false, reason: '' }])).toEqual({ run: false, message: NO_REASON });
+    });
+    it('not in the answer: the action does not apply', () => {
+        expect(gestureStep(id, [])).toEqual({ run: false, message: 'Open in… does not apply to the selection.' });
     });
 });

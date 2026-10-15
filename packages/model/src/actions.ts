@@ -197,6 +197,24 @@ export function applicableActions(f: SelectionFacts): ActionState[] {
     return out;
 }
 
+/** What a gesture does with an action: run it, or show a message (the reason that it cannot run). */
+export type GestureStep = { run: true } | { run: false; message: string };
+
+/** The message of a disabled action without a reason. */
+export const NO_REASON = 'The action cannot run now.';
+
+/**
+ * The step of a gesture (a click, a double-click, Enter, a key) from the cached answer for its target (spec/ui-manifest.hs §4.2,
+ * law_disabledGestureShowsReason). No answer yet: run (the run asks at once). Enabled: run. Disabled: its reason. Not in the
+ * answer: the action does not apply.
+ */
+export function gestureStep(id: string, answer: ActionState[] | undefined): GestureStep {
+    if (!answer) return { run: true };
+    const state = answer.find(a => a.id === id);
+    if (!state) return { run: false, message: `${ACTIONS.find(a => a.id === id)?.label ?? id} does not apply to the selection.` };
+    return state.enabled ? { run: true } : { run: false, message: state.reason || NO_REASON };
+}
+
 /** The items of a selection to act on, by kind: the element ids. */
 export function itemsOfKind(items: ItemFacts[], ...kinds: ElementKind[]): string[] {
     return [...new Set(items.filter(i => has(i, ...kinds)).map(i => i.element))];

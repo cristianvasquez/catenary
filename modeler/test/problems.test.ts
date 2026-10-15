@@ -18,28 +18,28 @@ vi.mock('@theia/property-view/lib/browser/property-view-contribution', () => ({ 
 vi.mock('../src/browser/commands', () => ({ OpenModelCommands: { OPEN: { id: 'open' } } }));
 
 function fixture() {
-    const commands = { executeCommand: vi.fn(async () => undefined) };
+    const actions = { gesture: vi.fn(async () => undefined) };
     const selection = Object.assign(new SelectionModel(), { model: {
         onDidChange: () => ({ dispose() {} }), snapshot: { revision: 0 }, isOpen: true,
         service: { selected: async (s: ModelSelection) => ({ ...emptySelected(), view: s.view, ids: s.ids, elements: s.ids }) }
     } });
     const properties = { openView: vi.fn(async () => ({})) };
-    const handler = Object.assign(new ElementOpenHandler(), { commands, selection, properties });
-    return { handler, commands, selection, properties };
+    const handler = Object.assign(new ElementOpenHandler(), { actions, selection, properties });
+    return { handler, actions, selection, properties };
 }
 
 it('a click on a problem selects its instance, reveals Properties and opens no view', async () => {
-    const { handler, commands, selection, properties } = fixture();
+    const { handler, actions, selection, properties } = fixture();
     await handler.open(elementUri('i1'), { mode: 'reveal' } as object);
     expect(selection.selection).toEqual({ view: undefined, ids: ['i1'] });
     expect(properties.openView).toHaveBeenCalledWith({ activate: false, reveal: true });
-    expect(commands.executeCommand).not.toHaveBeenCalled();
+    expect(actions.gesture).not.toHaveBeenCalled();
 });
 
 it('a double-click on a problem runs Open in… on its instance', async () => {
-    const { handler, commands } = fixture();
+    const { handler, actions } = fixture();
     await handler.open(elementUri('i1'));
-    expect(commands.executeCommand).toHaveBeenCalledWith('catenary.openIn', { ids: ['i1'] });
+    expect(actions.gesture).toHaveBeenCalledWith('catenary.openIn', { ids: ['i1'] });
 });
 
 it('a click on a problem without a focus instance changes no selection', async () => {

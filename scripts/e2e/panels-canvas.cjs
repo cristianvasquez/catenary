@@ -1,12 +1,12 @@
-// Browser scenarios of the panels and canvases: hidden panel reads, Trace metrics, two-canvas selection and bends.
+// Browser scenarios of the panels and canvases: hidden panel reads, Trace metrics, two-canvas selection, bends and the reason of a disabled gesture.
 // No fixed sleep establishes completion. A check waits for an observed state (app.waitUntil, a locator), or for these completion
 // points: the window has processed a revision (its snapshot and the backend answer of its selection), a frame flush of the window,
 // a later RPC on the same frontend connection, and an answered read-only GLSP request on the same canvas session.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { test, withFixtureApp } = require('./harness.cjs');
-const { iriId } = require('../../packages/model/lib/ids.js');
+const { test, withApp, withFixtureApp } = require('./harness.cjs');
+const { escapeId, iriId } = require('../../packages/model/lib/ids.js');
 
 const PANEL_READS = ['properties', 'appearance', 'links', 'view', 'elementRows'];
 
@@ -381,4 +381,49 @@ test('browser: a drag of an edge line adds a bend, a double-click on the bend re
   await handle.waitFor({ state: 'detached' });
   cli('run', 'catenary.undo');
   await app.waitUntil('one undo restores the bend where it was', bendState, s => s.vertices === saved);
+}));
+
+test('browser: law_disabledGestureShowsReason: a click on a predicate that no file declares, and F12, show the reason each time', { timeout: 60000 }, t => withApp(t, 'disabled-gesture', {
+  fixture: workspace => {
+    fs.writeFileSync(path.join(workspace, 'workspace.trig'), `@prefix ws: <https://cristianvasquez.github.io/catenary/vocab/workspace#> .
+    <urn:name:workspace> { <urn:name:workspace> a ws:Workspace; ws:placeInstances "data.ttl" . }`);
+    fs.writeFileSync(path.join(workspace, 'data.ttl'), `<urn:x:a> a <urn:x:Thing> ; <http://www.w3.org/2000/01/rdf-schema#label> "A" ; <urn:x:undeclared> <urn:x:b> .
+<urn:x:b> a <urn:x:Thing> ; <http://www.w3.org/2000/01/rdf-schema#label> "B" .\n`);
+  },
+  ready: '#theia-main-content-panel'
+}, async ({ page, cli, workspace, errors, waitUntil }) => {
+  cli('rpc', 'open', JSON.stringify(path.join(workspace, 'workspace.trig')));
+  const REASON = 'No file and no view has the element.';
+  const predicate = 'urn:x:undeclared', pid = iriId(predicate);
+  const rid = `r-${escapeId('urn:x:a')}-${escapeId(predicate)}-${escapeId('urn:x:b')}`;
+  const lastSeq = () => cli('messages').at(-1)?.seq ?? 0;
+  const shown = since => waitUntil(`the message "${REASON}" after message ${since}`, () => cli('messages', '--since', String(since)),
+    messages => messages.some(m => m.text === REASON));
+  // The answer for a target is cached as disabled: the command registry reports Open in… disabled.
+  const cachedDisabled = arg => waitUntil('the cached answer: Open in… disabled', () => cli('eval', `return ctx.commands.isEnabled('catenary.openIn'${arg ? `, ${JSON.stringify(arg)}` : ''})`), enabled => enabled === false);
+
+  // The relation on a canvas: the canvas selection is the Theia selection that the Properties panel shows.
+  const exec = command => cli('exec', JSON.stringify(command)).result;
+  const view = exec({ kind: 'createView', label: 'Gesture' }).id;
+  assert.equal(exec({ kind: 'addToView', view, ids: [iriId('urn:x:a'), iriId('urn:x:b')], at: { x: 100, y: 100 } }).ok, true);
+  cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
+  await page.locator('svg.sprotty-graph:visible').waitFor();
+  cli('eval', `ctx.selection.set({ view: ${JSON.stringify(view)}, ids: [${JSON.stringify(rid)}] }); await ctx.shell.revealWidget('property-view'); return true`);
+  const link = page.locator('#catenary-properties a.catenary-link[title="urn:x:undeclared"]');
+  await link.waitFor();
+  // First click: no answer yet, or a cached one. Second click: the answer is cached as disabled (Theia does not run the command).
+  let since = lastSeq();
+  await link.click();
+  await shown(since);
+  await cachedDisabled({ ids: [pid] });
+  since = lastSeq();
+  await link.click();
+  await shown(since);
+  // F12 on a window selection whose cached answer is disabled: the key shows the reason.
+  cli('eval', `ctx.selection.set({ ids: [${JSON.stringify(pid)}] }); return true`);
+  await cachedDisabled();
+  since = lastSeq();
+  await page.keyboard.press('F12');
+  await shown(since);
+  assert.deepEqual(errors, []);
 }));

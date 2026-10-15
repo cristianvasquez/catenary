@@ -2,9 +2,9 @@
 // (RPC `selectionActions`); this service keeps the last answer for the window selection and for explicit targets (a Links row, a
 // class folder), so that menus and keys can ask synchronously. Menus show nothing for a target whose answer has not arrived yet.
 
-import { Emitter } from '@theia/core';
+import { CommandService, Emitter, MessageService } from '@theia/core';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { ActionState, ActionTarget, ItemFacts, SelectionActions, targetKey, panelsUnchanged } from '@catenary/model';
+import { ActionState, ActionTarget, ItemFacts, SelectionActions, gestureStep, targetKey, panelsUnchanged } from '@catenary/model';
 import { ViewEditors } from './diagram/view-editors';
 import { ModelFrontend } from './model-client';
 import { SELECTION_QUIET_MS, SelectionModel } from './selection-model';
@@ -29,6 +29,8 @@ export class ActionService {
     @inject(ModelFrontend) protected readonly model: ModelFrontend;
     @inject(SelectionModel) protected readonly selection: SelectionModel;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
+    @inject(CommandService) protected readonly commands: CommandService;
+    @inject(MessageService) protected readonly messages: MessageService;
 
     /** Answers by target key, for the current model revision. */
     protected readonly answers = new Map<string, SelectionActions>();
@@ -127,6 +129,21 @@ export class ActionService {
         const answer = this.answers.get(targetKey(target));
         if (!answer) { this.ask(target); return true; }
         return !!answer.actions.find(a => a.id === id)?.enabled;
+    }
+
+    /**
+     * Run an action command from a gesture (a click, a double-click, Enter, a key) with an optional explicit target. The command
+     * registry does not run a disabled command, so a cached disabled answer shows its reason here (gestureStep, ui-manifest §4.2
+     * law_disabledGestureShowsReason). Does not reject.
+     */
+    async gesture(id: string, arg?: unknown): Promise<void> {
+        try {
+            const step = gestureStep(id, this.answers.get(targetKey(viewAsItem(id, this.targetOf(arg))))?.actions);
+            if (!step.run) return void this.messages.info(step.message);
+            await this.commands.executeCommand(id, ...(arg === undefined ? [] : [arg]));
+        } catch (e) {
+            void this.messages.error(e instanceof Error ? e.message : String(e));
+        }
     }
 
     items(target: ActionTarget): ItemFacts[] {

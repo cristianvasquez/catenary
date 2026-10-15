@@ -99,3 +99,27 @@ it('enabled: a command of the window selection can run before its answer arrives
     expect(service.enabled('catenary.openIn', target)).toBe(false);
     expect(service.enabled('catenary.rename', target)).toBe(false);
 });
+
+it('law_disabledGestureShowsReason: gesture runs the command without an answer or when enabled, shows the cached reason, and does not reject', async () => {
+    const { service, replies } = fixture();
+    const executeCommand = vi.fn(async () => undefined);
+    const info = vi.fn(), error = vi.fn();
+    Object.assign(service, { commands: { executeCommand }, messages: { info, error } });
+    const id = 'catenary.openIn', arg = { ids: ['p'] };
+    // No answer yet: the command runs (its run asks at once).
+    await service.gesture(id, arg);
+    expect(executeCommand).toHaveBeenLastCalledWith(id, arg);
+    // The answer arrives (in the app, the run of the command asks for it).
+    void service.fetch(service.targetOf(arg));
+    replies.shift()!({ actions: [{ id, enabled: false, reason: 'No file and no view has the element.' }], items: [], cards: [] } as SelectionActions);
+    await settle();
+    // Cached disabled: the reason, and no command (Theia would reject a disabled command).
+    executeCommand.mockClear();
+    await service.gesture(id, arg);
+    expect(info).toHaveBeenLastCalledWith('No file and no view has the element.');
+    expect(executeCommand).not.toHaveBeenCalled();
+    // A failed run shows the error and does not reject.
+    executeCommand.mockRejectedValueOnce(new Error('broken'));
+    await expect(service.gesture('catenary.rename', { ids: ['q'] })).resolves.toBeUndefined();
+    expect(error).toHaveBeenLastCalledWith('broken');
+});

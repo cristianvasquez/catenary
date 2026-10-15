@@ -11,6 +11,7 @@ import React from '@theia/core/shared/react';
 import { AppearanceData, CardDisplay, EdgeLayout, View, boxOf, cardOf, edgeLayout } from '@catenary/model';
 import { Button, Choice, ElementPanel, Head, IconButton, Row, Section, SidePicker, Swatches, TextInput } from './controls';
 import { Selected } from '../selection-model';
+import { ActionService } from '../action-service';
 import { CARD_FONT_SIZE, FONT_DEFAULTS, FONT_MAX, FONT_MIN, FontPreferences, GROUP_FONT_SIZE, NOTE_FONT_SIZE } from '../diagram/font-preferences';
 import { EDGE_STYLE_DEFAULT, EdgePreferences } from '../diagram/edge-preferences';
 import { LayoutPreferences } from '../diagram/layout-preferences';
@@ -60,6 +61,7 @@ const IN_VIEW = 'saved in this view', ALL_VIEWS = 'all views · not in model';
 export class AppearanceWidget extends ElementPanel {
     @inject(FontPreferences) protected readonly fonts: FontPreferences;
     @inject(CommandService) protected readonly commands: CommandService;
+    @inject(ActionService) protected readonly actionService: ActionService;
     @inject(EdgePreferences) protected readonly edgeStyle: EdgePreferences;
     @inject(LayoutPreferences) protected readonly spacingPreference: LayoutPreferences;
     @inject(ViewEditors) protected readonly editors: ViewEditors;
@@ -322,7 +324,7 @@ export class AppearanceWidget extends ElementPanel {
             <Section title='Card'>
                 <div className='catenary-none'>Not in this view.</div>
                 {/* The shared action (action-commands.ts): the element of the selection to the current view. */}
-                <div className='catenary-buttons'><Button label='Add to Current View' onClick={() => this.commands.executeCommand('catenary.addToView')} /></div>
+                <div className='catenary-buttons'><Button label='Add to Current View' onClick={() => this.actionService.gesture('catenary.addToView')} /></div>
             </Section>
         </>;
     }

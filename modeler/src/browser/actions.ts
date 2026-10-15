@@ -13,6 +13,7 @@ import type { GLSPDiagramWidget } from '@eclipse-glsp/theia-integration';
 import { LAYOUT_ALGORITHMS } from '../common/protocol';
 import { LayoutPreferences } from './diagram/layout-preferences';
 import { showPopupPicker } from './diagram/popup-picker';
+import { ActionService } from './action-service';
 import { ViewEditors } from './diagram/view-editors';
 import { FollowUp, FollowUpField } from './follow-up';
 import { ModelFrontend } from './model-client';
@@ -41,6 +42,7 @@ export class ModelActions {
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(QuickInputService) protected readonly quick: QuickInputService;
     @inject(CommandService) protected readonly commands: CommandService;
+    @inject(ActionService) protected readonly actionService: ActionService;
     @inject(LayoutPreferences) protected readonly layoutPreferences: LayoutPreferences;
     @inject(FollowUp) protected readonly follow: FollowUp;
     @inject(FileDialogService) protected readonly fileDialog: FileDialogService;
@@ -246,7 +248,7 @@ export class ModelActions {
             pick.hide();
             const target = { ids: [hit.id] };
             if (button === FIND_BUTTONS[0]) await this.editors.show(hit.id);
-            else await this.commands.executeCommand('catenary.openIn', target);
+            else await this.actionService.gesture('catenary.openIn', target);
         });
         pick.show();
     }

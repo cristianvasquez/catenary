@@ -411,14 +411,9 @@ export class ModelPropertiesWidget extends ElementPanel implements PropertyViewC
         </>;
     }
 
-    /**
-     * Open in… for the predicate IRI (ui-manifest §4.7). The command registry does not run a disabled command, so a cached disabled
-     * answer shows its reason here.
-     */
+    /** Open in… for the predicate IRI (ui-manifest §4.7). */
     protected openPredicate(predicate: string): void {
-        const id = 'catenary.openIn', target = this.actionService.targetOf({ ids: [iriId(predicate)] });
-        if (this.actionService.enabled(id, target)) return void this.commands.executeCommand(id, target);
-        this.actions.info(this.actionService.state(id, target)?.reason ?? 'Open in… does not apply to the predicate.');
+        void this.actionService.gesture('catenary.openIn', { ids: [iriId(predicate)] });
     }
 
     // ------------------------------------------------------------ group
