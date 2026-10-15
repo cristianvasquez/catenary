@@ -189,7 +189,37 @@ const alreadyInView = (n: number) => fail(n === 1 ? 'The instance is already in 
  */
 const FROM_A_PROPERTY = new Set<EditCommand['kind']>(['showAsEdge', 'createPropertyShape', 'setPropertyShape']);
 
+/** The kinds of EditCommand. A Record makes the compiler check that the list is complete. */
+const KINDS: Record<EditCommand['kind'], true> = {
+    createInstance: true, moveElementsToFile: true, placeExplorerElements: true, rename: true, setUri: true, setStatements: true,
+    setTypes: true, delete: true, addToView: true, showRelations: true, showAsEdge: true, removeFromView: true, setBounds: true,
+    setLayout: true, setEdgeLayout: true, hideEdges: true, setViewDescription: true, setViewElements: true, createRelation: true,
+    reconnectRelation: true, createView: true, createNodeShape: true, proposeShapes: true, setNodeShape: true,
+    createPropertyShape: true, setPropertyShape: true, groupProperties: true, setConstraint: true, ungroup: true,
+    takeOutOfConstraint: true, createValueSet: true, addConcept: true, setConceptBroader: true, removeConcept: true,
+    migrateData: true, duplicateView: true, createGroup: true, createNote: true, addViewReference: true, addFileReference: true,
+    createArrow: true, collect: true, addToCollection: true, uncollect: true, pasteIntoView: true, moveBetweenViews: true,
+    duplicate: true, pasteRdf: true
+};
+export const EDIT_COMMAND_KINDS = Object.keys(KINDS) as EditCommand['kind'][];
+
+/**
+ * The error of a value that is not a known EditCommand (manifest §12, law_execMessageNamesTheFault): no object with a string kind,
+ * or an unknown kind. Undefined for a known kind.
+ */
+export function commandShapeError(c: unknown): string | undefined {
+    if (c === null || typeof c !== 'object' || Array.isArray(c) || typeof (c as { kind?: unknown }).kind !== 'string') {
+        return 'An edit command is a JSON object with a string kind.';
+    }
+    const kind = (c as { kind: string }).kind;
+    if (Object.prototype.hasOwnProperty.call(KINDS, kind)) return undefined;
+    // A frontend newer than this backend sends a kind that the backend does not know.
+    return `Unknown command kind "${kind}". If the frontend sent it, restart the backend. Known kinds: ${EDIT_COMMAND_KINDS.join(', ')}.`;
+}
+
 export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> {
+    const shapeError = commandShapeError(c);
+    if (shapeError) return fail(shapeError);
     // A paste or a move: the placements of the target view before the command. A move within one view re-places its cards: they
     // count as new.
     const target = c.kind === 'pasteIntoView' || c.kind === 'pasteRdf' ? c.view : c.kind === 'moveBetweenViews' ? viewIdOf(g, c.to) : undefined;
@@ -474,7 +504,7 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
         case 'duplicate':
             return duplicate(g, c.view, c.ids);
         default:
-            // A frontend newer than this backend: restart the backend.
-            return fail(`Unknown command "${(c as { kind: string }).kind}". The backend is older than the frontend: restart it.`);
+            // executeCommand refuses a kind that is not in KINDS before the switch. Here: a kind in KINDS without a case.
+            return fail(`The command kind "${(c as { kind: string }).kind}" has no implementation.`);
     }
 }

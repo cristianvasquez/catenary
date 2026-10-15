@@ -1996,6 +1996,36 @@ exitCode o = fromEnum o
 cliTimeoutMs :: Int
 cliTimeoutMs = 10000
 
+-- | CLI protocol version: the backend gives cliProtocol in its discovery file and in status. A missing value is 1.
+-- For each method except status, the CLI refuses a backend with a lower version (exit 2, "restart the backend") before a request.
+-- Reason: an older backend can ignore a new argument without an error. instances sends no request and does not check.
+-- Version 2: exec checks the command shape. modeler/src/common/cli-protocol.json holds the number for the backend and the CLI.
+cliProtocol :: Int
+cliProtocol = 2
+backendProtocol :: Maybe Int -> Int                  -- cliProtocol of the discovery file
+backendProtocol = fromMaybe 1
+cliOutcomeBefore :: CliMethod -> Maybe Int -> Maybe CliOutcome   -- the outcome before a request; Nothing: the CLI sends it
+law_cliRefusesOlderBackend :: CliMethod -> Maybe Int -> Bool
+law_cliRefusesOlderBackend m v =
+  (cliOutcomeBefore m v == Just UsageOrConnection) == (m /= Status && backendProtocol v < cliProtocol)
+
+-- | The exec argument and the RPC execute argument. The CLI exits 2 for a value that is not a JSON object, before a request.
+-- The backend refuses a value without a string kind, and an unknown kind with the list of known kinds. The restart hint applies
+-- only to an unknown kind: a frontend newer than the backend sends it.
+data ExecArgument = NotAnObject | NoStringKind | KindName String deriving Eq
+cliExecRefuses :: ExecArgument -> Bool
+cliExecRefuses a = a == NotAnObject
+execError :: [String] -> ExecArgument -> Maybe String   -- the known kinds
+execError known (KindName k)
+  | k `elem` known = Nothing
+  | otherwise = Just ("Unknown command kind \"" ++ k ++ "\". If the frontend sent it, restart the backend. Known kinds: "
+                      ++ foldr (\a b -> if null b then a else a ++ ", " ++ b) "" known ++ ".")
+execError _ _ = Just "An edit command is a JSON object with a string kind."
+editCommandKinds :: [String]                         -- EDIT_COMMAND_KINDS of packages/rdf/src/commands.ts
+executeError :: ExecArgument -> Maybe String         -- the error of RPC execute, Nothing when the command runs
+law_execMessageNamesTheFault :: ExecArgument -> Bool
+law_execMessageNamesTheFault a = executeError a == execError editCommandKinds a
+
 -- | Prompt adapters: dialogs, quick picks, input boxes, canvas pickers, inline inputs.
 -- Limit: notification buttons and canvas drags have no adapter. Use exec for model effects, not for gesture checks.
 -- status reports source and build staleness, backend restart need and window reload need. All must be false before a runtime check.
@@ -2035,6 +2065,9 @@ iriLabel = manifestOnly
 shapeLiterals = manifestOnly
 shownLiteral = manifestOnly
 textPatch = manifestOnly
+cliOutcomeBefore = manifestOnly
+editCommandKinds = manifestOnly
+executeError = manifestOnly
 
 instance Functor Tx where fmap = manifestOnly
 instance Applicative Tx where

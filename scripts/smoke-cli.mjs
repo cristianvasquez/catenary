@@ -71,6 +71,8 @@ try {
     a = await start('a');
     const { cli } = a;
     check('status before open: empty model', cli('status').model?.views === 0);
+    const protocol = JSON.parse(readFileSync(join(root, 'modeler/src/common/cli-protocol.json'), 'utf8')).cliProtocol;
+    check('the discovery file and status give the CLI protocol (law_cliRefusesOlderBackend)', a.cliProtocol === protocol && cli('status').cliProtocol === protocol);
     check('request without a token: 401', (await post(a.port, {})) === 401);
     check('request with a wrong token: 401', (await post(a.port, { authorization: 'Bearer wrong' })) === 401);
     check('request with the token: 200', (await post(a.port, { authorization: `Bearer ${a.token}` })) === 200);
@@ -84,6 +86,10 @@ try {
     const before = cli('model', 'views');
     const warnings = cli('model', 'warnings');
 
+    // A failed edit exits 1: execFileSync throws, the output is on the error.
+    let wrong;
+    try { wrong = cli('exec', JSON.stringify({ label })); } catch (e) { wrong = JSON.parse(e.stdout); }
+    check('exec without a string kind: the shape message (law_execMessageNamesTheFault)', wrong.result?.ok === false && wrong.result.error === 'An edit command is a JSON object with a string kind.', wrong);
     const created = cli('exec', JSON.stringify({ kind: 'createView', label }));
     check('createView returns the new ID', created.result?.ok === true && typeof created.result.id === 'string', created);
     await until('the edit is on disk', () => cli('model', 'dirty') === false && existsSync(viewFile));

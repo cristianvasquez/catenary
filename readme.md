@@ -114,6 +114,8 @@ A tag with a hyphen, for example `v0.2.0-rc.1`, makes a prerelease. A pull reque
 
 `pnpm -s catenary` controls a running backend. Use `--help` for syntax and `rpc` for the available methods. Each backend writes `$XDG_RUNTIME_DIR/catenary/<pid>.json` (port, token, workspace). The CLI selects the backend from `--port`, then `CATENARY_PORT`, then the only running backend, then the backend of the workspace that contains the current directory. Otherwise it fails and lists the running backends. The [data contract](spec/manifest.hs) defines authentication and exit codes.
 
+The CLI refuses a backend with an older CLI protocol (`cliProtocol` in the discovery file and in `status`) for each command except `status` and `instances`: restart the backend.
+
 The CLI writes all output before it exits, so a large result (`rpc view`, `rpc trace`) stays valid JSON in a pipe. When the reader closes the pipe early (`| head`), the CLI exits with the code of the result and prints no error.
 
 ```sh

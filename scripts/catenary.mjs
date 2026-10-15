@@ -5,6 +5,9 @@ import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
+// The CLI protocol version, shared with the backend (modeler/src/common/cli-protocol.ts, manifest §12).
+const { cliProtocol: CLI_PROTOCOL } = JSON.parse(readFileSync(new URL('../modeler/src/common/cli-protocol.json', import.meta.url), 'utf8'));
+
 const USAGE = `Usage: catenary [--port N] [--window N] [--timeout MS] <command> [arguments]
 
 Backend (works without a browser window):
@@ -93,6 +96,27 @@ function pickInstance(opts) {
     fail(`${all.length} backends run; choose one with --port: ${all.map(i => `${i.port} (${i.workspace ?? i.cwd})`).join(', ')}`);
 }
 
+/**
+ * The selected backend for a command. Every command except status and instances needs a backend with the CLI protocol of this CLI: an
+ * older backend can ignore new arguments without an error. The discovery file gives the version; a missing value is 1.
+ */
+function backendFor(opts, command) {
+    const instance = pickInstance(opts);
+    const protocol = instance.cliProtocol ?? 1;
+    if (command !== 'status' && protocol < CLI_PROTOCOL) {
+        fail(`The backend on port ${instance.port} uses CLI protocol ${protocol}. This CLI needs ${CLI_PROTOCOL}: restart the backend.`);
+    }
+    return instance;
+}
+
+/** The argument of exec: one JSON object. Else exit 2. */
+function execArgument(text) {
+    let value;
+    try { value = JSON.parse(text); } catch { /* not JSON */ }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('exec takes one JSON object with a string kind');
+    return value;
+}
+
 async function call(instance, method, params, window) {
     let res;
     try {
@@ -154,7 +178,7 @@ async function main() {
         case 'rpc': method = 'rpc'; params = { method: rest[0], args: rest.slice(1).map(jsonArg) }; break;
         case 'exec':
             if (!rest[0]) fail('exec needs an EditCommand as JSON, e.g. \'{"kind":"createView","label":"V"}\'');
-            method = 'rpc'; params = { method: 'execute', args: [JSON.parse(rest[0])] }; break;
+            method = 'rpc'; params = { method: 'execute', args: [execArgument(rest[0])] }; break;
         case 'undo': case 'redo': case 'save': method = 'rpc'; params = { method: command, args: [] }; break;
         case 'commands': method = 'commands'; params = { filter: rest[0], all: !!opts.all }; break;
         case 'run':
@@ -166,7 +190,7 @@ async function main() {
             break;
         case 'open-view': {
             if (!rest[0]) fail('open-view needs a view id; see "catenary model views --keys"');
-            const { result, code } = await openView(pickInstance(opts), rest[0], opts, timeout);
+            const { result, code } = await openView(backendFor(opts, command), rest[0], opts, timeout);
             return finish(JSON.stringify(result, null, 2) + '\n', code);
         }
         case 'messages': method = 'messages'; params = { since: opts.since === undefined ? undefined : Number(opts.since) }; break;
@@ -175,7 +199,7 @@ async function main() {
             method = 'eval'; params = { code: rest.join(' ') }; break;
         default: fail(`unknown command "${command}"; see "catenary --help"`);
     }
-    const result = await call(pickInstance(opts), method, params, opts.window);
+    const result = await call(backendFor(opts, command), method, params, opts.window);
     finish(JSON.stringify(result, null, 2) + '\n', exitCode(result));
 }
 

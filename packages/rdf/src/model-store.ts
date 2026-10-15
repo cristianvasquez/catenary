@@ -16,7 +16,7 @@ import * as path from 'path';
 import { OxigraphStore, QuadStore, SerialQueue, TRAP_MESSAGE, TrapGuard, isInside, oxigraphMemoryBytes, portableRelative } from 'rdf-files';
 import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
-import { executeCommand } from './commands';
+import { commandShapeError, executeCommand } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
 import { ChangeScope, Classified, REPORT_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
 import { GraphChange, ModelGraph, Patch } from './graph';
@@ -460,6 +460,9 @@ export class ModelStore {
     /** Run a command as one transaction. On an error, the dataset does not change. */
     execute(command: EditCommand): CommandResult {
         this.assertLive();
+        // RPC and CLI pass any JSON value: refuse a value that is not a known command before it is read.
+        const shapeError = commandShapeError(command);
+        if (shapeError) return { ok: false, error: shapeError };
         return tracer.span('command', command.kind, () => this.executeNow(command));
     }
 

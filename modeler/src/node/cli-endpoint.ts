@@ -12,7 +12,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node/backend-app
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { MODEL_QUERIES } from '@catenary/model';
 import { ModelStore } from '@catenary/rdf';
-import { CLI_HTTP_PATH, CliBridgeClient, CliRequest, FRONTEND_METHODS, modelSummary } from '../common/cli-protocol';
+import { CLI_HTTP_PATH, CLI_PROTOCOL, CliBridgeClient, CliRequest, FRONTEND_METHODS, modelSummary } from '../common/cli-protocol';
 import { ModelServiceImpl } from './model-service';
 
 export function discoveryDir(): string {
@@ -119,7 +119,7 @@ export class CliEndpoint implements BackendApplicationContribution {
         const file = path.join(dir, `${process.pid}.json`);
         try {
             fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-            fs.writeFileSync(file, JSON.stringify({ pid: process.pid, host, port: address.port, token: this.token, cwd: process.cwd(), argv: process.argv.slice(2), startedAt: this.startedAt }), { mode: 0o600 });
+            fs.writeFileSync(file, JSON.stringify({ pid: process.pid, host, port: address.port, token: this.token, cliProtocol: CLI_PROTOCOL, cwd: process.cwd(), argv: process.argv.slice(2), startedAt: this.startedAt }), { mode: 0o600 });
             process.on('exit', () => { try { fs.unlinkSync(file); } catch { /* already removed */ } });
         } catch (e) {
             console.error(`catenary CLI: cannot write ${file}: ${e}`);
@@ -132,7 +132,7 @@ export class CliEndpoint implements BackendApplicationContribution {
                 const s = this.store.snapshot();
                 const build = buildInfo(this.startedAt);
                 return {
-                    pid: process.pid, startedAt: this.startedAt, build, model: modelSummary(s), files: s.files,
+                    pid: process.pid, cliProtocol: CLI_PROTOCOL, startedAt: this.startedAt, build, model: modelSummary(s), files: s.files,
                     windows: this.windows.list.map((w, index) => ({
                         index, connectedAt: w.connectedAt, reloadNeeded: build.bundleAt ? Date.parse(build.bundleAt) > Date.parse(w.connectedAt) : undefined
                     }))
