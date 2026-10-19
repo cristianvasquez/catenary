@@ -57,12 +57,13 @@ export type EditCommand =
     | { kind: 'setLayout'; view: string; bounds: ({ id: string } & Partial<Rect>)[] }
     | { kind: 'setEdgeLayout'; view: string; relation: string; patch: Partial<Omit<EdgeLayout, 'relation'>> }
     | { kind: 'hideEdges'; view: string; ids: string[]; hidden: boolean }
+    /** Markdown description of a view. `expectedText`: the command fails if the description has another text (another client changed it). */
+    | { kind: 'setViewDescription'; view: string; text: string; expectedText?: string }
     /**
      * Change elements of a view (cards, relations, groups, notes, view references, collections, arrows): box, color ('' removes it),
      * display of cards, label of groups, text of notes. A field that an element does not have is ignored; a relation takes only
      * the color. `expectedText`: the command fails if a note has another text (another client changed it).
      */
-    | { kind: 'setViewDescription'; view: string; text: string; expectedText?: string }
     | { kind: 'setViewElements'; view: string; ids: string[]; patch: ViewElementPatch; expectedText?: string }
     /** Relation between instance ids or new instances. With a view, an end not in it is placed at `at`. */
     | { kind: 'createRelation'; subject: string | NewInstance; predicate: string; object: string | NewInstance; view?: string; at?: Point; sides?: EdgeSides }

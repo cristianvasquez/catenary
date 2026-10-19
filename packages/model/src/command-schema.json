@@ -308,7 +308,7 @@
     },
     {
       "kind": "setViewDescription",
-      "doc": "Change elements of a view (cards, relations, groups, notes, view references, collections, arrows): box, color ('' removes it), display of cards, label of groups, text of notes. A field that an element does not have is ignored; a relation takes only the color. `expectedText`: the command fails if a note has another text (another client changed it).",
+      "doc": "Markdown description of a view. `expectedText`: the command fails if the description has another text (another client changed it).",
       "fields": [
         {
           "name": "view",
@@ -329,7 +329,7 @@
     },
     {
       "kind": "setViewElements",
-      "doc": "",
+      "doc": "Change elements of a view (cards, relations, groups, notes, view references, collections, arrows): box, color ('' removes it), display of cards, label of groups, text of notes. A field that an element does not have is ignored; a relation takes only the color. `expectedText`: the command fails if a note has another text (another client changed it).",
       "fields": [
         {
           "name": "view",
