@@ -490,7 +490,7 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   assert.equal(await picker.isVisible(), true);
 }));
 
-test('browser: CLI exec batch: ten edits with IRIs are one undo step and one commit; an invalid command changes nothing (manifest §5.2); rpc canRelate of a refused relation names the shape (§6.2)', { timeout: 60000 }, t => withApp(t, 'exec-batch', {
+test('browser: CLI exec batch: ten edits with IRIs are one undo step and one commit; an invalid command changes nothing (manifest §5.2); rpc canRelate of a refused relation names the shape (§6.2); view --compact gives the card line (§12)', { timeout: 60000 }, t => withApp(t, 'exec-batch', {
   // A repository before the backend opens the workspace: the open finds it.
   fixture: workspace => {
     copyFixtures(workspace);
@@ -551,6 +551,18 @@ test('browser: CLI exec batch: ten edits with IRIs are one undo step and one com
   for (const label of ['Batch one', 'Batch two renamed', 'Batch three']) assert.ok(labels().includes(label), label);
   cli('undo');
   assert.deepEqual(labels(), before.labels);
+  // law_compactLinesCoverBoxes: view --compact after createView and addToView prints the view line and the card line, exit 0.
+  const compactView = cli('exec', JSON.stringify({ kind: 'createView', label: 'Compact view' })).result.id;
+  assert.equal(cli('exec', JSON.stringify({ kind: 'addToView', view: compactView, ids: ['urn:name:Query%20service'], at: { x: 40, y: 60 } })).result.ok, true);
+  const compact = spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'view', compactView, '--compact'],
+    { encoding: 'utf8', timeout: 15000 });
+  assert.equal(compact.status, 0, compact.stdout + compact.stderr);
+  const lines = compact.stdout.trimEnd().split('\n');
+  assert.match(lines[0], /^view "Compact view" /);
+  assert.ok(lines.some(l => /^card "Query service" dcat:DataService urn:name:Query%20service -?\d+ -?\d+ \d+ \d+$/.test(l)), compact.stdout);
+  const unknown = spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'view', 'urn:name:No%20view', '--compact'],
+    { encoding: 'utf8', timeout: 15000 });
+  assert.equal(unknown.status, 1, unknown.stdout + unknown.stderr);
 }));
 
 test('browser: view URL overrides restored tabs and rejects unknown views', { timeout: 60000 }, t => withFixtureApp(t, 'view-url', async app => {

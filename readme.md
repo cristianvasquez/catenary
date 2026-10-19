@@ -177,6 +177,14 @@ printf '%s\n' '{"kind":"createView","label":"Plan"}' '{"kind":"createNote","view
 pnpm -s catenary --port 3917 rpc canRelate '"urn:name:Query%20service"' '"osg://vocab/data-product-draft#exposedThrough"' '"urn:name:Metrics%20API"'
 ```
 
+`view <view> [--compact]` prints one view. The view is an ID or an IRI. Without `--compact`, the output is the JSON of `rpc view`. With `--compact`, the output is text from `rpc viewLines`: the view, then one line per box in view order, one per edge and one per arrow. The line forms are `card <label> <class> <iri> x y w h`, `group <label> x y w h`, `note x y: <text>`, `reference <view or file> x y`, `collection <member labels> x y w h`, `edge <subject> <predicate> <object>` (with `hidden` at the end for a hidden edge) and `arrow <from> <to>`. A label with a space is in double quotes, and coordinates are integers. An unknown view gives the error on stderr and exit 1.
+
+```sh
+pnpm -s catenary --port 3917 view 'urn:name:Product%20context' --compact
+# view "Product context" urn:name:Product%20context
+# card "Query service" dcat:DataService urn:name:Query%20service 1450 620 450 200
+```
+
 `rpc viewDescription '"<view-id>"'` reads only a view's Markdown description, without diagram counts. See the Trace section of [the site](www/reference/properties.md) for the five Trace metrics.
 
 `rpc setTracing true` starts the trace of the backend for the CLI connection, `rpc trace 0` reads the spans and totals, and `rpc setTracing false` stops it. Figure synchronization spans identify notation input, per-view derivation and placement-rule time. Canvas refresh spans and snapshot spans are listed in the Trace section of [the site](www/reference/properties.md). `rpc stopTracing 0` returns the final batch before stopping the CLI connection. Read spans show the RDF view ID, instance count and file-origin query count under the calling RPC. The Trace panel (View → Trace) shows the same data.

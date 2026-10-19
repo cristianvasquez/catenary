@@ -64,6 +64,8 @@ export interface ModelQueries {
     selected(selection: ModelSelection): Selected;
     /** One stored view (from its view graph): boxes, edges and arrows with their placement ids. Undefined: no such view. */
     view(viewId: string, ids?: string[]): View | undefined;
+    /** A view as text lines (compact-view.ts compactView): the view, then one line per box, edge and arrow. Undefined: no such view. */
+    viewLines(viewId: string): string[] | undefined;
     /** The shapes: node shapes, property shapes, logical constraints and value sets. */
     shapes(): ShapesModel;
     /** Delete from Model: the confirmation lines and notes for `ids` (prompts.ts). */
@@ -130,6 +132,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     selectionActions: ['target'],
     selected: ['selection'],
     view: ['viewId', 'ids'],
+    viewLines: ['viewId'],
     shapes: [],
     deletePlan: ['ids'],
     relationChoices: ['source', 'target'],

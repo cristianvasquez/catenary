@@ -25,6 +25,8 @@ Backend (works without a browser window):
   undo | redo | save             rpc shortcuts
   layout <view> [--mode layered|force]
                                  lay out a view (ID or IRI) as Apply Layout does: one setLayout command, one undo step
+  view <view> [--compact]        rpc view of a view (ID or IRI) as JSON; --compact: one text line per card, group, note,
+                                 reference, collection, edge and arrow (rpc viewLines)
 
 Frontend (needs an open window):
   commands [filter] [--all]      Theia commands: id, label, enabled, keys (--all: also disabled ones)
@@ -269,6 +271,13 @@ async function main() {
             if (!rest[0]) fail('layout needs a view id or IRI; see "catenary model views --keys"');
             if (opts.mode !== undefined && !['layered', 'force'].includes(opts.mode)) fail(`layout: --mode is layered or force, not "${opts.mode}"`);
             method = 'layout'; params = { view: rest[0], mode: opts.mode ?? 'layered' }; break;
+        case 'view': {
+            if (!rest[0]) fail('view needs a view id or IRI; see "catenary model views --keys"');
+            // An unknown view: exit 1 with the error on stderr, in both forms.
+            const r = await call(await backendFor(opts, command), 'rpc', { method: opts.compact ? 'viewLines' : 'view', args: [rest[0]] }, opts.window);
+            if (r.result === null || r.result === undefined) fail(r.error ?? `no view ${rest[0]}`, 1);
+            return finish(opts.compact ? r.result.map(l => l + '\n').join('') : JSON.stringify(r, null, 2) + '\n', 0);
+        }
         case 'commands': method = 'commands'; params = { filter: rest[0], all: !!opts.all }; break;
         case 'run':
             if (!rest[0]) fail('run needs a command id; see "catenary commands"');

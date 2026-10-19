@@ -3,7 +3,7 @@
 import {
     ActionTarget, AppearanceData, CanRelate, Choices, DeletePlan, Doc, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow, FileContent, GestureInfo,
     MetamodelInfo, ModelQueries, PREFIXES, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchFilter, SearchHit, Selected, SelectionActions,
-    SelectionLinks, ShapesModel, Showing, View, ViewGesture, appearanceData, deletePlan, elementOfId, elementRows, emptySelected, knownPredicates, neighborChoices, newLabel,
+    SelectionLinks, ShapesModel, Showing, View, ViewGesture, appearanceData, compactView, deletePlan, elementOfId, elementRows, emptySelected, knownPredicates, neighborChoices, newLabel,
     filterHits, occurrence, refusedRelation, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
 import { absolutePath, pathKey } from 'rdf-files';
@@ -202,6 +202,12 @@ export class PanelReads implements ModelQueries {
 
     view(viewId: string, ids?: string[]): View | undefined {
         return this.file ? (ids ? this.scoped({ elements: ids, selectionViews: [viewId] }) : this.viewDoc(viewId)).views[viewId] : undefined;
+    }
+
+    viewLines(viewId: string): string[] | undefined {
+        if (!this.file) return undefined;
+        const doc = this.viewDoc(viewId);
+        return doc.views[viewId] ? compactView(doc, viewId) : undefined;
     }
 
     shapes(): ShapesModel {

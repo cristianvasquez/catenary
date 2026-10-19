@@ -3,6 +3,7 @@
 
 export * from './actions';
 export * from './commands';
+export * from './compact-view';
 export * from './diagram-schema';
 export * from './doc';
 export * from './explorer';

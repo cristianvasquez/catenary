@@ -1850,7 +1850,7 @@ canWrite f _ = writable f
 data QueryGroup = PanelQueries | ViewQueries | FormQueries | SelectionQueries | PromptQueries deriving (Eq, Enum, Bounded)
 queries :: QueryGroup -> [String]
 queries PanelQueries = ["explorerChildren", "explorerSearch", "explorerPaths", "explorerElements", "properties", "outline", "problems", "search", "links"]
-queries ViewQueries = ["viewLabels", "view", "viewGesture", "appearance", "occurrence", "showing", "unplaced"]
+queries ViewQueries = ["viewLabels", "view", "viewLines", "viewGesture", "appearance", "occurrence", "showing", "unplaced"]
 queries FormQueries = ["formData", "shapesText", "shapes"]
 queries SelectionQueries = ["selected", "selectionActions", "sources"]   -- selectionActions also gives the cards of Show Details
 queries PromptQueries =
@@ -1861,6 +1861,17 @@ modelQueries :: [String]
 modelQueries = concatMap queries [minBound .. maxBound]
 law_queryNamesUnique :: Bool
 law_queryNamesUnique = unique modelQueries
+-- | viewLines gives one view as text lines (compactView in packages/model/src/compact-view.ts). Reason: an agent reads a view in one
+-- pass, without a join of rpc view with search. Line 1 is the view. Then one line per box in view order, one per edge, one per arrow.
+-- Nothing: no such view.
+viewLines :: Backend -> Id -> Maybe [String]
+viewBoxCount :: Backend -> Id -> Int                -- cards, groups, notes, references and collections of the view
+viewEdgeCount :: Backend -> Id -> Int               -- the edge layouts of the view, hidden ones included
+viewArrowCount :: Backend -> Id -> Int
+law_compactLinesCoverBoxes :: Backend -> Id -> Bool
+law_compactLinesCoverBoxes b v = case viewLines b v of
+  Nothing -> True
+  Just ls -> length ls - 1 == viewBoxCount b v + viewEdgeCount b v + viewArrowCount b v
 -- | A query changes no store content and no history.
 -- PanelReads (packages/rdf/src/panel-reads.ts) runs the read modules. RPC and CLI dispatch queries to it.
 -- ModelStore supplies the live read context and retains the event-keyed caches (§11.2).
@@ -2122,6 +2133,13 @@ canRelateError b s p o
   | s == o = Just "A relation from an element to itself is not supported."
   | not (permitted b s p o) = Just (refusal b s p o)
   | otherwise = Nothing
+-- | view <view> [--compact] prints one view. The view is an ID or an IRI. Without --compact: the answer of rpc view, as JSON.
+-- With --compact: the lines of rpc viewLines (§11.1), one per output line, as text. An unknown view: the error on stderr, exit 1.
+-- Line forms: view <label> <iri>; card <label> <class CURIE> <iri> x y w h; group <label> x y w h; note x y: <text>;
+-- reference <view label or file> x y; collection <member labels> x y w h; edge <subject> <predicate CURIE> <object> [hidden];
+-- arrow <from> <to>. A label with a space goes in double quotes. A newline of a note is \n. Coordinates are integers.
+cliViewCompact :: Backend -> IdRef -> Maybe String
+cliViewCompact b v = concatMap (++ "\n") <$> viewLines b (resolveArg b v)
 
 -- | Backend choice: --port, else CATENARY_PORT, else the only running backend, else the one backend whose workspace contains
 -- the current directory or is inside it. Otherwise the CLI fails and lists ports and workspaces. Files of dead PIDs are removed.
@@ -2308,6 +2326,10 @@ objectsOf = manifestOnly
 isVocabularyType = manifestOnly
 permitted = manifestOnly
 nodeShapeLabel = manifestOnly
+viewLines = manifestOnly
+viewBoxCount = manifestOnly
+viewEdgeCount = manifestOnly
+viewArrowCount = manifestOnly
 refusal = manifestOnly
 isViewGraph = manifestOnly
 viewDescriptionText = manifestOnly
