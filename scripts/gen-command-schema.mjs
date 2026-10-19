@@ -81,7 +81,7 @@ if (check) {
         try { committed = readFileSync(target, 'utf8'); } catch { /* missing: stale */ }
         if (readFileSync(fresh, 'utf8') !== committed) {
             process.stderr.write('command-schema.json is stale: run pnpm gen:schema\n');
-            process.exit(1);
+            process.exitCode = 1;
         }
     } finally { rmSync(dir, { recursive: true, force: true }); }
 } else {
