@@ -14,6 +14,7 @@ import type { SearchFilter, SearchHit } from './search';
 import type { Problem } from './validation';
 import type { FileContent } from './snapshot';
 import type { RdfCopy, RdfPaste } from './commands';
+import type { CanRelate } from './relation-refusal';
 
 export interface ModelQueries {
     /** Parse clipboard RDF without editing the model. MIME type, when supplied, selects the parser. */
@@ -69,6 +70,11 @@ export interface ModelQueries {
     deletePlan(ids: string[]): DeletePlan;
     /** Relation types that can link instance `source` to instance `target`, else why none can. Undefined: not two instances. */
     relationChoices(source: string, target: string): RelationChoices | undefined;
+    /**
+     * Does the metamodel permit predicate `p` (an IRI) from instance `s` to instance `o`? The check of createRelation, without an edit.
+     * Refused: the error and its facts (relation-refusal.ts). `permitted`: the relation types from the classes of `s`.
+     */
+    canRelate(s: string, p: string, o: string): CanRelate;
     /** Halo expand button: the instances related to `from` that the view does not show, with the relations to show. */
     neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined;
     /** Halo incoming button of a node shape card: the node shapes with a property to `from` that the view does not show. */
@@ -127,6 +133,7 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
     shapes: [],
     deletePlan: ['ids'],
     relationChoices: ['source', 'target'],
+    canRelate: ['s', 'p', 'o'],
     neighborChoices: ['viewId', 'from', 'dir'],
     shapeSourceChoices: ['viewId', 'from'],
     shapeTargetChoices: ['viewId', 'from'],
@@ -145,4 +152,4 @@ export const MODEL_QUERIES: { readonly [K in keyof ModelQueries]: readonly strin
 export type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 
 /** The parameters of MODEL_QUERIES that hold an id or a list of ids. The CLI also accepts an IRI or a triple {s, p, o} there (manifest §12). */
-export const QUERY_ID_PARAMS: ReadonlySet<string> = new Set(['id', 'ids', 'instanceId', 'viewId', 'view', 'source', 'target', 'from', 'collection']);
+export const QUERY_ID_PARAMS: ReadonlySet<string> = new Set(['id', 'ids', 'instanceId', 'viewId', 'view', 'source', 'target', 'from', 'collection', 's', 'o']);

@@ -144,6 +144,7 @@ Paths are relative to the directory in the first column.
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, the merge of the plugins, prefixes, form conversion |
+| | `relation-refusal.ts` | The facts and the message of a refused relation (createRelation, reconnect, `canRelate`) |
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
 | | `explorer.ts`, `outline.ts`, `properties.ts`, `validation.ts` | Panel row types and the explorer drag payload |
 | | `fuzzy.ts` | Ordered-character matching, match positions and ranking |

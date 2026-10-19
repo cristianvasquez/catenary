@@ -111,7 +111,8 @@ describe('RDFS rules in the store', () => {
         expect(permittedRelations(store.meta, [EX + 'Person'], [EX + 'Employee']).map(r => r.name)).toEqual(['knows']);
         expect(store.execute({ kind: 'createRelation', subject: id('bob'), predicate: EX + 'knows', object: id('ann') })).toMatchObject({ ok: true });
         expect(store.execute({ kind: 'createRelation', subject: id('core'), predicate: EX + 'knows', object: id('ann') }))
-            .toMatchObject({ ok: false, error: expect.stringMatching(/rule permits this relation/) });
+            .toMatchObject({ ok: false, error: 'No shape or RDFS rule permits <http://ex/knows> from "Core team" (<http://ex/Team>) to "Ann" (<http://ex/Employee>).'
+                + ' Shapes of the subject: none. Permitted from "Core team": "anything" (<http://ex/anything>) to rdfs:Resource.' });
     });
 
     it('Properties: a plugin form for the RDFS rules, its shape in the form shapes only, and its link candidates', () => {
