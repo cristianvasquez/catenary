@@ -2,7 +2,7 @@
 
 import type { Doc, ViewBox } from './doc';
 import { idIri } from './ids';
-import { compactIri } from './shapes-doc';
+import { compactIri, formatPath } from './shapes-doc';
 import { NS } from './terms';
 
 /** A label with a space, a quote or no text goes in double quotes (JSON string escapes). */
@@ -13,7 +13,7 @@ const xy = (b: ViewBox) => `${int(b.x)} ${int(b.y)}`;
 const xywh = (b: ViewBox) => `${xy(b)} ${int(b.width)} ${int(b.height)}`;
 const oneLine = (text: string) => text.replace(/\r?\n/g, '\\n');
 
-/** Label, class CURIE and IRI of the element of a card: an instance, else a node shape or a value set of a shapes view. */
+/** Label, class CURIE and IRI of the element of a card: an instance, else a node shape, a value set or a property shape of a shapes view. */
 function element(doc: Doc, id: string): { label: string; cls: string; iri: string } {
     const i = doc.instances[id];
     if (i) return { label: i.label, cls: i.types.length ? i.types.map(compactIri).join(',') : '-', iri: i.uri };
@@ -21,6 +21,12 @@ function element(doc: Doc, id: string): { label: string; cls: string; iri: strin
     if (shape) return { label: shape.label, cls: compactIri(NS.sh + 'NodeShape'), iri: shape.uri };
     const set = doc.shapes.valueSets[id];
     if (set) return { label: set.label, cls: compactIri(NS.skos + (set.kind === 'scheme' ? 'ConceptScheme' : 'Collection')), iri: set.uri };
+    const property = doc.shapes.properties[id];
+    if (property) {
+        // The label of labels.ts elementLabel: "<node shape> — <path>".
+        const label = `${doc.shapes.nodeShapes[property.owner]?.label ?? property.owner} — ${formatPath(property.path)}`;
+        return { label, cls: compactIri(NS.sh + 'PropertyShape'), iri: property.uri ?? idIri(id) ?? '-' };
+    }
     return { label: id, cls: '-', iri: idIri(id) ?? '-' };
 }
 

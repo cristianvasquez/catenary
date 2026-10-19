@@ -49,4 +49,19 @@ describe('compactView', () => {
         expect(lines).toContain('collection "Sales data, API" 0 900 320 240');
         expect(lines).toContain('edge unknown - -');
     });
+
+    it('a card of a shapes view: a node shape and a property shape with their label, class and IRI', () => {
+        const d = doc(), v = d.views.v;
+        d.shapes.nodeShapes.s = { id: 's', uri: 'urn:DatasetShape', label: 'Dataset', targetClass: DCAT + 'Dataset', file: 'shapes.ttl', properties: ['p'], constraints: [], raw: [] } as unknown as Doc['shapes']['nodeShapes'][string];
+        d.shapes.properties.p = { id: 'p', uri: 'urn:DatasetShape-theme', owner: 's', path: { kind: 'iri', iri: DCAT + 'theme' } } as unknown as Doc['shapes']['properties'][string];
+        v.boxes = [
+            { kind: 'card', id: 'ps', element: 's', x: 0, y: 0, width: 640, height: 320 },
+            { kind: 'card', id: 'pp', element: 'p', x: 0, y: 400, width: 320, height: 100 }
+        ];
+        v.edges = []; v.arrows = [];
+        expect(compactView(d, 'v').slice(1)).toEqual([
+            'card Dataset sh:NodeShape urn:DatasetShape 0 0 640 320',
+            'card "Dataset — dcat:theme" sh:PropertyShape urn:DatasetShape-theme 0 400 320 100'
+        ]);
+    });
 });
