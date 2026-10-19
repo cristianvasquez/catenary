@@ -1186,12 +1186,21 @@ relationProblem :: Backend -> Iri -> Iri -> Iri -> Maybe Error
 relationProblem b s p o
   | s == o = Just "A relation from an element to itself is not supported."
   | Quad (NamedNode s) p (NamedNode o) (graphIri UnionGraph) `elem` modelStatements b = Just "The relation exists already."
-  | not (permitted b s p o) = Just "No shape or RDFS rule permits this relation."
+  | not (permitted b s p o) = Just (refusal b s p o)
   | otherwise = Nothing
 law_relationRejected :: Backend -> Iri -> Iri -> Iri -> Bool
 law_relationRejected b s p o =
   isJust (relationProblem b s p o)
     ==> failed (fst (step b (Execute (CreateRelation (ExistingEnd (elementId s)) p (ExistingEnd (elementId o)) Nothing))))
+-- | A refusal by the metamodel names what to change: the predicate, both ends with their classes, the node shapes that target a
+-- class of the subject, and the relation types from those classes. Reason: an agent changes the edit or the shapes without a second read.
+-- createRelation, reconnectRelation and reconnectProblem give the same text. Code: relationRefusal in packages/model/src/relation-refusal.ts.
+-- The read query canRelate gives the same facts without an edit (§11.1).
+nodeShapeLabel :: Backend -> Iri -> String         -- sh:name, else rdfs:label, else the local name
+refusal :: Backend -> Iri -> Iri -> Iri -> Error   -- relationRefusal of the facts of (s, p, o)
+law_refusalNamesShapes :: Backend -> Iri -> Iri -> Iri -> Bool
+law_refusalNamesShapes b s p o =
+  and [("\"" ++ nodeShapeLabel b sh ++ "\"") `infixOf` refusal b s p o | NamedNode c <- objectsOf b s "rdf:type", sh <- shapesTargeting b c]
 -- | After setUri, no statement of any graph mentions the old IRI, as a term or inside a triple term.
 mentions :: Iri -> Term -> Bool
 mentions i (NamedNode n) = n == i
@@ -1846,7 +1855,7 @@ queries FormQueries = ["formData", "shapesText", "shapes"]
 queries SelectionQueries = ["selected", "selectionActions", "sources"]   -- selectionActions also gives the cards of Show Details
 queries PromptQueries =
   [ "deletePlan", "relationChoices", "neighborChoices", "shapeSourceChoices", "linkChoices", "newLabel"
-  , "knownPredicates", "knownClasses", "memberOptions", "instancesNamed", "elementRows" ]
+  , "knownPredicates", "knownClasses", "memberOptions", "instancesNamed", "elementRows", "canRelate" ]
 -- | The read interface is exactly these queries. MODEL_QUERIES lists the same names.
 modelQueries :: [String]
 modelQueries = concatMap queries [minBound .. maxBound]
@@ -2105,6 +2114,14 @@ resolveArg :: Backend -> IdRef -> Id                -- ModelStore.resolveId
 isPropertyShapeIri :: Backend -> Iri -> Bool
 law_iriArgumentIsId :: Backend -> Iri -> Bool
 law_iriArgumentIsId b i = ':' `elem` i && not (isPropertyShapeIri b i) ==> resolveArg b (IdText i) == elementId i
+-- | rpc canRelate <s> <p> <o> checks a relation without an edit (§6.2): rpc canRelate '"urn:name:A"' '"http://ex/p"' '"urn:name:B"'.
+-- s and o are IDs or IRIs. p is an IRI and is not resolved. A refusal gives ok false, the error of createRelation and its facts
+-- (classes, predicate, shapes, permitted relation types), and exit 1. It does not check for a duplicate. Code: PanelReads.canRelate.
+canRelateError :: Backend -> Iri -> Iri -> Iri -> Maybe Error   -- Nothing: ok true
+canRelateError b s p o
+  | s == o = Just "A relation from an element to itself is not supported."
+  | not (permitted b s p o) = Just (refusal b s p o)
+  | otherwise = Nothing
 
 -- | Backend choice: --port, else CATENARY_PORT, else the only running backend, else the one backend whose workspace contains
 -- the current directory or is inside it. Otherwise the CLI fails and lists ports and workspaces. Files of dead PIDs are removed.
@@ -2290,6 +2307,8 @@ mintIri = manifestOnly
 objectsOf = manifestOnly
 isVocabularyType = manifestOnly
 permitted = manifestOnly
+nodeShapeLabel = manifestOnly
+refusal = manifestOnly
 isViewGraph = manifestOnly
 viewDescriptionText = manifestOnly
 noteText = manifestOnly

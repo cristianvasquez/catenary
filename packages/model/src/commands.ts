@@ -3,6 +3,7 @@
 
 import { CardDisplay, DEFAULT_SIZE, Doc, EdgeLayout, Instance, Relation, Side, View, ViewBox, boxes, cardOf, findRelation, inside, placementOfId } from './doc';
 import { Classes, RelationDef, permittedRelations, primaryClass } from './metamodel';
+import { relationRefusal, relationRefusalData } from './relation-refusal';
 import type { LogicalOperator, MigrationChange, PathJSON, Range } from './shapes-doc';
 import type { TermJSON } from './terms';
 
@@ -322,7 +323,9 @@ export function reconnectProblem(meta: Classes, doc: Doc, r: Relation, end: 'sou
     if (s === o) return 'A relation from an element to itself is not supported.';
     const si = doc.instances[s], oi = doc.instances[o];
     if (!si || !oi) return 'A relation connects two instances.';
-    if (!permittedRelations(meta, si.types, oi.types, oi.uri).some(d => d.path === r.predicate)) return `No shape or RDFS rule permits this relation from "${si.label}" to "${oi.label}".`;
+    if (!permittedRelations(meta, si.types, oi.types, oi.uri).some(d => d.path === r.predicate)) {
+        return relationRefusal(relationRefusalData(meta, doc.shapes, { label: si.label, classes: si.types }, { label: oi.label, classes: oi.types }, r.predicate));
+    }
     if (findRelation(doc, s, r.predicate, o)) return 'This relation exists already.';
     return undefined;
 }

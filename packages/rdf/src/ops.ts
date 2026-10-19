@@ -5,7 +5,7 @@
 import {
     Box, Classes, DEFAULT_COLLECTION_SIZE, DEFAULT_NOTE_SIZE, DEFAULT_SIZE, DEFAULT_VIEW_REFERENCE_SIZE, EdgeLayout, GROUP_SIZE, MIN_GROUP, NS,
     RDFS_LABEL, RDF_TYPE, TermJSON, ViewElementPatch, centered, gridPositions, inside, labelProblem, permittedRelations, alternativesOf, targetSize,
-    pillSize, pills, rangeText, formatVertices, parseVertices, nkey, shortIri, isVocabularyType
+    pillSize, pills, rangeText, formatVertices, parseVertices, nkey, shortIri, isVocabularyType, RelationRefusal, relationRefusal, relationRefusalData
 } from '@catenary/model';
 import type { Literal, NamedNode, Quad, Quad_Object, Quad_Predicate, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
@@ -164,12 +164,17 @@ export function inValueSet(g: ModelGraph, set: string, o: NamedNode): boolean {
         || g.match(v, k('hasTopConcept'), o).length > 0 || g.match(v, k('member'), o).length > 0;
 }
 
+/** The facts of a refusal of the relation (s, p, o) (relation-refusal.ts in @catenary/model). */
+export function relationRefusalOf(g: ModelGraph, meta: Classes, s: NamedNode, p: string, o: NamedNode): RelationRefusal {
+    return relationRefusalData(meta, shapesIndex(g).model, { label: label(g, s), classes: typesOf(g, s) }, { label: label(g, o), classes: typesOf(g, o) }, p);
+}
+
 /** Why the shapes do not allow the relation (s, p, o), if they do not. */
-function relationProblem(g: ModelGraph, meta: Classes, s: NamedNode, p: string, o: NamedNode): string | undefined {
+export function relationProblem(g: ModelGraph, meta: Classes, s: NamedNode, p: string, o: NamedNode): string | undefined {
     if (s.equals(o)) return 'A relation from an element to itself is not supported.';
     // A scheme or collection target: `o` must be in it now (the metamodel list can be older than a concept created in this command).
     const permitted = permittedRelations(meta, typesOf(g, s), typesOf(g, o)).filter(r => !r.valueSet || inValueSet(g, r.valueSet, o));
-    if (!permitted.some(r => r.path === p)) return `No shape or RDFS rule permits this relation from "${label(g, s)}" to "${label(g, o)}".`;
+    if (!permitted.some(r => r.path === p)) return relationRefusal(relationRefusalOf(g, meta, s, p, o));
     return undefined;
 }
 

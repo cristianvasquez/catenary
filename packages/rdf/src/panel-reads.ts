@@ -1,10 +1,10 @@
 // Frontend query host: request-scoped reads and the existing panel rules. No shared Doc (ADR 0012).
 
 import {
-    ActionTarget, AppearanceData, Choices, DeletePlan, Doc, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow, FileContent, GestureInfo,
+    ActionTarget, AppearanceData, CanRelate, Choices, DeletePlan, Doc, ElementProperties, ElementRow, ExplorerDrag, ExplorerPage, ExplorerPath, ExplorerRow, FileContent, GestureInfo,
     MetamodelInfo, ModelQueries, PREFIXES, ModelSelection, NewLabelKind, Occurrence, OpenTarget, OutlineNode, Problem, RelationChoices, SearchFilter, SearchHit, Selected, SelectionActions,
     SelectionLinks, ShapesModel, Showing, View, ViewGesture, appearanceData, deletePlan, elementOfId, elementRows, emptySelected, knownPredicates, neighborChoices, newLabel,
-    filterHits, occurrence, relationChoices, shapeSourceChoices, showing, viewGesture
+    filterHits, occurrence, refusedRelation, relationChoices, shapeSourceChoices, showing, viewGesture
 } from '@catenary/model';
 import { absolutePath, pathKey } from 'rdf-files';
 import { ActionContext, selectionActions } from './actions';
@@ -15,6 +15,7 @@ import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
 import { LinkChoices, linkChoices, shapeTargetChoices as readShapeTargetChoices } from './link-choices';
 import { fileContent } from './loader';
+import { relationProblem, relationRefusalOf } from './ops';
 import { OutlineSelection, outline } from './outline';
 import { filesOfSubject } from './placement';
 import { properties } from './properties';
@@ -29,6 +30,7 @@ import { Metamodel, formShapes } from './shapes';
 import { ShapesIndex } from './shapes-read';
 import { rdf, termKey } from './terms';
 import { viewLabels } from './view-read';
+import { isInstance } from './vocabulary';
 
 /** State and request reads supplied by the coordinator. No edit or file queue access. */
 export interface ReadContext {
@@ -212,6 +214,15 @@ export class PanelReads implements ModelQueries {
 
     relationChoices(source: string, target: string): RelationChoices | undefined {
         return relationChoices(this.scoped({ elements: [source, target] }), this.metamodel, source, target);
+    }
+
+    /** The check of createRelation (ops.ts relationProblem) without an edit. `p` is an IRI. */
+    canRelate(s: string, p: string, o: string): CanRelate {
+        const g = this.graph, st = elementTerm(s), ot = elementTerm(o);
+        if (!isInstance(g, st) || !isInstance(g, ot)) return { ok: false, error: 'A relation connects two instances.', subjectClasses: [], objectClasses: [], predicate: p, shapes: [], permitted: [] };
+        const data = relationRefusalOf(g, this.metamodel, st, p, ot);
+        const error = relationProblem(g, this.metamodel, st, p, ot);
+        return error ? refusedRelation(error, data) : { ok: true, permitted: data.permitted };
     }
 
     neighborChoices(viewId: string, from: string, dir: 'out' | 'in'): Choices | undefined {

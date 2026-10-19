@@ -490,7 +490,7 @@ test('browser: Find Element (F8): Enter adds to the view, Ctrl+Enter adds and st
   assert.equal(await picker.isVisible(), true);
 }));
 
-test('browser: CLI exec batch: ten edits with IRIs are one undo step and one commit; an invalid command changes nothing (manifest §5.2)', { timeout: 60000 }, t => withApp(t, 'exec-batch', {
+test('browser: CLI exec batch: ten edits with IRIs are one undo step and one commit; an invalid command changes nothing (manifest §5.2); rpc canRelate of a refused relation names the shape (§6.2)', { timeout: 60000 }, t => withApp(t, 'exec-batch', {
   // A repository before the backend opens the workspace: the open finds it.
   fixture: workspace => {
     copyFixtures(workspace);
@@ -522,6 +522,15 @@ test('browser: CLI exec batch: ten edits with IRIs are one undo step and one com
   ];
   const exec = input => spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'exec', '-'],
     { input, encoding: 'utf8', timeout: 15000 });
+  // law_refusalNamesShapes: rpc canRelate of a refused relation names the node shape of the subject, and exits 1.
+  const canRelate = spawnSync(process.execPath, [path.join(root, 'scripts/catenary.mjs'), '--port', new URL(app.url).port, 'rpc', 'canRelate',
+    JSON.stringify('urn:name:Query%20service'), JSON.stringify('osg://vocab/data-product-draft#exposedThrough'), JSON.stringify('urn:name:Metrics%20API')],
+    { encoding: 'utf8', timeout: 15000 });
+  assert.equal(canRelate.status, 1, canRelate.stdout + canRelate.stderr);
+  const can = JSON.parse(canRelate.stdout).result;
+  assert.equal(can.ok, false);
+  assert.deepEqual(can.shapes.map(s => s.label), ['Data Service']);
+  assert.match(can.error, / Shapes of the subject: "Data Service"\. /);
   // law_batchRejectionRollsBack: an unknown IRI in command 7. Exit 1, the index, and no change.
   const before = { labels: labels(), commits: commits(), revision: cli('status').model.revision };
   const invalid = [...edits];

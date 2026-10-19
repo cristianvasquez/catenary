@@ -22,6 +22,7 @@ export * from './paste-layout';
 export * from './prompts';
 export * from './properties';
 export * from './queries';
+export * from './relation-refusal';
 export * from './search';
 export * from './selection';
 export * from './shapes-doc';
