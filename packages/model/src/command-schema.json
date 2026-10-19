@@ -1,0 +1,1029 @@
+{
+  "commands": [
+    {
+      "kind": "createInstance",
+      "doc": "",
+      "fields": [
+        {
+          "name": "classIri",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "moveElementsToFile",
+      "doc": "Move only statements supplied by source. Other origins and resource IRIs stay unchanged.",
+      "fields": [
+        {
+          "name": "source",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "destination",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "placeExplorerElements",
+      "doc": "Place a mixed explorer selection in one transaction, without creating instances.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "rename",
+      "doc": "Label of an instance, view, node shape, value set or concept (id of its IRI: iriId): the label predicates that it has, else its default. `targetClass`: a node shape also gets this target class (the creation follow-up names the shape and its class in one step).",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "targetClass",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setUri",
+      "doc": "",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "uri",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setStatements",
+      "doc": "Replace the statements (instance, predicate, *) for the given predicates. IRIs of instances are relations.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "values",
+          "type": "Record<string, TermJSON[]>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "setTypes",
+      "doc": "Classes of instances: remove the rdf:type statements of `remove`, then add `add`. Other statements stay (values that the new classes do not describe show as \"Not in shapes\"). A type of the vocabularies (rdf, rdfs, owl, sh, skos, view, ws) is refused.",
+      "fields": [
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "add",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "remove",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "delete",
+      "doc": "Delete elements of any kind in one step: instances and relations (from the model and all views), views (with the references to them), node shapes (with their property shapes and cards), property shapes, unused value sets; constraints are dissolved.",
+      "fields": [
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "addToView",
+      "doc": "Cards added around `at`. They bring the lines, links and hubs between them and the shown figures (ADR 0014, arrival).",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "showRelations",
+      "doc": "Relations dropped on a view: their ends not in the view are added around `at`, hidden edges show again.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "showAsEdge",
+      "doc": "A property shape (`id`, any owner of a shared property) becomes a line in a view: its placement, and the box of its end at `at` when the view does not show it (with view:keptByLines). A constraint id, or a member of a constraint: its hub, with the boxes of the member ends. A datatype, node-kind or open end is private: such a property stays a row (an error). ADR 0014.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "removeFromView",
+      "doc": "Del in a view: cards leave, edges hide, and view-owned elements are deleted. The model does not change. A property line leaves: the property is a row again. A hub, a member line or its pill: the hub unit leaves. The lines that need what left go too, and each box kept by lines whose last line left (ADR 0014, removal).",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "setBounds",
+      "doc": "Move or resize cards and view-owned nodes. A moved group takes the elements inside it.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "bounds",
+          "type": "({ id: string } & Partial<Rect>)[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "setLayout",
+      "doc": "Apply Layout: new boxes (as setBounds), then the sides and bends of every edge placement of the view are cleared.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "bounds",
+          "type": "({ id: string } & Partial<Rect>)[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "setEdgeLayout",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "relation",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "patch",
+          "type": "Partial<Omit<EdgeLayout, 'relation'>>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "hideEdges",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "hidden",
+          "type": "boolean",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "setViewDescription",
+      "doc": "Change elements of a view (cards, relations, groups, notes, view references, collections, arrows): box, color ('' removes it), display of cards, label of groups, text of notes. A field that an element does not have is ignored; a relation takes only the color. `expectedText`: the command fails if a note has another text (another client changed it).",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "expectedText",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setViewElements",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "patch",
+          "type": "ViewElementPatch",
+          "optional": false
+        },
+        {
+          "name": "expectedText",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "createRelation",
+      "doc": "Relation between instance ids or new instances. With a view, an end not in it is placed at `at`.",
+      "fields": [
+        {
+          "name": "subject",
+          "type": "string | NewInstance",
+          "optional": false
+        },
+        {
+          "name": "predicate",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "object",
+          "type": "string | NewInstance",
+          "optional": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        },
+        {
+          "name": "sides",
+          "type": "EdgeSides",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "reconnectRelation",
+      "doc": "Move one end of a relation (source: subject, target: object) to the instance `to`. The predicate does not change, the relation gets a new id. Edge layouts stay in the views that show both new ends. With `view` and `side`, the moved end attaches to that side in that view. `to` equal to the current end changes only the side.",
+      "fields": [
+        {
+          "name": "relation",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "end",
+          "type": "'source' | 'target'",
+          "optional": false
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "side",
+          "type": "Side",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "createView",
+      "doc": "New view. `file`: path of its view file (absolute, or relative to the workspace folder), a new TriG file inside the workspace folder; any name. Else `folder`: absolute path of the folder of its view file, inside the workspace folder; default: `views/`.",
+      "fields": [
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "folder",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "createNodeShape",
+      "doc": "New node shape in the primary shapes file; with a view (a shapes view), its card is placed at `at`. Its IRI is minted from `label` + \" shape\" (a label that ends with \" shape\" gets no second one).",
+      "fields": [
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "targetClass",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "proposeShapes",
+      "doc": "Node shapes proposed from the data (SHACLxtract) in the primary shapes file: one for each class (default: each type of the data file that no node shape targets). A class with a node shape is skipped. Result: the ids of the new node shapes.",
+      "fields": [
+        {
+          "name": "classes",
+          "type": "string[]",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setNodeShape",
+      "doc": "",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "patch",
+          "type": "NodeShapePatch",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "createPropertyShape",
+      "doc": "New property shape of node shape `shape`. The result id is the property shape. With `view` and `at` (a shapes view) and `out`: the property is an edge (taken out of its card); its target card, or its pill, at `at`. `newTarget`: first create a node shape (no target class; range sh:node) or a value set with this label, at `at`; `range` is ignored. `newOwner`: first create a node shape with this label, at `at`, the owner of the property; `shape` is ignored. With `view`, `at` and `out`, an owner that the view does not show gets its card at `at` (incoming link of a node shape).",
+      "fields": [
+        {
+          "name": "shape",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "path",
+          "type": "PathJSON",
+          "optional": false
+        },
+        {
+          "name": "range",
+          "type": "Range",
+          "optional": false
+        },
+        {
+          "name": "minCount",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "maxCount",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        },
+        {
+          "name": "out",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "newTarget",
+          "type": "NewShapeTarget",
+          "optional": true
+        },
+        {
+          "name": "newOwner",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setPropertyShape",
+      "doc": "Change a property shape. null removes a value. The result id is the property shape. `view`, `at`: a new target of an edge of this view, or a new value set target, gets its card at `at`.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "patch",
+          "type": "PropertyShapePatch",
+          "optional": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "groupProperties",
+      "doc": "Group edges of one node shape into a logical constraint, or add edges to the constraint in `ids`. Result: the constraint id.",
+      "fields": [
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        },
+        {
+          "name": "operator",
+          "type": "Exclude<LogicalOperator, 'not'>",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setConstraint",
+      "doc": "",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "operator",
+          "type": "LogicalOperator",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "ungroup",
+      "doc": "Dissolve a logical constraint: its members go back to sh:property.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "takeOutOfConstraint",
+      "doc": "",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "createValueSet",
+      "doc": "New SKOS concept scheme or collection in the primary shapes file; with a shapes view, its node is placed at `at`.",
+      "fields": [
+        {
+          "name": "valueSet",
+          "type": "'scheme' | 'collection'",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "view",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "addConcept",
+      "doc": "A new concept `label` joins a value set (scheme: skos:inScheme; collection: skos:member), or an existing concept `uri`. Result: its IRI.",
+      "fields": [
+        {
+          "name": "set",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "uri",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "setConceptBroader",
+      "doc": "Add skos:broader between existing concepts. Reject self-links and hierarchy cycles.",
+      "fields": [
+        {
+          "name": "uri",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "broader",
+          "type": "string",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "removeConcept",
+      "doc": "A concept leaves a value set: from a scheme it is deleted; from a collection only the membership goes.",
+      "fields": [
+        {
+          "name": "set",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "uri",
+          "type": "string",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "migrateData",
+      "doc": "Apply a data change of the patch queue. `id`: the queue entry, removed on success.",
+      "fields": [
+        {
+          "name": "migration",
+          "type": "MigrationChange & { id?: string }",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "duplicateView",
+      "doc": "`file`: the view file of the copy, as in createView; default: a free `<label> copy` file in `views/`.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "createGroup",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "around",
+          "type": "string[]",
+          "optional": true
+        },
+        {
+          "name": "rect",
+          "type": "Rect",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "createNote",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "addViewReference",
+      "doc": "",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "addFileReference",
+      "doc": "A link box to a file (absolute path; the store keeps it relative to the view file).",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "createArrow",
+      "doc": "Arrow between two boxes of a view (element ids; a card: its instance id). One end must be a note. The result id is the arrow. Removal: removeFromView. An arrow goes with its note or other end.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "collect",
+      "doc": "Collect cards (instance ids) of a view into one new collection, centered on their box. Selected collections join it with their members. The result id is the collection.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "addToCollection",
+      "doc": "Instances (ids) join collection `id` of a view; an instance outside the view is added to it.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "uncollect",
+      "doc": "Take members (all without `ids`) out of a collection: their cards show again, next to it. An empty collection is deleted.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "pasteIntoView",
+      "doc": "Add the clip to a view: the same elements, never new ones. Pack new placements near `at`, else near the clip's top-left corner. Previous placements stay fixed. Groups and notes are new boxes.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "clip",
+          "type": "ViewClip",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        },
+        {
+          "name": "cardScale",
+          "type": "number",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "moveBetweenViews",
+      "doc": "Paste of a cut: the clip leaves view `from` and is pasted into view `to` (as pasteIntoView), one undo step. `from` and `to`: a view IRI or a view id. `from` equal to `to`: a re-placement.",
+      "fields": [
+        {
+          "name": "from",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "clip",
+          "type": "ViewClip",
+          "optional": false
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        },
+        {
+          "name": "cardScale",
+          "type": "number",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "kind": "duplicate",
+      "doc": "New instances from the instances `ids` placed in `view` (ops.copyInstance, label with the next suffix), each beside its source (offset 40 px) with the same appearance, and the relations between them. A node shape is refused.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "kind": "pasteRdf",
+      "doc": "Parsed clipboard RDF as N-Quads. Named graphs require explicit flattening consent. One additive edit and layout.",
+      "fields": [
+        {
+          "name": "view",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "rdf",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "flatten",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "at",
+          "type": "Point",
+          "optional": true
+        },
+        {
+          "name": "cardScale",
+          "type": "number",
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "types": {
+    "Rect": "{ x: number; y: number; width: number; height: number }",
+    "Point": "{ x: number; y: number }",
+    "ViewElementPatch": "Partial<Rect> & { color?: string; display?: CardDisplay; label?: string; text?: string }",
+    "NewInstance": "{ classIri: string; label: string; inScheme?: string }",
+    "NewShapeTarget": "{ kind: 'nodeShape' | 'scheme' | 'collection'; label: string }",
+    "NodeShapePatch": "{ targetClass?: string; targetSubjectsOf?: string[]; targetObjectsOf?: string[]; nodes?: string[]; closed?: boolean; description?: string }",
+    "PropertyShapePatch": "{ path?: PathJSON; range?: Range; minCount?: number | null; maxCount?: number | null; name?: string | null; description?: string | null; pattern?: string | null; minLength?: number | null; maxLength?: number | null; languageIn?: string[] | null }",
+    "ViewClip": "{ format: typeof VIEW_CLIP_FORMAT; mode: ClipMode; source: string; boxes: Exclude<ViewBox, { kind: 'collection' }>[]; edges: (Omit<EdgeLayout, 'relation'> & { subject: string; predicate: string; object: string })[] }",
+    "ClipMode": "'copy' | 'cut'",
+    "EdgeSides": "Pick<EdgeLayout, 'fromSide' | 'toSide'>"
+  }
+}

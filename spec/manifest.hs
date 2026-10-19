@@ -2153,6 +2153,19 @@ executeError :: ExecArgument -> Maybe String         -- the error of RPC execute
 law_execMessageNamesTheFault :: ExecArgument -> Bool
 law_execMessageNamesTheFault a = executeError a == execError editCommandKinds a
 
+-- | exec --schema [kind] prints the edit command kinds with their fields and docs, or one kind with the type aliases that it uses.
+-- It reads packages/model/src/command-schema.json and sends no backend request. An unknown kind: exit 2 with the list of kinds.
+-- scripts/gen-command-schema.mjs (pnpm gen:schema) generates the file from the EditCommand union of packages/model/src/commands.ts.
+-- pnpm check generates it again into a temporary file and refuses a file that differs. Reason: an agent reads the fields, not the source.
+data SchemaEntry = SchemaEntry { schemaKind :: String, schemaDoc :: String, schemaFields :: [(String, String, Bool)] }   -- name, type, optional
+commandSchemaFile :: [SchemaEntry]                   -- the entries of command-schema.json
+schemaCheck :: String -> String -> Maybe String      -- the generated text, the committed text: the error of pnpm check
+schemaCheck generated committed
+  | generated == committed = Nothing
+  | otherwise = Just "command-schema.json is stale: run pnpm gen:schema"
+law_schemaCoversEveryKind :: Bool
+law_schemaCoversEveryKind = sort (map schemaKind commandSchemaFile) == sort editCommandKinds
+
 -- | Prompt adapters: dialogs, quick picks, input boxes, canvas pickers, inline inputs.
 -- Limit: notification buttons and canvas drags have no adapter. Use exec for model effects, not for gesture checks.
 -- status reports source and build staleness, backend restart need and window reload need. All must be false before a runtime check.
@@ -2195,6 +2208,7 @@ textPatch = manifestOnly
 cliOutcomeBefore = manifestOnly
 editCommandKinds = manifestOnly
 executeError = manifestOnly
+commandSchemaFile = manifestOnly
 resolveArg = manifestOnly
 stepBatch = manifestOnly
 isPropertyShapeIri = manifestOnly

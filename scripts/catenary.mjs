@@ -17,7 +17,8 @@ Backend (works without a browser window):
   status                         model summary, files, connected windows
   model [dot.path] [--keys]      the model snapshot, or a part: views, counts, violations, meta, files
   rpc [method [json-arg...]]     call a ModelService method; without a method: list methods and parameters
-  exec '<EditCommand JSON>'      rpc execute; the command kinds: packages/model/src/commands.ts
+  exec '<EditCommand JSON>'      rpc execute; the command kinds and their fields: exec --schema
+  exec --schema [kind]           the command kinds with their fields and docs, or the fields of one kind; no backend
   exec '[<EditCommand>, ...]'    rpc executeBatch: one transaction, one undo step, one commit; a failure changes nothing.
                                  "$N" in a command is the result id of command N (0-based)
   exec -                         the same batch, from NDJSON on stdin (one command per line)
@@ -176,6 +177,26 @@ function execStdin() {
     return commands;
 }
 
+/**
+ * exec --schema [kind]: the edit command kinds and their fields from packages/model/src/command-schema.json (pnpm gen:schema,
+ * manifest §12 law_schemaCoversEveryKind). No backend request. An unknown kind: exit 2 with the list of kinds.
+ */
+function execSchema(kind) {
+    const { commands, types } = JSON.parse(readFileSync(new URL('../packages/model/src/command-schema.json', import.meta.url), 'utf8'));
+    const field = f => `${f.name}${f.optional ? '?' : ''}: ${f.type}`;
+    if (kind === undefined) return commands.map(c => `${c.kind}(${c.fields.map(field).join(', ')})${c.doc ? '  ' + c.doc : ''}`).join('\n') + '\n';
+    const command = commands.find(c => c.kind === kind);
+    if (!command) fail(`exec --schema: unknown command kind "${kind}"; kinds: ${commands.map(c => c.kind).join(', ')}`);
+    // The aliases that the fields use, and the aliases that those use.
+    const uses = new Set();
+    const scan = text => Object.keys(types).forEach(t => {
+        if (!uses.has(t) && new RegExp(`\\b${t}\\b`).test(text)) { uses.add(t); scan(types[t]); }
+    });
+    command.fields.forEach(f => scan(f.type));
+    return [command.kind, ...(command.doc ? [command.doc] : []), ...command.fields.map(f => '  ' + field(f)),
+        ...Object.keys(types).filter(t => uses.has(t)).map(t => `type ${t} = ${types[t]}`)].join('\n') + '\n';
+}
+
 async function call(instance, method, params, window) {
     let res;
     try {
@@ -236,6 +257,7 @@ async function main() {
         case 'model': method = 'model'; params = { path: rest[0], keys: !!opts.keys }; break;
         case 'rpc': method = 'rpc'; params = { method: rest[0], args: rest.slice(1).map(jsonArg) }; break;
         case 'exec':
+            if (opts.schema) return finish(execSchema(rest[0]), 0);
             if (!rest[0]) fail('exec needs an EditCommand as JSON, e.g. \'{"kind":"createView","label":"V"}\'');
             {
                 const value = rest[0] === '-' ? execStdin() : execArgument(rest[0]);

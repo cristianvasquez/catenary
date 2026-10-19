@@ -148,6 +148,12 @@ pnpm -s catenary --port 3917 exec '{"kind":"addToView","view":"urn:name:Product%
 pnpm -s catenary --port 3917 exec '{"kind":"delete","ids":[{"s":"urn:name:A","p":"http://www.w3.org/ns/dcat#distribution","o":"urn:name:B"}]}'
 ```
 
+`exec --schema` prints each edit command kind with its fields (`name?` is optional) and its doc. `exec --schema <kind>` prints the fields of one kind and the type aliases that they use. It needs no backend. `pnpm gen:schema` generates `packages/model/src/command-schema.json` from `packages/model/src/commands.ts`, and `pnpm check` refuses a stale file.
+
+```sh
+pnpm -s catenary exec --schema setBounds
+```
+
 `layout <view> [--mode layered|force]` lays out a view with the layout of Apply Layout. The view is an ID or an IRI. The default mode is `layered`. The backend uses the defaults of Apply Layout: the Show level Placed, the default spacing (200 px) and card scale 1. The result is one `setLayout` command, so one `undo` restores the old bounds. An unknown view gives exit 1. A mode other than `layered` or `force` gives exit 2.
 
 ```sh

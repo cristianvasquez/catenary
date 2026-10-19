@@ -142,6 +142,7 @@ Paths are relative to the directory in the first column.
 | `packages/shacl/notations` | `shapes.ttl` | SHACL figure definitions |
 | `packages/model/src` | `doc.ts`, `terms.ts`, `ids.ts`, `snapshot.ts`, `trace.ts`, `trace-metrics.ts` | Read-model records, JSON terms, element IDs, snapshot schema, trace records and metric calculations |
 | | `commands.ts`, `actions.ts`, `queries.ts` | Edit commands, action applicability, read-query declarations |
+| | `command-schema.json` | Kinds, fields and docs of the edit commands, generated from `commands.ts` by `scripts/gen-command-schema.mjs` (`exec --schema`) |
 | | `paste-layout.ts` | Packs new placements around fixed boxes and moves copied frames with their contents |
 | | `metamodel.ts`, `shapes-doc.ts`, `form.ts` | Shapes, ranges, the merge of the plugins, prefixes, form conversion |
 | | `view-schema.ts`, `diagram-schema.ts`, `shapes-schema.ts`, `view-ui.ts` | Diagram projection of a view, gesture data |
@@ -195,6 +196,7 @@ Paths are relative to the directory in the first column.
 | | `check-windows-package.mjs`, `smoke-desktop.mjs` | Static check of the Windows package (`scripts/package.sh win32-x64`), desktop smoke test of the build or a Linux, Windows or macOS package |
 | | `smoke-cli.mjs`, `check-links.mjs`, `check-css.mjs` | CI: CLI and RPC contract smoke test, Markdown links, style sheets |
 | | `rdf-query.cjs` | SPARQL on RDF files (Oxigraph) for tests and agents |
+| | `gen-command-schema.mjs` | `pnpm gen:schema`: writes `packages/model/src/command-schema.json`; `--check` (in `pnpm check`) refuses a stale file |
 
 ## Hosts
 
