@@ -97,8 +97,9 @@ function importedFailure(folder: string, files: string[]): CommandResult {
     };
 }
 
-/** The ok result of an executed command: its id, or its ids. */
-function resultOf(r: { ok: true } | { ok: true; value: unknown }): Extract<CommandResult, { ok: true }> {
+/** The ok result of an executed command: its id, or its ids. A no-op: `changed: false` and its message. */
+function resultOf(r: { ok: true; changed?: boolean; message?: string } | { ok: true; value: unknown }): Extract<CommandResult, { ok: true }> {
+    if ('changed' in r && r.changed === false) return { ok: true, changed: false, message: r.message };
     const v = 'value' in r ? r.value : undefined;
     if (Array.isArray(v)) return { ok: true, id: v[0], ids: v };
     return { ok: true, id: typeof v === 'string' ? v : undefined };
@@ -664,11 +665,13 @@ export class ModelStore {
             const r = command.kind === 'moveElementsToFile'
                 ? transfer(g, ws, command.source, command.destination, command.ids)
                 : executeCommand(g, this.metamodel, command);
-            if (r.ok) placeChanges(g, ws);
+            if (r.ok && r.changed !== false) placeChanges(g, ws);
             const files = r.ok ? ws.importedChanges(g.changes()) : [];
             return files.length ? importedFailure(this.folder, files) : r;
         });
         if (!r.ok) { ws.newViewFolder = ws.newViewFile = undefined; return r; }
+        // A no-op (manifest §5.1 law_noopLeavesHistory): no history step, no commit note, no write.
+        if (r.changed === false && !patch.length) { ws.newViewFolder = ws.newViewFile = undefined; return resultOf(r); }
         this.commitEdit(patch, [command.kind], shapesBefore, revision, command.kind === 'migrateData' ? command.migration.id : undefined,
             command.kind === 'moveElementsToFile' ? [command.source, command.destination] : []);
         return resultOf(r);

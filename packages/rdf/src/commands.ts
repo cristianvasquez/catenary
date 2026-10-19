@@ -188,8 +188,9 @@ function placeAround(g: ModelGraph, viewId: string, ids: string[], at: Point): s
     return add;
 }
 
-const alreadyInView = (n: number) => fail(n === 1 ? 'The instance is already in this view. An element appears at most once in each view.'
-    : `All ${n} instances are already in this view.`);
+const alreadyInViewText = (n: number) => n === 1 ? 'The instance is already in this view. An element appears at most once in each view.'
+    : `All ${n} instances are already in this view.`;
+const alreadyInView = (n: number) => fail(alreadyInViewText(n));
 
 /**
  * Commands that place a target from a property (Show as Edge, a new or changed property with its target): the placed box does not
@@ -241,8 +242,8 @@ export function executeCommand(g: ModelGraph, meta: Classes, c: EditCommand): op
     }
     const r = run(g, meta, elementIds(g, c));
     // One rule for every removal path: an arrow goes with its end. One rule for every placement path: relations and property edges
-    // follow their ends.
-    if (r.ok) {
+    // follow their ends. A no-op changes nothing.
+    if (r.ok && r.changed !== false) {
         ops.placeConnectors(g);
         syncFigures(g, !FROM_A_PROPERTY.has(c.kind));
         ops.pruneArrows(g);
@@ -327,7 +328,7 @@ function run(g: ModelGraph, meta: Classes, c: EditCommand): ops.Result<unknown> 
                 return ops.gone('element', c.ids.join(', '));
             }
             const added = placeAround(g, c.view, known, c.at);
-            return added.length ? ok(added[0]) : alreadyInView(c.ids.length);
+            return added.length ? ok(added[0]) : ops.noop(alreadyInViewText(c.ids.length));
         }
         case 'showRelations': {
             const rels = c.ids.map(id => ops.relationTerms(g, id)).filter(r => !!r);

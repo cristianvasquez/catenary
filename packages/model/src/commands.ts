@@ -217,9 +217,11 @@ export type ClipMode = 'copy' | 'cut';
 /**
  * Result of a command. `id` is the id of a created element, if any; `ids` the ids of all of them (paste). `iri`: the IRI of `id`;
  * `iris`: the IRI of each of `ids`, null for an id without one (a relation). `imported`: the command changes these imported files
- * (absolute paths), so it is refused (manifest ws:imported).
+ * (absolute paths), so it is refused (manifest ws:imported). `changed: false`: a no-op, the command had nothing to change; `message`
+ * says why (manifest §5.1 law_noopLeavesHistory). `changed` absent: a change.
  */
-export type CommandResult = { ok: true; id?: string; ids?: string[]; iri?: string; iris?: (string | null)[] } | { ok: false; error: string; imported?: string[] };
+export type CommandResult = { ok: true; id?: string; ids?: string[]; iri?: string; iris?: (string | null)[]; changed?: boolean; message?: string }
+    | { ok: false; error: string; imported?: string[] };
 
 /**
  * The answer of a batch (ModelStore.executeBatch): one result per command, in order. A failure changes nothing; `index` is the

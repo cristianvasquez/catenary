@@ -57,7 +57,7 @@ export function deleteElements(g: ModelGraph, ids: string[]): ops.Result {
     const instances = rest.filter(id => ops.instanceTerm(g, id));
     const relations = rest.filter(id => ops.relationTerms(g, id));
     const views = rest.filter(id => ops.viewTerm(g, id));
-    if (!shapeIds.length && !sets.length && !instances.length && !relations.length && !views.length) return fail('Nothing to delete.');
+    if (!shapeIds.length && !sets.length && !instances.length && !relations.length && !views.length) return ops.noop('Nothing to delete.');
     if (shapeIds.length) {
         const r = shapes.deleteShapes(g, shapeIds);
         if (!r.ok) return r;

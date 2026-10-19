@@ -43,7 +43,10 @@ describe('elements of any kind', () => {
         expect(Object.values(d.views).map(v => [v.label, v.boxes.length])).toEqual([['V', 0]]);
         g.undo(patch);
         expect(canonical(g.quads())).toBe(before);
-        expect(g.transact(x => executeCommand(x, meta, { kind: 'delete', ids: ['n-missing'] })).result.ok).toBe(false);
+        // A no-op (manifest §5.1 law_noopLeavesHistory): ok, not changed, no patch.
+        const none = g.transact(x => executeCommand(x, meta, { kind: 'delete', ids: ['n-missing'] }));
+        expect(none.result).toMatchObject({ ok: true, changed: false, message: 'Nothing to delete.' });
+        expect(none.patch).toEqual([]);
     });
 
     it('renames with the label predicates the element has, else the default of its kind', async () => {

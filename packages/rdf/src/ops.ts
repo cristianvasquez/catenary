@@ -17,9 +17,11 @@ import { isInstance, homeOf, label, usedIris, ownedBy, P, mint } from './vocabul
 import { isView, connectorOf, markIri, views, viewSubject, nodeOf, connectorPlacements, edgeOf, V, placementIri, viewPartBase } from './views';
 import { viewFiguresOf } from './notations';
 
-export type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
+export type Result<T = void> = { ok: true; value: T; changed?: false; message?: string } | { ok: false; error: string };
 export const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 export const fail = (error: string): Result<never> => ({ ok: false, error });
+/** A command that has nothing to change: ok, no patch, no undo step, no write (manifest §5.1 law_noopLeavesHistory). It has no value. */
+export const noop = (message: string): Result<never> => ({ ok: true, value: undefined as never, changed: false, message });
 /** An id that names no element of this kind: the caller gave a wrong id, or the element was deleted. */
 export const gone = (what: string, id: string): Result<never> => fail(`No ${what} with the id ${id}: the id is wrong or the ${what} was deleted.`);
 

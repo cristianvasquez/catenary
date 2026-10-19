@@ -165,6 +165,38 @@ describe('executeBatch (manifest §5.2)', () => {
     });
 });
 
+describe('a no-op (manifest §5.1 law_noopLeavesHistory, §5.2)', () => {
+    const undoCount = () => (store as unknown as { history: { undoStack: unknown[] } }).history.undoStack.length;
+    const placed = () => boxes(store.reads.view(iriId(VIEW))!, 'card')[0].element;
+    const unchanged = (run: () => unknown, expected: object) => {
+        const before = { undo: undoCount(), dirty: store.dirty, revision: store.revision, quads: quads() };
+        expect(run()).toMatchObject(expected);
+        expect({ undo: undoCount(), dirty: store.dirty, revision: store.revision, quads: quads() }).toEqual(before);
+    };
+
+    it('addToView of placed ids gives ok:true, changed:false; the undo count and the dirty flag do not change', () => {
+        unchanged(() => store.execute({ kind: 'addToView', view: VIEW, ids: [placed()], at: { x: 0, y: 0 } }),
+            { ok: true, changed: false, message: 'The instance is already in this view. An element appears at most once in each view.' });
+        expect(store.canUndo).toBe(false);
+    });
+
+    it('delete of an absent id gives ok:true, changed:false; the undo count and the dirty flag do not change', () => {
+        unchanged(() => store.execute({ kind: 'delete', ids: ['urn:name:Nothing%20here'] }), { ok: true, changed: false, message: 'Nothing to delete.' });
+        expect(store.canUndo).toBe(false);
+    });
+
+    it('law_batchResultPerCommand: a batch with a no-op item and a real edit gives one undo step and two results; the no-op keeps its index', () => {
+        const r = ok(store.executeBatch([
+            { kind: 'addToView', view: VIEW, ids: [placed()], at: { x: 0, y: 0 } },
+            { kind: 'createNote', view: VIEW, text: 'A note', at: { x: 0, y: 400 } }
+        ]));
+        expect(r.ok && r.results).toHaveLength(2);
+        expect(r.ok && r.results[0]).toMatchObject({ ok: true, changed: false });
+        expect(r.ok && r.results[1].changed).toBeUndefined();
+        expect(undoCount()).toBe(1);
+    });
+});
+
 describe('one batch, one commit (manifest §10.3)', () => {
     it('a batch of ten edits gives one Git commit', async () => {
         ok(await store.setSettings({ autoCommit: true }));

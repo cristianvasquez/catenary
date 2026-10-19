@@ -11,7 +11,7 @@ import {
 import type { NamedNode, Quad, Quad_Graph, Quad_Object, Quad_Subject, Term } from '@rdfjs/types';
 import { ModelGraph } from './graph';
 import { elementId, elementTerm } from './ids';
-import { Result, dropFromView, fail, gone, iriProblem, ok, replaceTerm } from './ops';
+import { Result, dropFromView, fail, gone, iriProblem, noop, ok, replaceTerm } from './ops';
 import { S, ShapesIndex, shapesIndexOf } from './shapes-read';
 import { isSkolem } from 'rdf-core';
 import { rdf } from './terms';
@@ -575,7 +575,7 @@ export function deleteShapes(g: ModelGraph, ids: string[]): Result {
     const gone = new Set(shapes);
     const properties = ids.filter(id => idx.property.has(id) && !gone.has(idx.model.properties[id].owner));
     const constraints = ids.filter(id => idx.constraint.has(id) && !gone.has(idx.model.constraints[id].owner));
-    if (!shapes.length && !properties.length && !constraints.length) return fail('Nothing to delete: select node shapes, edges or logical constraints.');
+    if (!shapes.length && !properties.length && !constraints.length) return noop('Nothing to delete: select node shapes, edges or logical constraints.');
     // Resolve by term: the ids change while the property shapes are removed.
     const terms = properties.map(id => ({ term: idx.property.get(id)!.term, owner: idx.property.get(id)!.owner }));
     for (const c of constraints) { const r = ungroup(g, c); if (!r.ok) return r; }
