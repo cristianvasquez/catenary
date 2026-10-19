@@ -784,7 +784,7 @@ data Change = Add Quad | Remove Quad deriving Eq
 type Patch = [Change]
 data Tx a
 data Backend
-data CommandResult = Success (Maybe Id) [Id] | Failure Error
+data CommandResult = Success (Maybe Id) [Id] | NoOp String | Failure Error
 data Op
   = Open FilePath | Create FilePath (Maybe Placement) | Execute EditCommand | Undo | Redo | Save
   | SetSettings WorkspaceSettings | SetPrefixes [(String, Iri)] | DismissMigration Id
@@ -802,10 +802,22 @@ redo = () <$ runOp Redo
 failed :: CommandResult -> Bool
 failed (Failure _) = True
 failed (Success _ _) = False
+failed (NoOp _) = False
 storeQuads :: Backend -> [Quad]                    -- all graphs
 historyOf :: Backend -> History
 filesOf :: Backend -> [FilePath]                   -- the model and view files of the workspace
 lastPatch :: Backend -> Patch                      -- the patch of the last Op
+-- | A command that has nothing to change gives NoOp with a message: ok true, changed false (ops.noop, packages/rdf/src/ops.ts).
+-- The no-ops: addToView of placed IDs, delete of IDs that match nothing. A no-op records no undo step, queues no write, makes no commit.
+-- Reason: an agent can repeat a command without an error, and the repeat leaves no trace.
+noop :: CommandResult -> Bool
+noop (NoOp _) = True
+noop _ = False
+law_noopLeavesHistory :: Backend -> EditCommand -> Bool
+law_noopLeavesHistory b c =
+  let (r, b') = step b (Execute c)
+  in noop r ==> (length (undoStack (historyOf b')) == length (undoStack (historyOf b)) && storeQuads b' == storeQuads b
+                 && all (\f -> dirty b' f == dirty b f) (filesOf b))
 
 -- 5.2 One command, one patch, one undo step ------------------------------------------
 
@@ -901,6 +913,12 @@ law_batchOneStep b cs =
 law_batchRejectionRollsBack :: Backend -> [EditCommand] -> Bool
 law_batchRejectionRollsBack b cs =
   let (r, b') = stepBatch b cs in batchFailed r ==> (storeQuads b' == storeQuads b && historyOf b' == historyOf b)
+-- | A batch gives one result per command, in order. A no-op command (§5.1) does not fail the batch: its NoOp keeps its index.
+-- Reason: a repeated command in an agent batch does not roll back the other commands.
+law_batchResultPerCommand :: Backend -> [EditCommand] -> Bool
+law_batchResultPerCommand b cs = case fst (stepBatch b cs) of
+  BatchDone rs -> length rs == length cs && not (any failed rs)
+  BatchFailed _ _ -> True
 -- | A string field "$N" (anywhere in a command) takes the result ID of command N. N must be an earlier command that gives an ID,
 -- else the batch fails. The references resolve before the IRIs (§12). Code: resolveRefs in packages/rdf/src/model-store.ts.
 -- After a command that changes the shapes, the next command reads the new metamodel. A rollback rebuilds the metamodel again.
@@ -1273,6 +1291,7 @@ law_moveIsOneUndoStep b from to clip at =
 law_duplicateMintsNew :: Backend -> Id -> [Id] -> Bool
 law_duplicateMintsNew b v ids = case fst (step b (Execute (Duplicate v ids))) of
   Success _ new -> all (`notElem` map elementId (elementsOf b)) new
+  NoOp _ -> True
   Failure _ -> True
 
 -- | Raw RDF paste adds missing statements without replacing values or changing explicit resource IRIs.

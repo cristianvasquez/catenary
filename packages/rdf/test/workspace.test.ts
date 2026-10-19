@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +11,7 @@ import { Saver } from '../src/saver';
 import { rdf } from '../src/terms';
 import { TracedStore } from '../src/trace';
 import { newModelGraph } from '../src/model-graph';
-import { tempWorkspace } from './helpers';
+import { DATA, SHAPES, openStore, tempWorkspace, writeWorkspace } from './helpers';
 
 const EX = 'http://example.org/';
 
@@ -107,5 +108,25 @@ describe('sync modules', () => {
             const imports = [...readFileSync(join(src, `${m}.ts`), 'utf8').matchAll(/from '\.\/([\w-]+)'/g)].map(x => x[1]);
             expect(imports.filter(i => modules.includes(i)), m).toEqual([]);
         }
+    });
+});
+
+describe('a no-op and Git (manifest §5.1 law_noopLeavesHistory)', () => {
+    it('a no-op makes no commit', async () => {
+        const ws = tempWorkspace({ 'shapes.ttl': SHAPES, 'data.ttl': DATA }, 'catenary-noop-');
+        let store = await openStore(writeWorkspace(ws.dir));
+        expect((await store.setSettings({ autoCommit: true })).ok).toBe(true);
+        await store.idle();
+        const git = (...args: string[]) => execFileSync('git', args, { cwd: ws.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        git('init', '-q');
+        git('config', 'user.name', 'Test');
+        git('config', 'user.email', 'test@example.org');
+        git('add', '-A');
+        git('commit', '-q', '-m', 'start');
+        store = await openStore(ws.path('workspace.trig'));
+        expect(store.execute({ kind: 'delete', ids: ['urn:name:Nothing%20here'] })).toMatchObject({ ok: true, changed: false });
+        await store.idle();
+        expect(git('rev-list', '--count', 'HEAD')).toBe('1');
+        expect(git('status', '--porcelain')).toBe('');
     });
 });

@@ -140,7 +140,7 @@ pnpm -s catenary --workspace /tmp/catenary-test status
 
 `status`, `model`, `rpc`, `exec` and `layout` need no browser window. The other commands need a connected window. A headless Chromium page is sufficient. Before a test, `status` must report `build.stale`, `build.restartNeeded` and each window's `reloadNeeded` as false. A backend without a frontend starts with an empty model, so open the test workspace explicitly. Keep the backend on localhost.
 
-`exec` and the reads of `rpc` take an IRI where they take an ID, and a relation as `{"s":IRI,"p":IRI,"o":IRI}`. A value with `:` is an IRI. A CURIE is not expanded. The IRI of a property shape gives its `p-` ID. An unknown ID or IRI on a read gives `result: null`, an `error` that names the value, and exit 1. A command result gives `iri` next to `id`, and `iris` next to `ids`.
+`exec` and the reads of `rpc` take an IRI where they take an ID, and a relation as `{"s":IRI,"p":IRI,"o":IRI}`. A value with `:` is an IRI. A CURIE is not expanded. The IRI of a property shape gives its `p-` ID. An unknown ID or IRI on a read gives `result: null`, an `error` that names the value, and exit 1. A command result gives `iri` next to `id`, and `iris` next to `ids`. A command with nothing to change gives `ok: true`, `changed: false`, a `message` and exit 0, and makes no undo step, write or commit.
 
 ```sh
 pnpm -s catenary --port 3917 rpc properties '"urn:name:Query%20service"'
