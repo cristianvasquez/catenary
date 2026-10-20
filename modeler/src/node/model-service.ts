@@ -63,6 +63,7 @@ export class ModelServiceImpl implements ModelService, Disposable {
     }
     async dismissMigration(id: string): Promise<void> { tracer.span('rpc', 'dismissMigration', () => this.store.dismissMigration(id)); }
     save(): Promise<CommandResult> { return tracer.span('rpc', 'save', () => this.store.save()); }
+    checkpoint(message: string): Promise<CommandResult> { return tracer.span('rpc', 'checkpoint', () => this.store.checkpoint(message)); }
     async undo(): Promise<CommandResult> { return tracer.span('rpc', 'undo', () => this.store.undo()); }
     async redo(): Promise<CommandResult> { return tracer.span('rpc', 'redo', () => this.store.redo()); }
     async execute(command: EditCommand): Promise<CommandResult> { return tracer.span('rpc', 'execute', () => this.store.execute(command)); }

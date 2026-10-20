@@ -23,7 +23,7 @@ module Catenary.Manifest where
 
 import Prelude hiding (Left, Right)   -- Side uses these names. The contract never matches on Either.
 import Control.Applicative ((<|>))
-import Data.Char (isAsciiLower, isAsciiUpper, isDigit, toLower)
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isSpace, toLower)
 import Data.List (find, intercalate, isPrefixOf, isSuffixOf, nub, sort, sortBy, sortOn)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 
@@ -1828,6 +1828,20 @@ commitMessage p =
       list n xs = intercalate ", " (take n xs) ++ (if length xs > n then ", …" else "")
   in "Catenary: " ++ list 5 ks ++ (if null vs then "" else " (" ++ list 3 vs ++ ")")
 
+-- | Checkpoint (ModelStore.checkpoint, rpc checkpoint): write what is not written, then one commit of all written files (the
+-- commitPaths with autoCommitOn true) with the trimmed user message as given. It needs a repository, not ws:autoCommit. It clears the
+-- pending record and the commit timer. No undo step. Errors: an empty message ("Checkpoint: give a message."), no workspace (the
+-- error of Save), no repository ("Checkpoint: not a git repository."). Nothing written since the last commit: no git command.
+-- Reason: the user names a step of the history. The generated message says what changed, not why.
+checkpointRun :: Backend -> String -> (CommandResult, Backend)   -- the message
+lastCommitSubject :: Backend -> String                           -- the subject of the last commit in the repository of the workspace
+trimMessage :: String -> String
+trimMessage = reverse . dropWhile isSpace . reverse . dropWhile isSpace
+law_checkpointMessageVerbatim :: Backend -> String -> Bool
+law_checkpointMessageVerbatim b msg =
+  let (r, b') = checkpointRun b msg
+  in not (failed r) && commitCount b' /= commitCount b ==> commitCount b' == commitCount b + 1 && lastCommitSubject b' == trimMessage msg
+
 -- 10.4 Watcher --------------------------------------------------------------------------
 
 -- | Watcher: recursive, 150 ms after the last event. It ignores hidden paths, temporary files and unchanged own writes.
@@ -2350,6 +2364,8 @@ lastPatch = manifestOnly
 commitCount = manifestOnly
 writeRun = manifestOnly
 commitTimer = manifestOnly
+checkpointRun = manifestOnly
+lastCommitSubject = manifestOnly
 viewExists = manifestOnly
 mintIri = manifestOnly
 objectsOf = manifestOnly

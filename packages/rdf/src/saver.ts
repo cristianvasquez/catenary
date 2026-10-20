@@ -111,27 +111,30 @@ export class Writer {
      * Commit the written files with the message of the pending record, then clear the record and the paths. Auto-commit off, or no
      * repository: no commit, the paths stay (a later read from disk does not take Catenary's writes for changes of the user, and a
      * commit after auto-commit is turned on includes them). A failed commit keeps the record and the paths for the next commit.
+     * `message` (a checkpoint, manifest §10.3 law_checkpointMessageVerbatim): the commit message as given, in place of the generated
+     * one; auto-commit off does not stop it, a repository is necessary. Returns the error of the commit.
      */
-    async commit(): Promise<void> {
+    async commit(message?: string): Promise<string | undefined> {
         this.stopTimer();
         const ws = this.port.saver();
-        if (!ws || !this.pending.kinds.size) return;
+        if (!ws || (message === undefined && !this.pending.kinds.size)) return undefined;
         const warningCount = this.port.warnings.length;
         // Notes of edits during the commit go to a new record.
         const pending = this.pending;
         this.pending = emptyPending();
-        const files = ws.committable();
+        const files = ws.committable(message !== undefined);
         // Auto-commit off: nothing to keep. Nothing to commit yet (a failed write): the record waits for the files.
         if (!files.length) {
             if (ws.commits) this.restore(pending);
-            return;
+            return undefined;
         }
         const labels = this.port.viewLabels();
-        const message = commitMessage(pending, v => labels[elementId(rdf.namedNode(v))] ?? localName(v));
-        const error = await tracer.span('file', 'commit', () => commitFiles(files, message));
+        const text = message ?? commitMessage(pending, v => labels[elementId(rdf.namedNode(v))] ?? localName(v));
+        const error = await tracer.span('file', 'commit', () => commitFiles(files, text));
         if (error) this.restore(pending);
         else ws.written = [];
         this.report(error, 'commit', warningCount);
+        return error;
     }
 
     /** Put a record back before the notes that came after it. */
@@ -356,10 +359,10 @@ export class Saver {
 
     /**
      * The written paths to commit: not the files with changes in git that Catenary did not write (a note for each). None when
-     * ws:autoCommit is false or the workspace is not in a repository: then no git command runs.
+     * ws:autoCommit is false (unless `checkpoint`) or the workspace is not in a repository: then no git command runs.
      */
-    committable(): string[] {
-        if (!this.commits) return [];
+    committable(checkpoint = false): string[] {
+        if (!(checkpoint ? this.repo : this.commits)) return [];
         return [...new Set(this.written)].filter(file => {
             if (!this.uncommitted.has(pathKey(file))) return true;
             this.note(`not committed: ${portableRelative(this.settings.folder, file)} has changes that are not committed`);

@@ -123,6 +123,7 @@ pnpm -s catenary --port 3917 status
 pnpm -s catenary --port 3917 rpc open '"/tmp/catenary-test/workspace.trig"'
 pnpm -s catenary --port 3917 model views --keys
 pnpm -s catenary --port 3917 exec '{"kind":"createView","label":"Test view"}'
+pnpm -s catenary --port 3917 rpc checkpoint '"Add the road map"'
 pnpm -s catenary --port 3917 commands view
 pnpm -s catenary --port 3917 run catenary.newInstance
 pnpm -s catenary --port 3917 prompt

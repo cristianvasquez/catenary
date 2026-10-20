@@ -592,11 +592,11 @@ describe('shapes files in the store', () => {
     });
 
     describe('commit on idle, not on write (manifest §10.3)', () => {
-        /** A workspace in a new repository with auto-commit on, and a store with `commitDelay`. */
-        async function inRepo(commitDelay?: number) {
+        /** A workspace in a new repository with auto-commit on (or `autoCommit`), and a store with `commitDelay`. */
+        async function inRepo(commitDelay?: number, autoCommit = true) {
             const f = files();
             const before = await openStore(f.ws);
-            ok(await before.setSettings({ autoCommit: true }));
+            ok(await before.setSettings({ autoCommit }));
             await before.idle();
             await before.dispose();
             const git = (...args: string[]) => execFileSync('git', args, { cwd: f.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -719,6 +719,43 @@ describe('shapes files in the store', () => {
             expect(git('status', '--porcelain')).toBe('');
         });
 
+        it('law_checkpointMessageVerbatim: an edit, then a checkpoint: one commit with the message as given; the timer makes no commit', async () => {
+            const { git, store, count, subject } = await inRepo(0);
+            await rename(store, 'Product usage data', 'Renamed');
+            ok(await store.checkpoint('  Add the road map  '));
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Add the road map');
+            expect(git('status', '--porcelain')).toBe('');
+            await fire(store);
+            expect(count()).toBe(2);
+            await store.dispose();
+            expect(count()).toBe(2);
+        });
+
+        it('auto-commit off: two edits, then a checkpoint: one commit of both files', async () => {
+            const { git, store, count, subject } = await inRepo(0, false);
+            await rename(store, 'Product usage data', 'Renamed');
+            ok(store.execute({ kind: 'createView', label: 'Road map' }));
+            await store.idle();
+            await fire(store);
+            expect(count()).toBe(1);
+            ok(await store.checkpoint('Add the road map'));
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Add the road map');
+            expect(git('show', '--name-only', '--format=', 'HEAD').split('\n').sort()).toEqual(['data.ttl', 'views/road-map.view.trig']);
+            expect(git('status', '--porcelain')).toBe('');
+            await store.dispose();
+        });
+
+        it('a checkpoint with an empty message: an error and no commit', async () => {
+            const { git, store, count } = await inRepo();
+            await rename(store, 'Product usage data', 'Renamed');
+            expect(await store.checkpoint('   ')).toEqual({ ok: false, error: 'Checkpoint: give a message.' });
+            expect(count()).toBe(1);
+            expect(git('status', '--porcelain')).toBe('M data.ttl');
+            await store.dispose();
+        });
+
         it('a failed commit keeps the record: the next commit includes it', async () => {
             const { f, store, count, subject } = await inRepo(0);
             const hook = join(f.dir, '.git/hooks/pre-commit');
@@ -736,6 +773,17 @@ describe('shapes files in the store', () => {
             expect(store.warnings.some(w => w.startsWith('Not committed:'))).toBe(false);
             await store.dispose();
         });
+    });
+
+    it('a checkpoint in a folder with no git repository: an error, the edit is written', async () => {
+        const f = files();
+        const store = await openStore(f.ws);
+        ok(store.execute({ kind: 'rename', id: instanceId(store, 'Product usage data'), label: 'Renamed' }));
+        await store.idle();
+        expect(await store.checkpoint('Add the road map')).toEqual({ ok: false, error: 'Checkpoint: not a git repository.' });
+        expect(existsSync(join(f.dir, '.git'))).toBe(false);
+        expect(f.read('data.ttl')).toContain('"Renamed"');
+        await store.dispose();
     });
 
     it('a blank node of the data file that a view shows gets its IRI in the data file; the view shows it after a new open', async () => {

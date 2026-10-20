@@ -1147,6 +1147,23 @@ export class ModelStore {
         });
     }
 
+    /**
+     * Write what is not written, then make one commit of all written files with `message` (trimmed) as given (manifest §10.3
+     * law_checkpointMessageVerbatim). Auto-commit off does not stop it. No undo step.
+     */
+    checkpoint(message: string): Promise<CommandResult> {
+        const text = typeof message === 'string' ? message.trim() : '';
+        if (!text) return Promise.resolve({ ok: false, error: 'Checkpoint: give a message.' });
+        return this.serial(async () => {
+            if (!this.saver) return { ok: false, error: 'No workspace is open.' };
+            if (!this.saver.repo) return { ok: false, error: 'Checkpoint: not a git repository.' };
+            const r = await this.writer.write();
+            if (!r.ok) return r;
+            const error = await this.writer.commit(text);
+            return error ? { ok: false, error } : { ok: true };
+        });
+    }
+
     protected note(text: string): void {
         if (!this.warnings.includes(text)) this.warnings.push(text);
         this.notes.push(text);

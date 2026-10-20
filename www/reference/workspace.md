@@ -77,6 +77,8 @@ The command changes only the namespace text. It keeps the formatting and the com
 
 If the workspace is in a Git repository and Auto-commit is On, Catenary writes each edit at once and commits later. A commit runs 60 seconds after the last content edit, at a save, when Catenary stops and when another workspace opens. A move or a resize alone does not start the 60 seconds. The commit contains the changed files only. Other staged changes stay out of it. The commit message gives the kinds of edits with their counts and the views that changed, for example `Catenary: setBounds ×12, createRelation ×2 (tasks)`. The **Source Control** view shows changes and history. A file changed outside Catenary is read again. This clears the undo history.
 
+A checkpoint writes the edits that are not written yet. Then it makes one commit of all written files with your message as the commit message. A checkpoint needs a Git repository. It also works when Auto-commit is Off. An empty message gives the error "Checkpoint: give a message." A folder without a repository gives the error "Checkpoint: not a git repository." The CLI command is `rpc checkpoint '"Add the road map"'`.
+
 All windows of a workspace share one undo history. One edit is one transaction and one undo step.
 
 ## Model index failure

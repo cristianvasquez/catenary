@@ -170,6 +170,11 @@ export interface ModelService extends RpcServer<ModelClient>, Remote<ModelQuerie
     dismissMigration(id: string): Promise<void>;
     /** Write what is not written yet (after a failed write) and commit it. */
     save(): Promise<CommandResult>;
+    /**
+     * Write what is not written yet, then make one commit of all written files with `message` (trimmed) as the commit message, as
+     * given. It needs a git repository, not auto-commit. No undo step.
+     */
+    checkpoint(message: string): Promise<CommandResult>;
     /** Undo or redo one step. A step that changes an imported file is refused (`imported`: the files); it stays on its stack. */
     undo(): Promise<CommandResult>;
     redo(): Promise<CommandResult>;
