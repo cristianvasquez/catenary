@@ -212,8 +212,10 @@ describe('one batch, one commit (manifest §10.3)', () => {
         expect(count()).toBe(1);
         ok(store.executeBatch(tenEdits()));
         await store.idle();
+        expect(count()).toBe(1);
+        ok(await store.save());
         expect(count()).toBe(2);
-        expect(git('log', '-1', '--format=%s')).toMatch(/^Catenary: createInstance, addToView, setBounds, createRelation, rename/);
+        expect(git('log', '-1', '--format=%s')).toBe('Catenary: createInstance ×3, addToView ×2, setBounds ×2, createNote, createRelation, … (Product context)');
         expect(git('status', '--porcelain')).toBe('');
     });
 });

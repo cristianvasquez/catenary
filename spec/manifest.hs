@@ -24,14 +24,15 @@ module Catenary.Manifest where
 import Prelude hiding (Left, Right)   -- Side uses these names. The contract never matches on Either.
 import Control.Applicative ((<|>))
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, toLower)
-import Data.List (find, isPrefixOf, isSuffixOf, nub, sort, sortBy, sortOn)
+import Data.List (find, intercalate, isPrefixOf, isSuffixOf, nub, sort, sortBy, sortOn)
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe)
 
 -- | Design rules. Code comments cite them as "ADR <n>". Each line gives the rule, its reason, and where the contract states it.
 -- ADR 0001  One operation per action for all element kinds (rename, setUri, delete, copy, setStatements, one view-box model);
 --           kind-specific code only where the meaning differs (paths, ranges, sh:or lists, migrations). One read-model record
 --           per kind, shared accessors. Reason: a fix applies to all kinds. §6.
--- ADR 0003  The files are the model; the store is an index. An edit writes a text patch at once and makes a Git commit. §2, §10.
+-- ADR 0003  The files are the model; the store is an index. An edit writes a text patch at once. A Git commit follows after 60 s
+--           without content edits, or at a save. §2, §10.
 -- ADR 0004  Files have no roles: what a file contains comes from its triples. §2.
 -- ADR 0005  Electron app next to the browser app. One process, one profile, one ModelStore per workspace; a second window
 --           starts a new process (scripts/desktop.sh, electron-main-module.ts). Headless Electron gives no working window.
@@ -1781,25 +1782,50 @@ mayOverwrite disk known = disk == known
 
 -- 10.3 Git ------------------------------------------------------------------------------
 
--- | Git: each write batch is one commit of its changed files, git commit --only. Unrelated staged changes stay out.
+-- | Git: a commit takes the files written since the last commit, git commit --only. Unrelated staged changes stay out.
 -- Files with outside uncommitted changes, found at open or reload, are not committed automatically. Ignored files stay out.
--- No repository: write files, run no git command and give no warning. A failed commit path is retried at a later write.
--- ws:autoCommit true: commit each write batch. False is the default, and writers do not store it. False: write files, no git command.
+-- No repository: write files, run no git command and give no warning. A failed commit keeps its paths and its record for the next commit.
+-- ws:autoCommit true: commit the writes. False is the default, and writers do not store it. False: write files, no git command.
 -- Turning ws:autoCommit on checks again for a repository (a git init after the open).
 -- Reason: a commit changes the history of the user; the author turns it on. A folder without a repository has nothing to commit to.
--- A batch can hold several command kinds. There is no promise of one commit per EditCommand.
--- One write run gives one commit for all changes queued before it runs (Writer.queueWrite). An exec batch (§5.2) does not wait
--- between its commands: it is one write run and one commit.
 data FileState = FileState { written :: Bool, outsideChanges :: Bool, gitIgnored :: Bool }
 data GitState = GitState { inRepository :: Bool, autoCommitOn :: Bool }
-commitPaths :: GitState -> [(FilePath, FileState)] -> [FilePath]   -- the files of one write batch
+commitPaths :: GitState -> [(FilePath, FileState)] -> [FilePath]   -- the files written since the last commit
 commitPaths g fs
   | not (inRepository g && autoCommitOn g) = []
   | otherwise = [f | (f, s) <- fs, written s, not (outsideChanges s), not (gitIgnored s)]
 autoCommitValue :: Bool -> Maybe String           -- the literal of ws:autoCommit; Nothing: not written
 autoCommitValue on = if on then Just "true" else Nothing
-gitArguments :: String -> [FilePath] -> [String]   -- message, the commitPaths of the batch
+gitArguments :: String -> [FilePath] -> [String]   -- message, the commitPaths
 gitArguments msg ps = ["commit", "--only", "-q", "-m", msg, "--"] ++ ps
+-- | Commit schedule (packages/rdf/src/saver.ts Writer.note, Writer.commit): a write never commits. A commit runs commitDelayMs after
+-- the last content edit, at Save, at dispose and at an open of another workspace. A layout-only edit (§11.3 ViewPatch) does not
+-- start or restart the timer: it goes in the next commit. Reason: a drag gives many writes, and one commit per write fills the history.
+commitDelayMs :: Int
+commitDelayMs = 60000
+commitCount :: Backend -> Int                       -- the commits that Catenary made in the repository of the workspace
+writeRun :: Backend -> Backend                      -- the queued write runs (Writer.write)
+commitTimer :: Backend -> Maybe Int                 -- the ms until the pending commit runs; Nothing: no timer
+law_writeDoesNotCommit :: Backend -> Bool
+law_writeDoesNotCommit b = commitCount (writeRun b) == commitCount b
+law_layoutDoesNotStartCommitTimer :: Backend -> EditCommand -> Bool
+law_layoutDoesNotStartCommitTimer b c =
+  let b' = snd (step b (Execute c))
+  in isLayoutPatch b (lastPatch b') ==> commitTimer b' == commitTimer b
+-- | The pending record: the command kinds of the edits since the last commit with their counts (undo, redo, files and import notes
+-- count as kinds), and the labels of the views that the edits changed (a view not in the graph: the local name of its IRI).
+-- The message: the kinds by count, descending, then by name; `kind ×N` for a count above 1; at most 5, then `…`. Then up to 3 view
+-- labels, sorted, in parentheses. Example: "Catenary: setBounds ×12, createRelation ×2 (EP-portal-datasets, tasks)".
+-- Reason: the history says what changed and where, in one line. An exec batch (§5.2) counts each of its commands.
+data PendingCommit = PendingCommit { pendingKinds :: [(String, Int)], pendingViewLabels :: [String] }
+commitMessage :: PendingCommit -> String
+commitMessage p =
+  let byCount (k, n) (k', n') = compare n' n <> compare k k'
+      shown (k, n) = if n == 1 then k else k ++ " ×" ++ show n
+      ks = map shown (sortBy byCount (pendingKinds p))
+      vs = sortBy compareLabels (pendingViewLabels p)
+      list n xs = intercalate ", " (take n xs) ++ (if length xs > n then ", …" else "")
+  in "Catenary: " ++ list 5 ks ++ (if null vs then "" else " (" ++ list 3 vs ++ ")")
 
 -- 10.4 Watcher --------------------------------------------------------------------------
 
@@ -2320,6 +2346,9 @@ storeQuads = manifestOnly
 historyOf = manifestOnly
 filesOf = manifestOnly
 lastPatch = manifestOnly
+commitCount = manifestOnly
+writeRun = manifestOnly
+commitTimer = manifestOnly
 viewExists = manifestOnly
 mintIri = manifestOnly
 objectsOf = manifestOnly

@@ -560,7 +560,7 @@ describe('shapes files in the store', () => {
         expect(Object.values(docOf(store).shapes.nodeShapes).map(s => s.label)).toContain('Outside');
     });
 
-    it('git: each write is one commit of the written files; staged changes of the user stay out; an undo removes a new view file', async () => {
+    it('git: each save is one commit of the written files; staged changes of the user stay out; an undo removes a new view file', async () => {
         const f = files();
         // Auto-commit is off by default: turn it on before the repository exists, so that the initial commit has it.
         const before = await opened(f.ws);
@@ -576,19 +576,127 @@ describe('shapes files in the store', () => {
         git('add', 'notes.txt');
         const store = await opened(f.ws);
         ok(store.execute({ kind: 'rename', id: instanceId(store, 'Product usage data'), label: 'Renamed' }));
-        await store.idle();
+        ok(await store.save());
         expect(git('log', '-1', '--format=%s')).toBe('Catenary: rename');
         expect(git('show', '--name-only', '--format=', 'HEAD')).toBe('data.ttl');
         expect(git('diff', '--cached', '--name-only')).toBe('notes.txt');
         ok(store.execute({ kind: 'createView', label: 'Road map' }));
-        await store.idle();
+        ok(await store.save());
         expect(git('show', '--name-status', '--format=', 'HEAD')).toBe('A\tviews/road-map.view.trig');
         store.undo();
-        await store.idle();
+        ok(await store.save());
         expect(git('log', '-1', '--format=%s')).toBe('Catenary: undo');
         expect(git('show', '--name-status', '--format=', 'HEAD')).toBe('D\tviews/road-map.view.trig');
         expect(git('status', '--porcelain')).toBe('A  notes.txt');
         expect(store.warnings.filter(w => w.startsWith('Not '))).toEqual([]);
+    });
+
+    describe('commit on idle, not on write (manifest §10.3)', () => {
+        /** A workspace in a new repository with auto-commit on, and a store with `commitDelay`. */
+        async function inRepo(commitDelay?: number) {
+            const f = files();
+            const before = await openStore(f.ws);
+            ok(await before.setSettings({ autoCommit: true }));
+            await before.idle();
+            await before.dispose();
+            const git = (...args: string[]) => execFileSync('git', args, { cwd: f.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+            git('init', '-q');
+            git('config', 'user.name', 'Test');
+            git('config', 'user.email', 'test@example.org');
+            git('add', '-A');
+            git('commit', '-q', '-m', 'start');
+            const store = new ModelStore({ commitDelay });
+            store.watching = false;
+            ok(await store.open(f.ws));
+            const count = () => Number(git('rev-list', '--count', 'HEAD'));
+            const subject = () => git('log', '-1', '--format=%s');
+            return { f, git, store, count, subject };
+        }
+        const rename = async (store: ModelStore, from: string, to: string) => {
+            ok(store.execute({ kind: 'rename', id: instanceId(store, from), label: to }));
+            await store.idle();
+        };
+        /** Fire the commit timer, then wait for the queued commit. */
+        const fire = async (store: ModelStore) => {
+            vi.advanceTimersByTime(60000);
+            await store.idle();
+        };
+
+        it('law_writeDoesNotCommit: an edit writes its file and makes no commit', async () => {
+            const { f, git, store, count } = await inRepo();
+            await rename(store, 'Product usage data', 'Renamed');
+            expect(store.dirty).toBe(false);
+            expect(f.read('data.ttl')).toContain('"Renamed"');
+            expect(count()).toBe(1);
+            expect(git('status', '--porcelain')).toBe('M data.ttl');
+            await store.dispose();
+        });
+
+        it('two edits, then the timer: one commit with the count of the kind', async () => {
+            const { git, store, count, subject } = await inRepo(0);
+            await rename(store, 'Product usage data', 'Renamed');
+            await rename(store, 'Renamed', 'Renamed again');
+            expect(count()).toBe(1);
+            await fire(store);
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Catenary: rename ×2');
+            expect(git('status', '--porcelain')).toBe('');
+            await store.dispose();
+        });
+
+        it('law_layoutDoesNotStartCommitTimer: a setBounds alone makes no commit; a rename after it commits both with the view label', async () => {
+            const { git, store, count, subject } = await inRepo(0);
+            const view = Object.values(docOf(store).views)[0];
+            const box = boxes(view, 'card')[0];
+            ok(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: box.id, x: box.x + 40, y: box.y + 40 }] }));
+            await store.idle();
+            expect(store.dirty).toBe(false);
+            await fire(store);
+            expect(count()).toBe(1);
+            await rename(store, 'Product usage data', 'Renamed');
+            await fire(store);
+            expect(count()).toBe(2);
+            expect(subject()).toBe(`Catenary: rename, setBounds (${view.label})`);
+            expect(git('status', '--porcelain')).toBe('');
+            await store.dispose();
+        });
+
+        it('save() commits at once', async () => {
+            const { store, count, subject } = await inRepo();
+            await rename(store, 'Product usage data', 'Renamed');
+            expect(count()).toBe(1);
+            ok(await store.save());
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Catenary: rename');
+            await store.dispose();
+        });
+
+        it('dispose() commits what is pending', async () => {
+            const { git, store, count, subject } = await inRepo();
+            await rename(store, 'Product usage data', 'Renamed');
+            await store.dispose();
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Catenary: rename');
+            expect(git('status', '--porcelain')).toBe('');
+        });
+
+        it('a failed commit keeps the record: the next commit includes it', async () => {
+            const { f, store, count, subject } = await inRepo(0);
+            const hook = join(f.dir, '.git/hooks/pre-commit');
+            writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+            await rename(store, 'Product usage data', 'Renamed');
+            await fire(store);
+            expect(count()).toBe(1);
+            expect(store.warnings.some(w => w.startsWith('Not committed:'))).toBe(true);
+            rmSync(hook);
+            ok(store.execute({ kind: 'createView', label: 'Road map' }));
+            await store.idle();
+            await fire(store);
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Catenary: createView, rename (Road map)');
+            expect(store.warnings.some(w => w.startsWith('Not committed:'))).toBe(false);
+            await store.dispose();
+        });
     });
 
     it('a blank node of the data file that a view shows gets its IRI in the data file; the view shows it after a new open', async () => {

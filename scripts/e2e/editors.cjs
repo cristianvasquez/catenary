@@ -503,6 +503,8 @@ test('browser: CLI exec batch: ten edits with IRIs are one undo step and one com
   const waitUntil = strictWait(app);
   const git = (...args) => spawnSync('git', args, { cwd: workspace, encoding: 'utf8' }).stdout.trim();
   assert.equal(cli('rpc', 'setSettings', JSON.stringify({ autoCommit: true })).result.ok, true);
+  // A write does not commit (manifest §10.3 law_writeDoesNotCommit): save commits at once.
+  assert.equal(cli('rpc', 'save').result.ok, true);
   await waitUntil('the settings are written and committed', () => ({ dirty: cli('status').model.dirty, porcelain: git('status', '--porcelain') }),
     s => !s.dirty && s.porcelain === '');
   const commits = () => Number(git('rev-list', '--count', 'HEAD'));
@@ -544,10 +546,11 @@ test('browser: CLI exec batch: ten edits with IRIs are one undo step and one com
   const done = exec(edits.map(c => JSON.stringify(c)).join('\n'));
   assert.equal(done.status, 0, done.stdout + done.stderr);
   assert.equal(JSON.parse(done.stdout).result.results[0].iri, 'urn:name:Batch%20one');
+  assert.equal(cli('rpc', 'save').result.ok, true);
   await waitUntil('the batch is written and committed', () => ({ dirty: cli('status').model.dirty, porcelain: git('status', '--porcelain'), commits: commits() }),
     s => !s.dirty && s.porcelain === '' && s.commits > before.commits);
   assert.equal(commits(), before.commits + 1);
-  assert.match(git('log', '-1', '--format=%s'), /^Catenary: createInstance, addToView, setBounds, createRelation, rename/);
+  assert.match(git('log', '-1', '--format=%s'), /^Catenary: createInstance ×3, addToView ×2, setBounds ×2, createNote, createRelation, … \(Product context\)$/);
   for (const label of ['Batch one', 'Batch two renamed', 'Batch three']) assert.ok(labels().includes(label), label);
   cli('undo');
   assert.deepEqual(labels(), before.labels);

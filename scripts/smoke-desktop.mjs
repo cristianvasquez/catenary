@@ -69,7 +69,7 @@ function copyTree(from, to) {
 mkdirSync(run);
 if (!launcher) {
     copyTree(join(root, 'examples/bookshop'), ws);
-    // The edits below check that each write is committed: auto-commit is off by default (ws:autoCommit, spec/manifest.hs §10.3).
+    // The edits below check that each save is committed: auto-commit is off by default (ws:autoCommit, spec/manifest.hs §10.3).
     const manifest = join(ws, 'workspace.trig');
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('ws:defaultFile "data.ttl";', 'ws:autoCommit true;\n    ws:defaultFile "data.ttl";'));
     if (!readFileSync(manifest, 'utf8').includes('ws:autoCommit true')) throw new Error(`no ws:defaultFile line in ${manifest}`);
@@ -125,8 +125,9 @@ const rpc = (method, ...args) => cli('rpc', { method, args });
 const evaluate = code => cli('eval', { code });
 const status = () => cli('status');
 const commits = () => Number(git('rev-list', '--count', 'HEAD'));
-/** The edit is on disk and in Git: nothing dirty, a new commit, a clean Git status. */
+/** The edit is on disk and in Git: nothing dirty, a new commit, a clean Git status. A write does not commit: save commits at once (§10.3). */
 const settled = async before => {
+    await rpc('save');
     await until('write and commit', async () => !(await status()).model.dirty && commits() > before && git('status', '--porcelain') === '');
     return commits();
 };

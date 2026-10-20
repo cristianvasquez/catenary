@@ -101,7 +101,9 @@ it.each(['open', 'reload'])('git preserves user changes present at %s and warns 
     const store = before ?? await f.open();
     if (before) await store.syncFromDisk();
     await rename(store);
+    expect(await store.save()).toEqual({ ok: true });
     await rename(store, 'Again');
+    expect(await store.save()).toEqual({ ok: true });
     expect(f.git('log', '-1', '--format=%s')).toBe('initial');
     expect(f.read('data file.ttl')).toContain('"Again"');
     expect(store.warnings.filter(w => w.includes('not committed: data file.ttl has changes that are not committed'))).toHaveLength(1);
@@ -131,6 +133,7 @@ it('auto-commit off (the default): the files are written and not committed; on c
     expect(store.warnings.filter(w => w.startsWith('not committed:'))).toEqual([]);
     expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
     await rename(store, 'Again');
+    expect(await store.save()).toEqual({ ok: true });
     expect(f.git('log', '-1', '--format=%s')).toMatch(/^Catenary: /);
     expect(f.git('status', '--porcelain')).toBe('');
 });
@@ -144,6 +147,7 @@ it('auto-commit off: a read from disk of another file keeps the writes of Catena
     expect(await store.syncFromDisk()).toEqual(['other.ttl']);
     expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
     await rename(store, 'Again');
+    expect(await store.save()).toEqual({ ok: true });
     expect(f.git('log', '-1', '--format=%s')).toMatch(/^Catenary: /);
     expect(f.git('show', '--name-only', '--format=', 'HEAD').split('\n')).toContain('data.ttl');
     expect(f.git('status', '--porcelain')).toBe('M other.ttl');
@@ -161,6 +165,7 @@ it('a file changed outside Catenary stays out of commits after a later read of a
     expect(await store.syncFromDisk()).toEqual(['other.ttl']);
     expect(await store.setSettings({ autoCommit: true })).toEqual({ ok: true });
     await rename(store, 'Again');
+    expect(await store.save()).toEqual({ ok: true });
     expect(f.git('show', '--name-only', '--format=', 'HEAD').split('\n')).not.toContain('data.ttl');
     expect(f.git('diff', '--name-only').split('\n')).toContain('data.ttl');
     expect(store.warnings.filter(w => w.includes('data.ttl has changes that are not committed'))).toHaveLength(1);
@@ -187,6 +192,7 @@ it('a failed commit keeps its paths for the next write', async () => {
     f.put('.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n');
     chmodSync(join(f.dir, '.git/hooks/pre-commit'), 0o755);
     await rename(store);
+    expect(await store.save()).toEqual({ ok: true });
     expect(f.git('log', '-1', '--format=%s')).toBe('initial');
     rmSync(join(f.dir, '.git/hooks/pre-commit'));
     expect(await store.save()).toEqual({ ok: true });
@@ -201,6 +207,7 @@ it('failed commit notes survive a reopen, but do not reach another coordinator',
     f.put('.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n');
     chmodSync(join(f.dir, '.git/hooks/pre-commit'), 0o755);
     await rename(store);
+    expect(await store.save()).toEqual({ ok: true });
     const failure = store.warnings.find(w => w.startsWith('Not committed:'));
     expect(failure).toBeDefined();
     expect(await store.open(join(f.dir, 'workspace.trig'))).toEqual({ ok: true });
@@ -209,8 +216,8 @@ it('failed commit notes survive a reopen, but do not reach another coordinator',
     const second = await other.open();
     rmSync(join(f.dir, '.git/hooks/pre-commit'));
     expect(store.execute({ kind: 'createView', label: 'New' }).ok).toBe(true);
-    await store.idle();
-    expect(f.git('log', '-1', '--format=%s')).toBe('Catenary: rename, createView');
+    expect(await store.save()).toEqual({ ok: true });
+    expect(f.git('log', '-1', '--format=%s')).toBe('Catenary: createView, rename (New)');
     expect(store.warnings).not.toContain(failure);
     expect(await second.save()).toEqual({ ok: true });
     expect(other.git('log', '-1', '--format=%s')).toBe('initial');

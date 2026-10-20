@@ -19,7 +19,7 @@ import type { StoreTrap } from 'rdf-files';
 import { authoringMetamodel } from './authoring';
 import { commandShapeError, executeCommand, mapCommandIds } from './commands';
 import { Placement, decorateFileReferences, referencedFiles } from './files';
-import { ChangeScope, Classified, REPORT_GRAPH, classify, keepsReads, mergeRecords, tierOf } from './change';
+import { ChangeScope, Classified, REPORT_GRAPH, classify, keepsReads, layoutOnly, mergeRecords, tierOf } from './change';
 import { GraphChange, ModelGraph, Patch } from './graph';
 import { History } from 'rdf-core';
 import { elementId, elementTerm, relationTriple } from './ids';
@@ -40,7 +40,7 @@ import { rdf, termKey } from './terms';
 import { TracedStore, tracer } from './trace';
 import { ValidationData } from './validation-data';
 import { ValidationRunner } from './validation-runner';
-import { readView } from './view-read';
+import { readView, viewLabels } from './view-read';
 import { views, V } from './views';
 import { P } from './vocabulary';
 import { newModelGraph } from './model-graph';
@@ -205,17 +205,7 @@ export class ModelStore {
     /** The calls of `syncFromDisk` that have not ended (outside the file queue): `dispose` waits for them. */
     protected readonly diskReads = new Set<Promise<unknown>>();
 
-    protected readonly writer = (() => {
-        const store = this;
-        return new Writer({
-            saver: () => this.saver,
-            writable: () => !!this.settings && !this.settings.gone,
-            queue: this.fileQueue,
-            get warnings() { return store.warnings; },
-            set warnings(warnings: string[]) { store.warnings = warnings; },
-            saved: () => this.changed('save')
-        });
-    })();
+    protected readonly writer: Writer;
 
     protected readonly reconciler = new Reconciler({
         settings: () => this.settings,
@@ -233,6 +223,20 @@ export class ModelStore {
     });
 
     protected readonly listeners = new Set<Listener>();
+
+    /** `commitDelay`: the ms without content edits before the auto-commit (manifest §10.3; tests pass 0). */
+    constructor(options: { commitDelay?: number } = {}) {
+        const store = this;
+        this.writer = new Writer({
+            saver: () => this.saver,
+            writable: () => !!this.settings && !this.settings.gone,
+            queue: this.fileQueue,
+            get warnings() { return store.warnings; },
+            set warnings(warnings: string[]) { store.warnings = warnings; },
+            saved: () => this.changed('save'),
+            viewLabels: () => this.settings ? viewLabels(this.graph) : {}
+        }, options);
+    }
 
     /** Call `listener` after each change. */
     onDidChange(listener: Listener): { dispose(): void } {
@@ -681,7 +685,7 @@ export class ModelStore {
     protected commitEdit(patch: Patch, kinds: string[], shapesBefore: ShapesIndex, revision: unknown, migration?: string, transferFiles: string[] = []): void {
         const ws = this.settings!;
         if (patch.length) {
-            this.writer.commitNotes.push(...kinds);
+            this.writer.note(kinds, this.classify(patch).views.map(v => elementTerm(v)?.value ?? v), layoutOnly(this.graph, patch));
             this.track(patch);
         }
         this.history.record(patch, migration, this.graph.proposed, transferFiles);
@@ -811,7 +815,7 @@ export class ModelStore {
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
-        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.commitNotes.push(reason);
+        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.note([reason]);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
     }
@@ -871,6 +875,9 @@ export class ModelStore {
         return this.disposal ??= (async () => {
             this.close();
             await this.validation.dispose();
+            // The pending commit, after the writes that are queued (manifest §10.3).
+            this.writer.stopTimer();
+            void this.fileQueue.run(() => this.writer.commit());
             for (let queued = -1; queued !== this.fileQueue.queued || this.diskReads.size;) {
                 queued = this.fileQueue.queued;
                 await Promise.allSettled([...this.diskReads]);
@@ -987,6 +994,8 @@ export class ModelStore {
 
     /** `ofFolder`: the folder was given; a workspace file that is not on disk is the default manifest. */
     protected async doOpen(primaryPath: string, ofFolder = false): Promise<CommandResult> {
+        // The pending commit of the open workspace, before another one loads (manifest §10.3): the next Saver has other paths.
+        await this.writer.commit();
         const { graph, guard } = this.newGraph();
         const r = await openWorkspace(graph, primaryPath, ofFolder);
         if ('error' in r) return { ok: false, error: r.error };
@@ -1064,7 +1073,7 @@ export class ModelStore {
         if (!ws) return { ok: false, error: 'No workspace is open.' };
         // A file to mark as imported must be on disk as Catenary has it: the write gives blank nodes their IRIs in the file.
         if (settings.imported?.some(g => !ws.importedGlobs.includes(g)) && this.saver!.dirty) {
-            this.writer.commitNotes.push('before import mark');
+            this.writer.note(['before import mark']);
             await this.writer.write();
         }
         const validation = ws.validation;
@@ -1111,16 +1120,20 @@ export class ModelStore {
             settings: () => this.settings, readSources: readImportSources,
             copies: (folder, reads) => new ImportCopies(folder, reads),
             dirty: () => this.saver!.dirty, savedState: () => this.saver!.savedState(),
-            commitNote: note => this.writer.commitNotes.push(note), write: () => this.writer.write(),
+            commitNote: note => this.writer.note([note]), write: () => this.writer.write(),
             written: files => this.saver!.written.push(...files), reopen: file => this.doOpen(file),
             prefixesChanged: () => { this.graph.invalidate(); this.rebuildMetamodel(); },
             note: text => this.note(text), changed: () => this.changed('files')
         }));
     }
 
-    /** Write the files that are not written yet (after a failed write), and commit them. Normally there is nothing to write. */
+    /** Write the files that are not written yet (after a failed write), then commit what is pending (manifest §10.3). */
     save(): Promise<CommandResult> {
-        return this.serial(() => this.writer.write());
+        return this.serial(async () => {
+            const r = await this.writer.write();
+            if (r.ok) await this.writer.commit();
+            return r;
+        });
     }
 
     protected note(text: string): void {

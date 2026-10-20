@@ -1,13 +1,14 @@
 // The saver (ADR 0003): what differs from the files on disk, and the save. A save writes each changed file (Turtle that Catenary read
-// or wrote: a patch of its text, text-patch.ts), all or none, and records the written paths for the commit. The canonical form of each
+// or wrote: a patch of its text, text-patch.ts), all or none, and records the written paths for the commit (Writer.commit). The canonical form of each
 // file is cached and computed again only for the files that a change touched.
 
-import { CommandResult, PREFIXES } from '@catenary/model';
+import { CommandResult, PREFIXES, compareLabels, localName } from '@catenary/model';
 import type { NamedNode, Quad } from '@rdfjs/types';
 import { existsSync, promises as fs } from 'fs';
 import * as path from 'path';
 import { OwnWrites, SerialQueue, StatementDiff, commitFiles, gitChanges, parseTurtleText, patchTurtle, patchTurtleDiff, pathKey, portableRelative, readUnchanged, termKey, tripleKey, writeAll } from 'rdf-files';
 import type { Change } from './graph';
+import { elementId } from './ids';
 import { IMPORT_FOLDER, manifestQuads, parseRdf, serializeRdf, writeProblem } from './files';
 import { ModelGraph, dataGraphIri, shapesGraphIri, fileOfGraph } from './graph';
 import { OnDisk, Saved, Settings } from './settings';
@@ -24,17 +25,63 @@ export interface WriterPort {
     queue: SerialQueue;
     warnings: string[];
     saved(): void;
+    /** The label of each view of the graph (view id -> label, view-read.ts viewLabels). */
+    viewLabels(): Record<string, string>;
 }
 
-/** Write batches and retry notes live across workspace opens. */
+/** What the next commit contains (manifest §10.3): command kinds with counts, the IRIs of the views touched, all edits layout-only. */
+export interface PendingCommit { kinds: Map<string, number>; views: Set<string>; layout: boolean }
+
+const emptyPending = (): PendingCommit => ({ kinds: new Map(), views: new Set(), layout: true });
+
+/**
+ * The commit message (manifest §10.3 commitMessage): the kinds by count (descending), then by name, `kind ×N` for a count above 1, at
+ * most 5 then `…`; then up to 3 view labels, sorted, in parentheses. `label`: the label of a view IRI.
+ */
+export function commitMessage(pending: PendingCommit, label: (view: string) => string): string {
+    const kinds = [...pending.kinds].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, n]) => n === 1 ? k : `${k} ×${n}`);
+    const views = [...pending.views].map(label).sort(compareLabels);
+    return `Catenary: ${kinds.slice(0, 5).join(', ')}${kinds.length > 5 ? ', …' : ''}${views.length ? ` (${views.slice(0, 3).join(', ')}${views.length > 3 ? ', …' : ''})` : ''}`;
+}
+
+/** Write batches and the pending commit live across workspace opens. A write does not commit: a commit runs after `commitDelay` ms without content edits, or at `commit()`. */
 export class Writer {
     protected writeQueued = false;
-    /** What the next commit contains: command kinds, undo, redo, files. */
-    readonly commitNotes: string[] = [];
-    /** The last write error; it shows in the warnings until a write succeeds. */
+    /** What the next commit contains. */
+    pending = emptyPending();
+    /** The last write or commit error; it shows in the warnings until that step succeeds. */
     writeError?: string;
+    /** The step that gave `writeError`: a write that succeeds does not clear a commit error. */
+    protected errorOf?: 'write' | 'commit';
+    protected timer?: ReturnType<typeof setTimeout>;
+    readonly commitDelay: number;
 
-    constructor(protected readonly port: WriterPort) {}
+    constructor(protected readonly port: WriterPort, options: { commitDelay?: number } = {}) {
+        this.commitDelay = options.commitDelay ?? 60000;
+    }
+
+    /**
+     * Add to the next commit: command kinds (undo, redo, files, …), the IRIs of the views touched. A content edit (`layoutOnly` not
+     * true) starts the commit timer again (law_layoutDoesNotStartCommitTimer).
+     */
+    note(kinds: string[], views: string[] = [], layoutOnly = false): void {
+        for (const k of kinds) this.pending.kinds.set(k, (this.pending.kinds.get(k) ?? 0) + 1);
+        for (const v of views) this.pending.views.add(v);
+        this.pending.layout &&= layoutOnly;
+        if (layoutOnly) return;
+        this.stopTimer();
+        this.timer = setTimeout(() => {
+            this.timer = undefined;
+            void this.port.queue.run(() => this.commit());
+        }, this.commitDelay);
+        this.timer.unref?.();
+    }
+
+    /** Stop the commit timer (dispose, open). */
+    stopTimer(): void {
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = undefined;
+    }
 
     /** Queue one write for all changes that come before it runs. */
     queueWrite(): void {
@@ -46,27 +93,64 @@ export class Writer {
         });
     }
 
-    /** Write the changed files and commit them. Keep a failure visible until success. */
+    /** Write the changed files (law_writeDoesNotCommit). Keep a failure visible until success. */
     async write(): Promise<CommandResult> {
         const ws = this.port.saver();
+        const warningCount = this.port.warnings.length;
         const r: CommandResult = ws ? await tracer.span('file', 'save', () => ws.save()) : { ok: false, error: 'No workspace is open.' };
         // A write does not change the dataset: the caches stay (only the dirty state changes).
-        if (r.ok) this.port.saved();
-        const notes = [...new Set(this.commitNotes.splice(0))];
+        if (r.ok) {
+            this.port.saved();
+            ws!.written = [...new Set(ws!.written)];
+        }
+        this.report(r.ok ? undefined : `Not written: ${r.error}`, 'write', warningCount);
+        return r;
+    }
+
+    /**
+     * Commit the written files with the message of the pending record, then clear the record and the paths. Auto-commit off, or no
+     * repository: no commit, the paths stay (a later read from disk does not take Catenary's writes for changes of the user, and a
+     * commit after auto-commit is turned on includes them). A failed commit keeps the record and the paths for the next commit.
+     */
+    async commit(): Promise<void> {
+        this.stopTimer();
+        const ws = this.port.saver();
+        if (!ws || !this.pending.kinds.size) return;
         const warningCount = this.port.warnings.length;
-        const files = ws?.committable() ?? [];
-        const error = !r.ok ? `Not written: ${r.error}` : files.length
-            ? await tracer.span('file', 'commit', () => commitFiles(files, `Catenary: ${notes.slice(0, 5).join(', ')}${notes.length > 5 ? ', …' : ''}`)) : undefined;
-        // No commit (auto-commit off, or no repository): keep the paths, so that a later read from disk does not take Catenary's
-        // writes for changes of the user, and a commit after auto-commit is turned on includes them.
-        if (r.ok && !error) ws!.written = ws!.commits ? [] : [...new Set(ws!.written)];
-        if (error) this.commitNotes.unshift(...notes);
+        // Notes of edits during the commit go to a new record.
+        const pending = this.pending;
+        this.pending = emptyPending();
+        const files = ws.committable();
+        // Auto-commit off: nothing to keep. Nothing to commit yet (a failed write): the record waits for the files.
+        if (!files.length) {
+            if (ws.commits) this.restore(pending);
+            return;
+        }
+        const labels = this.port.viewLabels();
+        const message = commitMessage(pending, v => labels[elementId(rdf.namedNode(v))] ?? localName(v));
+        const error = await tracer.span('file', 'commit', () => commitFiles(files, message));
+        if (error) this.restore(pending);
+        else ws.written = [];
+        this.report(error, 'commit', warningCount);
+    }
+
+    /** Put a record back before the notes that came after it. */
+    protected restore(pending: PendingCommit): void {
+        for (const [k, n] of this.pending.kinds) pending.kinds.set(k, (pending.kinds.get(k) ?? 0) + n);
+        for (const v of this.pending.views) pending.views.add(v);
+        pending.layout &&= this.pending.layout;
+        this.pending = pending;
+    }
+
+    /** Show the error of a write or a commit in the warnings, in place of the last one. */
+    protected report(error: string | undefined, step: 'write' | 'commit', warningCount: number): void {
+        if (!error && this.writeError && this.errorOf !== step) error = this.writeError;
+        else this.errorOf = error ? step : undefined;
         if (error !== this.writeError || this.port.warnings.length !== warningCount) {
             this.port.warnings = [...this.port.warnings.filter(w => w !== this.writeError), ...(error ? [error] : [])];
             this.writeError = error;
             this.port.saved();
         }
-        return r;
     }
 }
 
