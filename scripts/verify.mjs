@@ -18,7 +18,7 @@ const steps = [
 ];
 const logs = mkdtempSync(join(tmpdir(), 'catenary-verify-'));
 
-// The store writes and commits each edit (ADR 0003). A step must not change the test fixtures or make commits in this repository.
+// The store writes each edit at once and commits on a schedule (ADR 0003, manifest §10.3). A step must not change the test fixtures or make commits in this repository.
 const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' }).stdout.trim();
 const repoState = () => ({ head: git('rev-parse', 'HEAD'), fixtures: git('status', '--porcelain', '--', 'packages/rdf/test/fixtures') });
 const startState = repoState();
