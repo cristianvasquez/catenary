@@ -585,7 +585,7 @@ describe('shapes files in the store', () => {
         expect(git('show', '--name-status', '--format=', 'HEAD')).toBe('A\tviews/road-map.view.trig');
         store.undo();
         ok(await store.save());
-        expect(git('log', '-1', '--format=%s')).toBe('Catenary: undo');
+        expect(git('log', '-1', '--format=%s')).toBe('Catenary: undo (Road map)');
         expect(git('show', '--name-status', '--format=', 'HEAD')).toBe('D\tviews/road-map.view.trig');
         expect(git('status', '--porcelain')).toBe('A  notes.txt');
         expect(store.warnings.filter(w => w.startsWith('Not '))).toEqual([]);
@@ -657,6 +657,45 @@ describe('shapes files in the store', () => {
             await fire(store);
             expect(count()).toBe(2);
             expect(subject()).toBe(`Catenary: rename, setBounds (${view.label})`);
+            expect(git('status', '--porcelain')).toBe('');
+            await store.dispose();
+        });
+
+        it('law_layoutDoesNotStartCommitTimer: an undo and a redo of a setBounds make no commit after the timer', async () => {
+            const { store, count } = await inRepo(0);
+            const view = Object.values(docOf(store).views)[0];
+            const box = boxes(view, 'card')[0];
+            ok(store.execute({ kind: 'setBounds', view: view.id, bounds: [{ id: box.id, x: box.x + 40, y: box.y + 40 }] }));
+            await store.idle();
+            ok(store.undo());
+            await store.idle();
+            ok(store.redo());
+            await store.idle();
+            expect(store.dirty).toBe(false);
+            await fire(store);
+            expect(count()).toBe(1);
+            await store.dispose();
+        });
+
+        it('a workspace file changed on disk while a commit is pending: the reopen does not commit it', async () => {
+            const { f, git, store, count } = await inRepo();
+            ok(await store.setSettings({ validation: 'off' }));
+            await store.idle();
+            expect(git('status', '--porcelain')).toBe('M workspace.trig');
+            writeFileSync(f.ws, '# hand edit\n' + f.read('workspace.trig'));
+            await store.syncFromDisk();
+            expect(count()).toBe(1);
+            expect(git('diff', 'HEAD', '--', 'workspace.trig')).toContain('# hand edit');
+            await store.dispose();
+            expect(count()).toBe(1);
+        });
+
+        it('a settings change that reads the files again commits its write at the open', async () => {
+            const { git, store, count, subject } = await inRepo();
+            ok(await store.setSettings({ language: 'de' }));
+            await store.idle();
+            expect(count()).toBe(2);
+            expect(subject()).toBe('Catenary: files');
             expect(git('status', '--porcelain')).toBe('');
             await store.dispose();
         });

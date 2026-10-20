@@ -815,7 +815,9 @@ export class ModelStore {
             });
         } else for (const l of [...this.listeners]) l({ reason, event, scope, patch });
         // Disk is the source of truth (ADR 0003): every change is written at once.
-        if (reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.note([reason]);
+        if (reason === 'files') this.writer.note([reason]);
+        // An undo or a redo of a layout-only patch does not start the commit timer (§10.3 law_layoutDoesNotStartCommitTimer).
+        if (reason === 'undo' || reason === 'redo') this.writer.note([reason], scope?.views.map(v => elementTerm(v)?.value ?? v), !!scope?.layout);
         if (reason === 'edit' || reason === 'undo' || reason === 'redo' || reason === 'files') this.writer.queueWrite();
         if (reason === 'load' || reason === 'files' || reason === 'shapes') this.watch();
     }
@@ -925,6 +927,13 @@ export class ModelStore {
 
     protected async reopenFromDisk(file: string): Promise<void> {
         const name = path.basename(file);
+        // The pending commit of doOpen takes no written file that another program changed after Catenary wrote it (§10.3).
+        const saver = this.saver;
+        if (saver) {
+            const changed: string[] = [];
+            for (const f of new Set(saver.written)) if (!(await saver.ownWrites.isOwn(f))) changed.push(f);
+            await saver.recordUncommitted(changed);
+        }
         const r = await this.doOpen(file);
         this.warnings = [...this.warnings, r.ok ? `${name} changed on disk: the workspace was opened again.` : `${name} changed on disk and cannot be opened: ${r.error}`];
         this.changed('files');
@@ -1081,6 +1090,8 @@ export class ModelStore {
         if ('error' in r) return { ok: false, error: r.error };
         if (ws.validation !== validation) this.validation.invalidate(0);
         if (r.reread) {
+            // The open again commits this write (doOpen): the next Saver does not have its path.
+            this.writer.note(['files']);
             await this.writer.write();
             return this.doOpen(ws.path);
         }

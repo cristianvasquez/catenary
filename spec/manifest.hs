@@ -1799,7 +1799,8 @@ autoCommitValue on = if on then Just "true" else Nothing
 gitArguments :: String -> [FilePath] -> [String]   -- message, the commitPaths
 gitArguments msg ps = ["commit", "--only", "-q", "-m", msg, "--"] ++ ps
 -- | Commit schedule (packages/rdf/src/saver.ts Writer.note, Writer.commit): a write never commits. A commit runs commitDelayMs after
--- the last content edit, at Save, at dispose and at an open of another workspace. A layout-only edit (§11.3 ViewPatch) does not
+-- the last content edit, at Save, at dispose and at each open (also a reopen; a file changed on disk after Catenary wrote it stays
+-- out). A layout-only edit, undo or redo (§11.3 ViewPatch) does not
 -- start or restart the timer: it goes in the next commit. Reason: a drag gives many writes, and one commit per write fills the history.
 commitDelayMs :: Int
 commitDelayMs = 60000
@@ -1808,10 +1809,10 @@ writeRun :: Backend -> Backend                      -- the queued write runs (Wr
 commitTimer :: Backend -> Maybe Int                 -- the ms until the pending commit runs; Nothing: no timer
 law_writeDoesNotCommit :: Backend -> Bool
 law_writeDoesNotCommit b = commitCount (writeRun b) == commitCount b
-law_layoutDoesNotStartCommitTimer :: Backend -> EditCommand -> Bool
-law_layoutDoesNotStartCommitTimer b c =
-  let b' = snd (step b (Execute c))
-  in isLayoutPatch b (lastPatch b') ==> commitTimer b' == commitTimer b
+law_layoutDoesNotStartCommitTimer :: Backend -> Op -> Bool   -- an edit, an undo or a redo of a layout-only patch
+law_layoutDoesNotStartCommitTimer b op =
+  let b' = snd (step b op)
+  in isChangeOp op && isLayoutPatch b (lastPatch b') ==> commitTimer b' == commitTimer b
 -- | The pending record: the command kinds of the edits since the last commit with their counts (undo, redo, files and import notes
 -- count as kinds), and the labels of the views that the edits changed (a view not in the graph: the local name of its IRI).
 -- The message: the kinds by count, descending, then by name; `kind ×N` for a count above 1; at most 5, then `…`. Then up to 3 view
