@@ -1,3 +1,7 @@
+---
+repo-group: rdf
+tags: [package/rdf]
+---
 # rdf-files
 
 `rdf-files` reads and writes RDF files on disk and keeps their quads in an in-memory quad store. It detects the RDF format from the file extension and writes a canonical form. It patches the text of Turtle files. It watches folders, writes several files atomically and commits files with git. It runs in Node only. It does not import any `@catenary` package (`scripts/check-boundaries.mjs` checks this). It depends on `rdf-serialization` for canonical form and Turtle/TriG serialization.

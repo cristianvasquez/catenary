@@ -1,3 +1,7 @@
+---
+repo-group: rdf
+tags: [package/rdf]
+---
 # rdf-core
 
 A quad store with graph roles and transactions. Each transaction records a patch. Undo and redo apply a patch backwards and forwards. Each committed patch publishes one change event with the cache inputs that it invalidates. Node only. The package imports no Catenary package: `scripts/check-boundaries.mjs` rejects other imports.

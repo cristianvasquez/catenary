@@ -1,3 +1,7 @@
+---
+repo-group: rdf
+tags: [package/rdf]
+---
 # Catenary RDF serialization
 
 This package vendors the canonicalization and Turtle/TriG serialization code that Catenary needs. It does not include the `rdf-cli` command or pipeline.

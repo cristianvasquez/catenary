@@ -5,9 +5,9 @@ repo-name: catenary
 repo-group: rdf
 tags: [repo/rdf]
 layout: node.js
+notes: Published
 ---
-
-# Catenary
+# [Catenary](osg://repo/github.com/cristianvasquez/catenary)
 
 A scribble tool for RDF models. Sketch shapes and instances on a canvas, in any order, until the model is consistent. Then write it up with diagrams and share it.
 
@@ -76,7 +76,9 @@ E2E_REPLY_DELAY_MS=300 E2E_TEST='<exact name>' pnpm e2e   # editors scenarios: e
 `pnpm e2e` (`scripts/e2e.cjs`) runs the browser scenarios of `scripts/e2e/`. `E2E_CONCURRENCY` sets the number of parallel scenarios (default 3). A failed scenario that starts a backend keeps its temporary folder (`$TMPDIR/catenary-<name>-*`). The two rendering checks start no backend and keep no folder. The folder holds the workspace, the configuration, `backend-browser.log`, `diagnostics.json` (phase, URL, backend exit code and signal, last CLI commands, browser errors), `failure.png` and `page.html`.
 
 Canvas command `catenary.copyAsRdf` copies selected model RDF as readable Turtle without placement metadata.
+
 RPC queries `prepareRdfPaste(text, mediaType?)` and `copyAsRdf(viewId, ids)` parse and export clipboard RDF.
+
 The `pasteRdf` edit accepts parsed N-Quads, a view, an optional position, and explicit consent to flatten named graphs.
 
 By default, the first start copies [`examples/bookshop`](examples/bookshop/readme.md) to `~/.local/share/catenary/workspaces/example` or `$XDG_DATA_HOME/catenary/workspaces/example`. Catenary edits the copy, not the tracked example, and does not overwrite a non-empty workspace. Set `CATENARY_WORKSPACE` to use another folder. For another desktop workspace, use `bash scripts/desktop.sh <folder>`. Each workspace gets its own Electron profile in `~/.config/catenary/profiles/<hash>`, so each workspace runs in its own process with its own backend. A second launch on the same workspace focuses the open window. `--user-data-dir=<dir>` overrides the profile. Backend logs of all instances also go to `~/.local/state/catenary/backend.log`.

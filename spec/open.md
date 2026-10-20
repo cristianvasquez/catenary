@@ -1,3 +1,7 @@
+---
+repo-group: rdf
+tags: [spec/rdf]
+---
 # Open work
 
 The contracts (spec/manifest.hs, spec/ui-manifest.hs) define target behavior. This file holds decisions, implementation gaps and defects. Do not change a contract merely to match the code.
