@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CommandResult, EditCommand, Migration, ModelSelection, NewLabelKind, Range, SearchHit, emptyDoc, emptySelected, newLabel } from '@catenary/model';
 import { ModelActions } from '../src/browser/actions';
 import { viewAsItem } from '../src/browser/action-service';
@@ -249,4 +249,33 @@ it('Duplicate View: asks for the file of the copy, proposed next to the source; 
     expect(execute).toHaveBeenCalledWith({ kind: 'duplicateView', id: 'v', file: 'views/road-copy.trig' });
     expect(editors.open).toHaveBeenCalledWith('copy');
     expect(follow).not.toHaveBeenCalled();
+});
+
+describe('Checkpoint… (spec/ui-manifest.hs §4.10)', () => {
+    function checkpointFixture(answer: string | undefined, result: CommandResult) {
+        const checkpoint = vi.fn(async (_message: string): Promise<CommandResult> => result);
+        const messages = { error: vi.fn() };
+        const model = Object.assign(new ModelFrontend(), { service: { checkpoint }, messages });
+        const input = vi.fn(async () => answer);
+        const actions = Object.assign(new ModelActions(), { model, quick: { input }, messages });
+        return { actions, checkpoint, messages, input };
+    }
+
+    it('a text from the input box goes to checkpoint as it is; an error result shows the error', async () => {
+        const ok = checkpointFixture('  Add the road map ', { ok: true });
+        await ok.actions.checkpoint();
+        expect(ok.input).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Commit message' }));
+        expect(ok.checkpoint.mock.calls).toEqual([['  Add the road map ']]);
+        expect(ok.messages.error).not.toHaveBeenCalled();
+        const failed = checkpointFixture('Add the road map', { ok: false, error: 'Checkpoint: not a git repository.' });
+        await failed.actions.checkpoint();
+        expect(failed.messages.error.mock.calls).toEqual([['Checkpoint: not a git repository.']]);
+    });
+
+    it('law_checkpointCancelMakesNoCommit: a canceled input box makes no checkpoint call', async () => {
+        const { actions, checkpoint, messages } = checkpointFixture(undefined, { ok: true });
+        await actions.checkpoint();
+        expect(checkpoint).not.toHaveBeenCalled();
+        expect(messages.error).not.toHaveBeenCalled();
+    });
 });

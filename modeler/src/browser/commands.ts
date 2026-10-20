@@ -47,6 +47,8 @@ export namespace OpenModelCommands {
     export const OPEN_AS = cmd('catenary.openAs', 'Open as…', 'codicon codicon-go-to-file');
     export const OPEN_BESIDE = cmd('catenary.openBeside', 'Open beside…', 'codicon codicon-split-horizontal');
     export const SAVE = cmd('catenary.save', 'Save Workspace');
+    /** An input box for the commit message, then ModelService.checkpoint (spec/ui-manifest.hs §4.10). */
+    export const CHECKPOINT = cmd('catenary.checkpoint', 'Checkpoint…');
     export const EXPORT_MARKDOWN = cmd('catenary.exportMarkdown', 'Export Markdown…');
     /** Repeat the last successful Markdown export of the workspace, without the dialog (UI §9.2). */
     export const RUN_LAST_EXPORT = cmd('catenary.runLastMarkdownExport', 'Run Last Markdown Export');
@@ -370,6 +372,7 @@ export class ModelContribution implements FrontendApplicationContribution, Comma
         registry.registerCommand(OpenModelCommands.NEW, { execute: () => a.newModel() });
         registry.registerCommand(OpenModelCommands.OPEN_RECENT, { execute: () => a.openRecent(this.recent.paths), isEnabled: () => this.recent.paths.length > 0 });
         registry.registerCommand(OpenModelCommands.SAVE, { execute: () => a.save(), isEnabled: open });
+        registry.registerCommand(OpenModelCommands.CHECKPOINT, { execute: () => a.checkpoint(), isEnabled: open });
         // The sources: the argument (CLI, scripts: a path, a list of paths, a URI), else the folders and Markdown files of the navigator
         // selection. Second argument: the destination folder. Absolute paths.
         const sourcesArg = (arg?: unknown): string[] | undefined => {

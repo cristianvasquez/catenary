@@ -895,6 +895,16 @@ law_canvasEditErrorsOnce kind o = length (editMessages kind o) <= 1 && all isWar
 popupRequestsPerHover :: Int
 popupRequestsPerHover = 0
 
+-- 4.10 Checkpoint ------------------------------------------------------------------
+
+-- | Checkpoint… (catenary.checkpoint, File menu after Save Workspace) is enabled when a workspace is open. It shows an input box
+-- with the prompt "Commit message". Cancel makes no checkpoint call and no commit. Each other answer, also an empty text, goes to
+-- ModelService.checkpoint as it is (spec/manifest.hs §10.3). A failed result shows its error as an error message (ModelActions.checkpoint).
+-- Reason: the backend owns the trim and the message errors.
+checkpointCallsOf :: Maybe String -> [String]   -- the answer of the input box (Nothing: canceled) -> the messages sent to checkpoint
+law_checkpointCancelMakesNoCommit :: Bool
+law_checkpointCancelMakesNoCommit = null (checkpointCallsOf Nothing)
+
 -- 5. Canvas gestures -----------------------------------------------------------
 
 -- 5.1 Palette and drag sources ------------------------------------------------------
@@ -2207,3 +2217,4 @@ isFolder = manifestOnly
 parentFolder = manifestOnly
 commonFolder = manifestOnly
 viewFileBase = manifestOnly
+checkpointCallsOf = manifestOnly

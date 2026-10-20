@@ -157,6 +157,13 @@ export class ModelActions {
         if (count) this.messages.warn(`Saved. The model is not valid: ${count} violations${views ? ' on the open views' : ''} (see Problems).`);
     }
 
+    /** Checkpoint…: an input box for the commit message. Cancel makes no call (spec/ui-manifest.hs §4.10 law_checkpointCancelMakesNoCommit). */
+    async checkpoint(): Promise<void> {
+        const message = await this.quick.input({ prompt: 'Commit message', placeHolder: 'What this step of the history does' });
+        if (message === undefined) return;
+        await this.model.report(this.model.service.checkpoint(message));
+    }
+
     /** Report an error; show new import warnings. */
     protected async report(p: Promise<CommandResult>): Promise<void> {
         const before = new Set(this.model.snapshot.warnings);

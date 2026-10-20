@@ -49,7 +49,7 @@ export class ModelerMenus implements MenuContribution {
 
         const c = OpenModelCommands;
         addMenuItems(menus, FILE_MODEL, c.NEW.id, c.OPEN.id, c.OPEN_RECENT.id, c.WORKSPACE_SETTINGS.id, c.IMPORT_FILE.id);
-        addMenuItems(menus, FILE_SAVE, c.SAVE.id);
+        addMenuItems(menus, FILE_SAVE, c.SAVE.id, c.CHECKPOINT.id);
         addMenuItems(menus, CommonMenus.EDIT_UNDO, [c.UNDO.id, 'Undo'], [c.REDO.id, 'Redo']);
         addMenuItems(menus, CommonMenus.EDIT_FIND, ModelCommands.FIND_ELEMENT.id);
         addMenuItems(menus, CommonMenus.EDIT_CLIPBOARD, ModelCommands.COPY_AS_RDF.id, ModelCommands.DUPLICATE.id);
