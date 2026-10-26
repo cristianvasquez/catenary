@@ -71,9 +71,28 @@ async function waitUntil(description, observe, until = Boolean, { timeout = 1000
   }
 }
 
+/**
+ * Page init script: records each gap over 100 ms between animation frames and each long task (start and duration in ms of
+ * performance.now()). It shows on a failure whether the page stopped drawing frames. The rAF loop runs while the page is open.
+ */
+const FRAME_PROBE = () => {
+  const probe = globalThis.__e2eFrames = { gaps: [], longTasks: [] };
+  let last = performance.now();
+  const tick = time => {
+    if (time - last > 100) probe.gaps.push([Math.round(last), Math.round(time - last)]);
+    last = time;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  try {
+    new PerformanceObserver(list => { for (const e of list.getEntries()) probe.longTasks.push([Math.round(e.startTime), Math.round(e.duration)]); })
+      .observe({ type: 'longtask', buffered: true });
+  } catch {}
+};
+
 /** The agent CLI (scripts/catenary.mjs) on the backend at `url`: `cli(...args)` returns its JSON output. `record(entry)` gets each call. */
 const catenaryCli = (url, record) => (...args) => {
-  const entry = { args, result: 'running' };
+  const entry = { at: new Date().toISOString(), args, result: 'running' };
   record?.(entry);
   try {
     const out = JSON.parse(execFileSync(process.execPath,
@@ -180,7 +199,8 @@ async function stopBackend(proc) {
  * `ready` (a selector to wait for after the page load; null for none).
  * Each resource registers its cleanup when it is created. On a failure the temporary folder stays, with the workspace, the
  * configuration, backend-browser.log, diagnostics.json (phase, URL, backend exit code and signal, the last CLI commands, browser
- * errors), failure.png and page.html.
+ * errors), failure.png, page.html, frames.json (animation frame gaps over 100 ms and long tasks of the page, see FRAME_PROBE) and
+ * backend-trace.json (the backend trace, when the scenario turned it on).
  */
 async function withApp(t, name, options, run) {
   const { fixture = copyFixtures, page: pageOptions = { viewport: { width: 1600, height: 1000 } }, defaultTimeout = 10000, gotoTimeout = 30000,
@@ -220,6 +240,7 @@ async function withApp(t, name, options, run) {
     browser.on('disconnected', () => diagnostics.browserErrors.push('browser disconnected'));
     page = await browser.newPage(pageOptions);
     page.setDefaultTimeout(defaultTimeout);
+    await page.addInitScript(FRAME_PROBE);
     page.setDefaultNavigationTimeout(gotoTimeout);
     page.on('console', m => {
       if (m.type() === 'error' || m.type() === 'warn') logs.push(m.text());
@@ -240,6 +261,12 @@ async function withApp(t, name, options, run) {
     fs.writeFileSync(path.join(dir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
     await page?.screenshot({ path: path.join(dir, 'failure.png'), timeout: 3000 }).catch(() => {});
     if (page) fs.writeFileSync(path.join(dir, 'page.html'), await page.content().catch(() => ''));
+    // A page that draws no frames can also answer no evaluate: the probe read has its own limit.
+    const frames = page && await Promise.race([page.evaluate(() => ({ timeOrigin: performance.timeOrigin, now: performance.now(),
+      visibility: document.visibilityState, focus: document.hasFocus(), ...globalThis.__e2eFrames })).catch(e => ({ error: e.message })),
+    new Promise(resolve => setTimeout(() => resolve({ error: 'no answer in 3000 ms' }), 3000))]);
+    if (frames) fs.writeFileSync(path.join(dir, 'frames.json'), JSON.stringify({ failedAt: new Date().toISOString(), ...frames }, null, 2));
+    try { fs.writeFileSync(path.join(dir, 'backend-trace.json'), JSON.stringify(catenaryCli(diagnostics.url)('rpc', 'trace', '0'), null, 2)); } catch {}
     const { exitCode = null, signal = null } = diagnostics.backend;
     console.error(`${name} failure artifacts: ${dir}`);
     throw new Error(`${name} failed in phase "${diagnostics.phase}": ${e.message}\n`
