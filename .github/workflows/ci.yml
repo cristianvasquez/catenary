@@ -46,15 +46,19 @@ jobs:
       - name: CLI and RPC contract smoke test
         run: node scripts/smoke-cli.mjs
       - name: Browser tests
+        # A step timeout is a failure: the upload of the failure folders still runs.
+        timeout-minutes: 15
         env:
-          # Two browser tests at a time on the 4 vCPUs of a runner (scripts/e2e.cjs).
-          E2E_CONCURRENCY: 2
+          # One browser test at a time: two at a time starved the page of the other test on the 4 vCPUs of a runner (spec/open.md).
+          E2E_CONCURRENCY: 1
         run: |
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
+          # The first Chromium start of a runner took 13 to 45 s: pay it once, before the tests.
+          timeout 90 "$CHROMIUM" --headless=new --no-sandbox --disable-gpu --dump-dom about:blank > /dev/null || true
           pnpm -s e2e
       - name: Upload e2e failure artifacts
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           # failure.png, page.html, backend-browser.log, diagnostics.json of each failed scenario (scripts/e2e/harness.cjs).

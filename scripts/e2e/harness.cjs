@@ -72,23 +72,30 @@ async function waitUntil(description, observe, until = Boolean, { timeout = 1000
 }
 
 /**
- * Page init script: records each gap over 100 ms between animation frames and each long task (start and duration in ms of
- * performance.now()). It shows on a failure whether the page stopped drawing frames. The rAF loop runs while the page is open.
+ * Page init script: records each long task of the page (start and duration in ms of performance.now()). The observer is passive: it
+ * requests no frames, so it adds no load to the runner.
  */
-const FRAME_PROBE = () => {
-  const probe = globalThis.__e2eFrames = { gaps: [], longTasks: [] };
-  let last = performance.now();
-  const tick = time => {
-    if (time - last > 100) probe.gaps.push([Math.round(last), Math.round(time - last)]);
-    last = time;
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+const LONG_TASKS = () => {
+  const tasks = globalThis.__e2eLongTasks = [];
   try {
-    new PerformanceObserver(list => { for (const e of list.getEntries()) probe.longTasks.push([Math.round(e.startTime), Math.round(e.duration)]); })
+    new PerformanceObserver(list => { for (const e of list.getEntries()) tasks.push([Math.round(e.startTime), Math.round(e.duration)]); })
       .observe({ type: 'longtask', buffered: true });
   } catch {}
 };
+
+/**
+ * Launch Chromium for the test `t`. A node:test timeout does not stop the test function: when the launch ends after the test has
+ * ended, the `after` hooks have already run, so the browser is closed here. Else it keeps `node scripts/e2e.cjs` alive.
+ * 30 s: the first browser start of a CI runner took 13 to 45 s.
+ */
+async function launchBrowser(t, options = {}) {
+  const browser = await chromium.launch({ executablePath, timeout: 30000, ...options });
+  if (t.signal.aborted) {
+    await browser.close().catch(() => {});
+    throw new Error('the test ended before the browser launch completed');
+  }
+  return browser;
+}
 
 /** The agent CLI (scripts/catenary.mjs) on the backend at `url`: `cli(...args)` returns its JSON output. `record(entry)` gets each call. */
 const catenaryCli = (url, record) => (...args) => {
@@ -199,7 +206,7 @@ async function stopBackend(proc) {
  * `ready` (a selector to wait for after the page load; null for none).
  * Each resource registers its cleanup when it is created. On a failure the temporary folder stays, with the workspace, the
  * configuration, backend-browser.log, diagnostics.json (phase, URL, backend exit code and signal, the last CLI commands, browser
- * errors), failure.png, page.html, frames.json (animation frame gaps over 100 ms and long tasks of the page, see FRAME_PROBE) and
+ * errors), failure.png, page.html, long-tasks.json (the long tasks of the page, see LONG_TASKS) and
  * backend-trace.json (the backend trace, when the scenario turned it on).
  */
 async function withApp(t, name, options, run) {
@@ -235,12 +242,12 @@ async function withApp(t, name, options, run) {
     const url = diagnostics.url = await started.ready;
     const cli = catenaryCli(url, record);
     diagnostics.phase = 'browser launch';
-    const browser = await chromium.launch({ executablePath, timeout: 10000 });
+    const browser = await launchBrowser(t);
     cleanups.push(() => browser.close());
     browser.on('disconnected', () => diagnostics.browserErrors.push('browser disconnected'));
     page = await browser.newPage(pageOptions);
     page.setDefaultTimeout(defaultTimeout);
-    await page.addInitScript(FRAME_PROBE);
+    await page.addInitScript(LONG_TASKS);
     page.setDefaultNavigationTimeout(gotoTimeout);
     page.on('console', m => {
       if (m.type() === 'error' || m.type() === 'warn') logs.push(m.text());
@@ -261,11 +268,11 @@ async function withApp(t, name, options, run) {
     fs.writeFileSync(path.join(dir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
     await page?.screenshot({ path: path.join(dir, 'failure.png'), timeout: 3000 }).catch(() => {});
     if (page) fs.writeFileSync(path.join(dir, 'page.html'), await page.content().catch(() => ''));
-    // A page that draws no frames can also answer no evaluate: the probe read has its own limit.
-    const frames = page && await Promise.race([page.evaluate(() => ({ timeOrigin: performance.timeOrigin, now: performance.now(),
-      visibility: document.visibilityState, focus: document.hasFocus(), ...globalThis.__e2eFrames })).catch(e => ({ error: e.message })),
+    // A stalled page can also answer no evaluate: the probe read has its own limit.
+    const probe = page && await Promise.race([page.evaluate(() => ({ timeOrigin: performance.timeOrigin, now: performance.now(),
+      visibility: document.visibilityState, focus: document.hasFocus(), longTasks: globalThis.__e2eLongTasks })).catch(e => ({ error: e.message })),
     new Promise(resolve => setTimeout(() => resolve({ error: 'no answer in 3000 ms' }), 3000))]);
-    if (frames) fs.writeFileSync(path.join(dir, 'frames.json'), JSON.stringify({ failedAt: new Date().toISOString(), ...frames }, null, 2));
+    if (probe) fs.writeFileSync(path.join(dir, 'long-tasks.json'), JSON.stringify({ failedAt: new Date().toISOString(), ...probe }, null, 2));
     try { fs.writeFileSync(path.join(dir, 'backend-trace.json'), JSON.stringify(catenaryCli(diagnostics.url)('rpc', 'trace', '0'), null, 2)); } catch {}
     const { exitCode = null, signal = null } = diagnostics.backend;
     console.error(`${name} failure artifacts: ${dir}`);
@@ -280,5 +287,5 @@ async function withApp(t, name, options, run) {
 /** withApp on the standard fixture (copyFixtures). */
 const withFixtureApp = (t, name, run) => withApp(t, name, {}, run);
 
-module.exports = { test, run, root, waitUntil, catenaryCli, navNode, navigator, rdfRows, FIXTURE_PREFERENCES, copyFixtures,
+module.exports = { test, run, root, launchBrowser, waitUntil, catenaryCli, navNode, navigator, rdfRows, FIXTURE_PREFERENCES, copyFixtures,
   startBackend, stopBackend, withApp, withFixtureApp };

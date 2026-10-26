@@ -2,11 +2,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require('playwright-core');
-const { test, root } = require('./harness.cjs');
+const { test, root, launchBrowser } = require('./harness.cjs');
 
-test('browser: law_edgeStrokeScales: visible edge strokes scale, hit strokes stay fixed', { timeout: 45000 }, async t => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });
+test('browser: law_edgeStrokeScales: visible edge strokes scale, hit strokes stay fixed', { timeout: 90000 }, async t => {
+  const browser = await launchBrowser(t, { args: ['--no-sandbox'] });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent('<svg width="400" height="200"><g class="catenary-edge" style="--c: black"><path class="hit" d="M20 100 H300"/><path class="line" d="M20 100 H300"/></g></svg>');
@@ -31,9 +30,9 @@ test('browser: law_edgeStrokeScales: visible edge strokes scale, hit strokes sta
   }
 });
 
-// 45 s: the first browser start of a CI runner takes about 15 s (launch and first page, Chromium 154 on ubuntu-latest).
-test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 45000 }, async t => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', args: ['--no-sandbox'] });
+// 90 s: the first browser start of a CI runner took 13 to 45 s (launch and first page, Chromium 155 on ubuntu-latest).
+test('browser: node OR selector stays visible in a narrow Properties form', { timeout: 90000 }, async t => {
+  const browser = await launchBrowser(t, { args: ['--no-sandbox'] });
   t.after(() => browser.close());
   const page = await browser.newPage();
   const bundle = path.join(root, 'node_modules/@ulb-darmstadt/shacl-form/dist/bundle.js');
