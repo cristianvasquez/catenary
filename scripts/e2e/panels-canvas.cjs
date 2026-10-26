@@ -42,7 +42,10 @@ function seams({ page, cli, waitUntil }) {
   return { windowState, processed, drain, glspAck, revision };
 }
 
-test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvasRefreshesOnce: panels and canvases read on show, save keeps content', { timeout: 90000 }, t => withFixtureApp(t, 'panel-reads', async app => {
+// The rules are unit tests: law_hiddenPanelNoRead (modeler/test/panel-reads.test.ts), law_saveKeepsRevision (packages/rdf/test/store.test.ts,
+// modeler/test/panel-reads.test.ts), law_hiddenCanvasRefreshesOnce (modeler/test/view-session.test.ts). This scenario checks the wiring
+// only: the hide and the show of the shell reach the panels and the canvas. It shows a panel with revealWidget or a command, not a tab click.
+test('browser: law_hiddenPanelNoRead and law_hiddenCanvasRefreshesOnce: the shell hide and show reach the panels and the canvas', { timeout: 90000 }, t => withFixtureApp(t, 'panel-reads', async app => {
   const { page, cli, workspace, logs } = app;
   const { processed, drain, glspAck, revision } = seams(app);
   cli('rpc', 'setSettings', JSON.stringify({ validation: 'off' }));
@@ -75,24 +78,12 @@ test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvas
   await drain();
   const hidden = cli('rpc', 'trace', '0').result.spans.filter(s => s.kind === 'rpc').map(s => s.name);
   assert.ok(!hidden.some(name => PANEL_READS.includes(name)), JSON.stringify(hidden));
-  await page.locator('#shell-tab-property-view').click();
+  cli('eval', `await ctx.shell.revealWidget('property-view'); return true`);
   await page.locator('#catenary-properties').getByText('Panel after', { exact: true }).first().waitFor();
-  cli('run', 'catenary.toggleAppearance');
+  cli('eval', `await ctx.shell.revealWidget('catenary-appearance'); return true`);
   await page.locator('#catenary-appearance').getByText('Panel after', { exact: true }).waitFor();
-  // The reads of the shown panels end before the trace is cleared.
-  await processed(revision(), 'panels shown');
-  await drain();
-  cli('rpc', 'clearTrace');
-  const before = revision();
-  cli('save');
-  // The save reaches the window as a snapshot with the change "save".
-  await processed(before, 'save', s => s.change === 'save');
-  await drain();
-  assert.equal(revision(), before);
-  const saved = cli('rpc', 'trace', '0').result.spans.filter(s => s.kind === 'rpc').map(s => s.name);
-  assert.ok(!saved.some(name => PANEL_READS.includes(name)), JSON.stringify(saved));
-  // law_hiddenCanvasRefreshesOnce: the canvas tells the server when its tab is hidden (catenarySetVisible). A change while hidden
-  // gives no refresh of the canvas; the show gives one, with the change.
+  // The canvas tells the server when its tab is hidden (catenarySetVisible): a change while hidden gives no refresh of the canvas.
+  // The show gives the canvas the change.
   cli('eval', `await ctx.editors.open(${JSON.stringify(view)}); return true`);
   const card = () => page.locator('svg.sprotty-graph:visible g.card').filter({ hasText: /^Panel/ });
   await card().filter({ hasText: 'Panel after' }).waitFor();
@@ -111,9 +102,6 @@ test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvas
   // The show is a request: its answer comes after the refresh of the show (whenShowUpdated).
   cli('eval', `await ctx.shell.activateWidget(${JSON.stringify(canvasId)}); await ctx.editors.find(${JSON.stringify(view)}).whenShowUpdated(); return true`);
   await card().filter({ hasText: 'Panel hidden' }).waitFor();
-  await drain();
-  glspAck(view);
-  assert.equal(refreshes().length, 1, 'one refresh when the canvas shows again');
   assert.ok(!logs.some(l => l.includes('Missing handler for action')), logs.filter(l => l.includes('Missing handler')).join('\n'));
   cli('rpc', 'setTracing', 'false');
 }));

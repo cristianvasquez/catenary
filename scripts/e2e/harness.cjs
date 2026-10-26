@@ -175,14 +175,15 @@ async function stopBackend(proc) {
  * A backend on a workspace copy, a browser page with the CLI bridge connected, and the cleanup. `run(app)` gets
  * { page, cli, url, dir, workspace, config, logs, errors, waitUntil }: `logs` collects the backend output, the browser console
  * errors and warnings and the page errors; `errors` has the page error messages. `app.waitUntil` stops at once when the backend exits.
- * Options: `fixture(workspace)` (default copyFixtures), `page` (newPage options), `defaultTimeout` (10000), `gotoTimeout`,
+ * Options: `fixture(workspace)` (default copyFixtures), `page` (newPage options), `defaultTimeout` (10000), `gotoTimeout` (30000: each
+ * page load and the wait for `ready`; a cold load of the Theia bundle on a loaded 4 vCPU runner is not a correctness check),
  * `ready` (a selector to wait for after the page load; null for none).
  * Each resource registers its cleanup when it is created. On a failure the temporary folder stays, with the workspace, the
  * configuration, backend-browser.log, diagnostics.json (phase, URL, backend exit code and signal, the last CLI commands, browser
  * errors), failure.png and page.html.
  */
 async function withApp(t, name, options, run) {
-  const { fixture = copyFixtures, page: pageOptions = { viewport: { width: 1600, height: 1000 } }, defaultTimeout = 10000, gotoTimeout,
+  const { fixture = copyFixtures, page: pageOptions = { viewport: { width: 1600, height: 1000 } }, defaultTimeout = 10000, gotoTimeout = 30000,
     ready = '#shell-tab-explorer-view-container' } = options;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `catenary-${name}-`));
   const workspace = path.join(dir, 'workspace'), config = path.join(dir, 'config');
@@ -219,14 +220,15 @@ async function withApp(t, name, options, run) {
     browser.on('disconnected', () => diagnostics.browserErrors.push('browser disconnected'));
     page = await browser.newPage(pageOptions);
     page.setDefaultTimeout(defaultTimeout);
+    page.setDefaultNavigationTimeout(gotoTimeout);
     page.on('console', m => {
       if (m.type() === 'error' || m.type() === 'warn') logs.push(m.text());
       if (m.type() === 'error') diagnostics.browserErrors.push(`console: ${m.text()}`);
     });
     page.on('pageerror', e => { errors.push(e.message); logs.push(e.stack ?? e.message); diagnostics.browserErrors.push(`page: ${e.message}`); });
     diagnostics.phase = 'page load';
-    await page.goto(url, { waitUntil: 'domcontentloaded', ...gotoTimeout && { timeout: gotoTimeout } });
-    if (ready) await page.locator(ready).waitFor();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    if (ready) await page.locator(ready).waitFor({ timeout: gotoTimeout });
     diagnostics.phase = 'CLI bridge';
     await waitUntil('the CLI bridge reports a browser window', () => cli('status').windows.length, n => n > 0, { timeout: 15000, abort });
     diagnostics.phase = 'scenario';

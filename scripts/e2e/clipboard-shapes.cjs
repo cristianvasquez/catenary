@@ -204,7 +204,6 @@ test('browser: shapes view → rows, + attribute, value picker, SKOS scheme and 
   },
   page: { viewport: { width: 1700, height: 1000 } },
   defaultTimeout: 8000,
-  gotoTimeout: 15000,
   ready: null
 }, async ({ page, cli, dir, workspace, logs, errors, waitUntil }) => {
   const main = page.locator('#theia-main-content-panel');

@@ -372,6 +372,23 @@ describe('patch notification integration', () => {
         } finally { await store.dispose(); }
     });
 
+    it('law_saveKeepsRevision: a save notifies with the reason "save" and keeps the revision and the event', async () => {
+        const { a } = workspace(), store = tracked(new ModelStore());
+        store.watching = false;
+        try {
+            expect((await store.open(a)).ok).toBe(true);
+            expect(store.execute({ kind: 'createView', label: 'Saved view' }).ok).toBe(true);
+            await store.idle();
+            const revision = store.snapshot().revision;
+            const changes: ModelChange[] = [];
+            store.onDidChange(change => changes.push(change));
+            expect((await store.save()).ok).toBe(true);
+            expect(changes.map(c => c.reason)).toEqual(['save']);
+            expect(changes[0].event.sequence).toBe(revision);
+            expect(store.snapshot()).toMatchObject({ revision, change: { reason: 'save' } });
+        } finally { await store.dispose(); }
+    });
+
     it('law_readWarningsCurrent and law_placementWarningExplains: refresh placement warnings after data arrival, removal and undo (kata d8w7)', async () => {
         const { a, dir } = workspace(), store = tracked(new ModelStore());
         store.watching = false;
