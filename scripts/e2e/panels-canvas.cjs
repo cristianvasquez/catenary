@@ -51,7 +51,9 @@ test('browser: law_hiddenPanelNoRead, law_saveKeepsRevision and law_hiddenCanvas
   assert.equal(created.ok, true);
   const select = () => cli('eval', `ctx.selection.set({view: ${JSON.stringify(view)}, ids: [${JSON.stringify(created.id)}]}); return true`);
   select();
-  if (!await page.locator('#catenary-properties').isVisible()) await page.locator('#shell-tab-property-view').click();
+  // The initial layout reveals Properties, but its content widget comes with the selection: a tab click while Properties is the
+  // current tab of the open right panel collapses the panel. revealWidget shows the panel in either state.
+  cli('eval', `await ctx.shell.revealWidget('property-view'); return true`);
   await page.locator('#catenary-properties').getByText('Panel before', { exact: true }).first().waitFor();
   cli('run', 'catenary.toggleAppearance');
   await page.locator('#catenary-appearance').waitFor();

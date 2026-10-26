@@ -53,6 +53,15 @@ jobs:
           CHROMIUM="$(command -v chromium || command -v chromium-browser || command -v google-chrome)"
           export CHROMIUM
           pnpm -s e2e
+      - name: Upload e2e failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # failure.png, page.html, backend-browser.log, diagnostics.json of each failed scenario (scripts/e2e/harness.cjs).
+          name: e2e-failures
+          path: /tmp/catenary-*
+          if-no-files-found: ignore
+          retention-days: 7
 
   windows:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci:full')
