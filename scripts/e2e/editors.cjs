@@ -382,7 +382,7 @@ test('browser: subject and object targets retain all predicates through Properti
     assert.equal(shape.ok, true);
     cli('exec', JSON.stringify({ kind: 'setNodeShape', id: shape.id, patch: { [key]: ['urn:test:first', 'urn:test:second'] } }));
     cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(shape.id)}] }); return true`);
-    if (!await panel.isVisible()) await page.locator('#shell-tab-property-view').click();
+    cli('eval', `await ctx.shell.revealWidget('property-view'); return true`);
     const field = panel.locator('.catenary-row').filter({ has: page.locator('code', { hasText: new RegExp(`^sh:${key}$`) }) }).locator('textarea');
     await field.waitFor();
     // ui-manifest §8.11: Properties shows its last data until the new answer arrives. The shapes answer of the revision before
@@ -691,7 +691,7 @@ test('browser: Properties keeps its content during a model change; the SHACL for
   });
   assert.ok(target, 'an instance of the fixtures has a SHACL form');
   cli('eval', `ctx.selection.set({ view: undefined, ids: [${JSON.stringify(target.id)}] }); return true`);
-  if (!await page.locator('#catenary-properties').isVisible()) await page.locator('#shell-tab-property-view').click();
+  cli('eval', `await ctx.shell.revealWidget('property-view'); return true`);
   await page.locator('#catenary-properties .catenary-props shacl-form').first().waitFor();
   // The gate: while it is closed, the answers of ctx.model.service.properties wait for the release. The render wrapper records
   // the request (file, revision, element) of the data that the panel rendered last.
